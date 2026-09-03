@@ -1,0 +1,29 @@
+---
+description: UI design system, Tailwind v4, shadcn/ui
+globs: "**/components/**/*.tsx, **/app/**/*.tsx"
+alwaysApply: false
+---
+
+# UI design & styling
+
+## 1. Visual style
+- Fresh, clear, high contrast — not pastel kitsch.
+- Palette: `gray-100` content, `zinc-800` chrome, `orange-700` primary/CTA, `yellow-400` accent, `zinc-950` strong text.
+- Icons: only `lucide-react` with explicit size classes.
+- Font: Nunito via `--font-nunito` / `font-sans` (see typography rule).
+
+## 2. shadcn/ui
+- Prefer existing shadcn primitives under `@/components/ui/`.
+- Extend via `className`, do not fork base files unless required.
+
+## 3. Tailwind
+- Tailwind v4 only; no arbitrary hex in `className`.
+- Use `cn()` from `@/lib/utils`.
+- Interactive elements: `transition-all duration-200 ease-in-out`.
+- Buttons/links: `cursor-pointer`; disabled: `cursor-not-allowed`.
+- Mobile-first (`sm:`, `md:`, `lg:`).
+
+## 4. Forms
+- Forms with Zod/server validation: `noValidate`.
+- Field errors under the field in German; toast for global errors only.
+- Edit dialogs: primary action only; close via X (no Abbrechen) — except delete confirms.

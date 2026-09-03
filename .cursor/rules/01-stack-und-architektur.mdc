@@ -1,0 +1,33 @@
+---
+description: System architecture, TypeScript standards, and language rules
+globs: "**/*.ts, **/*.tsx"
+alwaysApply: false
+---
+
+# System architecture & TypeScript
+
+## 1. Language & localization (strict)
+- **Code:** Source (variables, functions, interfaces, file names, Git commits, code comments) MUST be English.
+- **UI:** All user-visible frontend text MUST be German — labels, buttons, headings, placeholders, tooltips, toasts, empty states. English library defaults must never reach the user.
+- **Errors:** User-facing validation and error messages MUST be German.
+- **Dates & numbers:** Display/input with `de-DE` (`tt.mm.jjjj`, 24h `HH:mm`, decimal `,`). Prefer custom fields over native `type="date"` / `type="number"` / `type="time"`.
+
+## 2. Tech stack
+- **Framework:** Next.js App Router; default to React Server Components.
+- **Language:** TypeScript strict mode.
+- **Database & auth:** Supabase (PostgreSQL + RLS). App schema: `leseno`.
+- **UI:** Tailwind CSS v4, shadcn/ui (when added), Lucide icons.
+- **Validation:** Zod schemas; import `@/lib/validations/configure-zod` as side effect; explicit German messages per field.
+- **Deploy:** GitHub → Coolify (Node 22). Secrets only via env (never commit `.env*`).
+
+## 3. Structure
+- App Router under `src/app/`
+- Base UI: `@/components/ui/`
+- Features: `@/components/features/`
+- Shared logic: `@/lib/`
+- No `any` — explicit types for props, actions, DB rows.
+- `'use client'` only when state or browser events are required.
+
+## 4. Server Actions
+- Mutations via Server Actions + Zod.
+- Return shape: `{ success: boolean; data?: T; error?: string }` (`ActionResult`).

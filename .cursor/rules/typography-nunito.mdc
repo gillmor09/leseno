@@ -1,0 +1,11 @@
+---
+description: Use Nunito as the mandatory UI font
+alwaysApply: true
+---
+
+# Typography
+
+- Always use **Nunito** as the application UI font (sans / headings).
+- Load via `next/font/google` (`Nunito`) and wire through `--font-nunito` / Tailwind `font-sans`.
+- Do not switch the product UI to Geist, Inter, Roboto, Arial, or system UI stacks for body/UI text.
+- Mono may remain a separate monospace font for code-only contexts.

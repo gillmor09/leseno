@@ -1,0 +1,15 @@
+---
+description: Confirm dialogs for deletions
+alwaysApply: true
+---
+
+# Confirm dialogs for deletions
+
+When adding or changing **delete / remove** flows in the UI:
+
+- Always require an explicit confirm Dialog before calling the delete action.
+- Do not use only `window.confirm` for new delete UX.
+- Dialog copy must state **what** is deleted and cascading side effects.
+- Provide **Abbrechen** and a clear destructive confirm button.
+- Disable buttons while pending; close only after success (or cancel when idle).
+- Server-side: still enforce auth checks; the Dialog is UX only.

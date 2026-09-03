@@ -1,0 +1,11 @@
+---
+description: No cancel button in edit/action dialogs
+alwaysApply: true
+---
+
+# No Abbrechen in edit / action dialogs
+
+- In edit / save / apply dialogs: no **Abbrechen** or **Verwerfen** button.
+- Close via Dialog **X** (and Escape / outside click if allowed).
+- Footer: primary action only (Speichern, Übernehmen, Anlegen).
+- Exception: **ConfirmDeleteDialog** keeps Abbrechen + destructive confirm.

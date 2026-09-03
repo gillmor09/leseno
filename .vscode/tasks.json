@@ -1,0 +1,117 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "App starten",
+      "detail": "Startet Next.js und öffnet http://localhost:3000 im internen Simple Browser",
+      "dependsOrder": "sequence",
+      "dependsOn": ["Next.js Dev Server", "Simple Browser öffnen"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Next.js Dev Server",
+      "type": "shell",
+      "command": "npm.cmd run dev",
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/d", "/c"]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": false
+      },
+      "problemMatcher": {
+        "owner": "nextjs",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "(Ready in|Local:)"
+        }
+      }
+    },
+    {
+      "label": "App stoppen",
+      "detail": "Beendet den Next.js Dev-Server auf Port 3000",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\stop-dev-server.ps1\"",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/d", "/c"]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": false,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "GitHub-Commit",
+      "detail": "Änderungen stagen, committen und nach origin/main pushen (für Coolify-Rebuild)",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\github-commit.ps1\" -Message \"${input:commitMessage}\"",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/d", "/c"]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "focus": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Simple Browser öffnen",
+      "type": "shell",
+      "command": "echo ${input:openSimpleBrowser}",
+      "options": {
+        "shell": {
+          "executable": "cmd.exe",
+          "args": ["/d", "/c"]
+        }
+      },
+      "presentation": {
+        "reveal": "never",
+        "echo": false,
+        "close": true,
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "openSimpleBrowser",
+      "type": "command",
+      "command": "simpleBrowser.api.open",
+      "args": ["http://localhost:3000"]
+    },
+    {
+      "id": "commitMessage",
+      "type": "promptString",
+      "description": "Commit-Message (Warum der Change?)",
+      "default": "Update Leseno for Coolify deploy."
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+---
+description: Supabase client, auth, database and security
+globs: "**/lib/supabase/**/*.ts, **/app/api/**/*.ts, **/*actions*.ts"
+alwaysApply: false
+---
+
+# Supabase guidelines
+
+## 1. Clients
+- Use `@supabase/ssr` with Next.js App Router.
+- Server Components / Actions: `createClient` from `@/lib/supabase/server`.
+- Client Components: `createClient` from `@/lib/supabase/client`.
+- Service role only on the server (never expose to the browser).
+
+## 2. Security
+- Assume RLS on every table in schema `leseno`.
+- Check session with `supabase.auth.getUser()` before protected mutations.
+- Env: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+## 3. Migrations
+- SQL under `supabase/migrations/` with timestamp prefixes.
+- Idempotent where practical (`if not exists`, upserts).

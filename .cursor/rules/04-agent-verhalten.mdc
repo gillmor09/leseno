@@ -1,0 +1,21 @@
+---
+description: Agent working style, quality and error handling
+globs: "**/*"
+alwaysApply: true
+---
+
+# Agent behaviour
+
+## 1. Plan then execute
+1. For non-trivial work, briefly outline the approach in German (2–3 sentences) before large edits.
+2. Always ship complete, runnable code — no placeholder stubs or omitted blocks.
+3. Prefer small, working increments.
+
+## 2. UX & errors
+- Loading states for async UI (Skeleton / spinner).
+- Failures: German toast + optional field errors.
+- Validate on the server with Zod; forms use `noValidate`.
+
+## 3. Git / Coolify
+- Prefer committing and pushing to **`main`** so Coolify rebuilds.
+- Never commit secrets (`.env*`, keys). Use the VS Code task **GitHub-Commit** for routine deploys.
