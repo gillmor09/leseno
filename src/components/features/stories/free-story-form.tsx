@@ -6,7 +6,7 @@
  */
 
 import { useState, useTransition, type FormEvent } from "react";
-import { BookOpen, BicepsFlexed, Lightbulb, Loader2, Smile, Sparkles, Zap } from "lucide-react";
+import { BicepsFlexed, Lightbulb, Loader2, Smile, Sparkles, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { generateFreeStoryAction } from "@/app/actions/story-generate";
 import {
@@ -91,7 +91,7 @@ export function FreeStoryForm({
   const storyTextClass = storyBodyClassName(storySchoolStage ?? schoolStage);
 
   return (
-    <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-10">
+    <div className="grid items-start gap-8">
       <form
         noValidate
         onSubmit={handleSubmit}
@@ -230,90 +230,82 @@ export function FreeStoryForm({
         </button>
       </form>
 
-      <div className="grid gap-6">
-        <section
-          aria-labelledby="story-output-heading"
-          aria-busy={isPending}
-          className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
-        >
-          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-            Deine Geschichte
-          </p>
-          <h2
-            id="story-output-heading"
-            className="mt-1 text-xl font-extrabold text-zinc-950"
-          >
-            Frisch für dich geschrieben
-          </h2>
-          {isPending ? (
-            <div className="mt-6 flex flex-col items-start gap-3 rounded-2xl bg-orange-50 px-4 py-6 ring-1 ring-orange-700/10">
-              <Loader2 className="size-6 animate-spin text-orange-700" aria-hidden />
-              <p className="text-sm font-semibold text-orange-900">
-                {statusText ?? "Schreibe die Geschichte …"}
-              </p>
-              <p className="text-sm leading-relaxed text-zinc-600">
-                Zuerst holen wir Fakten, danach formuliert die KI die Geschichte.
-              </p>
-            </div>
-          ) : output ? (
-            <p
-              className={cn(
-                "mt-4 whitespace-pre-wrap leading-relaxed text-zinc-700",
-                storyTextClass,
-              )}
-            >
-              {output}
-            </p>
-          ) : (
-            <div className="mt-6 flex flex-col items-start gap-3 rounded-2xl bg-gray-100 px-4 py-6">
-              <span className="flex size-11 items-center justify-center rounded-2xl bg-yellow-400 text-zinc-950">
-                <BookOpen className="size-5" aria-hidden />
-              </span>
-              <p className="text-sm leading-relaxed text-zinc-600">
-                Hier erscheint die Geschichte — mit echten Fakten dazwischen.
-                Wählt ein Thema und startet.
-              </p>
-            </div>
-          )}
-        </section>
-
-        {!isPending && learnedFacts.length > 0 ? (
+      {isPending || output ? (
+        <div className="grid gap-6">
           <section
-            aria-labelledby="learned-facts-heading"
+            aria-labelledby="story-output-heading"
+            aria-busy={isPending}
             className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
           >
-            <div className="flex items-start gap-3">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-yellow-400 text-zinc-950">
-                <Lightbulb className="size-5" aria-hidden />
-              </span>
-              <div>
-                <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                  Wissen
+            <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+              Deine Geschichte
+            </p>
+            <h2
+              id="story-output-heading"
+              className="mt-1 text-xl font-extrabold text-zinc-950"
+            >
+              Frisch für dich geschrieben
+            </h2>
+            {isPending ? (
+              <div className="mt-6 flex flex-col items-start gap-3 rounded-2xl bg-orange-50 px-4 py-6 ring-1 ring-orange-700/10">
+                <Loader2 className="size-6 animate-spin text-orange-700" aria-hidden />
+                <p className="text-sm font-semibold text-orange-900">
+                  {statusText ?? "Schreibe die Geschichte …"}
                 </p>
-                <h2
-                  id="learned-facts-heading"
-                  className="mt-1 text-xl font-extrabold text-zinc-950"
-                >
-                  Das hast du gelernt
-                </h2>
+                <p className="text-sm leading-relaxed text-zinc-600">
+                  Zuerst holen wir Fakten, danach formuliert die KI die Geschichte.
+                </p>
               </div>
-            </div>
-            <ul className="mt-5 space-y-3">
-              {learnedFacts.map((fact, index) => (
-                <li
-                  key={`${index}-${fact.slice(0, 24)}`}
-                  className="flex gap-3 rounded-2xl bg-gray-100 px-4 py-3 text-sm leading-relaxed text-zinc-700"
-                >
-                  <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-orange-700 text-xs font-extrabold text-white">
-                    {index + 1}
-                  </span>
-                  <span>{fact}</span>
-                </li>
-              ))}
-            </ul>
+            ) : (
+              <p
+                className={cn(
+                  "mt-4 whitespace-pre-wrap leading-relaxed text-zinc-700",
+                  storyTextClass,
+                )}
+              >
+                {output}
+              </p>
+            )}
           </section>
-        ) : null}
-      </div>
+
+          {!isPending && learnedFacts.length > 0 ? (
+            <section
+              aria-labelledby="learned-facts-heading"
+              className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
+            >
+              <div className="flex items-start gap-3">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-yellow-400 text-zinc-950">
+                  <Lightbulb className="size-5" aria-hidden />
+                </span>
+                <div>
+                  <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+                    Wissen
+                  </p>
+                  <h2
+                    id="learned-facts-heading"
+                    className="mt-1 text-xl font-extrabold text-zinc-950"
+                  >
+                    Das hast du gelernt
+                  </h2>
+                </div>
+              </div>
+              <ul className="mt-5 space-y-3">
+                {learnedFacts.map((fact, index) => (
+                  <li
+                    key={`${index}-${fact.slice(0, 24)}`}
+                    className="flex gap-3 rounded-2xl bg-gray-100 px-4 py-3 text-sm leading-relaxed text-zinc-700"
+                  >
+                    <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-orange-700 text-xs font-extrabold text-white">
+                      {index + 1}
+                    </span>
+                    <span>{fact}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
