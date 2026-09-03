@@ -1,0 +1,33 @@
+---
+description: Code documentation for context finding and maintainability
+globs: "**/*.{ts,tsx,sql}"
+alwaysApply: true
+---
+
+# Code documentation
+
+Document so a later reader (human or agent) can find *why* something exists and *where* the next change belongs. Comments and JSDoc are **English** (same as source). Do not narrate obvious code.
+
+## 1. What to document
+- **File / module:** 2–5 lines at the top when the role is not obvious from the path (feature boundary, side effects, which schema or env it talks to).
+- **Exports:** short JSDoc on public functions, types, and Server Actions — purpose, important args/returns, and failure meaning.
+- **Non-obvious logic:** business rules, age-based language, Freemium limits, RLS assumptions, auth redirects, Coolify/Supabase URL quirks.
+- **Pointers:** name the related file, table, or env key (`leseno` schema, `ActionResult`, `NEXT_PUBLIC_SUPABASE_URL`) instead of repeating the implementation.
+
+## 2. What to skip
+- Restating the next line (`// increment i`).
+- Changelog or “as discussed” comments.
+- Large commented-out blocks.
+
+## 3. Shape
+
+```ts
+/**
+ * Builds a story request pitched to the child's age.
+ * Facts stay in the story body; see `src/lib/stories/facts.ts`.
+ */
+export function buildStoryPrompt(input: StoryInput): string {
+  // Plus: more monthly stories; free tier is capped in `getStoryQuota`.
+  ...
+}
+```

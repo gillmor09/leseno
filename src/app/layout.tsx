@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Nunito, Geist_Mono } from "next/font/google";
+import { AppToaster } from "@/components/ui/app-toaster";
 import "./globals.css";
 
 const nunito = Nunito({
@@ -13,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Leseno",
-  description: "Leseno — Basis-App",
+  title: "Leseno — Eigene Geschichten mit echten Fakten",
+  description:
+    "Die Leseapp für Kinder von 5 bis 10. Thema wählen, Alter angeben, Stimmung setzen — und beim Lesen echte Fakten entdecken.",
 };
 
 export default function RootLayout({
@@ -25,9 +27,12 @@ export default function RootLayout({
   return (
     <html
       lang="de"
-      className={`${nunito.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${nunito.variable} ${geistMono.variable} h-full scroll-smooth antialiased`}
     >
-      <body className="flex min-h-full flex-col font-sans">{children}</body>
+      <body className="flex min-h-full flex-col font-sans">
+        {children}
+        <AppToaster />
+      </body>
     </html>
   );
 }
