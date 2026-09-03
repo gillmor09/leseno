@@ -17,7 +17,7 @@ export type StorySchoolStageId = (typeof STORY_SCHOOL_STAGES)[number]["id"];
 export const STORY_MOODS = [
   { id: "lustig", label: "Lustig" },
   { id: "spannend", label: "Spannend" },
-  { id: "informativ", label: "Informativ" },
+  { id: "motivierend", label: "Motivierend" },
 ] as const;
 
 export type StoryMoodId = (typeof STORY_MOODS)[number]["id"];

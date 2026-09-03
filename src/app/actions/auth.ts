@@ -3,6 +3,7 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient } from "@/lib/supabase/server";
 import { getSiteUrl } from "@/lib/site-url";
+import { assertBotGuard } from "@/lib/security/bot-guard";
 import type { ActionResult } from "@/lib/types/actions";
 import {
   forgotEmailSchema,
@@ -16,6 +17,16 @@ import {
  * Starts an email/password session using Supabase Auth.
  */
 export async function signInAction(input: unknown): Promise<ActionResult> {
+  const botError = await assertBotGuard(input, {
+    action: "sign-in",
+    minFillMs: 1200,
+    maxRequests: 12,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (botError) {
+    return { success: false, error: botError };
+  }
+
   const parsed = signInSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -38,6 +49,16 @@ export async function signInAction(input: unknown): Promise<ActionResult> {
  * Creates a new Supabase Auth user and sends the verification email.
  */
 export async function signUpAction(input: unknown): Promise<ActionResult> {
+  const botError = await assertBotGuard(input, {
+    action: "sign-up",
+    minFillMs: 2000,
+    maxRequests: 6,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (botError) {
+    return { success: false, error: botError };
+  }
+
   const parsed = signUpSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -112,6 +133,16 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
 export async function requestPasswordResetAction(
   input: unknown,
 ): Promise<ActionResult> {
+  const botError = await assertBotGuard(input, {
+    action: "password-reset",
+    minFillMs: 1500,
+    maxRequests: 5,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (botError) {
+    return { success: false, error: botError };
+  }
+
   const parsed = forgotPasswordSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -148,6 +179,16 @@ export async function requestPasswordResetAction(
 export async function resetPasswordAction(
   input: unknown,
 ): Promise<ActionResult> {
+  const botError = await assertBotGuard(input, {
+    action: "password-update",
+    minFillMs: 1500,
+    maxRequests: 8,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (botError) {
+    return { success: false, error: botError };
+  }
+
   const parsed = resetPasswordSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -192,6 +233,16 @@ export async function resetPasswordAction(
 export async function requestEmailReminderAction(
   input: unknown,
 ): Promise<ActionResult> {
+  const botError = await assertBotGuard(input, {
+    action: "email-reminder",
+    minFillMs: 2000,
+    maxRequests: 5,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (botError) {
+    return { success: false, error: botError };
+  }
+
   const parsed = forgotEmailSchema.safeParse(input);
   if (!parsed.success) {
     return {

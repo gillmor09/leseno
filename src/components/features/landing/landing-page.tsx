@@ -2,7 +2,7 @@ import Image from "next/image";
 import {
   BookOpen,
   Check,
-  Lightbulb,
+  BicepsFlexed,
   Smile,
   Sparkles,
   Target,
@@ -27,7 +27,7 @@ const steps = [
   {
     number: "03",
     title: "Ton setzen",
-    text: "Lustig, spannend oder informativ. Jede Geschichte trägt echte Fakten, die nach dem Lesen bleiben.",
+    text: "Lustig, spannend oder motivierend. Jede Geschichte trägt echte Fakten, die nach dem Lesen bleiben.",
     icon: BookOpen,
   },
 ] as const;
@@ -50,12 +50,12 @@ const moods = [
     icon: Zap,
   },
   {
-    title: "Informativ",
-    text: "Neugierig und klar. Erklärt, was Kinder wirklich verstehen wollen — in einer Geschichte, nicht im Lehrbuch.",
-    image: "/landing/mood-informativ.webp",
+    title: "Motivierend",
+    text: "Mut machen und Lust wecken. Geschichten, die anspornen — mit echtem Wissen, das bleibt.",
+    image: "/landing/mood-motivierend.webp",
     imageAlt:
-      "Kind betrachtet nachdenklich ein Buch, aus dem der leuchtende Leseno-Vogel steigt",
-    icon: Lightbulb,
+      "Kind betrachtet zuversichtlich ein Buch, aus dem der leuchtende Leseno-Vogel steigt",
+    icon: BicepsFlexed,
   },
 ] as const;
 
@@ -97,7 +97,7 @@ function HeroSection() {
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
             Thema wählen, Alter angeben, Stimmung bestimmen. Leseno schreibt
-            daraus eine Geschichte — lustig, spannend oder informativ. Mit
+            daraus eine Geschichte — lustig, spannend oder motivierend. Mit
             echten Fakten, die hängen bleiben.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -211,7 +211,7 @@ function MoodsSection() {
           Drei Töne
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Lustig, spannend oder informativ — ihr entscheidet.
+          Lustig, spannend oder motivierend — ihr entscheidet.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
           Dieselbe Neugier, drei Wege. Der Ton ändert die Geschichte. Die

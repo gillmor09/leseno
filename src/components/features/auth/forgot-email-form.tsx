@@ -8,6 +8,10 @@ import {
   authInputClassName,
   authLabelClassName,
 } from "@/components/features/auth/auth-form-styles";
+import {
+  BotGuardFields,
+  useBotGuardFields,
+} from "@/components/features/security/bot-guard-fields";
 import { cn } from "@/lib/utils";
 
 export function ForgotEmailForm() {
@@ -18,6 +22,7 @@ export function ForgotEmailForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const botGuard = useBotGuardFields();
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,6 +35,7 @@ export function ForgotEmailForm() {
         rememberedName,
         guessedEmail,
         notes,
+        ...botGuard.getBotGuardPayload(),
       });
 
       if (!result.success) {
@@ -54,8 +60,13 @@ export function ForgotEmailForm() {
     <form
       noValidate
       onSubmit={handleSubmit}
-      className="rounded-[2rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
+      className="relative rounded-[2rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
     >
+      <BotGuardFields
+        website={botGuard.website}
+        onWebsiteChange={botGuard.setWebsite}
+        formStartedAt={botGuard.formStartedAt}
+      />
       <div className="grid gap-5">
         <label className="block">
           <span className={authLabelClassName}>Deine Kontakt-E-Mail</span>

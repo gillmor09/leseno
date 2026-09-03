@@ -38,24 +38,24 @@ export const FALLBACK_AI_MODELS: AiModelConfig[] = [
   {
     id: "facts-default",
     label: "Faktenmodell Standard",
-    provider: "openai-compatible",
-    modelSlug: "gpt-4.1-mini",
+    provider: "gemini",
+    modelSlug: "gemini-2.0-flash",
     supportsSystemPrompt: true,
     supportsJsonOutput: true,
     isActive: true,
     notes:
-      "Sammelt belastbare Fakten. Später austauschbar gegen günstigere oder schnellere Modelle.",
+      "Sammelt belastbare Fakten über Gemini. Später austauschbar gegen andere Provider.",
   },
   {
     id: "story-default",
     label: "Geschichtenmodell Standard",
-    provider: "openai-compatible",
-    modelSlug: "gpt-4.1",
+    provider: "gemini",
+    modelSlug: "gemini-2.0-flash",
     supportsSystemPrompt: true,
     supportsJsonOutput: false,
     isActive: true,
     notes:
-      "Formuliert aus Thema, Fakten und Auswahlfeldern die finale Geschichte.",
+      "Formuliert aus Thema, Fakten und Auswahlfeldern die finale Geschichte über Gemini.",
   },
 ];
 

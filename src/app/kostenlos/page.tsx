@@ -29,7 +29,7 @@ export default async function KostenlosPage() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             Schulstufe und Textlänge wählen, dann lustig, spannend oder
-            informativ. In jeder Geschichte stecken echte Fakten.
+            motivierend. In jeder Geschichte stecken echte Fakten.
           </p>
           <div className="mt-10">
             <FreeStoryForm lengthCatalog={lengthCatalog} />

@@ -63,22 +63,22 @@ insert into leseno.ai_models (
   (
     'facts-default',
     'Faktenmodell Standard',
-    'openai-compatible',
-    'gpt-4.1-mini',
+    'gemini',
+    'gemini-2.0-flash',
     true,
     true,
     true,
-    'Sammelt belastbare Fakten. Später austauschbar gegen günstigere oder schnellere Modelle.'
+    'Sammelt belastbare Fakten über Gemini. Später austauschbar gegen andere Provider.'
   ),
   (
     'story-default',
     'Geschichtenmodell Standard',
-    'openai-compatible',
-    'gpt-4.1',
+    'gemini',
+    'gemini-2.0-flash',
     true,
     false,
     true,
-    'Formuliert aus Thema, Fakten und Auswahlfeldern die finale Geschichte.'
+    'Formuliert aus Thema, Fakten und Auswahlfeldern die finale Geschichte über Gemini.'
   )
 on conflict (id) do update
 set label = excluded.label,

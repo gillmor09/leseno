@@ -8,6 +8,10 @@ import {
   authInputClassName,
   authLabelClassName,
 } from "@/components/features/auth/auth-form-styles";
+import {
+  BotGuardFields,
+  useBotGuardFields,
+} from "@/components/features/security/bot-guard-fields";
 import { cn } from "@/lib/utils";
 
 export function ResetPasswordForm() {
@@ -16,6 +20,7 @@ export function ResetPasswordForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const botGuard = useBotGuardFields();
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -23,7 +28,11 @@ export function ResetPasswordForm() {
     setMessage(null);
 
     startTransition(async () => {
-      const result = await resetPasswordAction({ password, confirmPassword });
+      const result = await resetPasswordAction({
+        password,
+        confirmPassword,
+        ...botGuard.getBotGuardPayload(),
+      });
 
       if (!result.success) {
         setFieldError(result.error ?? "Passwort konnte nicht gespeichert werden.");
@@ -46,8 +55,13 @@ export function ResetPasswordForm() {
     <form
       noValidate
       onSubmit={handleSubmit}
-      className="rounded-[2rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
+      className="relative rounded-[2rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
     >
+      <BotGuardFields
+        website={botGuard.website}
+        onWebsiteChange={botGuard.setWebsite}
+        formStartedAt={botGuard.formStartedAt}
+      />
       <div className="grid gap-5">
         <label className="block">
           <span className={authLabelClassName}>Neues Passwort</span>
