@@ -1,11 +1,18 @@
 /**
- * Free-tier story composer options (age 5–10).
+ * Free-tier story composer options (school stages instead of numeric ages).
  * Generation logic will consume these values later; keep labels in sync with the UI.
  */
 
-export const STORY_AGES = [5, 6, 7, 8, 9, 10] as const;
+export const STORY_SCHOOL_STAGES = [
+  { id: "vorschule", label: "Vorschule" },
+  { id: "klasse_1", label: "1. Klasse" },
+  { id: "klasse_2", label: "2. Klasse" },
+  { id: "klasse_3", label: "3. Klasse" },
+  { id: "klasse_4", label: "4. Klasse" },
+  { id: "hoeher", label: "Höher" },
+] as const;
 
-export type StoryAge = (typeof STORY_AGES)[number];
+export type StorySchoolStageId = (typeof STORY_SCHOOL_STAGES)[number]["id"];
 
 export const STORY_MOODS = [
   { id: "lustig", label: "Lustig" },

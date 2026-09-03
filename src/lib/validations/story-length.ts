@@ -8,6 +8,10 @@ export const storyLengthLimitUpdateSchema = z
       .number({ message: "Mindestwortzahl angeben." })
       .int({ message: "Mindestwortzahl muss ganzzahlig sein." })
       .min(1, { message: "Mindestwortzahl muss mindestens 1 sein." }),
+    factCount: z.coerce
+      .number({ message: "Faktenanzahl angeben." })
+      .int({ message: "Faktenanzahl muss ganzzahlig sein." })
+      .min(1, { message: "Faktenanzahl muss mindestens 1 sein." }),
     maxWords: z.union([
       z.literal(""),
       z.null(),
@@ -20,6 +24,7 @@ export const storyLengthLimitUpdateSchema = z
   .transform((value) => ({
     id: value.id,
     minWords: value.minWords,
+    factCount: value.factCount,
     maxWords: value.maxWords === "" || value.maxWords === null ? null : value.maxWords,
   }))
   .refine((value) => value.maxWords === null || value.maxWords >= value.minWords, {

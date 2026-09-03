@@ -12,11 +12,19 @@ import { AGE_GROUP_IDS, type StoryLengthCatalog } from "@/lib/stories/length";
 import { cn } from "@/lib/utils";
 
 const AGE_GROUP_COPY: Record<(typeof AGE_GROUP_IDS)[number], string> = {
-  "5-7": "5–7 Jahre",
-  "8-10": "8–10 Jahre",
+  "5-7": "Vorschule bis 2. Klasse",
+  "8-10": "3. Klasse bis Höher",
 };
 
-export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog }) {
+export function StoryLengthAdminForm({
+  catalog,
+  canSave,
+  readOnlyNotice,
+}: {
+  catalog: StoryLengthCatalog;
+  canSave: boolean;
+  readOnlyNotice?: string;
+}) {
   const [drafts, setDrafts] = useState(() =>
     Object.fromEntries(
       catalog.limits.map((limit) => [
@@ -24,6 +32,7 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
         {
           minWords: String(limit.minWords),
           maxWords: limit.maxWords === null ? "" : String(limit.maxWords),
+          factCount: String(limit.factCount),
         },
       ]),
     ),
@@ -31,7 +40,11 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
   const [pending, setPending] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
 
-  function patch(id: string, field: "minWords" | "maxWords", value: string) {
+  function patch(
+    id: string,
+    field: "minWords" | "maxWords" | "factCount",
+    value: string,
+  ) {
     setDrafts((current) => ({
       ...current,
       [id]: { ...current[id], [field]: value },
@@ -40,6 +53,10 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canSave) {
+      toast.error("Speichern ist noch nicht verfügbar, bis die Migration `story_length_limits` ausgeführt ist.");
+      return;
+    }
     setFieldError(null);
     setPending(true);
 
@@ -48,6 +65,7 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
         id: limit.id,
         minWords: drafts[limit.id]?.minWords ?? "",
         maxWords: drafts[limit.id]?.maxWords ?? "",
+        factCount: drafts[limit.id]?.factCount ?? "",
       })),
     });
 
@@ -64,6 +82,12 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
 
   return (
     <form noValidate onSubmit={handleSubmit} className="space-y-8">
+      {!canSave ? (
+        <p className="rounded-[1.75rem] bg-orange-50 p-6 text-sm font-semibold text-orange-900 ring-1 ring-orange-700/10">
+          {readOnlyNotice ??
+            "Vorschau: Die Textlängen konnten evtl. nicht geladen werden. Bitte die Migration `story_length_limits` ausführen."}
+        </p>
+      ) : null}
       {AGE_GROUP_IDS.map((groupId) => (
         <section
           key={groupId}
@@ -74,7 +98,7 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
               {AGE_GROUP_COPY[groupId]}
             </h2>
             <p className="text-sm text-zinc-600">
-              Wortspannen für die fünf Reglerstufen. Höchstwert leer = „über …“.
+              Wortspannen und Faktenanzahl für die fünf Reglerstufen. Höchstwert leer = „über …“.
             </p>
           </div>
           <div className="divide-y divide-zinc-950/5">
@@ -89,7 +113,7 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
               return (
                 <div
                   key={limit.id}
-                  className="grid gap-4 px-6 py-4 sm:grid-cols-[8rem_1fr_1fr] sm:items-end"
+                  className="grid gap-4 px-6 py-4 sm:grid-cols-[8rem_1fr_1fr_1fr] sm:items-end"
                 >
                   <p className="text-sm font-extrabold text-zinc-950">{step.label}</p>
                   <label className="block">
@@ -101,6 +125,7 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
                       inputMode="numeric"
                       name={`min-${limit.id}`}
                       value={draft?.minWords ?? ""}
+                      disabled={!canSave}
                       onChange={(event) => patch(limit.id, "minWords", event.target.value)}
                       className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
                     />
@@ -114,7 +139,22 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
                       inputMode="numeric"
                       name={`max-${limit.id}`}
                       value={draft?.maxWords ?? ""}
+                      disabled={!canSave}
                       onChange={(event) => patch(limit.id, "maxWords", event.target.value)}
+                      className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                      Fakten
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      name={`facts-${limit.id}`}
+                      value={draft?.factCount ?? ""}
+                      disabled={!canSave}
+                      onChange={(event) => patch(limit.id, "factCount", event.target.value)}
                       className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
                     />
                   </label>
@@ -131,13 +171,13 @@ export function StoryLengthAdminForm({ catalog }: { catalog: StoryLengthCatalog 
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={!canSave || pending}
         className={cn(
           "inline-flex rounded-full bg-orange-700 px-6 py-3 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800",
-          pending && "opacity-70",
+          (!canSave || pending) && "opacity-70",
         )}
       >
-        {pending ? "Speichert …" : "Speichern"}
+        {pending ? "Speichert …" : canSave ? "Speichern" : "Migration ausführen"}
       </button>
     </form>
   );

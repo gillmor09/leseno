@@ -21,6 +21,7 @@ type LimitRow = {
   step_id: string;
   min_words: number;
   max_words: number | null;
+  fact_count: number;
 };
 
 function toCatalog(steps: StepRow[], limits: LimitRow[]): StoryLengthCatalog {
@@ -40,6 +41,7 @@ function toCatalog(steps: StepRow[], limits: LimitRow[]): StoryLengthCatalog {
       stepId: row.step_id as StoryLengthStepId,
       minWords: row.min_words,
       maxWords: row.max_words,
+      factCount: row.fact_count,
     })),
   };
 }
@@ -47,17 +49,20 @@ function toCatalog(steps: StepRow[], limits: LimitRow[]): StoryLengthCatalog {
 /** Public catalog for the composer. Falls back to seed numbers if the API is down. */
 export async function loadStoryLengthCatalog(): Promise<StoryLengthCatalog> {
   try {
-    const supabase = await createClient();
+    const supabase = await createClient(null);
     const [stepsResult, limitsResult] = await Promise.all([
-      supabase.from("story_length_steps").select("id, label, sort_order"),
-      supabase.from("story_length_limits").select("id, age_group_id, step_id, min_words, max_words"),
+      supabase.rpc("list_story_length_steps"),
+      supabase.rpc("list_story_length_limits"),
     ]);
 
     if (stepsResult.error || limitsResult.error || !limitsResult.data?.length) {
       return FALLBACK_STORY_LENGTH_CATALOG;
     }
 
-    return toCatalog(stepsResult.data ?? [], limitsResult.data);
+    return toCatalog(
+      (stepsResult.data ?? []) as StepRow[],
+      (limitsResult.data ?? []) as LimitRow[],
+    );
   } catch {
     return FALLBACK_STORY_LENGTH_CATALOG;
   }
@@ -65,35 +70,34 @@ export async function loadStoryLengthCatalog(): Promise<StoryLengthCatalog> {
 
 /** Admin load — service role so empty/new rows still appear after a fresh migrate. */
 export async function loadStoryLengthCatalogForAdmin(): Promise<StoryLengthCatalog> {
-  const supabase = createServiceClient();
+  const supabase = createServiceClient(null);
   const [stepsResult, limitsResult] = await Promise.all([
-    supabase.from("story_length_steps").select("id, label, sort_order"),
-    supabase.from("story_length_limits").select("id, age_group_id, step_id, min_words, max_words"),
+    supabase.rpc("list_story_length_steps"),
+    supabase.rpc("list_story_length_limits"),
   ]);
 
-  if (stepsResult.error) {
-    throw new Error(stepsResult.error.message);
-  }
-  if (limitsResult.error) {
-    throw new Error(limitsResult.error.message);
-  }
+  if (stepsResult.error) throw new Error(stepsResult.error.message);
+  if (limitsResult.error) throw new Error(limitsResult.error.message);
 
-  return toCatalog(stepsResult.data ?? [], limitsResult.data ?? []);
+  return toCatalog(
+    (stepsResult.data ?? []) as StepRow[],
+    (limitsResult.data ?? []) as LimitRow[],
+  );
 }
 
 export async function updateStoryLengthLimits(
-  updates: Pick<StoryLengthLimit, "id" | "minWords" | "maxWords">[],
+  updates: Pick<StoryLengthLimit, "id" | "minWords" | "maxWords" | "factCount">[],
 ): Promise<void> {
-  const supabase = createServiceClient();
+  const supabase = createServiceClient(null);
 
   for (const update of updates) {
     const { error } = await supabase
-      .from("story_length_limits")
-      .update({
-        min_words: update.minWords,
-        max_words: update.maxWords,
-      })
-      .eq("id", update.id);
+      .rpc("update_story_length_limit", {
+        p_id: update.id,
+        p_min_words: update.minWords,
+        p_max_words: update.maxWords,
+        p_fact_count: update.factCount,
+      });
 
     if (error) {
       throw new Error(error.message);

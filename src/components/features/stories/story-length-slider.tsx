@@ -12,17 +12,17 @@ import {
   type StoryLengthCatalog,
   type StoryLengthStepId,
 } from "@/lib/stories/length";
-import type { StoryAge } from "@/lib/stories/options";
+import type { StorySchoolStageId } from "@/lib/stories/options";
 
 type StoryLengthSliderProps = {
-  age: StoryAge;
+  schoolStage: StorySchoolStageId;
   catalog: StoryLengthCatalog;
   value: StoryLengthStepId;
   onChange: (stepId: StoryLengthStepId) => void;
 };
 
 export function StoryLengthSlider({
-  age,
+  schoolStage,
   catalog,
   value,
   onChange,
@@ -33,7 +33,9 @@ export function StoryLengthSlider({
     steps.findIndex((step) => step.id === value),
   );
   const current = steps[index];
-  const limit = current ? findLengthLimit(catalog, age, current.id) : undefined;
+  const limit = current
+    ? findLengthLimit(catalog, schoolStage, current.id)
+    : undefined;
   const percent = steps.length > 1 ? (index / (steps.length - 1)) * 100 : 0;
 
   return (

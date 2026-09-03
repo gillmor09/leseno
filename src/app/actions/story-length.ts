@@ -26,6 +26,7 @@ export async function saveStoryLengthLimitsAction(
     await updateStoryLengthLimits(parsed.data.limits);
     revalidatePath("/kostenlos");
     revalidatePath("/admin/textlaenge");
+    revalidatePath("/admin/prompts");
     return { success: true };
   } catch {
     return {

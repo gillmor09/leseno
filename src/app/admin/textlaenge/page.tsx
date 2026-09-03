@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
-import { LandingHeader } from "@/components/features/landing/landing-header";
+import { AppHeader } from "@/components/features/landing/app-header";
 import { StoryLengthAdminForm } from "@/components/features/admin/story-length-admin-form";
 import { loadStoryLengthCatalogForAdmin } from "@/lib/stories/length-repository";
+import { FALLBACK_STORY_LENGTH_CATALOG } from "@/lib/stories/length";
+import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
   title: "Textlängen — Leseno Admin",
-  description: "Wortspannen für die Textlängen-Stufen nach Altersgruppe.",
+  description: "Wortspannen für die Textlängen-Stufen nach Schulstufen-Gruppe.",
 };
 
 /**
@@ -14,23 +16,33 @@ export const metadata: Metadata = {
  * Session lock can wrap this route once auth exists.
  */
 export default async function StoryLengthAdminPage() {
-  let catalog;
-  let loadError: string | null = null;
+  let catalog = FALLBACK_STORY_LENGTH_CATALOG;
+  let canSave = false;
+  const hasServiceRole = hasServiceRoleConfig();
+  let readOnlyNotice =
+    "Vorschau: Die Textlängen konnten evtl. nicht geladen werden. Bitte die Migration `story_length_limits` ausführen.";
 
   try {
     catalog = await loadStoryLengthCatalogForAdmin();
-    if (catalog.limits.length === 0) {
-      loadError =
-        "Noch keine Werte in der Datenbank. Bitte die Migration story_length_limits ausführen.";
+    canSave = hasServiceRole;
+    if (!hasServiceRole) {
+      readOnlyNotice =
+        "Vorschau: `SUPABASE_SERVICE_ROLE_KEY` ist in der laufenden App nicht verfügbar. Bitte `.env.local` prüfen und den Dev-Server neu starten.";
     }
-  } catch {
-    loadError =
-      "Die Textlängen konnten nicht geladen werden. Läuft Supabase, und ist die Migration da?";
+  } catch (error) {
+    if (!hasServiceRole) {
+      readOnlyNotice =
+        "Vorschau: `SUPABASE_SERVICE_ROLE_KEY` ist in der laufenden App nicht verfügbar. Bitte `.env.local` prüfen und den Dev-Server neu starten.";
+    } else {
+      const message =
+        error instanceof Error ? error.message : "Die neuen Textlängen-Daten sind noch nicht verfügbar.";
+      readOnlyNotice = `Vorschau: ${message} Bitte auch die Migration \`20260903184500_story_length_fact_count.sql\` ausführen.`;
+    }
   }
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
-      <LandingHeader />
+      <AppHeader />
       <main className="flex-1">
         <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
           <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
@@ -41,16 +53,14 @@ export default async function StoryLengthAdminPage() {
           </h1>
           <p className="mt-3 text-base leading-relaxed text-zinc-600">
             Diese Spannen steuern den Schieberegler auf der kostenlosen
-            Geschichten-Seite. Zwei Altersgruppen, fünf Stufen.
+            Geschichten-Seite. Zwei Schulstufen-Gruppen, fünf Stufen.
           </p>
           <div className="mt-10">
-            {loadError ? (
-              <p className="rounded-[1.75rem] bg-white p-6 text-sm font-semibold text-zinc-700 shadow-xl ring-1 ring-zinc-950/10">
-                {loadError}
-              </p>
-            ) : catalog ? (
-              <StoryLengthAdminForm catalog={catalog} />
-            ) : null}
+            <StoryLengthAdminForm
+              catalog={catalog}
+              canSave={canSave}
+              readOnlyNotice={readOnlyNotice}
+            />
           </div>
         </section>
       </main>

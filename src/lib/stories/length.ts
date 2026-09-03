@@ -1,10 +1,10 @@
 /**
- * Story length slider: five steps, word bands per age group (5–7 vs 8–10).
- * Canonical values live in `leseno.story_length_limits`; this module maps age → group
- * and formats ranges. Seed/fallback matches the migration.
+ * Story length slider: five steps, word bands per school-stage group.
+ * Canonical values live in `leseno.story_length_limits`; this module maps school stage
+ * to one of two groups and formats ranges. Seed/fallback matches the migration.
  */
 
-import type { StoryAge } from "@/lib/stories/options";
+import type { StorySchoolStageId } from "@/lib/stories/options";
 
 export const AGE_GROUP_IDS = ["5-7", "8-10"] as const;
 export type AgeGroupId = (typeof AGE_GROUP_IDS)[number];
@@ -30,6 +30,7 @@ export type StoryLengthLimit = {
   stepId: StoryLengthStepId;
   minWords: number;
   maxWords: number | null;
+  factCount: number;
 };
 
 export type StoryLengthCatalog = {
@@ -47,28 +48,36 @@ export const STORY_LENGTH_STEPS: StoryLengthStep[] = [
 
 /** Fallback if Postgres is unreachable — same numbers as the migration seed. */
 export const FALLBACK_STORY_LENGTH_LIMITS: StoryLengthLimit[] = [
-  { id: "fallback-5-7-sehr_kurz", ageGroupId: "5-7", stepId: "sehr_kurz", minWords: 10, maxWords: 30 },
-  { id: "fallback-5-7-kurz", ageGroupId: "5-7", stepId: "kurz", minWords: 30, maxWords: 80 },
-  { id: "fallback-5-7-mittel", ageGroupId: "5-7", stepId: "mittel", minWords: 80, maxWords: 150 },
-  { id: "fallback-5-7-lang", ageGroupId: "5-7", stepId: "lang", minWords: 150, maxWords: 300 },
-  { id: "fallback-5-7-sehr_lang", ageGroupId: "5-7", stepId: "sehr_lang", minWords: 300, maxWords: null },
-  { id: "fallback-8-10-sehr_kurz", ageGroupId: "8-10", stepId: "sehr_kurz", minWords: 50, maxWords: 150 },
-  { id: "fallback-8-10-kurz", ageGroupId: "8-10", stepId: "kurz", minWords: 150, maxWords: 350 },
-  { id: "fallback-8-10-mittel", ageGroupId: "8-10", stepId: "mittel", minWords: 350, maxWords: 700 },
-  { id: "fallback-8-10-lang", ageGroupId: "8-10", stepId: "lang", minWords: 700, maxWords: 1000 },
-  { id: "fallback-8-10-sehr_lang", ageGroupId: "8-10", stepId: "sehr_lang", minWords: 1200, maxWords: null },
+  { id: "fallback-5-7-sehr_kurz", ageGroupId: "5-7", stepId: "sehr_kurz", minWords: 10, maxWords: 30, factCount: 1 },
+  { id: "fallback-5-7-kurz", ageGroupId: "5-7", stepId: "kurz", minWords: 30, maxWords: 80, factCount: 2 },
+  { id: "fallback-5-7-mittel", ageGroupId: "5-7", stepId: "mittel", minWords: 80, maxWords: 150, factCount: 3 },
+  { id: "fallback-5-7-lang", ageGroupId: "5-7", stepId: "lang", minWords: 150, maxWords: 300, factCount: 4 },
+  { id: "fallback-5-7-sehr_lang", ageGroupId: "5-7", stepId: "sehr_lang", minWords: 300, maxWords: null, factCount: 5 },
+  { id: "fallback-8-10-sehr_kurz", ageGroupId: "8-10", stepId: "sehr_kurz", minWords: 50, maxWords: 150, factCount: 1 },
+  { id: "fallback-8-10-kurz", ageGroupId: "8-10", stepId: "kurz", minWords: 150, maxWords: 350, factCount: 2 },
+  { id: "fallback-8-10-mittel", ageGroupId: "8-10", stepId: "mittel", minWords: 350, maxWords: 700, factCount: 3 },
+  { id: "fallback-8-10-lang", ageGroupId: "8-10", stepId: "lang", minWords: 700, maxWords: 1000, factCount: 4 },
+  { id: "fallback-8-10-sehr_lang", ageGroupId: "8-10", stepId: "sehr_lang", minWords: 1200, maxWords: null, factCount: 5 },
 ];
 
-export function ageGroupForAge(age: StoryAge): AgeGroupId {
-  return age <= 7 ? "5-7" : "8-10";
+export function ageGroupForSchoolStage(stage: StorySchoolStageId): AgeGroupId {
+  if (
+    stage === "vorschule" ||
+    stage === "klasse_1" ||
+    stage === "klasse_2"
+  ) {
+    return "5-7";
+  }
+
+  return "8-10";
 }
 
 export function findLengthLimit(
   catalog: StoryLengthCatalog,
-  age: StoryAge,
+  stage: StorySchoolStageId,
   stepId: StoryLengthStepId,
 ): StoryLengthLimit | undefined {
-  const ageGroupId = ageGroupForAge(age);
+  const ageGroupId = ageGroupForSchoolStage(stage);
   return catalog.limits.find(
     (limit) => limit.ageGroupId === ageGroupId && limit.stepId === stepId,
   );
@@ -76,7 +85,7 @@ export function findLengthLimit(
 
 export function formatWordRange(limit: StoryLengthLimit | undefined): string {
   if (!limit) {
-    return "Wortzahl folgt aus dem Alter";
+    return "Wortzahl folgt aus der Schulstufe";
   }
   if (limit.maxWords === null) {
     return `über ${limit.minWords} Wörter`;

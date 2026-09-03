@@ -1,5 +1,5 @@
 -- Word-count bands for the story-length slider.
--- Two age groups (5–7, 8–10) × five steps. Public read; writes via service_role / admin.
+-- Two school-stage groups × five steps. Public read; writes via service_role / admin.
 
 create or replace function leseno.set_updated_at()
 returns trigger
@@ -44,8 +44,8 @@ for each row
 execute function leseno.set_updated_at();
 
 insert into leseno.age_groups (id, label, min_age, max_age) values
-  ('5-7', '5–7 Jahre', 5, 7),
-  ('8-10', '8–10 Jahre', 8, 10)
+  ('5-7', 'Vorschule bis 2. Klasse', 5, 7),
+  ('8-10', '3. Klasse bis Höher', 8, 10)
 on conflict (id) do update
 set label = excluded.label,
     min_age = excluded.min_age,

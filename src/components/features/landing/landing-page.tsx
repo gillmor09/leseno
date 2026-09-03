@@ -9,7 +9,7 @@ import {
   Zap,
 } from "lucide-react";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
-import { LandingHeader } from "@/components/features/landing/landing-header";
+import { AppHeader } from "@/components/features/landing/app-header";
 
 const steps = [
   {
@@ -69,7 +69,7 @@ const parentPoints = [
 export function LandingPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
-      <LandingHeader />
+      <AppHeader />
       <main>
         <HeroSection />
         <StepsSection />

@@ -3,14 +3,18 @@ import { cookies } from "next/headers";
 
 import { APP_DB_SCHEMA, getSupabasePublicConfig } from "@/lib/supabase/config";
 
-export async function createClient() {
+export async function createClient(schema: string | null = APP_DB_SCHEMA) {
   const { url, anonKey } = getSupabasePublicConfig();
   const cookieStore = await cookies();
 
   return createServerClient(url, anonKey, {
-    db: {
-      schema: APP_DB_SCHEMA,
-    },
+    ...(schema
+      ? {
+          db: {
+            schema,
+          },
+        }
+      : {}),
     cookies: {
       getAll() {
         return cookieStore.getAll();

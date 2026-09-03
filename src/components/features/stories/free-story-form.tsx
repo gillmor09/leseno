@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Free-tier story form: topic, age, length, mood.
+ * Free-tier story form: topic, school stage, length, mood.
  * Submit is a UI stub — generation will attach here later (no API yet).
  */
 
@@ -11,11 +11,11 @@ import { cn } from "@/lib/utils";
 import { StoryLengthSlider } from "@/components/features/stories/story-length-slider";
 import type { StoryLengthCatalog, StoryLengthStepId } from "@/lib/stories/length";
 import {
-  STORY_AGES,
+  STORY_SCHOOL_STAGES,
   STORY_MOODS,
   TOPIC_EXAMPLES,
-  type StoryAge,
   type StoryMoodId,
+  type StorySchoolStageId,
 } from "@/lib/stories/options";
 
 const moodIcons = {
@@ -33,7 +33,8 @@ export function FreeStoryForm({
   lengthCatalog: StoryLengthCatalog;
 }) {
   const [topic, setTopic] = useState("");
-  const [age, setAge] = useState<StoryAge>(8);
+  const [schoolStage, setSchoolStage] =
+    useState<StorySchoolStageId>("klasse_3");
   const [lengthStep, setLengthStep] = useState<StoryLengthStepId>("mittel");
   const [mood, setMood] = useState<StoryMoodId>("spannend");
   const [output, setOutput] = useState("");
@@ -91,18 +92,22 @@ export function FreeStoryForm({
 
         <fieldset className="mt-8">
           <legend className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-            Alter
+            Schulstufe
           </legend>
           <p className="mt-1 text-sm text-zinc-600">
-            Damit die Sprache zum Kind passt — von 5 bis 10 Jahren.
+            Damit Sprache und Umfang zum Leseniveau im Alltag passen.
           </p>
-          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Alter">
-            {STORY_AGES.map((value) => (
+          <div
+            className="mt-3 flex flex-wrap gap-2"
+            role="group"
+            aria-label="Schulstufe"
+          >
+            {STORY_SCHOOL_STAGES.map((stage) => (
               <ChoiceChip
-                key={value}
-                active={age === value}
-                onClick={() => setAge(value)}
-                label={`${value} Jahre`}
+                key={stage.id}
+                active={schoolStage === stage.id}
+                onClick={() => setSchoolStage(stage.id)}
+                label={stage.label}
               />
             ))}
           </div>
@@ -110,7 +115,7 @@ export function FreeStoryForm({
 
         <div className="mt-8">
           <StoryLengthSlider
-            age={age}
+            schoolStage={schoolStage}
             catalog={lengthCatalog}
             value={lengthStep}
             onChange={setLengthStep}
