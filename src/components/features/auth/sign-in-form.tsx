@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 export function SignInForm({
   emailConfirmed = false,
   confirmationFailed = false,
-  nextPath = "/kostenlos",
+  nextPath = "/basis",
 }: {
   emailConfirmed?: boolean;
   confirmationFailed?: boolean;
@@ -47,7 +47,7 @@ export function SignInForm({
       }
 
       toast.success("Du bist jetzt angemeldet.");
-      window.location.href = nextPath.startsWith("/") ? nextPath : "/kostenlos";
+      window.location.href = nextPath.startsWith("/") ? nextPath : "/basis";
     });
   }
 

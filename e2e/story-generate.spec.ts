@@ -8,14 +8,14 @@ import { expect, test } from "@playwright/test";
 test.describe("KI story generation", () => {
   test.setTimeout(10 * 60 * 1000);
 
-  test("generates story HTML and learned list on /kostenlos", async ({
+  test("generates story HTML and learned list on /basis", async ({
     page,
   }) => {
-    await page.goto("/kostenlos");
+    await page.goto("/basis");
 
     await expect(
       page.getByRole("heading", {
-        name: "Wähl dein Thema. Wir schreiben deine Geschichte.",
+        name: "Wähl dein Thema. Lies deine Geschichte.",
       }),
     ).toBeVisible();
 

@@ -1,7 +1,6 @@
 /**
- * Story length slider: five steps, word bands per school-stage group.
- * Canonical values live in `leseno.story_length_limits`; this module maps school stage
- * to one of two groups and formats ranges. Seed/fallback matches the migration.
+ * Story length slider: five steps, target word count per school-stage group.
+ * Canonical values live in `leseno.story_length_limits.anzahl_woerter`.
  */
 
 import type { StorySchoolStageId } from "@/lib/stories/options";
@@ -28,8 +27,8 @@ export type StoryLengthLimit = {
   id: string;
   ageGroupId: AgeGroupId;
   stepId: StoryLengthStepId;
-  minWords: number;
-  maxWords: number | null;
+  /** Target word count the story should approximately reach. */
+  anzahlWoerter: number;
   factCount: number;
 };
 
@@ -46,18 +45,18 @@ export const STORY_LENGTH_STEPS: StoryLengthStep[] = [
   { id: "sehr_lang", label: "Sehr lang", sortOrder: 5 },
 ];
 
-/** Fallback if Postgres is unreachable — same numbers as the migration seed. */
+/** Fallback if Postgres is unreachable — same targets as former min band. */
 export const FALLBACK_STORY_LENGTH_LIMITS: StoryLengthLimit[] = [
-  { id: "fallback-5-7-sehr_kurz", ageGroupId: "5-7", stepId: "sehr_kurz", minWords: 10, maxWords: 30, factCount: 1 },
-  { id: "fallback-5-7-kurz", ageGroupId: "5-7", stepId: "kurz", minWords: 30, maxWords: 80, factCount: 2 },
-  { id: "fallback-5-7-mittel", ageGroupId: "5-7", stepId: "mittel", minWords: 80, maxWords: 150, factCount: 3 },
-  { id: "fallback-5-7-lang", ageGroupId: "5-7", stepId: "lang", minWords: 150, maxWords: 300, factCount: 4 },
-  { id: "fallback-5-7-sehr_lang", ageGroupId: "5-7", stepId: "sehr_lang", minWords: 300, maxWords: null, factCount: 5 },
-  { id: "fallback-8-10-sehr_kurz", ageGroupId: "8-10", stepId: "sehr_kurz", minWords: 50, maxWords: 150, factCount: 1 },
-  { id: "fallback-8-10-kurz", ageGroupId: "8-10", stepId: "kurz", minWords: 150, maxWords: 350, factCount: 2 },
-  { id: "fallback-8-10-mittel", ageGroupId: "8-10", stepId: "mittel", minWords: 350, maxWords: 700, factCount: 3 },
-  { id: "fallback-8-10-lang", ageGroupId: "8-10", stepId: "lang", minWords: 700, maxWords: 1000, factCount: 4 },
-  { id: "fallback-8-10-sehr_lang", ageGroupId: "8-10", stepId: "sehr_lang", minWords: 1200, maxWords: null, factCount: 5 },
+  { id: "fallback-5-7-sehr_kurz", ageGroupId: "5-7", stepId: "sehr_kurz", anzahlWoerter: 10, factCount: 1 },
+  { id: "fallback-5-7-kurz", ageGroupId: "5-7", stepId: "kurz", anzahlWoerter: 30, factCount: 2 },
+  { id: "fallback-5-7-mittel", ageGroupId: "5-7", stepId: "mittel", anzahlWoerter: 80, factCount: 3 },
+  { id: "fallback-5-7-lang", ageGroupId: "5-7", stepId: "lang", anzahlWoerter: 150, factCount: 4 },
+  { id: "fallback-5-7-sehr_lang", ageGroupId: "5-7", stepId: "sehr_lang", anzahlWoerter: 300, factCount: 5 },
+  { id: "fallback-8-10-sehr_kurz", ageGroupId: "8-10", stepId: "sehr_kurz", anzahlWoerter: 50, factCount: 1 },
+  { id: "fallback-8-10-kurz", ageGroupId: "8-10", stepId: "kurz", anzahlWoerter: 150, factCount: 2 },
+  { id: "fallback-8-10-mittel", ageGroupId: "8-10", stepId: "mittel", anzahlWoerter: 350, factCount: 3 },
+  { id: "fallback-8-10-lang", ageGroupId: "8-10", stepId: "lang", anzahlWoerter: 700, factCount: 4 },
+  { id: "fallback-8-10-sehr_lang", ageGroupId: "8-10", stepId: "sehr_lang", anzahlWoerter: 1200, factCount: 5 },
 ];
 
 export function ageGroupForSchoolStage(stage: StorySchoolStageId): AgeGroupId {
@@ -83,14 +82,12 @@ export function findLengthLimit(
   );
 }
 
-export function formatWordRange(limit: StoryLengthLimit | undefined): string {
+/** Human-readable target for UI and prompts. */
+export function formatWordTarget(limit: StoryLengthLimit | undefined): string {
   if (!limit) {
     return "Wortzahl folgt aus der Schulstufe";
   }
-  if (limit.maxWords === null) {
-    return `über ${limit.minWords} Wörter`;
-  }
-  return `${limit.minWords}–${limit.maxWords} Wörter`;
+  return `ca. ${limit.anzahlWoerter} Wörter`;
 }
 
 export const FALLBACK_STORY_LENGTH_CATALOG: StoryLengthCatalog = {

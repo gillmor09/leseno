@@ -1,28 +1,23 @@
 "use client";
 
 /**
- * Five-stop length slider. Word bands come from `leseno.story_length_limits`
- * and change when the selected age switches group (5–7 vs 8–10).
+ * Five-stop length slider. Targets come from `leseno.story_length_limits`
+ * (used server-side); labels are the five named steps only.
  */
 
 import { cn } from "@/lib/utils";
-import {
-  findLengthLimit,
-  formatWordRange,
-  type StoryLengthCatalog,
-  type StoryLengthStepId,
+import type {
+  StoryLengthCatalog,
+  StoryLengthStepId,
 } from "@/lib/stories/length";
-import type { StorySchoolStageId } from "@/lib/stories/options";
 
 type StoryLengthSliderProps = {
-  schoolStage: StorySchoolStageId;
   catalog: StoryLengthCatalog;
   value: StoryLengthStepId;
   onChange: (stepId: StoryLengthStepId) => void;
 };
 
 export function StoryLengthSlider({
-  schoolStage,
   catalog,
   value,
   onChange,
@@ -32,10 +27,6 @@ export function StoryLengthSlider({
     0,
     steps.findIndex((step) => step.id === value),
   );
-  const current = steps[index];
-  const limit = current
-    ? findLengthLimit(catalog, schoolStage, current.id)
-    : undefined;
   const percent = steps.length > 1 ? (index / (steps.length - 1)) * 100 : 0;
 
   return (
@@ -84,7 +75,9 @@ export function StoryLengthSlider({
                 onClick={() => onChange(step.id)}
                 className={cn(
                   "rounded-xl px-1 py-1.5 text-center text-[0.7rem] leading-tight font-extrabold transition-all duration-200 ease-in-out sm:text-xs",
-                  active ? "bg-yellow-400 text-zinc-950" : "text-zinc-500 hover:bg-gray-100",
+                  active
+                    ? "bg-yellow-400 text-zinc-950"
+                    : "text-zinc-500 hover:bg-gray-100",
                 )}
               >
                 {step.label}
@@ -93,10 +86,6 @@ export function StoryLengthSlider({
           })}
         </div>
       </div>
-
-      <p className="mt-3 rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-700">
-        {current?.label ?? "Länge"} · {formatWordRange(limit)}
-      </p>
     </fieldset>
   );
 }

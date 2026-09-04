@@ -1,8 +1,7 @@
 "use client";
 
 /**
- * Admin editor for `leseno.story_length_limits`.
- * Empty max = unbounded ("über X Wörter"). Auth on this route comes later.
+ * Admin editor for `leseno.story_length_limits` (target word count + fact count).
  */
 
 import { useState, type FormEvent } from "react";
@@ -30,8 +29,7 @@ export function StoryLengthAdminForm({
       catalog.limits.map((limit) => [
         limit.id,
         {
-          minWords: String(limit.minWords),
-          maxWords: limit.maxWords === null ? "" : String(limit.maxWords),
+          anzahlWoerter: String(limit.anzahlWoerter),
           factCount: String(limit.factCount),
         },
       ]),
@@ -42,7 +40,7 @@ export function StoryLengthAdminForm({
 
   function patch(
     id: string,
-    field: "minWords" | "maxWords" | "factCount",
+    field: "anzahlWoerter" | "factCount",
     value: string,
   ) {
     setDrafts((current) => ({
@@ -54,7 +52,9 @@ export function StoryLengthAdminForm({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canSave) {
-      toast.error("Speichern ist noch nicht verfügbar, bis die Migration `story_length_limits` ausgeführt ist.");
+      toast.error(
+        "Speichern ist noch nicht verfügbar, bis die Migration `story_length_limits` ausgeführt ist.",
+      );
       return;
     }
     setFieldError(null);
@@ -63,8 +63,7 @@ export function StoryLengthAdminForm({
     const result = await saveStoryLengthLimitsAction({
       limits: catalog.limits.map((limit) => ({
         id: limit.id,
-        minWords: drafts[limit.id]?.minWords ?? "",
-        maxWords: drafts[limit.id]?.maxWords ?? "",
+        anzahlWoerter: drafts[limit.id]?.anzahlWoerter ?? "",
         factCount: drafts[limit.id]?.factCount ?? "",
       })),
     });
@@ -98,7 +97,8 @@ export function StoryLengthAdminForm({
               {AGE_GROUP_COPY[groupId]}
             </h2>
             <p className="text-sm text-zinc-600">
-              Wortspannen und Faktenanzahl für die fünf Reglerstufen. Höchstwert leer = „über …“.
+              Ziel-Wortanzahl und Faktenanzahl für die fünf Reglerstufen. Die
+              Geschichte soll in etwa diese Wortzahl erreichen.
             </p>
           </div>
           <div className="divide-y divide-zinc-950/5">
@@ -113,34 +113,24 @@ export function StoryLengthAdminForm({
               return (
                 <div
                   key={limit.id}
-                  className="grid gap-4 px-6 py-4 sm:grid-cols-[8rem_1fr_1fr_1fr] sm:items-end"
+                  className="grid gap-4 px-6 py-4 sm:grid-cols-[8rem_1fr_1fr] sm:items-end"
                 >
-                  <p className="text-sm font-extrabold text-zinc-950">{step.label}</p>
+                  <p className="text-sm font-extrabold text-zinc-950">
+                    {step.label}
+                  </p>
                   <label className="block">
                     <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                      Von (Wörter)
+                      anzahl_wörter
                     </span>
                     <input
                       type="text"
                       inputMode="numeric"
-                      name={`min-${limit.id}`}
-                      value={draft?.minWords ?? ""}
+                      name={`words-${limit.id}`}
+                      value={draft?.anzahlWoerter ?? ""}
                       disabled={!canSave}
-                      onChange={(event) => patch(limit.id, "minWords", event.target.value)}
-                      className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                      Bis (leer = über)
-                    </span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      name={`max-${limit.id}`}
-                      value={draft?.maxWords ?? ""}
-                      disabled={!canSave}
-                      onChange={(event) => patch(limit.id, "maxWords", event.target.value)}
+                      onChange={(event) =>
+                        patch(limit.id, "anzahlWoerter", event.target.value)
+                      }
                       className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
                     />
                   </label>
@@ -154,7 +144,9 @@ export function StoryLengthAdminForm({
                       name={`facts-${limit.id}`}
                       value={draft?.factCount ?? ""}
                       disabled={!canSave}
-                      onChange={(event) => patch(limit.id, "factCount", event.target.value)}
+                      onChange={(event) =>
+                        patch(limit.id, "factCount", event.target.value)
+                      }
                       className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
                     />
                   </label>

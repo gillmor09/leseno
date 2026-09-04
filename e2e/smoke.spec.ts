@@ -20,16 +20,16 @@ test.describe("Landing (guest)", () => {
     await expect(page.getByRole("link", { name: "Anmelden" })).toBeVisible();
   });
 
-  test("hero CTA reaches /kostenlos", async ({ page }) => {
+  test("hero CTA reaches /basis", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("link", { name: "Jetzt kostenlos starten" }).first().click();
-    await expect(page).toHaveURL(/\/kostenlos/);
+    await page.getByRole("link", { name: "Jetzt mit Basis starten" }).first().click();
+    await expect(page).toHaveURL(/\/basis/);
   });
 });
 
-test.describe("Kostenlos (guest)", () => {
+test.describe("Basis (guest)", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/kostenlos");
+    await page.goto("/basis");
   });
 
   test("composer shows Top-10 themes and personal toggle off", async ({
@@ -37,7 +37,7 @@ test.describe("Kostenlos (guest)", () => {
   }) => {
     await expect(
       page.getByRole("heading", {
-        name: "Wähl dein Thema. Wir schreiben deine Geschichte.",
+        name: "Wähl dein Thema. Lies deine Geschichte.",
       }),
     ).toBeVisible();
 
@@ -62,7 +62,7 @@ test.describe("Kostenlos (guest)", () => {
     ).toBeEnabled();
   });
 
-  test("guest header still shows marketing nav on /kostenlos", async ({
+  test("guest header still shows marketing nav on /basis", async ({
     page,
   }) => {
     await expect(
@@ -109,9 +109,9 @@ test.describe("Robustness smoke", () => {
     ).toBeVisible();
   });
 
-  test("kostenlos responds within budget", async ({ page }) => {
+  test("basis responds within budget", async ({ page }) => {
     const started = Date.now();
-    const response = await page.goto("/kostenlos");
+    const response = await page.goto("/basis");
     const elapsed = Date.now() - started;
     expect(response?.ok()).toBeTruthy();
     expect(elapsed).toBeLessThan(8_000);

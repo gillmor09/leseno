@@ -22,7 +22,7 @@ export const STORY_MOODS = [
 
 export type StoryMoodId = (typeof STORY_MOODS)[number]["id"];
 
-/** Top-10 theme chips on `/kostenlos` (no free-text topic). */
+/** Top-10 theme chips on `/basis` (no free-text topic). */
 export const STORY_TOP_TOPICS = [
   "Magie & Geheimnisse",
   "Abenteuer & Entdeckungen",

@@ -10,7 +10,7 @@ export const ADMIN_FORBIDDEN_MESSAGE =
   "Dazu brauchst du Admin-Rechte. Bitte melde dich mit einem Admin-Konto an.";
 
 /**
- * Redirects non-admins away from `/admin/*` (guests → anmelden, others → home).
+ * Redirects non-admins away from `/admin/*` (unsigned → anmelden, others → home).
  */
 export async function requireAdminPage(): Promise<void> {
   const user = await getCurrentUser();

@@ -1,7 +1,7 @@
 /**
- * Builds a self-contained HTML document for PDF preview / print that mirrors the
- * on-screen story card + learned list (floats, Nunito, brand colors).
- * Expects pipeline-sanitized story HTML. Preview opens in-app; save uses print().
+ * Builds a self-contained HTML document for PDF export (html2pdf.js).
+ * Mirrors the on-screen story card + learned list (floats, Nunito, brand colors).
+ * Expects pipeline-sanitized story HTML.
  */
 
 import { looksLikeHtml } from "@/lib/stories/looks-like-html";
@@ -64,24 +64,16 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
     input.learnedFacts.length > 0
       ? `
   <section class="facts" aria-label="Das hast du gelernt">
-    <div class="facts-head">
-      <span class="facts-icon" aria-hidden="true"></span>
-      <div>
-        <p class="eyebrow">Wissen</p>
-        <h2>Das hast du gelernt</h2>
-      </div>
-    </div>
-    <ol class="facts-list">
+    <p class="eyebrow">Wissen</p>
+    <h2>Das hast du gelernt</h2>
+    <ul class="facts-list">
       ${input.learnedFacts
         .map(
-          (fact, index) => `
-      <li>
-        <span class="fact-num">${index + 1}</span>
-        <span class="fact-text">${escapeHtml(fact)}</span>
-      </li>`,
+          (fact) => `
+      <li>${escapeHtml(fact)}</li>`,
         )
         .join("")}
-    </ol>
+    </ul>
   </section>`
       : "";
 
@@ -93,7 +85,8 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
   <title>Leseno — Deine Geschichte</title>
   <style>
     * { box-sizing: border-box; }
-    body {
+    body,
+    .leseno-pdf-root {
       margin: 0;
       padding: 1.5rem;
       background: #fff;
@@ -110,9 +103,9 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
     }
     .card {
       background: #fff;
-      border-radius: 1.75rem;
-      padding: 2rem;
-      border: 1px solid rgb(9 9 11 / 0.1);
+      padding: 0;
+      border: none;
+      border-radius: 0;
     }
     .eyebrow {
       margin: 0;
@@ -194,18 +187,6 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
     .story-html p:has(+ p > img.story-illustration:first-child) {
       margin-bottom: 0 !important;
     }
-    .facts-head {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
-    }
-    .facts-icon {
-      flex-shrink: 0;
-      width: 2.75rem;
-      height: 2.75rem;
-      border-radius: 1rem;
-      background: #facc15;
-    }
     .facts h2 {
       margin: 0.25rem 0 0;
       font-size: 1.25rem;
@@ -220,9 +201,6 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
       gap: 0.75rem;
     }
     .facts-list li {
-      display: flex;
-      gap: 0.75rem;
-      align-items: flex-start;
       background: #f4f4f5;
       border-radius: 1rem;
       padding: 0.75rem 1rem;
@@ -230,27 +208,9 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
       line-height: 1.55;
       color: #3f3f46;
     }
-    .fact-num {
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 1.75rem;
-      height: 1.75rem;
-      margin-top: 0.125rem;
-      border-radius: 9999px;
-      background: #c2410c;
-      color: #fff;
-      font-size: 0.875rem;
-      font-weight: 800;
-    }
     @media print {
-      body { padding: 0; }
-      .card {
-        border: none;
-        border-radius: 0;
-        padding: 0 0 1.5rem;
-      }
+      body,
+      .leseno-pdf-root { padding: 0; }
       .facts-list li {
         break-inside: avoid;
       }
@@ -270,8 +230,8 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
 </html>`;
 }
 
-function waitForImages(doc: Document): Promise<void> {
-  const images = Array.from(doc.images);
+function waitForImages(root: ParentNode): Promise<void> {
+  const images = Array.from(root.querySelectorAll("img"));
   if (images.length === 0) return Promise.resolve();
   return Promise.all(
     images.map(
@@ -289,45 +249,82 @@ function waitForImages(doc: Document): Promise<void> {
 }
 
 /**
- * @deprecated Prefer in-app `StoryPdfPreviewDialog` + `buildStoryExportDocument`.
- * Opens the system print dialog via a hidden iframe (legacy).
+ * Renders the export HTML in the main document and converts it to a PDF `Blob`
+ * via html2pdf.js. Host sits on-screen (clipped) so html2canvas gets real pixels.
  */
-export async function openStoryPrintDialog(
+export async function buildStoryPdfBlob(
   input: StoryExportInput,
-): Promise<void> {
+): Promise<Blob> {
   const html = buildStoryExportDocument(input);
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("aria-hidden", "true");
-  iframe.setAttribute("title", "PDF-Export");
-  Object.assign(iframe.style, {
-    position: "fixed",
-    right: "0",
-    bottom: "0",
-    width: "0",
-    height: "0",
-    border: "0",
-    opacity: "0",
-    pointerEvents: "none",
-  });
-  document.body.appendChild(iframe);
+  const parsed = new DOMParser().parseFromString(html, "text/html");
 
-  const frameWindow = iframe.contentWindow;
-  const frameDoc = iframe.contentDocument;
-  if (!frameWindow || !frameDoc) {
-    iframe.remove();
-    throw new Error("PDF-Export konnte nicht gestartet werden.");
+  const host = document.createElement("div");
+  host.setAttribute("data-leseno-pdf-export", "true");
+  Object.assign(host.style, {
+    position: "fixed",
+    left: "-9999px",
+    top: "0",
+    width: "794px",
+    margin: "0",
+    padding: "0",
+    background: "#ffffff",
+    zIndex: "1",
+    pointerEvents: "none",
+    opacity: "1",
+  });
+
+  for (const styleEl of Array.from(parsed.querySelectorAll("style"))) {
+    host.appendChild(styleEl.cloneNode(true));
   }
 
-  frameDoc.open();
-  frameDoc.write(html);
-  frameDoc.close();
+  const root = document.createElement("div");
+  root.className = "leseno-pdf-root";
+  root.innerHTML = parsed.body.innerHTML;
+  host.appendChild(root);
+  document.body.appendChild(host);
 
   try {
-    await waitForImages(frameDoc);
-    await new Promise((resolve) => window.setTimeout(resolve, 250));
-    frameWindow.focus();
-    frameWindow.print();
+    await waitForImages(host);
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+
+    const mod = await import("html2pdf.js");
+    const html2pdf = (mod.default ?? mod) as typeof mod.default;
+
+    const worker = html2pdf()
+      .set({
+        margin: [10, 10, 10, 10],
+        filename: "leseno-geschichte.pdf",
+        image: { type: "jpeg", quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          backgroundColor: "#ffffff",
+          scrollX: 0,
+          scrollY: -window.scrollY,
+          windowWidth: root.scrollWidth || 794,
+          windowHeight: root.scrollHeight || 1123,
+        },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["avoid-all", "css", "legacy"] },
+      })
+      .from(root);
+
+    // Force canvas → pdf, then read blob (more reliable than chaining outputPdf alone).
+    await worker.toPdf();
+    const pdf = (await worker.get("pdf")) as {
+      output: (type: string) => Blob;
+    };
+    const raw = pdf.output("blob");
+    const blob = new Blob([raw], { type: "application/pdf" });
+
+    const header = await blob.slice(0, 5).text();
+    if (!header.startsWith("%PDF") || blob.size < 200) {
+      throw new Error("PDF kam leer oder ungültig zurück.");
+    }
+    return blob;
   } finally {
-    window.setTimeout(() => iframe.remove(), 1500);
+    host.remove();
   }
 }

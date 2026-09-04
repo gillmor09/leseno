@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Large preview of the print/PDF export document.
- * Shows the story HTML in an iframe; „PDF speichern“ opens the system print dialog
- * (choose „Als PDF speichern“) from that frame — close via X only.
+ * Large dialog: story export preview + PDF download.
+ * Preview uses the export HTML (reliable). Download uses the html2pdf Blob.
+ * No backdrop-filter — Chrome PDF plugins break under filter ancestors.
+ * Close via X / Escape / outside click; footer only „PDF speichern“.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -13,26 +14,29 @@ import { cn } from "@/lib/utils";
 
 type StoryPdfPreviewDialogProps = {
   open: boolean;
-  /** Full HTML from `buildStoryExportDocument`. */
-  html: string | null;
+  /** Export HTML for the visual preview iframe. */
+  previewHtml: string | null;
+  /** Object URL for `application/pdf` download (revoked by parent on close). */
+  pdfUrl: string | null;
   onClose: () => void;
 };
 
 /**
- * 90vw × 90vh modal with document preview and primary save action.
+ * 90vw × 90vh modal with HTML preview and PDF download action.
  */
 export function StoryPdfPreviewDialog({
   open,
-  html,
+  previewHtml,
+  pdfUrl,
   onClose,
 }: StoryPdfPreviewDialogProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const [ready, setReady] = useState(false);
+  const [previewReady, setPreviewReady] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!open) {
-      setReady(false);
+      setPreviewReady(false);
       setIsSaving(false);
       return;
     }
@@ -55,20 +59,17 @@ export function StoryPdfPreviewDialog({
   }, [open, onClose]);
 
   useLayoutEffect(() => {
-    if (!open || !html) {
-      setReady(false);
+    if (!open || !previewHtml) {
+      setPreviewReady(false);
       return;
     }
-
-    setReady(false);
+    setPreviewReady(false);
     const iframe = iframeRef.current;
-    if (!iframe) return;
-
-    const doc = iframe.contentDocument;
+    const doc = iframe?.contentDocument;
     if (!doc) return;
 
     doc.open();
-    doc.write(html);
+    doc.write(previewHtml);
     doc.close();
 
     let cancelled = false;
@@ -87,30 +88,34 @@ export function StoryPdfPreviewDialog({
             }),
         ),
       );
-      await new Promise((resolve) => window.setTimeout(resolve, 200));
-      if (!cancelled) {
-        setReady(true);
-      }
+      await new Promise((resolve) => window.setTimeout(resolve, 150));
+      if (!cancelled) setPreviewReady(true);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [open, html]);
+  }, [open, previewHtml]);
 
-  if (!open || !html) {
+  if (!open) {
     return null;
   }
 
-  async function handleSave() {
-    const frameWindow = iframeRef.current?.contentWindow;
-    if (!frameWindow || !ready || isSaving) return;
+  const canSave = Boolean(pdfUrl);
+
+  function handleSave() {
+    if (!pdfUrl || !canSave || isSaving) return;
     setIsSaving(true);
     try {
-      frameWindow.focus();
-      frameWindow.print();
+      const link = document.createElement("a");
+      link.href = pdfUrl;
+      link.download = "leseno-geschichte.pdf";
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     } finally {
-      window.setTimeout(() => setIsSaving(false), 500);
+      window.setTimeout(() => setIsSaving(false), 400);
     }
   }
 
@@ -119,7 +124,7 @@ export function StoryPdfPreviewDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="story-pdf-preview-title"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/55 p-3 backdrop-blur-sm sm:p-4"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/60 p-3 sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -153,8 +158,8 @@ export function StoryPdfPreviewDialog({
         </header>
 
         <div className="relative min-h-0 flex-1 bg-zinc-100">
-          {!ready ? (
-            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-zinc-100/90">
+          {!previewReady ? (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-zinc-100">
               <Loader2
                 className="size-8 animate-spin text-orange-700"
                 aria-hidden
@@ -174,13 +179,11 @@ export function StoryPdfPreviewDialog({
         <footer className="flex shrink-0 justify-end border-t border-zinc-950/10 px-5 py-4 sm:px-6">
           <button
             type="button"
-            onClick={() => {
-              void handleSave();
-            }}
-            disabled={!ready || isSaving}
+            onClick={handleSave}
+            disabled={!canSave || isSaving}
             className={cn(
               "inline-flex items-center justify-center gap-2 rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800",
-              (!ready || isSaving) && "opacity-70",
+              (!canSave || isSaving) && "opacity-70",
             )}
           >
             {isSaving ? (

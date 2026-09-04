@@ -1,5 +1,5 @@
 /**
- * Loads and updates story-length bands from `leseno.story_length_*`.
+ * Loads and updates story-length targets from `leseno.story_length_*`.
  * Public reads use the anon server client; admin writes use the service role.
  */
 
@@ -19,8 +19,7 @@ type LimitRow = {
   id: string;
   age_group_id: string;
   step_id: string;
-  min_words: number;
-  max_words: number | null;
+  anzahl_woerter: number;
   fact_count: number;
 };
 
@@ -39,8 +38,7 @@ function toCatalog(steps: StepRow[], limits: LimitRow[]): StoryLengthCatalog {
       id: row.id,
       ageGroupId: row.age_group_id as AgeGroupId,
       stepId: row.step_id as StoryLengthStepId,
-      minWords: row.min_words,
-      maxWords: row.max_words,
+      anzahlWoerter: row.anzahl_woerter,
       factCount: row.fact_count,
     })),
   };
@@ -86,18 +84,16 @@ export async function loadStoryLengthCatalogForAdmin(): Promise<StoryLengthCatal
 }
 
 export async function updateStoryLengthLimits(
-  updates: Pick<StoryLengthLimit, "id" | "minWords" | "maxWords" | "factCount">[],
+  updates: Pick<StoryLengthLimit, "id" | "anzahlWoerter" | "factCount">[],
 ): Promise<void> {
   const supabase = createServiceClient(null);
 
   for (const update of updates) {
-    const { error } = await supabase
-      .rpc("update_story_length_limit", {
-        p_id: update.id,
-        p_min_words: update.minWords,
-        p_max_words: update.maxWords,
-        p_fact_count: update.factCount,
-      });
+    const { error } = await supabase.rpc("update_story_length_limit", {
+      p_id: update.id,
+      p_anzahl_woerter: update.anzahlWoerter,
+      p_fact_count: update.factCount,
+    });
 
     if (error) {
       throw new Error(error.message);

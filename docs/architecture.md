@@ -27,7 +27,7 @@ Personal mode: topic/cast resolved **server-side** from `user_world` (never trus
 
 ## Auth & admin
 
-- Session: Supabase Auth; role in `app_metadata.role` (`admin`, `guest`, …)  
+- Session: Supabase Auth; role in `app_metadata.role` (`admin`, `basis`, `paket1`–`paket3`; 1:1 with `/basis`…`/paket3`)  
 - `/admin/*`: `src/app/admin/layout.tsx` + `denyUnlessAdmin()` on write actions  
 - Prompt/model catalogs: **service role only** (not anon) — see migration `20260904120000_restrict_prompt_catalog_rpc.sql`
 

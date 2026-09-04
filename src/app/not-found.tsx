@@ -36,7 +36,7 @@ export default function NotFound() {
               Zur Startseite
             </Link>
             <Link
-              href="/kostenlos"
+              href="/basis"
               className="inline-flex w-full items-center justify-center rounded-full bg-white px-6 py-3 text-sm font-bold text-zinc-950 ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out hover:bg-gray-50 sm:w-auto"
             >
               Geschichte starten

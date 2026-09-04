@@ -89,6 +89,17 @@ export const FALLBACK_AI_MODELS: AiModelConfig[] = [
     notes:
       "Liest die Geschichte vor über OpenAI `/v1/audio/speech` (`OPENAI_API_KEY`, Stimme nova).",
   },
+  {
+    id: "fact-why-default",
+    label: "Fakt-Hintergrund (GPT-OSS 120B)",
+    provider: "openai-compatible",
+    modelSlug: "openai/gpt-oss-120b",
+    supportsSystemPrompt: true,
+    supportsJsonOutput: false,
+    isActive: true,
+    notes:
+      "Erklärt Fakt-Hintergründe und Vertiefungen über IONOS openai/gpt-oss-120b.",
+  },
 ];
 
 const LAYOUT_SYSTEM =
@@ -154,15 +165,15 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 2,
     modelId: "story-default",
     systemTemplate:
-      "Du schreibst warmherzige, fantasievolle Geschichten auf Deutsch für Kinder. Baue die Fakten natürlich in die Geschichte ein und achte darauf, dass der Ton zur gewünschten Stimmung passt. Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
+      "Du schreibst warmherzige, fantasievolle Geschichten auf Deutsch für Kinder. Baue die Fakten natürlich in die Geschichte ein und achte darauf, dass der Ton zur gewünschten Stimmung passt. Die Geschichte soll in etwa die angegebene Ziel-Wortzahl erreichen (nicht deutlich kürzer oder länger). Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
     userTemplate:
-      "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortspanne: {{target_word_range}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
+      "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortzahl: {{target_word_count}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. Die Geschichte soll ungefähr die Ziel-Wortzahl erreichen. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
     placeholders: [
       "topic",
       "school_stage",
       "story_mood",
       "length_step",
-      "target_word_range",
+      "target_word_count",
       "facts_block",
       "syllable_help_block",
     ],
@@ -180,9 +191,9 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 12,
     modelId: "story-default",
     systemTemplate:
-      "Du schreibst warmherzige, fantasievolle Geschichten auf Deutsch für Kinder. Die genannte Hauptfigur ist die zentrale Protagonist:in und behält genau diesen Namen. Freundesnamen aus der Liste darfst du als Freund:innen einbauen. Baue die Fakten natürlich ein. Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
+      "Du schreibst warmherzige, fantasievolle Geschichten auf Deutsch für Kinder. Die genannte Hauptfigur ist die zentrale Protagonist:in und behält genau diesen Namen. Freundesnamen aus der Liste darfst du als Freund:innen einbauen. Baue die Fakten natürlich ein. Die Geschichte soll in etwa die angegebene Ziel-Wortzahl erreichen (nicht deutlich kürzer oder länger). Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
     userTemplate:
-      "{{personal_block}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortspanne: {{target_word_range}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. {{protagonist_name}} ist die Hauptfigur. Weitere Namen falls sinnvoll: {{friends_list}}. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
+      "{{personal_block}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortzahl: {{target_word_count}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. Die Geschichte soll ungefähr die Ziel-Wortzahl erreichen. {{protagonist_name}} ist die Hauptfigur. Weitere Namen falls sinnvoll: {{friends_list}}. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
     placeholders: [
       "personal_block",
       "topic",
@@ -191,7 +202,7 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
       "school_stage",
       "story_mood",
       "length_step",
-      "target_word_range",
+      "target_word_count",
       "facts_block",
       "syllable_help_block",
     ],
@@ -218,9 +229,51 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
       "story_html",
     ],
     assemblyNotes:
-      "Bildanzahl: ≤300 Wörter → 1, ≤1000 → 2, darüber → 3 (aus Textlängen-Limit). Pipeline ersetzt __ILL_*__ durch data-URLs.",
+      "Bildanzahl: ≤300 Wörter → 1, ≤1000 → 2, darüber → 3 (aus anzahl_woerter). Pipeline ersetzt __ILL_*__ durch data-URLs.",
     outputContract:
       "Vollständiges HTML mit floatenden img-Tags (256×256, 1rem Abstand) und __ILL_*-Platzhaltern.",
+  },
+  {
+    id: "fallback-fact-why",
+    key: "fact-why",
+    label: "Fakt: Warum?",
+    purpose:
+      "Erklärt kindgerecht den Hintergrund eines einzelnen Fakten-Satzes.",
+    stageOrder: 40,
+    modelId: "fact-why-default",
+    systemTemplate:
+      "Du bist ein neugieriger Wissens-Coach für Kinder. Erkläre kurz, präzise und unterhaltsam, WARUM ein Fakt stimmt und was dahinter steckt. Passe Wortschatz und Ton an Alter, Schulstufe und Stimmung an. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch in 2–4 kurzen Absätzen.",
+    userTemplate:
+      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\nStimmung: {{story_mood}}\n\nFakt:\n{{fact}}\n\nErkläre den Hintergrund: Warum ist das so? Was steckt dahinter?",
+    placeholders: ["age_group", "school_stage", "story_mood", "fact"],
+    assemblyNotes:
+      "Gestartet vom „Warum?“-Button in der Faktenliste. Modell: fact-why-default (gpt-oss-120b).",
+    outputContract:
+      "Kurzer Fließtext auf Deutsch (2–4 Absätze), ohne Markdown-Überschriften.",
+  },
+  {
+    id: "fallback-fact-why-more",
+    key: "fact-why-more",
+    label: "Fakt: Ich will mehr wissen",
+    purpose:
+      "Vertieft einen Fakt anhand des bisherigen Hintergrunds mit zusätzlichem Kontext.",
+    stageOrder: 41,
+    modelId: "fact-why-default",
+    systemTemplate:
+      "Du bist ein neugieriger Wissens-Coach für Kinder. Liefere weiterführende Informationen: kurz, präzise, unterhaltsam. Nutze Fakt und bisherigen Hintergrund als Kontext — wiederhole nicht einfach denselben Text. Passe Wortschatz und Ton an Alter, Schulstufe und Stimmung an. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch in 2–5 kurzen Absätzen.",
+    userTemplate:
+      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\nStimmung: {{story_mood}}\n\nFakt:\n{{fact}}\n\nBisheriger Hintergrund:\n{{background}}\n\nErkläre jetzt weiterführende Details und Zusammenhänge, die noch spannender machen, warum das so ist.",
+    placeholders: [
+      "age_group",
+      "school_stage",
+      "story_mood",
+      "fact",
+      "background",
+    ],
+    assemblyNotes:
+      "Gestartet vom Button „Ich will mehr wissen“ im Warum-Dialog. Kontext: Fakt + Hintergrund.",
+    outputContract:
+      "Kurzer Fließtext auf Deutsch (2–5 Absätze), ohne Markdown-Überschriften.",
   },
 ];
 

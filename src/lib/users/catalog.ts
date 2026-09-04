@@ -1,16 +1,26 @@
 /**
- * Canonical user roles for Leseno admin and membership handling.
+ * Canonical user roles: admin + one role per membership story page.
+ * Page access is 1:1 (`basis` → `/basis`, `paket1` → `/paket1`, …).
  */
 
 export const USER_ROLE_OPTIONS = [
   { id: "admin", label: "Admin" },
-  { id: "guest", label: "Gast" },
-  { id: "member_tier_1", label: "Mitglied - Stufe 1" },
-  { id: "member_tier_2", label: "Mitglied - Stufe 2" },
-  { id: "member_tier_3", label: "Mitglied - Stufe 3" },
+  { id: "basis", label: "Basis", path: "/basis" },
+  { id: "paket1", label: "Paket 1", path: "/paket1" },
+  { id: "paket2", label: "Paket 2", path: "/paket2" },
+  { id: "paket3", label: "Paket 3", path: "/paket3" },
 ] as const;
 
 export type UserRoleId = (typeof USER_ROLE_OPTIONS)[number]["id"];
+
+export const MEMBERSHIP_ROLE_OPTIONS = [
+  { id: "basis", label: "Basis", path: "/basis" },
+  { id: "paket1", label: "Paket 1", path: "/paket1" },
+  { id: "paket2", label: "Paket 2", path: "/paket2" },
+  { id: "paket3", label: "Paket 3", path: "/paket3" },
+] as const;
+
+export type MembershipRoleId = (typeof MEMBERSHIP_ROLE_OPTIONS)[number]["id"];
 
 export type UserAdminRow = {
   userId: string;
@@ -18,3 +28,15 @@ export type UserAdminRow = {
   role: UserRoleId;
   createdAt: string;
 };
+
+/** Story route for a membership role, or null for admin / unknown. */
+export function storyPathForRole(
+  role: string | null | undefined,
+): string | null {
+  const match = MEMBERSHIP_ROLE_OPTIONS.find((entry) => entry.id === role);
+  return match?.path ?? null;
+}
+
+export function isMembershipRoleId(value: string): value is MembershipRoleId {
+  return MEMBERSHIP_ROLE_OPTIONS.some((entry) => entry.id === value);
+}

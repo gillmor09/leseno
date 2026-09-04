@@ -3,7 +3,7 @@
 /**
  * Free-tier story form: Top-10 topic or „Ganz persönlich“, school stage, length, mood.
  * Full-screen wait overlay while generating; selection card collapses when ready.
- * PDF: large in-app preview dialog, then print → „Als PDF speichern“.
+ * PDF: html2pdf blob → large preview dialog → download.
  * Round play button: OpenAI TTS + Whisper word highlight (`synthesizeStorySpeechAction`).
  */
 
@@ -13,7 +13,6 @@ import {
   BicepsFlexed,
   ChevronDown,
   FileDown,
-  Lightbulb,
   Loader2,
   Pause,
   Play,
@@ -35,8 +34,10 @@ import type { StoryLengthCatalog, StoryLengthStepId } from "@/lib/stories/length
 import {
   exportFontSizeForSchoolStage,
   buildStoryExportDocument,
+  buildStoryPdfBlob,
 } from "@/lib/stories/export-story-document";
 import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
+import { StoryFactsList } from "@/components/features/stories/story-facts-list";
 import {
   STORY_SCHOOL_STAGES,
   STORY_MOODS,
@@ -65,7 +66,7 @@ const moodIcons = {
 } as const;
 
 /**
- * Controlled composer for `/kostenlos`.
+ * Controlled composer for `/basis` and membership package pages.
  * Collects inputs and fills the output pane via `generateFreeStoryAction`.
  */
 export function FreeStoryForm({
@@ -93,10 +94,12 @@ export function FreeStoryForm({
   const [learnedFacts, setLearnedFacts] = useState<string[]>([]);
   const [storySchoolStage, setStorySchoolStage] =
     useState<StorySchoolStageId | null>(null);
+  const [storyMood, setStoryMood] = useState<StoryMoodId | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [selectionExpanded, setSelectionExpanded] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [isTtsLoading, setIsTtsLoading] = useState(false);
@@ -390,6 +393,7 @@ export function FreeStoryForm({
     setFieldError(null);
     setLearnedFacts([]);
     setStorySchoolStage(null);
+    setStoryMood(null);
 
     if (personalMode && !personalAvailable) {
       setFieldError(
@@ -442,6 +446,7 @@ export function FreeStoryForm({
           .filter(Boolean),
       );
       setStorySchoolStage(schoolStage);
+      setStoryMood(mood);
       setSelectionExpanded(false);
     });
   }
@@ -449,22 +454,32 @@ export function FreeStoryForm({
   async function handleExportPdf() {
     if (!output || isExporting) return;
     setIsExporting(true);
+    if (pdfPreviewUrl) {
+      URL.revokeObjectURL(pdfPreviewUrl);
+      setPdfPreviewUrl(null);
+    }
+    setPdfPreviewHtml(null);
     try {
-      const html = buildStoryExportDocument({
+      const exportInput = {
         storyHtml: output,
         learnedFacts,
         bodyFontSizeRem: exportFontSizeForSchoolStage(
           storySchoolStage ?? schoolStage,
         ),
         schoolStage: storySchoolStage ?? schoolStage,
-      });
+      };
+      const html = buildStoryExportDocument(exportInput);
+      const blob = await buildStoryPdfBlob(exportInput);
+      const url = URL.createObjectURL(blob);
       setPdfPreviewHtml(html);
+      setPdfPreviewUrl(url);
       setPdfPreviewOpen(true);
     } catch (error) {
+      setPdfPreviewOpen(false);
       toast.error(
         error instanceof Error
           ? error.message
-          : "PDF-Vorschau konnte nicht geöffnet werden.",
+          : "PDF konnte nicht erzeugt werden.",
       );
     } finally {
       setIsExporting(false);
@@ -735,7 +750,6 @@ export function FreeStoryForm({
 
             <div className="mt-8">
               <StoryLengthSlider
-                schoolStage={schoolStage}
                 catalog={lengthCatalog}
                 value={lengthStep}
                 onChange={setLengthStep}
@@ -910,40 +924,11 @@ export function FreeStoryForm({
           </section>
 
           {learnedFacts.length > 0 ? (
-            <section
-              aria-labelledby="learned-facts-heading"
-              className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
-            >
-              <div className="flex items-start gap-3">
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-yellow-400 text-zinc-950">
-                  <Lightbulb className="size-5" aria-hidden />
-                </span>
-                <div>
-                  <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                    Wissen
-                  </p>
-                  <h2
-                    id="learned-facts-heading"
-                    className="mt-1 text-xl font-extrabold text-zinc-950"
-                  >
-                    Das hast du gelernt
-                  </h2>
-                </div>
-              </div>
-              <ul className="mt-5 space-y-3">
-                {learnedFacts.map((fact, index) => (
-                  <li
-                    key={`${index}-${fact.slice(0, 24)}`}
-                    className="flex gap-3 rounded-2xl bg-gray-100 px-4 py-3 text-lg leading-relaxed text-zinc-700 sm:text-xl"
-                  >
-                    <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-orange-700 text-sm font-extrabold text-white">
-                      {index + 1}
-                    </span>
-                    <span>{fact}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+            <StoryFactsList
+              facts={learnedFacts}
+              schoolStage={storySchoolStage ?? schoolStage}
+              mood={storyMood ?? mood}
+            />
           ) : null}
         </div>
       ) : null}
@@ -959,9 +944,14 @@ export function FreeStoryForm({
       ) : null}
       <StoryPdfPreviewDialog
         open={pdfPreviewOpen}
-        html={pdfPreviewHtml}
+        previewHtml={pdfPreviewHtml}
+        pdfUrl={pdfPreviewUrl}
         onClose={() => {
           setPdfPreviewOpen(false);
+          if (pdfPreviewUrl) {
+            URL.revokeObjectURL(pdfPreviewUrl);
+          }
+          setPdfPreviewUrl(null);
           setPdfPreviewHtml(null);
         }}
       />

@@ -20,7 +20,7 @@ import {
 import { loadPromptAdminCatalog } from "@/lib/prompts/repository";
 import {
   findLengthLimit,
-  formatWordRange,
+  formatWordTarget,
   type StoryLengthCatalog,
   type StoryLengthStepId,
   STORY_LENGTH_STEPS,
@@ -297,10 +297,9 @@ function resolveLengthContext(
     input.lengthStep,
   );
   const factCount = Math.max(1, limit?.factCount ?? 2);
-  const wordRange = formatWordRange(limit);
+  const wordRange = formatWordTarget(limit);
   const imageCount = illustrationCountForWordTarget(
-    limit?.minWords ?? 0,
-    limit?.maxWords ?? null,
+    limit?.anzahlWoerter ?? 0,
   );
   return { factCount, wordRange, imageCount };
 }
@@ -412,7 +411,7 @@ export async function generateStoryPipeline(
     story_mood: labelForMood(input.mood),
     length_step: labelForLengthStep(input.lengthStep),
     fact_count: factCount,
-    target_word_range: wordRange,
+    target_word_count: wordRange,
     personal_block: input.personal
       ? buildPersonalPromptBlock(input.personal)
       : "",

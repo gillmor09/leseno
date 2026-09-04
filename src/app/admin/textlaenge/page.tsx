@@ -51,8 +51,8 @@ export default async function StoryLengthAdminPage() {
             Textlängen
           </h1>
           <p className="mt-3 text-base leading-relaxed text-zinc-600">
-            Diese Spannen steuern den Schieberegler auf der kostenlosen
-            Geschichten-Seite. Zwei Schulstufen-Gruppen, fünf Stufen.
+            Diese Spannen steuern den Schieberegler auf der Basis- und
+            Paket-Seiten. Zwei Schulstufen-Gruppen, fünf Stufen.
           </p>
           <div className="mt-10">
             <StoryLengthAdminForm

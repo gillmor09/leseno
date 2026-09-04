@@ -15,6 +15,7 @@
     "@supabase/supabase-js": "^2.114.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "html2pdf.js": "^0.10.3",
     "hyphen": "^1.14.1",
     "isomorphic-dompurify": "^4.1.0",
     "lucide-react": "^1.40.0",

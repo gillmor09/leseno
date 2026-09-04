@@ -47,16 +47,12 @@ const NO_TEXT_BLOCK = [
 ].join(". ");
 
 /**
- * Maps target word band to illustration count.
+ * Maps target word count to illustration count.
  * ≤300 → 1, ≤1000 → 2, otherwise → 3.
  */
-export function illustrationCountForWordTarget(
-  minWords: number,
-  maxWords: number | null,
-): number {
-  const words = maxWords ?? Math.max(minWords, 1001);
-  if (words <= 300) return 1;
-  if (words <= 1000) return 2;
+export function illustrationCountForWordTarget(wordCount: number): number {
+  if (wordCount <= 300) return 1;
+  if (wordCount <= 1000) return 2;
   return 3;
 }
 
