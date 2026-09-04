@@ -17,13 +17,13 @@ export function LandingFooter() {
               leseno
             </p>
             <p className="text-sm text-zinc-400">
-              Lesen, das zu euch gehört.
+              Lesen, das zu dir gehört.
             </p>
           </div>
         </div>
         <p className="max-w-md text-sm leading-relaxed text-zinc-400">
-          Für Kinder von 5 bis 10 und die Erwachsenen, die sie beim Lesen
-          begleiten. Geschichten mit echten Fakten — ohne albernen Kram.
+          Für dich von 5 bis 10 — und für die Erwachsenen, die dich beim Lesen
+          begleiten. Geschichten mit echten Fakten, ohne albernen Kram.
         </p>
       </div>
     </footer>

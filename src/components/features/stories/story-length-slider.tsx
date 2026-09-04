@@ -44,7 +44,7 @@ export function StoryLengthSlider({
         Textlänge
       </legend>
       <p className="mt-1 text-sm text-zinc-600">
-        Schiebt den Regler — von einem Kurzspaß bis zur langen Vorlesegeschichte.
+        Schieb den Regler — vom kurzen Spaß bis zur langen Vorlesegeschichte.
       </p>
 
       <div className="mt-5 px-1">

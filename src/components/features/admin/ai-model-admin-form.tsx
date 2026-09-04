@@ -79,8 +79,8 @@ export function AiModelAdminForm({
         <div className="border-b border-zinc-950/10 bg-gray-100 px-6 py-4">
           <h2 className="text-lg font-extrabold text-zinc-950">KI-Modelle</h2>
           <p className="text-sm text-zinc-600">
-            Diese Modelle können später von einzelnen Prompt-Stufen referenziert
-            werden.
+            Provider „openai-compatible“ nutzt den IONOS AI Model Hub
+            (`IONOS_API_TOKEN`, Modell z. B. `openai/gpt-oss-120b`).
           </p>
         </div>
         <div className="divide-y divide-zinc-950/5">

@@ -14,6 +14,7 @@ import {
   useBotGuardFields,
 } from "@/components/features/security/bot-guard-fields";
 import { cn } from "@/lib/utils";
+import { StoryHtmlBody } from "@/components/features/stories/story-html-body";
 import { StoryLengthSlider } from "@/components/features/stories/story-length-slider";
 import type { StoryLengthCatalog, StoryLengthStepId } from "@/lib/stories/length";
 import {
@@ -58,7 +59,7 @@ export function FreeStoryForm({
     setFieldError(null);
     setLearnedFacts([]);
     setStorySchoolStage(null);
-    setStatusText("Hole passende Fakten …");
+    setStatusText("Ich hole passende Fakten für dich …");
 
     startTransition(async () => {
       const result = await generateFreeStoryAction({
@@ -71,8 +72,8 @@ export function FreeStoryForm({
 
       if (!result.success || !result.data) {
         setStatusText(null);
-        setFieldError(result.error ?? "Die Geschichte konnte nicht erzeugt werden.");
-        toast.error(result.error ?? "Die Geschichte konnte nicht erzeugt werden.");
+        setFieldError(result.error ?? "Deine Geschichte konnte nicht entstehen.");
+        toast.error(result.error ?? "Deine Geschichte konnte nicht entstehen.");
         return;
       }
 
@@ -84,7 +85,7 @@ export function FreeStoryForm({
           .filter(Boolean),
       );
       setStorySchoolStage(schoolStage);
-      toast.success("Geschichte ist fertig.");
+      toast.success("Deine Geschichte ist fertig.");
     });
   }
 
@@ -110,7 +111,8 @@ export function FreeStoryForm({
             Thema
           </label>
           <p className="mt-1 text-sm text-zinc-600">
-            Worum soll die Geschichte gehen? Ein Wort reicht — oder ein ganzer Satz.
+            Worum soll deine Geschichte gehen? Ein Wort reicht — oder ein ganzer
+            Satz.
           </p>
           <textarea
             id="story-topic"
@@ -147,7 +149,7 @@ export function FreeStoryForm({
             Schulstufe
           </legend>
           <p className="mt-1 text-sm text-zinc-600">
-            Damit Sprache und Umfang zum Leseniveau im Alltag passen.
+            So passen Sprache und Länge zu dem, was du schon gut lesen kannst.
           </p>
           <div
             className="mt-3 flex flex-wrap gap-2"
@@ -226,45 +228,32 @@ export function FreeStoryForm({
           ) : (
             <Sparkles className="size-5" aria-hidden />
           )}
-          {isPending ? "Geschichte entsteht …" : "Geschichte starten"}
+          {isPending ? "Deine Geschichte entsteht …" : "Meine Geschichte starten"}
         </button>
       </form>
 
       {isPending || output ? (
         <div className="grid gap-6">
           <section
-            aria-labelledby="story-output-heading"
+            aria-label="Deine Geschichte"
             aria-busy={isPending}
             className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
           >
             <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
               Deine Geschichte
             </p>
-            <h2
-              id="story-output-heading"
-              className="mt-1 text-xl font-extrabold text-zinc-950"
-            >
-              Frisch für dich geschrieben
-            </h2>
             {isPending ? (
               <div className="mt-6 flex flex-col items-start gap-3 rounded-2xl bg-orange-50 px-4 py-6 ring-1 ring-orange-700/10">
                 <Loader2 className="size-6 animate-spin text-orange-700" aria-hidden />
                 <p className="text-sm font-semibold text-orange-900">
-                  {statusText ?? "Schreibe die Geschichte …"}
+                  {statusText ?? "Ich schreibe deine Geschichte …"}
                 </p>
                 <p className="text-sm leading-relaxed text-zinc-600">
-                  Zuerst holen wir Fakten, danach formuliert die KI die Geschichte.
+                  Zuerst hole ich Fakten, danach formuliere ich deine Geschichte.
                 </p>
               </div>
             ) : (
-              <p
-                className={cn(
-                  "mt-4 whitespace-pre-wrap leading-relaxed text-zinc-700",
-                  storyTextClass,
-                )}
-              >
-                {output}
-              </p>
+              <StoryHtmlBody content={output} className={storyTextClass} />
             )}
           </section>
 
@@ -293,9 +282,9 @@ export function FreeStoryForm({
                 {learnedFacts.map((fact, index) => (
                   <li
                     key={`${index}-${fact.slice(0, 24)}`}
-                    className="flex gap-3 rounded-2xl bg-gray-100 px-4 py-3 text-sm leading-relaxed text-zinc-700"
+                    className="flex gap-3 rounded-2xl bg-gray-100 px-4 py-3 text-lg leading-relaxed text-zinc-700 sm:text-xl"
                   >
-                    <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-orange-700 text-xs font-extrabold text-white">
+                    <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-orange-700 text-sm font-extrabold text-white">
                       {index + 1}
                     </span>
                     <span>{fact}</span>

@@ -14,20 +14,20 @@ import { AppHeader } from "@/components/features/landing/app-header";
 const steps = [
   {
     number: "01",
-    title: "Thema wählen",
-    text: "Dinosaurier, Freundschaft, Weltall oder der eigene Hund: Kinder bringen mit, worauf sie Lust haben.",
+    title: "Wähl dein Thema",
+    text: "Dinosaurier, Freundschaft, Weltall oder dein Hund: Bring mit, worauf du Lust hast.",
     icon: Sparkles,
   },
   {
     number: "02",
-    title: "Passend machen",
-    text: "Alter angeben. Die Sprache wächst mit — von ersten Sätzen bis zu richtigen Kapiteln.",
+    title: "Mach sie passend",
+    text: "Gib deine Schulstufe an. Die Sprache wächst mit dir — von ersten Sätzen bis zu richtigen Kapiteln.",
     icon: Target,
   },
   {
     number: "03",
-    title: "Ton setzen",
-    text: "Lustig, spannend oder motivierend. Jede Geschichte trägt echte Fakten, die nach dem Lesen bleiben.",
+    title: "Setz den Ton",
+    text: "Lustig, spannend oder motivierend. In jeder Geschichte stecken echte Fakten, die nach dem Lesen bei dir bleiben.",
     icon: BookOpen,
   },
 ] as const;
@@ -35,7 +35,7 @@ const steps = [
 const moods = [
   {
     title: "Lustig",
-    text: "Kichern erlaubt. Der Witz sitzt — und trotzdem steckt in der Geschichte etwas, das man nachher weiß.",
+    text: "Kichern ist erlaubt. Der Witz sitzt — und trotzdem steckt etwas in der Geschichte, das du nachher weißt.",
     image: "/landing/mood-lustig.webp",
     imageAlt:
       "Kind lacht über ein aufgeschlagenes Buch, aus dem der Leseno-Vogel steigt",
@@ -43,7 +43,7 @@ const moods = [
   },
   {
     title: "Spannend",
-    text: "Herzklopfen zum Umblättern. Abenteuer, die fesseln, ohne zu ängstigen — mit echtem Wissen im Gepäck.",
+    text: "Herzklopfen zum Weiterlesen. Abenteuer, die dich fesseln, ohne dich zu ängstigen — mit echtem Wissen im Gepäck.",
     image: "/landing/mood-spannend.webp",
     imageAlt:
       "Kind liest gebannt, während der Leseno-Vogel und ein Blitz aus dem Buch aufsteigen",
@@ -51,7 +51,7 @@ const moods = [
   },
   {
     title: "Motivierend",
-    text: "Mut machen und Lust wecken. Geschichten, die anspornen — mit echtem Wissen, das bleibt.",
+    text: "Hol dir Mut und Lust. Geschichten, die dich anspornen — mit echtem Wissen, das bleibt.",
     image: "/landing/mood-motivierend.webp",
     imageAlt:
       "Kind betrachtet zuversichtlich ein Buch, aus dem der leuchtende Leseno-Vogel steigt",
@@ -60,9 +60,9 @@ const moods = [
 ] as const;
 
 const parentPoints = [
-  "Echte Fakten in jeder Geschichte — Lesespaß mit Substanz.",
-  "Sprache nach Alter, nicht nach einem Einheitsmaß.",
-  "Freemium: erst ausprobieren, dann entscheiden, was die Familie braucht.",
+  "In jeder Geschichte stecken echte Fakten — Lesespaß mit Substanz.",
+  "Die Sprache richtet sich nach dem Alter, nicht nach einem Einheitsmaß.",
+  "Freemium: Probier erst aus, dann entscheidest du, was ihr braucht.",
   "Keine Werbeflut, kein alberner Ton. Ernst gemeinte Lesefreude.",
 ] as const;
 
@@ -90,22 +90,22 @@ function HeroSection() {
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-2 lg:gap-14 lg:py-20">
         <div>
           <p className="inline-flex items-center gap-2 rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-            Für Kinder von 5 bis 10
+            Für dich von 5 bis 10
           </p>
           <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl lg:text-[3.25rem] lg:leading-[1.1]">
-            Geschichten, die Kinder selbst starten.
+            Starte deine eigene Geschichte.
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
-            Thema wählen, Alter angeben, Stimmung bestimmen. Leseno schreibt
-            daraus eine Geschichte — lustig, spannend oder motivierend. Mit
-            echten Fakten, die hängen bleiben.
+            Wähl ein Thema, gib deine Schulstufe an und such dir den Ton aus.
+            Leseno schreibt daraus deine Geschichte — lustig, spannend oder
+            motivierend. Mit echten Fakten, die bei dir hängen bleiben.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a
               href="/kostenlos"
               className="inline-flex items-center justify-center rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
             >
-              Kostenlos starten
+              Jetzt kostenlos starten
             </a>
             <a
               href="#so-gehts"
@@ -115,7 +115,7 @@ function HeroSection() {
             </a>
           </div>
           <p className="mt-5 text-sm font-semibold text-zinc-500">
-            Für Familien · 5–10 Jahre · Freemium
+            Für dich · 5–10 Jahre · Freemium
           </p>
         </div>
 
@@ -166,11 +166,11 @@ function StepsSection() {
           So geht’s
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Drei Angaben. Eine Geschichte, die passt.
+          Drei Angaben. Deine Geschichte, die passt.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Kein langes Formular. Kinder sagen, worum es gehen soll — Leseno
-          macht daraus eine lesbare Geschichte auf dem richtigen Niveau.
+          Kein langes Formular. Du sagst, worum es gehen soll — Leseno macht
+          daraus eine Geschichte, die du gut lesen kannst.
         </p>
         <ol className="mt-10 grid gap-6 md:grid-cols-3">
           {steps.map((step) => {
@@ -211,11 +211,10 @@ function MoodsSection() {
           Drei Töne
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Lustig, spannend oder motivierend — ihr entscheidet.
+          Lustig, spannend oder motivierend — du entscheidest.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Dieselbe Neugier, drei Wege. Der Ton ändert die Geschichte. Die
-          Fakten bleiben.
+          Dieselbe Neugier, drei Wege. Du änderst den Ton. Die Fakten bleiben.
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-3">
           {moods.map((mood) => {
@@ -263,12 +262,12 @@ function FactsSection() {
             Der Unterschied
           </p>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-            Beim Lesen nebenbei klüger.
+            Beim Lesen wirst du nebenbei klüger.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-300">
             Jede Leseno-Geschichte trägt echte Fakten. Nicht als Test danach —
-            sondern mitten im Abenteuer. Kinder lesen, weil es Spaß macht. Und
-            nehmen etwas mit, das stimmt.
+            sondern mitten in deinem Abenteuer. Du liest, weil es Spaß macht.
+            Und nimmst etwas mit, das stimmt.
           </p>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2">
@@ -309,12 +308,13 @@ function ParentsSection() {
             Für Eltern
           </p>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            Lesefreude, der ihr trauen könnt.
+            Lesefreude, der du trauen kannst.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
-            Leseno ist für Kinder gemacht — und so gebaut, dass Erwachsene
-            mitgehen. Fröhlich, klar, ohne Klamauk. Ihr seht, worum es geht:
-            eigene Geschichten, passende Sprache, echtes Wissen.
+            Leseno ist für Kinder gemacht — und so gebaut, dass du als Mama,
+            Papa oder Begleitung mitgehst. Fröhlich, klar, ohne Klamauk. Du
+            siehst, worum es geht: eigene Geschichten, passende Sprache, echtes
+            Wissen.
           </p>
           <ul className="mt-6 space-y-3">
             {parentPoints.map((point) => (
@@ -340,11 +340,11 @@ function PricingSection() {
           Freemium
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Erst lesen. Dann entscheiden.
+          Erst lesen. Dann entscheidest du.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Loslegen kostet nichts. Wenn die Familie mehr Geschichten, mehr
-          Themen und einen Blick auf den Lesefortschritt will, gibt es Plus.
+          Loslegen kostet dich nichts. Wenn du mehr Geschichten, mehr Themen und
+          einen Blick auf den Lesefortschritt willst, gibt es Plus.
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-2">
           <article className="rounded-[1.75rem] bg-white p-8 shadow-xl ring-1 ring-zinc-950/10">
@@ -358,11 +358,11 @@ function PricingSection() {
             <ul className="mt-6 space-y-3 text-sm text-zinc-700">
               <li className="flex gap-2">
                 <Check className="mt-0.5 size-4 shrink-0 text-orange-700" aria-hidden />
-                Erste eigene Geschichten
+                Deine ersten eigenen Geschichten
               </li>
               <li className="flex gap-2">
                 <Check className="mt-0.5 size-4 shrink-0 text-orange-700" aria-hidden />
-                Thema, Alter und Stimmung wählen
+                Thema, Schulstufe und Stimmung wählen
               </li>
               <li className="flex gap-2">
                 <Check className="mt-0.5 size-4 shrink-0 text-orange-700" aria-hidden />
@@ -373,7 +373,7 @@ function PricingSection() {
               href="/kostenlos"
               className="mt-8 inline-flex w-full items-center justify-center rounded-full bg-orange-700 px-5 py-3 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
             >
-              Kostenlos starten
+              Jetzt kostenlos starten
             </a>
           </article>
 
@@ -381,9 +381,9 @@ function PricingSection() {
             <p className="text-sm font-extrabold tracking-wide text-yellow-400 uppercase">
               Plus
             </p>
-            <p className="mt-2 text-3xl font-extrabold">Für Familien</p>
+            <p className="mt-2 text-3xl font-extrabold">Für dich und deine Familie</p>
             <p className="mt-1 text-sm text-zinc-400">
-              Wenn Leseno fest zum Alltag gehört
+              Wenn Leseno fest zu deinem Alltag gehört
             </p>
             <ul className="mt-6 space-y-3 text-sm text-zinc-200">
               <li className="flex gap-2">
@@ -400,7 +400,7 @@ function PricingSection() {
               </li>
             </ul>
             <p className="mt-8 inline-flex w-full items-center justify-center rounded-full bg-yellow-400 px-5 py-3 text-sm font-bold text-zinc-950">
-              Bald für Familien
+              Bald für dich da
             </p>
           </article>
         </div>
@@ -421,17 +421,17 @@ function ClosingSection() {
           className="mx-auto size-16"
         />
         <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Bereit für die erste eigene Geschichte?
+          Bereit für deine erste eigene Geschichte?
         </h2>
         <p className="mt-4 text-base leading-relaxed text-zinc-600">
-          Sagt, worum es gehen soll. Leseno schreibt. Ihr lest — und lernt
+          Sag, worum es gehen soll. Leseno schreibt. Du liest — und lernst
           nebenbei etwas, das stimmt.
         </p>
         <a
           href="/kostenlos"
           className="mt-8 inline-flex items-center justify-center rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
         >
-          Kostenlos starten
+          Jetzt kostenlos starten
         </a>
       </div>
     </section>

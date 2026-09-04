@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Leseno — Eigene Geschichten mit echten Fakten",
+  title: "Leseno — Deine Geschichten mit echten Fakten",
   description:
-    "Die Leseapp für Kinder von 5 bis 10. Thema wählen, Alter angeben, Stimmung setzen — und beim Lesen echte Fakten entdecken.",
+    "Die Leseapp für dich von 5 bis 10. Wähl dein Thema, gib deine Schulstufe an, setz den Ton — und entdecke beim Lesen echte Fakten.",
 };
 
 export default function RootLayout({
