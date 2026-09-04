@@ -7,6 +7,8 @@
  * FLUX treats prose/numbers as text to paint. Keep prompts purely visual.
  */
 
+import type { StoryMoodId } from "@/lib/stories/options";
+
 export type FluxIllustrationPlan = {
   id: string;
   alt: string;
@@ -19,13 +21,26 @@ export type FluxIllustrationPlan = {
 export type FluxIllustrationContext = {
   topic: string;
   schoolStageLabel: string;
+  /** Short UI label (Lustig / Spannend / Motivierend). */
   moodLabel: string;
+  /** Genre id — drives visual vibe without dumping German prose into FLUX. */
+  moodId: StoryMoodId;
   facts: string[];
   /** Desired illustration count (1–3), derived from text length. */
   imageCount: number;
   /** Optional cast for "Ganz persönlich" illustrations. */
   protagonistName?: string;
   friendNames?: string[];
+};
+
+/** English visual cues aligned with story genre (not only tone). */
+const MOOD_VISUAL_CUES: Record<StoryMoodId, string> = {
+  lustig:
+    "Comedy slapstick vibe: funny mishaps, playful exaggerated expressions, lighthearted clowning around.",
+  spannend:
+    "Kid-safe detective mystery vibe: clues, searching, suspenseful investigation energy, no scary violence.",
+  motivierend:
+    "Motivational coach vibe: determined child overcoming a challenge, triumphant confident energy, can-do spirit.",
 };
 
 const STYLE_PREFIX =
@@ -135,7 +150,7 @@ export function buildFluxIllustrationPlans(
       imagePrompt: [
         STYLE_PREFIX,
         NO_TEXT_BLOCK,
-        `Mood feeling: ${context.moodLabel}.`,
+        `Genre visual vibe (${context.moodLabel}): ${MOOD_VISUAL_CUES[context.moodId]}.`,
         ...castBits,
         spec.sceneLine(theme),
         index > 0

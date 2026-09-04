@@ -22,6 +22,8 @@ export async function loadChildProfileOptionsForUser(
         id: profile.id,
         displayName: profile.displayName.trim() || "Ohne Namen",
         schoolStage: profile.schoolStage,
+        lengthStep: profile.lengthStep,
+        mood: profile.mood,
         hasName,
         hasTopicSeeds,
         personalReady: hasName && hasTopicSeeds,
@@ -29,6 +31,7 @@ export async function loadChildProfileOptionsForUser(
         syllableHelp: profile.syllableHelp,
         wordHighlight: profile.wordHighlight,
         readableAloud: profile.readableAloud,
+        isDefault: profile.isDefault,
       };
     });
   } catch (error) {

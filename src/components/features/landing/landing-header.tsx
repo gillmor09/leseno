@@ -47,7 +47,7 @@ export function LandingHeader({
   adminImpersonating?: boolean;
   testRole?: MembershipRoleId | null;
   isSignedIn?: boolean;
-  /** Membership composer path (`/basis`, `/paket1`, …) when role matches. */
+  /** Membership composer path (`/basis`, `/paket1`, …); falls back to `/basis`. */
   storyHref?: string | null;
 }) {
   const pathname = usePathname();
@@ -138,6 +138,12 @@ export function LandingHeader({
       label: "Prompts",
       description: "Prompt-Stufen, Platzhalter und Modellzuordnung steuern.",
     },
+    {
+      href: "/admin/emails",
+      label: "Auth-E-Mails",
+      description:
+        "Templates für Registrierung und Passwort vergessen (Supabase-Hooks).",
+    },
   ] as const;
 
   return (
@@ -182,28 +188,24 @@ export function LandingHeader({
           <div className="flex items-center gap-2">
             {isSignedIn ? (
               <>
-                {storyHref ? (
-                  <a
-                    href={storyHref}
-                    className={cn(
-                      "inline-flex rounded-full px-3 py-2 text-sm font-bold transition-all duration-200 ease-in-out sm:px-4",
-                      pathname === storyHref
-                        ? "bg-zinc-800 text-white hover:bg-zinc-900"
-                        : "bg-orange-700 text-white hover:bg-orange-800",
-                    )}
-                  >
-                    Geschichte
-                  </a>
-                ) : null}
+                <a
+                  href={storyHref ?? "/basis"}
+                  className={cn(
+                    "inline-flex rounded-full px-3 py-2 text-sm font-bold transition-all duration-200 ease-in-out sm:px-4",
+                    pathname === (storyHref ?? "/basis")
+                      ? "bg-zinc-800 text-white hover:bg-zinc-900"
+                      : "bg-orange-700 text-white hover:bg-orange-800",
+                  )}
+                >
+                  Meine Geschichte
+                </a>
                 <a
                   href="/meine-welt"
                   className={cn(
                     "inline-flex rounded-full px-3 py-2 text-sm font-bold transition-all duration-200 ease-in-out sm:px-4",
                     pathname === "/meine-welt"
                       ? "bg-zinc-800 text-white hover:bg-zinc-900"
-                      : storyHref
-                        ? "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100"
-                        : "bg-orange-700 text-white hover:bg-orange-800",
+                      : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
                   )}
                 >
                   Meine Welt

@@ -37,7 +37,7 @@ export async function requireMembershipPage(
   }
 
   if (isMembershipRoleId(role)) {
-    redirect(storyPathForRole(role) ?? "/");
+    redirect(storyPathForRole(role));
   }
 
   redirect("/");

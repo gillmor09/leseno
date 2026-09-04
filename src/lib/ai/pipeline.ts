@@ -27,6 +27,7 @@ import {
 } from "@/lib/stories/length";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
 import {
+  promptValueForMood,
   STORY_MOODS,
   STORY_SCHOOL_STAGES,
   type StoryMoodId,
@@ -133,6 +134,10 @@ function labelForSchoolStage(stage: StorySchoolStageId): string {
 
 function labelForMood(mood: StoryMoodId): string {
   return STORY_MOODS.find((entry) => entry.id === mood)?.label ?? mood;
+}
+
+function moodPromptValue(mood: StoryMoodId): string {
+  return promptValueForMood(mood);
 }
 
 function labelForLengthStep(stepId: StoryLengthStepId): string {
@@ -409,7 +414,7 @@ export async function generateStoryPipeline(
   const sharedValues = {
     topic: input.topic,
     school_stage: labelForSchoolStage(input.schoolStage),
-    story_mood: labelForMood(input.mood),
+    story_mood: moodPromptValue(input.mood),
     length_step: labelForLengthStep(input.lengthStep),
     fact_count: factCount,
     target_word_count: wordRange,
@@ -497,7 +502,8 @@ export async function generateStoryPipeline(
   const fluxPlans = buildFluxIllustrationPlans({
     topic: input.topic,
     schoolStageLabel: sharedValues.school_stage,
-    moodLabel: sharedValues.story_mood,
+    moodId: input.mood,
+    moodLabel: labelForMood(input.mood),
     facts,
     imageCount,
     protagonistName: input.personal?.protagonistName,

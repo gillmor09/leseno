@@ -1,8 +1,19 @@
 -- Single target word count instead of min/max band.
 -- Renames min_words → anzahl_woerter and drops max_words.
 
-alter table leseno.story_length_limits
-  rename column min_words to anzahl_woerter;
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'leseno'
+      and table_name = 'story_length_limits'
+      and column_name = 'min_words'
+  ) then
+    alter table leseno.story_length_limits
+      rename column min_words to anzahl_woerter;
+  end if;
+end $$;
 
 alter table leseno.story_length_limits
   drop column if exists max_words;
@@ -11,8 +22,14 @@ alter table leseno.story_length_limits
   drop constraint if exists story_length_limits_min_chk;
 
 alter table leseno.story_length_limits
+  drop constraint if exists story_length_limits_anzahl_woerter_chk;
+
+alter table leseno.story_length_limits
   add constraint story_length_limits_anzahl_woerter_chk
   check (anzahl_woerter > 0);
+
+-- Return row shape changed — CREATE OR REPLACE cannot change OUT columns.
+drop function if exists public.list_story_length_limits();
 
 create or replace function public.list_story_length_limits()
 returns table (
@@ -39,6 +56,7 @@ as $$
 $$;
 
 drop function if exists public.update_story_length_limit(uuid, integer, integer, integer);
+drop function if exists public.update_story_length_limit(uuid, integer, integer);
 
 create or replace function public.update_story_length_limit(
   p_id uuid,

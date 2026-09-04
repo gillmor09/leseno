@@ -1,5 +1,6 @@
 /**
  * Fact „Warum?“ / „mehr wissen“ explanations via prompt catalog + gpt-oss-120b.
+ * Independent of story genre/mood: always short, precise, child-friendly.
  */
 
 import { fillPromptTemplate } from "@/lib/ai/assemble";
@@ -13,9 +14,7 @@ import {
 import { loadPromptAdminCatalog } from "@/lib/prompts/repository";
 import { ageGroupForSchoolStage } from "@/lib/stories/length";
 import {
-  STORY_MOODS,
   STORY_SCHOOL_STAGES,
-  type StoryMoodId,
   type StorySchoolStageId,
 } from "@/lib/stories/options";
 import { UserFacingError } from "@/lib/errors/user-facing";
@@ -23,7 +22,6 @@ import { UserFacingError } from "@/lib/errors/user-facing";
 export type FactWhyInput = {
   fact: string;
   schoolStage: StorySchoolStageId;
-  mood: StoryMoodId;
 };
 
 export type FactWhyMoreInput = FactWhyInput & {
@@ -83,15 +81,10 @@ function schoolStageLabel(stage: StorySchoolStageId): string {
   );
 }
 
-function moodLabel(mood: StoryMoodId): string {
-  return STORY_MOODS.find((entry) => entry.id === mood)?.label ?? mood;
-}
-
 function commonPlaceholders(input: FactWhyInput): Record<string, string> {
   return {
     age_group: ageGroupLabelForSchoolStage(input.schoolStage),
     school_stage: schoolStageLabel(input.schoolStage),
-    story_mood: moodLabel(input.mood),
     fact: input.fact.trim(),
   };
 }

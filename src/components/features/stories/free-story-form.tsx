@@ -84,22 +84,31 @@ export function FreeStoryForm({
    */
   childProfiles?: ChildProfileOption[] | null;
 }) {
+  const startupProfile =
+    childProfiles?.find(
+      (profile) => profile.isDefault && profile.personalReady,
+    ) ?? null;
+
   const [topic, setTopic] = useState<StoryTopTopic | "">(
     STORY_TOP_TOPICS[0],
   );
-  /** `null` = Freies lesen (default on page load). Profile = personal story. */
+  /** `null` = Freies lesen (fallback). Default profile wins when ready. */
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
-    null,
+    startupProfile?.id ?? null,
   );
-  const [schoolStage, setSchoolStage] =
-    useState<StorySchoolStageId>("klasse_3");
-  const [lengthStep, setLengthStep] = useState<StoryLengthStepId>("mittel");
-  const [mood, setMood] = useState<StoryMoodId>("spannend");
+  const [schoolStage, setSchoolStage] = useState<StorySchoolStageId>(
+    startupProfile?.schoolStage ?? "klasse_3",
+  );
+  const [lengthStep, setLengthStep] = useState<StoryLengthStepId>(
+    startupProfile?.lengthStep ?? "mittel",
+  );
+  const [mood, setMood] = useState<StoryMoodId>(
+    startupProfile?.mood ?? "spannend",
+  );
   const [output, setOutput] = useState("");
   const [learnedFacts, setLearnedFacts] = useState<string[]>([]);
   const [storySchoolStage, setStorySchoolStage] =
     useState<StorySchoolStageId | null>(null);
-  const [storyMood, setStoryMood] = useState<StoryMoodId | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [selectionExpanded, setSelectionExpanded] = useState(true);
@@ -108,6 +117,8 @@ export function FreeStoryForm({
     missingName: boolean;
     missingTopics: boolean;
   } | null>(null);
+  /** When a profile is selected: length/mood cards hidden until „ändern“. */
+  const [lengthMoodOpen, setLengthMoodOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
@@ -415,7 +426,6 @@ export function FreeStoryForm({
     setFieldError(null);
     setLearnedFacts([]);
     setStorySchoolStage(null);
-    setStoryMood(null);
 
     if (personalMode && !activeProfileId) {
       setFieldError("Bitte wähl ein Kinder-Profil.");
@@ -465,7 +475,6 @@ export function FreeStoryForm({
           .filter(Boolean),
       );
       setStorySchoolStage(schoolStage);
-      setStoryMood(mood);
       setSelectionExpanded(false);
     });
   }
@@ -537,6 +546,7 @@ export function FreeStoryForm({
   function handleProfileSelect(profileId: string | null) {
     if (profileId === null) {
       setSelectedProfileId(null);
+      setLengthMoodOpen(false);
       if (!topic) setTopic(STORY_TOP_TOPICS[0]);
       return;
     }
@@ -552,6 +562,9 @@ export function FreeStoryForm({
     }
     setSelectedProfileId(profileId);
     setSchoolStage(next.schoolStage);
+    setLengthStep(next.lengthStep);
+    setMood(next.mood);
+    setLengthMoodOpen(false);
   }
 
   return (
@@ -562,6 +575,23 @@ export function FreeStoryForm({
           selectedId={selectedProfileId}
           onSelect={handleProfileSelect}
           disabled={isPending}
+          lengthLabel={
+            personalMode
+              ? (lengthCatalog.steps.find((step) => step.id === lengthStep)
+                  ?.label ?? lengthStep)
+              : null
+          }
+          moodLabel={
+            personalMode
+              ? (STORY_MOODS.find((item) => item.id === mood)?.label ?? mood)
+              : null
+          }
+          lengthMoodOpen={lengthMoodOpen}
+          onToggleLengthMood={
+            personalMode
+              ? () => setLengthMoodOpen((open) => !open)
+              : undefined
+          }
         />
       ) : null}
 
@@ -737,44 +767,54 @@ export function FreeStoryForm({
               </section>
             ) : null}
 
-            <div className={selectionCardClass}>
-              <StoryLengthSlider
-                catalog={lengthCatalog}
-                value={lengthStep}
-                onChange={setLengthStep}
-              />
-            </div>
+            {!personalMode || lengthMoodOpen ? (
+              <>
+                <div className={selectionCardClass}>
+                  {personalMode ? (
+                    <p className="mb-4 text-xs font-semibold text-zinc-500">
+                      Nur für diese Geschichte — Profil-Standard bleibt
+                      unverändert.
+                    </p>
+                  ) : null}
+                  <StoryLengthSlider
+                    catalog={lengthCatalog}
+                    value={lengthStep}
+                    onChange={setLengthStep}
+                  />
+                </div>
 
-            <section className={selectionCardClass}>
-              <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                Art der Geschichte
-              </p>
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {STORY_MOODS.map((item) => {
-                  const Icon = moodIcons[item.id];
-                  const active = mood === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => setMood(item.id)}
-                      className={cn(
-                        "flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-extrabold ring-1 transition-all duration-200 ease-in-out",
-                        active
-                          ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
-                          : "bg-gray-100 text-zinc-950 ring-zinc-950/10 hover:bg-white",
-                      )}
-                    >
-                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-orange-700">
-                        <Icon className="size-3.5" aria-hidden />
-                      </span>
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+                <section className={selectionCardClass}>
+                  <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+                    Art der Geschichte
+                  </p>
+                  <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    {STORY_MOODS.map((item) => {
+                      const Icon = moodIcons[item.id];
+                      const active = mood === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          disabled={isPending}
+                          onClick={() => setMood(item.id)}
+                          className={cn(
+                            "flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-extrabold ring-1 transition-all duration-200 ease-in-out",
+                            active
+                              ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                              : "bg-gray-100 text-zinc-950 ring-zinc-950/10 hover:bg-white",
+                          )}
+                        >
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-orange-700">
+                            <Icon className="size-3.5" aria-hidden />
+                          </span>
+                          {item.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              </>
+            ) : null}
 
             {fieldError ? (
               <p className="text-sm font-semibold text-orange-800">
@@ -914,7 +954,6 @@ export function FreeStoryForm({
             <StoryFactsList
               facts={learnedFacts}
               schoolStage={storySchoolStage ?? schoolStage}
-              mood={storyMood ?? mood}
             />
           ) : null}
         </div>

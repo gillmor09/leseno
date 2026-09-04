@@ -2,6 +2,7 @@
 
 /**
  * Story composer card: freies Lesen (default) or a child profile.
+ * With a profile selected: shows length/mood defaults + link to edit them.
  */
 
 import { Users } from "lucide-react";
@@ -14,6 +15,13 @@ type ChildProfilePickerCardProps = {
   selectedId: string | null;
   onSelect: (profileId: string | null) => void;
   disabled?: boolean;
+  /** Current length label when a profile is selected. */
+  lengthLabel?: string | null;
+  /** Current mood label when a profile is selected. */
+  moodLabel?: string | null;
+  /** Whether length/mood editors below are expanded. */
+  lengthMoodOpen?: boolean;
+  onToggleLengthMood?: () => void;
 };
 
 /**
@@ -24,6 +32,10 @@ export function ChildProfilePickerCard({
   selectedId,
   onSelect,
   disabled = false,
+  lengthLabel = null,
+  moodLabel = null,
+  lengthMoodOpen = false,
+  onToggleLengthMood,
 }: ChildProfilePickerCardProps) {
   if (profiles.length === 0) {
     return (
@@ -57,6 +69,8 @@ export function ChildProfilePickerCard({
   }
 
   const freeReading = selectedId === null;
+  const showLengthMoodHint =
+    !freeReading && Boolean(lengthLabel && moodLabel && onToggleLengthMood);
 
   return (
     <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
@@ -110,10 +124,35 @@ export function ChildProfilePickerCard({
                   )}
                 >
                   {profile.displayName}
+                  {profile.isDefault ? " · Standard" : ""}
                 </button>
               );
             })}
           </div>
+
+          {showLengthMoodHint ? (
+            <div className="mt-4 border-t border-zinc-950/10 pt-4">
+              <p className="text-sm leading-relaxed text-zinc-600">
+                Textlänge & Art:{" "}
+                <span className="font-extrabold text-zinc-950">
+                  {lengthLabel}
+                </span>
+                {" · "}
+                <span className="font-extrabold text-zinc-950">{moodLabel}</span>
+                <span className="text-zinc-500"> (aus dem Profil)</span>
+              </p>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={onToggleLengthMood}
+                className="mt-2 text-sm font-bold text-orange-800 underline-offset-2 hover:underline disabled:opacity-50"
+              >
+                {lengthMoodOpen
+                  ? "Auswahl einklappen"
+                  : "Textlänge oder Art ändern"}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </section>

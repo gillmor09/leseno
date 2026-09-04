@@ -29,12 +29,12 @@ export type UserAdminRow = {
   createdAt: string;
 };
 
-/** Story route for a membership role, or null for admin / unknown. */
+/** Story route for a membership role; defaults to `/basis` for admin / unknown. */
 export function storyPathForRole(
   role: string | null | undefined,
-): string | null {
+): string {
   const match = MEMBERSHIP_ROLE_OPTIONS.find((entry) => entry.id === role);
-  return match?.path ?? null;
+  return match?.path ?? "/basis";
 }
 
 export function isMembershipRoleId(value: string): value is MembershipRoleId {

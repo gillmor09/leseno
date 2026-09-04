@@ -119,7 +119,7 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     systemTemplate:
       "Du bist ein sorgfältiger Recherche-Assistent für Bildungsinhalte. Gib ausschließlich sachlich korrekte Aussagen zurück. Halte sie präzise, altersgerecht und konkret.",
     userTemplate:
-      "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nGewünschte Faktenanzahl: {{fact_count}}\nGib {{fact_count}} kurze Fakten zurück, die korrekt, spezifisch und gut für eine Kindergeschichte verwendbar sind. Keine Duplikate. Wenn ein Fakt unsicher ist, lass ihn weg.",
+      "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nArt der Geschichte: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nGewünschte Faktenanzahl: {{fact_count}}\nGib {{fact_count}} kurze Fakten zurück, die korrekt, spezifisch und gut für eine Kindergeschichte verwendbar sind. Keine Duplikate. Wenn ein Fakt unsicher ist, lass ihn weg.",
     placeholders: [
       "topic",
       "school_stage",
@@ -142,7 +142,7 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     systemTemplate:
       "Du bist ein sorgfältiger Recherche-Assistent für Bildungsinhalte. Gib ausschließlich sachlich korrekte Aussagen zurück. Halte sie präzise, altersgerecht und konkret. Der persönliche Kern ist ein Interesse oder ein Wunsch („Das möchte ich mal erleben“) — recherchiere dazu echte Fakten, keine erfundenen.",
     userTemplate:
-      "{{personal_block}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nGewünschte Faktenanzahl: {{fact_count}}\nGib {{fact_count}} kurze Fakten zurück, die zum persönlichen Kern („{{topic}}“) passen, korrekt, spezifisch und gut für eine Kindergeschichte mit der Hauptfigur {{protagonist_name}} verwendbar sind. Keine Duplikate. Wenn ein Fakt unsicher ist, lass ihn weg.",
+      "{{personal_block}}\nSchulstufe: {{school_stage}}\nArt der Geschichte: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nGewünschte Faktenanzahl: {{fact_count}}\nGib {{fact_count}} kurze Fakten zurück, die zum persönlichen Kern („{{topic}}“) passen, korrekt, spezifisch und gut für eine Kindergeschichte mit der Hauptfigur {{protagonist_name}} verwendbar sind. Keine Duplikate. Wenn ein Fakt unsicher ist, lass ihn weg.",
     placeholders: [
       "personal_block",
       "topic",
@@ -165,9 +165,9 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 2,
     modelId: "story-default",
     systemTemplate:
-      "Du schreibst warmherzige, fantasievolle Geschichten auf Deutsch für Kinder. Baue die Fakten natürlich in die Geschichte ein und achte darauf, dass der Ton zur gewünschten Stimmung passt. Die Geschichte soll in etwa die angegebene Ziel-Wortzahl erreichen (nicht deutlich kürzer oder länger). Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
+      "Du schreibst fantasievolle Geschichten auf Deutsch für Kinder. Die Vorgabe „Art der Geschichte“ bestimmt nicht nur den Ton, sondern Genre, Handlungsbogen und Erzählform — halte dich strikt an die mitgegebene Genre-Beschreibung. Baue die Fakten natürlich in die Geschichte ein. Die Geschichte soll in etwa die angegebene Ziel-Wortzahl erreichen (nicht deutlich kürzer oder länger). Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
     userTemplate:
-      "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortzahl: {{target_word_count}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. Die Geschichte soll ungefähr die Ziel-Wortzahl erreichen. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
+      "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nArt der Geschichte: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortzahl: {{target_word_count}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. Folge strikt der Art der Geschichte (Genre und Handlungsbogen). Die Geschichte soll ungefähr die Ziel-Wortzahl erreichen. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
     placeholders: [
       "topic",
       "school_stage",
@@ -191,9 +191,9 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 12,
     modelId: "story-default",
     systemTemplate:
-      "Du schreibst warmherzige, fantasievolle Geschichten auf Deutsch für Kinder. Die genannte Hauptfigur ist die zentrale Protagonist:in und behält genau diesen Namen. Freundesnamen aus der Liste darfst du als Freund:innen einbauen. Baue die Fakten natürlich ein. Die Geschichte soll in etwa die angegebene Ziel-Wortzahl erreichen (nicht deutlich kürzer oder länger). Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
+      "Du schreibst fantasievolle Geschichten auf Deutsch für Kinder. Die genannte Hauptfigur ist die zentrale Protagonist:in und behält genau diesen Namen. Freundesnamen aus der Liste darfst du als Freund:innen einbauen. Die Vorgabe „Art der Geschichte“ bestimmt nicht nur den Ton, sondern Genre, Handlungsbogen und Erzählform — halte dich strikt an die mitgegebene Genre-Beschreibung. Baue die Fakten natürlich ein. Die Geschichte soll in etwa die angegebene Ziel-Wortzahl erreichen (nicht deutlich kürzer oder länger). Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
     userTemplate:
-      "{{personal_block}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortzahl: {{target_word_count}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. Die Geschichte soll ungefähr die Ziel-Wortzahl erreichen. {{protagonist_name}} ist die Hauptfigur. Weitere Namen falls sinnvoll: {{friends_list}}. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
+      "{{personal_block}}\nSchulstufe: {{school_stage}}\nArt der Geschichte: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortzahl: {{target_word_count}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. Folge strikt der Art der Geschichte (Genre und Handlungsbogen). Die Geschichte soll ungefähr die Ziel-Wortzahl erreichen. {{protagonist_name}} ist die Hauptfigur. Weitere Namen falls sinnvoll: {{friends_list}}. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
     placeholders: [
       "personal_block",
       "topic",
@@ -242,14 +242,14 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 40,
     modelId: "fact-why-default",
     systemTemplate:
-      "Du bist ein neugieriger Wissens-Coach für Kinder. Erkläre kurz, präzise und unterhaltsam, WARUM ein Fakt stimmt und was dahinter steckt. Passe Wortschatz und Ton an Alter, Schulstufe und Stimmung an. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch in 2–4 kurzen Absätzen.",
+      "Du bist ein klarer Wissens-Erklärer für Kinder. Erkläre kurz, präzise und kindgerecht, WARUM ein Fakt stimmt und was dahinter steckt. Passe nur den Wortschatz an Alter und Schulstufe an — nicht an eine Geschichtsart, Stimmung oder Genre. Neutral und sachlich, ohne Witze, ohne Krimi-Spannung, ohne Motivationscoach-Ton. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch in 2–4 kurzen Absätzen.",
     userTemplate:
-      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\nStimmung: {{story_mood}}\n\nFakt:\n{{fact}}\n\nErkläre den Hintergrund: Warum ist das so? Was steckt dahinter?",
-    placeholders: ["age_group", "school_stage", "story_mood", "fact"],
+      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\n\nFakt:\n{{fact}}\n\nErkläre den Hintergrund: Warum ist das so? Was steckt dahinter? Kurz, präzise und kindgerecht.",
+    placeholders: ["age_group", "school_stage", "fact"],
     assemblyNotes:
-      "Gestartet vom „Warum?“-Button in der Faktenliste. Modell: fact-why-default (gpt-oss-120b).",
+      "Gestartet vom „Warum?“-Button. Unabhängig von Art der Geschichte. Modell: fact-why-default (gpt-oss-120b).",
     outputContract:
-      "Kurzer Fließtext auf Deutsch (2–4 Absätze), ohne Markdown-Überschriften.",
+      "Kurzer, präziser Fließtext auf Deutsch (2–4 Absätze), kindgerecht, ohne Markdown-Überschriften.",
   },
   {
     id: "fallback-fact-why-more",
@@ -260,20 +260,14 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 41,
     modelId: "fact-why-default",
     systemTemplate:
-      "Du bist ein neugieriger Wissens-Coach für Kinder. Liefere weiterführende Informationen: kurz, präzise, unterhaltsam. Nutze Fakt und bisherigen Hintergrund als Kontext — wiederhole nicht einfach denselben Text. Passe Wortschatz und Ton an Alter, Schulstufe und Stimmung an. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch in 2–5 kurzen Absätzen.",
+      "Du bist ein klarer Wissens-Erklärer für Kinder. Liefere weiterführende Informationen: kurz, präzise und kindgerecht. Nutze Fakt und bisherigen Hintergrund als Kontext — wiederhole nicht einfach denselben Text. Passe nur den Wortschatz an Alter und Schulstufe an — nicht an eine Geschichtsart, Stimmung oder Genre. Neutral und sachlich, ohne Witze, ohne Krimi-Spannung, ohne Motivationscoach-Ton. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch in 2–5 kurzen Absätzen.",
     userTemplate:
-      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\nStimmung: {{story_mood}}\n\nFakt:\n{{fact}}\n\nBisheriger Hintergrund:\n{{background}}\n\nErkläre jetzt weiterführende Details und Zusammenhänge, die noch spannender machen, warum das so ist.",
-    placeholders: [
-      "age_group",
-      "school_stage",
-      "story_mood",
-      "fact",
-      "background",
-    ],
+      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\n\nFakt:\n{{fact}}\n\nBisheriger Hintergrund:\n{{background}}\n\nErkläre weiterführende Details und Zusammenhänge. Kurz, präzise und kindgerecht.",
+    placeholders: ["age_group", "school_stage", "fact", "background"],
     assemblyNotes:
-      "Gestartet vom Button „Ich will mehr wissen“ im Warum-Dialog. Kontext: Fakt + Hintergrund.",
+      "Gestartet vom Button „Ich will mehr wissen“. Unabhängig von Art der Geschichte. Kontext: Fakt + Hintergrund.",
     outputContract:
-      "Kurzer Fließtext auf Deutsch (2–5 Absätze), ohne Markdown-Überschriften.",
+      "Kurzer, präziser Fließtext auf Deutsch (2–5 Absätze), kindgerecht, ohne Markdown-Überschriften.",
   },
 ];
 

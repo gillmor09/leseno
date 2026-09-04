@@ -44,7 +44,6 @@ export async function explainFactWhyAction(
     const text = await explainFactWhy({
       fact: parsed.data.fact,
       schoolStage: parsed.data.schoolStage,
-      mood: parsed.data.mood,
     });
     return { success: true, data: { text } };
   } catch (error) {
@@ -84,7 +83,6 @@ export async function explainFactWhyMoreAction(
     const text = await explainFactWhyMore({
       fact: parsed.data.fact,
       schoolStage: parsed.data.schoolStage,
-      mood: parsed.data.mood,
       background: parsed.data.background,
     });
     return { success: true, data: { text } };

@@ -37,15 +37,24 @@ export function MyWorldManager({
 
   function handleSaved(saved: ChildProfile) {
     setProfiles((current) => {
-      const exists = current.some((profile) => profile.id === saved.id);
+      const withClearedDefault = saved.isDefault
+        ? current.map((profile) =>
+            profile.id === saved.id
+              ? profile
+              : { ...profile, isDefault: false },
+          )
+        : current;
+      const exists = withClearedDefault.some(
+        (profile) => profile.id === saved.id,
+      );
       if (exists) {
-        return current.map((profile) =>
+        return withClearedDefault.map((profile) =>
           profile.id === saved.id
             ? { ...profile, ...saved, sortOrder: profile.sortOrder }
             : profile,
         );
       }
-      return [...current, saved];
+      return [...withClearedDefault, saved];
     });
     setActiveTab(saved.id);
   }
@@ -83,6 +92,11 @@ export function MyWorldManager({
                 )}
               >
                 {profile.displayName.trim() || "Ohne Namen"}
+                {profile.isDefault ? (
+                  <span className="ml-1 text-[0.65rem] font-extrabold tracking-wide text-orange-800 uppercase">
+                    Standard
+                  </span>
+                ) : null}
               </button>
             );
           })}
@@ -136,6 +150,8 @@ export function MyWorldManager({
           initialFields={{
             displayName: activeProfile.displayName,
             schoolStage: activeProfile.schoolStage,
+            lengthStep: activeProfile.lengthStep,
+            mood: activeProfile.mood,
             friends: activeProfile.friends,
             interests: activeProfile.interests,
             experiences: activeProfile.experiences,
@@ -144,6 +160,7 @@ export function MyWorldManager({
             syllableHelp: activeProfile.syllableHelp,
             wordHighlight: activeProfile.wordHighlight,
             readableAloud: activeProfile.readableAloud,
+            isDefault: activeProfile.isDefault,
           }}
           onSaved={handleSaved}
           onDeleted={handleDeleted}

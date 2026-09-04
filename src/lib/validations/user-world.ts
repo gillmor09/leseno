@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { STORY_SCHOOL_STAGES } from "@/lib/stories/options";
+import { STORY_LENGTH_STEP_IDS } from "@/lib/stories/length";
+import { STORY_MOODS, STORY_SCHOOL_STAGES } from "@/lib/stories/options";
 
 const listItemSchema = z
   .string()
@@ -12,6 +13,16 @@ const schoolStageIds = STORY_SCHOOL_STAGES.map((stage) => stage.id) as [
   ...(typeof STORY_SCHOOL_STAGES)[number]["id"][],
 ];
 
+const lengthStepIds = [...STORY_LENGTH_STEP_IDS] as [
+  (typeof STORY_LENGTH_STEP_IDS)[number],
+  ...(typeof STORY_LENGTH_STEP_IDS)[number][],
+];
+
+const moodIds = STORY_MOODS.map((mood) => mood.id) as [
+  (typeof STORY_MOODS)[number]["id"],
+  ...(typeof STORY_MOODS)[number]["id"][],
+];
+
 export const childProfileFieldsSchema = z.object({
   displayName: z
     .string()
@@ -20,6 +31,12 @@ export const childProfileFieldsSchema = z.object({
     .max(80, "Name ist zu lang (max. 80 Zeichen)."),
   schoolStage: z.enum(schoolStageIds, {
     message: "Bitte eine gültige Schulstufe wählen.",
+  }),
+  lengthStep: z.enum(lengthStepIds, {
+    message: "Bitte eine gültige Textlänge wählen.",
+  }),
+  mood: z.enum(moodIds, {
+    message: "Bitte eine gültige Art der Geschichte wählen.",
   }),
   friends: z.array(listItemSchema).max(50, "Maximal 50 Freunde."),
   interests: z.array(listItemSchema).max(50, "Maximal 50 Interessen."),
@@ -33,6 +50,7 @@ export const childProfileFieldsSchema = z.object({
   syllableHelp: z.boolean(),
   wordHighlight: z.boolean(),
   readableAloud: z.boolean(),
+  isDefault: z.boolean(),
 });
 
 export const saveChildProfileSchema = childProfileFieldsSchema.extend({

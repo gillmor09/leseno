@@ -8,13 +8,12 @@
 import { useState } from "react";
 import { Lightbulb } from "lucide-react";
 import { FactWhyDialog } from "@/components/features/stories/fact-why-dialog";
-import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
+import type { StorySchoolStageId } from "@/lib/stories/options";
 import { cn } from "@/lib/utils";
 
 type StoryFactsListProps = {
   facts: string[];
   schoolStage: StorySchoolStageId;
-  mood: StoryMoodId;
   /** Larger type for story result cards; compact for landing. */
   density?: "story" | "landing";
   className?: string;
@@ -23,12 +22,11 @@ type StoryFactsListProps = {
 };
 
 /**
- * Numbered fact rows + Warum button; dialog uses school stage + mood for prompts.
+ * Numbered fact rows + Warum button; dialog uses school stage for age-appropriate wording.
  */
 export function StoryFactsList({
   facts,
   schoolStage,
-  mood,
   density = "story",
   className,
   headingId = "learned-facts-heading",
@@ -115,7 +113,6 @@ export function StoryFactsList({
         open={Boolean(activeFact)}
         fact={activeFact ?? ""}
         schoolStage={schoolStage}
-        mood={mood}
         onClose={() => setActiveFact(null)}
       />
     </>

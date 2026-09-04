@@ -3,13 +3,13 @@ import {
   BookOpen,
   Check,
   BicepsFlexed,
-  Heart,
   HelpCircle,
   ImageIcon,
   Lightbulb,
   Smile,
   Sparkles,
   Target,
+  Users,
   Volume2,
   Zap,
 } from "lucide-react";
@@ -33,7 +33,7 @@ const steps = [
   {
     number: "03",
     title: "Dreh am Ton",
-    text: "Lustig, spannend oder motivierend: Du bestimmst das Gefühl. Mitten drin wartet echtes Wissen zum Staunen.",
+    text: "Lustig, spannend oder motivierend: Du wählst die Art der Geschichte. Mitten drin wartet echtes Wissen zum Staunen.",
     icon: BookOpen,
   },
 ] as const;
@@ -41,7 +41,7 @@ const steps = [
 const moods = [
   {
     title: "Lustig",
-    text: "Dreh den Spaß auf! Kichere dich durch die Seiten — und nimm trotzdem etwas mit, das stimmt.",
+    text: "Komödie mit Klamauk: Missgeschicke, Quatsch und Lacher — und trotzdem echtes Wissen dazwischen.",
     image: "/landing/mood-lustig.webp",
     imageAlt:
       "Kind lacht über ein aufgeschlagenes Buch, aus dem der Leseno-Vogel steigt",
@@ -49,7 +49,7 @@ const moods = [
   },
   {
     title: "Spannend",
-    text: "Dreh den Nervenkitzel hoch! Fang an — und komm nicht mehr los. Ohne Angst, mit echten Fakten im Gepäck.",
+    text: "Detektivgeschichte mit Rätsel, Spuren und Auflösung — kindgerecht spannend, mit echten Fakten im Gepäck.",
     image: "/landing/mood-spannend.webp",
     imageAlt:
       "Kind liest gebannt, während der Leseno-Vogel und ein Blitz aus dem Buch aufsteigen",
@@ -57,7 +57,7 @@ const moods = [
   },
   {
     title: "Motivierend",
-    text: "Dreh den Mut auf! Hol dir Power für den Alltag — und Wissen, das dich noch lange begleitet.",
+    text: "Wie ein Motivationscoach: Wenn du willst, schaffst du alles — Mut, Durchhalten und Wissen für danach.",
     image: "/landing/mood-motivierend.webp",
     imageAlt:
       "Kind betrachtet zuversichtlich ein Buch, aus dem der leuchtende Leseno-Vogel steigt",
@@ -92,9 +92,9 @@ const strengths = [
     icon: Volume2,
   },
   {
-    title: "Meine Welt",
-    text: "Kind, Freunde, Orte und Hobbys merken — und ganz persönliche Geschichten starten.",
-    icon: Heart,
+    title: "Eine Familie, ein Konto",
+    text: "Leg für jedes Kind ein eigenes Profil an — mit Lesewünschen, Erlebnissen und Freunden. Alles unter einem Konto.",
+    icon: Users,
   },
 ] as const;
 
@@ -103,7 +103,8 @@ const parentPoints = [
   "Tiefer eintauchen: Mit „Warum?“ und „Ich will mehr wissen“ folgt Neugier dem eigenen Tempo.",
   "Altersgerecht: Sprache und Länge folgen der Schulstufe, nicht einem Einheitsmaß.",
   "Lesepartner: Silbenhilfe und Vorlesen unterstützen, wenn’s mal hakt.",
-  "Persönlich: Mit „Meine Welt“ wird euer Alltag zur Geschichte.",
+  "Familie unter einem Konto: Jedes Kind bekommt ein eigenes Profil mit Lesewünschen und Erlebnissen — ihr verwaltet alles zentral.",
+  "Persönlich: Mit „Meine Welt“ wird der Alltag jedes Kindes zur eigenen Geschichte.",
   "Risikofrei starten: Erst ausprobieren, dann entscheiden.",
 ] as const;
 
@@ -391,7 +392,6 @@ function FactsSection() {
         <StoryFactsList
           facts={[...landingDemoFacts]}
           schoolStage="klasse_3"
-          mood="spannend"
           density="landing"
           showHeader={false}
         />
@@ -452,7 +452,7 @@ function TrySection() {
                   "Echtes Wissen zum Staunen im Text",
                   "„Warum?“ und „Ich will mehr wissen“",
                   "Silbenhilfe und Vorlesen",
-                  "Optional: ganz persönlich mit Meine Welt",
+                  "Optional: Familie mit Meine Welt — mehrere Profile, ein Konto",
                 ].map((line) => (
                   <li
                     key={line}
@@ -500,7 +500,9 @@ function ParentsSection() {
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
             Kinder wollen Abenteuer. Ihr wollt Fortschritt und Substanz. Leseno
             verbindet beides: eigene Geschichten, passende Sprache, Wissen im
-            Text — plus Hilfen, wenn das Lesen noch Übung braucht.
+            Text — plus Hilfen, wenn das Lesen noch Übung braucht. Und wenn mehr
+            als ein Kind liest: unter einem Konto legt ihr für jedes Kind ein
+            Profil mit eigenen Lesewünschen und Erfahrungen an.
           </p>
           <ul className="mt-6 space-y-3">
             {parentPoints.map((point) => (
@@ -596,7 +598,7 @@ function PricingSection() {
                   className="mt-0.5 size-4 shrink-0 text-yellow-400"
                   aria-hidden
                 />
-                Lieblingsthemen und Meine Welt
+                Lieblingsthemen und Familien-Profile in Meine Welt
               </li>
               <li className="flex gap-2">
                 <Check

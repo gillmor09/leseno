@@ -17,13 +17,12 @@ import {
   BotGuardFields,
   useBotGuardFields,
 } from "@/components/features/security/bot-guard-fields";
-import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
+import type { StorySchoolStageId } from "@/lib/stories/options";
 
 type FactWhyDialogProps = {
   open: boolean;
   fact: string;
   schoolStage: StorySchoolStageId;
-  mood: StoryMoodId;
   onClose: () => void;
 };
 
@@ -41,7 +40,6 @@ export function FactWhyDialog({
   open,
   fact,
   schoolStage,
-  mood,
   onClose,
 }: FactWhyDialogProps) {
   const botGuard = useBotGuardFields();
@@ -84,7 +82,6 @@ export function FactWhyDialog({
       const result = await explainFactWhyAction({
         fact,
         schoolStage,
-        mood,
         ...botGuard.getBotGuardPayload(),
       });
       if (!result.success || !result.data) {
@@ -95,7 +92,7 @@ export function FactWhyDialog({
       setBackground(result.data.text);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per open/fact
-  }, [open, fact, schoolStage, mood]);
+  }, [open, fact, schoolStage]);
 
   function handleMore() {
     if (!background || isLoadingMore || more) return;
@@ -103,7 +100,6 @@ export function FactWhyDialog({
       const result = await explainFactWhyMoreAction({
         fact,
         schoolStage,
-        mood,
         background,
         ...botGuard.getBotGuardPayload(),
       });

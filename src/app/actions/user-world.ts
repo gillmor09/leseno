@@ -39,6 +39,8 @@ export async function saveChildProfileAction(
       fields: {
         displayName: parsed.data.displayName,
         schoolStage: parsed.data.schoolStage,
+        lengthStep: parsed.data.lengthStep,
+        mood: parsed.data.mood,
         friends: parsed.data.friends,
         interests: parsed.data.interests,
         experiences: parsed.data.experiences,
@@ -47,6 +49,7 @@ export async function saveChildProfileAction(
         syllableHelp: parsed.data.syllableHelp,
         wordHighlight: parsed.data.wordHighlight,
         readableAloud: parsed.data.readableAloud,
+        isDefault: parsed.data.isDefault,
       },
     });
     revalidateWorldPaths();

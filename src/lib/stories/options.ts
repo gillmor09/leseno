@@ -14,13 +14,41 @@ export const STORY_SCHOOL_STAGES = [
 
 export type StorySchoolStageId = (typeof STORY_SCHOOL_STAGES)[number]["id"];
 
+/**
+ * „Art der Geschichte“ is a genre choice, not only tone.
+ * `genreBrief` is injected into story prompts via `promptValueForMood`.
+ */
 export const STORY_MOODS = [
-  { id: "lustig", label: "Lustig" },
-  { id: "spannend", label: "Spannend" },
-  { id: "motivierend", label: "Motivierend" },
+  {
+    id: "lustig",
+    label: "Lustig",
+    genreBrief:
+      "Schreibe eine spaßige Kindergeschichte als Komödie mit Klamauk: Missgeschicke, Quatsch-Dialoge, witzige Situationen und Lacher. Kindgerecht, ohne gemeinen Humor.",
+  },
+  {
+    id: "spannend",
+    label: "Spannend",
+    genreBrief:
+      "Schreibe die Geschichte als Detektivgeschichte bzw. kindgerechten Krimi: Rätsel, Spuren, Verdacht, Spannung und eine klare Auflösung. Ohne echte Gewalt und ohne Angstmachen.",
+  },
+  {
+    id: "motivierend",
+    label: "Motivierend",
+    genreBrief:
+      "Schreibe die Geschichte im Stil eines Motivationscoaches: die Hauptfigur wächst an Herausforderungen, glaubt an sich („Wenn du willst, schaffst du alles“), übt durch und schafft es. Kraftvoll und ermutigend, nicht belehrend.",
+  },
 ] as const;
 
 export type StoryMoodId = (typeof STORY_MOODS)[number]["id"];
+
+/** Label + genre brief for LLM placeholders (`{{story_mood}}`). */
+export function promptValueForMood(mood: StoryMoodId): string {
+  const entry = STORY_MOODS.find((item) => item.id === mood);
+  if (!entry) {
+    return mood;
+  }
+  return `${entry.label} — ${entry.genreBrief}`;
+}
 
 /** Top-10 theme chips on `/basis` (no free-text topic). */
 export const STORY_TOP_TOPICS = [

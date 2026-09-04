@@ -13,8 +13,12 @@ import {
 } from "@/app/actions/user-world";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import type { ChildProfile, ChildProfileFields } from "@/lib/world/catalog";
+import { STORY_LENGTH_STEPS } from "@/lib/stories/length";
+import type { StoryLengthStepId } from "@/lib/stories/length";
 import {
+  STORY_MOODS,
   STORY_SCHOOL_STAGES,
+  type StoryMoodId,
   type StorySchoolStageId,
 } from "@/lib/stories/options";
 import { cn } from "@/lib/utils";
@@ -132,6 +136,8 @@ export function MyWorldProfileEditor({
       id: result.data.id,
       displayName: fields.displayName.trim(),
       schoolStage: fields.schoolStage,
+      lengthStep: fields.lengthStep,
+      mood: fields.mood,
       friends: fields.friends,
       interests: fields.interests,
       experiences: fields.experiences,
@@ -140,6 +146,7 @@ export function MyWorldProfileEditor({
       syllableHelp: fields.syllableHelp,
       wordHighlight: fields.wordHighlight,
       readableAloud: fields.readableAloud,
+      isDefault: fields.isDefault,
       sortOrder: 0,
     });
   }
@@ -185,6 +192,40 @@ export function MyWorldProfileEditor({
             className="mt-3 w-full rounded-2xl bg-gray-100 px-4 py-3 text-base font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
             placeholder="z. B. Leo"
           />
+          <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl bg-gray-100 px-4 py-3 ring-1 ring-zinc-950/10">
+            <div>
+              <p className="text-sm font-extrabold text-zinc-950">
+                Standardprofil
+              </p>
+              <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 sm:text-sm">
+                Die Geschichten-Seite startet mit diesem Profil statt mit
+                „Freies lesen“. Es kann nur ein Standard geben.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={fields.isDefault}
+              onClick={() =>
+                setFields((current) => ({
+                  ...current,
+                  isDefault: !current.isDefault,
+                }))
+              }
+              className={cn(
+                "relative h-8 w-14 shrink-0 rounded-full transition-all duration-200 ease-in-out",
+                fields.isDefault ? "bg-yellow-400" : "bg-zinc-300",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-1 left-1 size-6 rounded-full bg-white shadow transition-all duration-200 ease-in-out",
+                  fields.isDefault && "translate-x-6",
+                )}
+              />
+              <span className="sr-only">Standardprofil</span>
+            </button>
+          </div>
         </section>
 
         <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
@@ -219,6 +260,84 @@ export function MyWorldProfileEditor({
                   )}
                 >
                   {stage.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
+          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+            Textlänge
+          </p>
+          <p className="mt-1 text-sm text-zinc-600">
+            Standard für Geschichten mit diesem Profil — auf der Story-Seite
+            noch änderbar.
+          </p>
+          <div
+            className="mt-4 flex flex-wrap gap-2"
+            role="group"
+            aria-label="Textlänge"
+          >
+            {STORY_LENGTH_STEPS.map((step) => {
+              const active = fields.lengthStep === step.id;
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() =>
+                    setFields((current) => ({
+                      ...current,
+                      lengthStep: step.id as StoryLengthStepId,
+                    }))
+                  }
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
+                    active
+                      ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                      : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
+                  )}
+                >
+                  {step.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
+          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+            Art der Geschichte
+          </p>
+          <p className="mt-1 text-sm text-zinc-600">
+            Standard-Stimmung für dieses Profil — auf der Story-Seite noch
+            änderbar.
+          </p>
+          <div
+            className="mt-4 flex flex-wrap gap-2"
+            role="group"
+            aria-label="Art der Geschichte"
+          >
+            {STORY_MOODS.map((item) => {
+              const active = fields.mood === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() =>
+                    setFields((current) => ({
+                      ...current,
+                      mood: item.id as StoryMoodId,
+                    }))
+                  }
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
+                    active
+                      ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                      : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
+                  )}
+                >
+                  {item.label}
                 </button>
               );
             })}

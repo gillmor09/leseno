@@ -30,6 +30,7 @@ Personal mode: topic/cast resolved **server-side** from the selected `child_prof
 - Session: Supabase Auth; role in `app_metadata.role` (`admin`, `basis`, `paket1`–`paket3`; 1:1 with `/basis`…`/paket3`)  
 - `/admin/*`: `src/app/admin/layout.tsx` + `denyUnlessAdmin()` on write actions  
 - Prompt/model catalogs: **service role only** (not anon) — see migration `20260904120000_restrict_prompt_catalog_rpc.sql`
+- Auth emails: templates in `leseno.auth_email_templates`; hooks at `/hooks/auth/send-email` (unified), `/hooks/auth/register` (signup), `/hooks/auth/forget` (recovery). Env: `AUTH_EMAIL_HOOK_SECRET`, `SMTP_*`.
 
 ## Meine Welt
 

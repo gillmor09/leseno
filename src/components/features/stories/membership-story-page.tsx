@@ -42,7 +42,7 @@ export async function MembershipStoryPage({
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             Nimm ein Top-Thema oder schalte „Ganz persönlich“ ein. Dann stell
-            Schulstufe und Textlänge ein — lustig, spannend oder motivierend.
+            Schulstufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte.
           </p>
           <div className="mt-10">
             <FreeStoryForm

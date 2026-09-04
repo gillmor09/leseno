@@ -3,8 +3,12 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
-import type { StorySchoolStageId } from "@/lib/stories/options";
-import { STORY_SCHOOL_STAGES } from "@/lib/stories/options";
+import {
+  STORY_LENGTH_STEP_IDS,
+  type StoryLengthStepId,
+} from "@/lib/stories/length";
+import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
+import { STORY_MOODS, STORY_SCHOOL_STAGES } from "@/lib/stories/options";
 import type {
   ChildProfile,
   ChildProfileFields,
@@ -13,6 +17,8 @@ import type {
 const SCHOOL_STAGE_IDS = new Set(
   STORY_SCHOOL_STAGES.map((stage) => stage.id),
 );
+const LENGTH_STEP_IDS = new Set<string>(STORY_LENGTH_STEP_IDS);
+const MOOD_IDS = new Set(STORY_MOODS.map((mood) => mood.id));
 
 function asStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -28,6 +34,20 @@ function asSchoolStage(value: unknown): StorySchoolStageId {
   return "klasse_3";
 }
 
+function asLengthStep(value: unknown): StoryLengthStepId {
+  if (typeof value === "string" && LENGTH_STEP_IDS.has(value)) {
+    return value as StoryLengthStepId;
+  }
+  return "mittel";
+}
+
+function asMood(value: unknown): StoryMoodId {
+  if (typeof value === "string" && MOOD_IDS.has(value as StoryMoodId)) {
+    return value as StoryMoodId;
+  }
+  return "spannend";
+}
+
 function asBool(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
@@ -38,6 +58,8 @@ function mapRow(row: Record<string, unknown>): ChildProfile {
     displayName:
       typeof row.display_name === "string" ? row.display_name.trim() : "",
     schoolStage: asSchoolStage(row.school_stage),
+    lengthStep: asLengthStep(row.length_step),
+    mood: asMood(row.mood),
     friends: asStringList(row.friends),
     interests: asStringList(row.interests),
     experiences: asStringList(row.experiences),
@@ -46,6 +68,7 @@ function mapRow(row: Record<string, unknown>): ChildProfile {
     syllableHelp: asBool(row.syllable_help, false),
     wordHighlight: asBool(row.word_highlight, false),
     readableAloud: asBool(row.readable_aloud, true),
+    isDefault: asBool(row.is_default, false),
     sortOrder:
       typeof row.sort_order === "number"
         ? row.sort_order
@@ -99,6 +122,9 @@ export async function saveChildProfile(input: {
     p_syllable_help: input.fields.syllableHelp,
     p_word_highlight: input.fields.wordHighlight,
     p_readable_aloud: input.fields.readableAloud,
+    p_length_step: input.fields.lengthStep,
+    p_mood: input.fields.mood,
+    p_is_default: input.fields.isDefault,
   });
 
   if (error) {
@@ -137,6 +163,8 @@ export async function loadMyWorld(): Promise<ChildProfileFields> {
     return {
       displayName: "",
       schoolStage: "klasse_3",
+      lengthStep: "mittel",
+      mood: "spannend",
       friends: [],
       interests: [],
       experiences: [],
@@ -145,11 +173,14 @@ export async function loadMyWorld(): Promise<ChildProfileFields> {
       syllableHelp: false,
       wordHighlight: false,
       readableAloud: true,
+      isDefault: false,
     };
   }
   return {
     displayName: first.displayName,
     schoolStage: first.schoolStage,
+    lengthStep: first.lengthStep,
+    mood: first.mood,
     friends: first.friends,
     interests: first.interests,
     experiences: first.experiences,
@@ -158,5 +189,6 @@ export async function loadMyWorld(): Promise<ChildProfileFields> {
     syllableHelp: first.syllableHelp,
     wordHighlight: first.wordHighlight,
     readableAloud: first.readableAloud,
+    isDefault: first.isDefault,
   };
 }

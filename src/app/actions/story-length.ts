@@ -33,10 +33,14 @@ export async function saveStoryLengthLimitsAction(
     revalidatePath("/admin/textlaenge");
     revalidatePath("/admin/prompts");
     return { success: true };
-  } catch {
+  } catch (error) {
+    console.error("[saveStoryLengthLimitsAction]", error);
     return {
       success: false,
-      error: "Speichern hat nicht geklappt. Ist Supabase erreichbar?",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Speichern hat nicht geklappt. Ist Supabase erreichbar?",
     };
   }
 }

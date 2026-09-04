@@ -11,8 +11,6 @@ const schoolStageSchema = z.enum([
   "hoeher",
 ]);
 
-const moodSchema = z.enum(["lustig", "spannend", "motivierend"]);
-
 export const factWhySchema = botGuardInputSchema.extend({
   fact: z
     .string()
@@ -20,7 +18,6 @@ export const factWhySchema = botGuardInputSchema.extend({
     .min(3, { message: "Der Fakt fehlt." })
     .max(500, { message: "Der Fakt ist zu lang." }),
   schoolStage: schoolStageSchema,
-  mood: moodSchema,
 });
 
 export const factWhyMoreSchema = factWhySchema.extend({

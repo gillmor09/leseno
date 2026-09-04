@@ -12,7 +12,7 @@ export default function SignUpPage() {
     <AuthShell
       eyebrow="Konto"
       title="Registrieren"
-      description="Lege dein Elternkonto an. Nach der Registrierung bestätigst du deine E-Mail und kannst dich dann anmelden."
+      description="Lege dein Konto an. Nach der Registrierung bestätigst du deine E-Mail und kannst dich dann anmelden."
     >
       <SignUpForm />
     </AuthShell>
