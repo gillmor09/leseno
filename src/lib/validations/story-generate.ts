@@ -29,10 +29,13 @@ const topTopicIds = [...STORY_TOP_TOPICS] as [
 
 export const storyGenerateSchema = z
   .object({
+    /** When true, topic is optional; server loads Meine Welt for the profile. */
     personalMode: z.boolean().default(false),
+    /** Selected child profile id (required when personalMode). */
+    profileId: z.string().uuid().optional(),
     syllableHelp: z.boolean().default(false),
     /** When false, skip FLUX generation and layout embedding. */
-    includeImages: z.boolean().default(true),
+    includeImages: z.boolean().default(false),
     topic: z.string().trim().optional(),
     schoolStage: z.enum(schoolStageIds, {
       message: "Bitte eine gültige Schulstufe wählen.",
@@ -46,6 +49,13 @@ export const storyGenerateSchema = z
   })
   .superRefine((value, ctx) => {
     if (value.personalMode) {
+      if (!value.profileId) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["profileId"],
+          message: "Bitte wähl ein Kinder-Profil für „Ganz persönlich“.",
+        });
+      }
       return;
     }
     if (!value.topic || !(topTopicIds as string[]).includes(value.topic)) {

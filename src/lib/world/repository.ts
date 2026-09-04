@@ -1,12 +1,18 @@
 /**
- * Loads and saves the signed-in user's "Meine Welt" via public RPCs.
+ * Loads and saves Meine Welt child profiles via public RPCs.
  */
 
 import { createClient } from "@/lib/supabase/server";
-import {
-  EMPTY_USER_WORLD,
-  type UserWorldProfile,
+import type { StorySchoolStageId } from "@/lib/stories/options";
+import { STORY_SCHOOL_STAGES } from "@/lib/stories/options";
+import type {
+  ChildProfile,
+  ChildProfileFields,
 } from "@/lib/world/catalog";
+
+const SCHOOL_STAGE_IDS = new Set(
+  STORY_SCHOOL_STAGES.map((stage) => stage.id),
+);
 
 function asStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -15,44 +21,142 @@ function asStringList(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function asSchoolStage(value: unknown): StorySchoolStageId {
+  if (typeof value === "string" && SCHOOL_STAGE_IDS.has(value as StorySchoolStageId)) {
+    return value as StorySchoolStageId;
+  }
+  return "klasse_3";
+}
+
+function asBool(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function mapRow(row: Record<string, unknown>): ChildProfile {
+  return {
+    id: typeof row.id === "string" ? row.id : String(row.id ?? ""),
+    displayName:
+      typeof row.display_name === "string" ? row.display_name.trim() : "",
+    schoolStage: asSchoolStage(row.school_stage),
+    friends: asStringList(row.friends),
+    interests: asStringList(row.interests),
+    experiences: asStringList(row.experiences),
+    fears: asStringList(row.fears),
+    includeImages: asBool(row.include_images, false),
+    syllableHelp: asBool(row.syllable_help, false),
+    wordHighlight: asBool(row.word_highlight, false),
+    readableAloud: asBool(row.readable_aloud, true),
+    sortOrder:
+      typeof row.sort_order === "number"
+        ? row.sort_order
+        : Number(row.sort_order) || 0,
+  };
+}
+
 /**
- * Returns the current user's world profile, creating an empty row if needed.
+ * Lists all child profiles for the signed-in user (may be empty).
  */
-export async function loadMyWorld(): Promise<UserWorldProfile> {
+export async function listMyChildProfiles(): Promise<ChildProfile[]> {
   const supabase = await createClient(null);
-  const { data, error } = await supabase.rpc("get_my_world");
+  const { data, error } = await supabase.rpc("list_my_child_profiles");
 
   if (error) {
     throw new Error(error.message);
   }
 
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row) {
-    return EMPTY_USER_WORLD;
-  }
-
-  return {
-    displayName:
-      typeof row.display_name === "string" ? row.display_name.trim() : "",
-    friends: asStringList(row.friends),
-    interests: asStringList(row.interests),
-    experiences: asStringList(row.experiences),
-  };
+  const rows = Array.isArray(data) ? data : data ? [data] : [];
+  return rows.map((row) => mapRow(row as Record<string, unknown>));
 }
 
 /**
- * Persists the signed-in user's world profile.
+ * Loads one owned profile by id, or null when missing / not owned.
  */
-export async function saveMyWorld(profile: UserWorldProfile): Promise<void> {
+export async function loadChildProfile(
+  profileId: string,
+): Promise<ChildProfile | null> {
+  const profiles = await listMyChildProfiles();
+  return profiles.find((profile) => profile.id === profileId) ?? null;
+}
+
+/**
+ * Creates or updates a child profile. Pass `id: null` to create.
+ * Returns the profile id.
+ */
+export async function saveChildProfile(input: {
+  id: string | null;
+  fields: ChildProfileFields;
+}): Promise<string> {
   const supabase = await createClient(null);
-  const { error } = await supabase.rpc("upsert_my_world", {
-    p_display_name: profile.displayName,
-    p_friends: profile.friends,
-    p_interests: profile.interests,
-    p_experiences: profile.experiences,
+  const { data, error } = await supabase.rpc("upsert_my_child_profile", {
+    p_id: input.id,
+    p_display_name: input.fields.displayName,
+    p_school_stage: input.fields.schoolStage,
+    p_friends: input.fields.friends,
+    p_interests: input.fields.interests,
+    p_experiences: input.fields.experiences,
+    p_fears: input.fields.fears,
+    p_include_images: input.fields.includeImages,
+    p_syllable_help: input.fields.syllableHelp,
+    p_word_highlight: input.fields.wordHighlight,
+    p_readable_aloud: input.fields.readableAloud,
   });
 
   if (error) {
     throw new Error(error.message);
   }
+
+  if (typeof data !== "string" || !data) {
+    throw new Error("Profil-ID fehlt nach dem Speichern.");
+  }
+
+  return data;
+}
+
+/**
+ * Deletes an owned child profile.
+ */
+export async function deleteChildProfile(profileId: string): Promise<void> {
+  const supabase = await createClient(null);
+  const { error } = await supabase.rpc("delete_my_child_profile", {
+    p_id: profileId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * @deprecated Prefer listMyChildProfiles / loadChildProfile.
+ * Returns the first child profile fields, or empty defaults.
+ */
+export async function loadMyWorld(): Promise<ChildProfileFields> {
+  const profiles = await listMyChildProfiles();
+  const first = profiles[0];
+  if (!first) {
+    return {
+      displayName: "",
+      schoolStage: "klasse_3",
+      friends: [],
+      interests: [],
+      experiences: [],
+      fears: [],
+      includeImages: false,
+      syllableHelp: false,
+      wordHighlight: false,
+      readableAloud: true,
+    };
+  }
+  return {
+    displayName: first.displayName,
+    schoolStage: first.schoolStage,
+    friends: first.friends,
+    interests: first.interests,
+    experiences: first.experiences,
+    fears: first.fears,
+    includeImages: first.includeImages,
+    syllableHelp: first.syllableHelp,
+    wordHighlight: first.wordHighlight,
+    readableAloud: first.readableAloud,
+  };
 }

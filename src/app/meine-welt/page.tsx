@@ -2,19 +2,18 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
-import { MyWorldForm } from "@/components/features/world/my-world-form";
+import { MyWorldManager } from "@/components/features/world/my-world-manager";
 import { getCurrentUser } from "@/lib/auth/session";
-import { EMPTY_USER_WORLD } from "@/lib/world/catalog";
-import { loadMyWorld } from "@/lib/world/repository";
+import { listMyChildProfiles } from "@/lib/world/repository";
 
 export const metadata: Metadata = {
   title: "Meine Welt — Leseno",
   description:
-    "Verwalte deinen Namen, deine Freunde, Interessen und was du mal erleben möchtest.",
+    "Verwalte Profile für eure Kinder: Namen, Freunde, Interessen und Wünsche.",
 };
 
 /**
- * Signed-in personal profile hub. Guests are sent to sign-in.
+ * Signed-in personal hub for one or more child profiles.
  */
 export default async function MeineWeltPage() {
   const user = await getCurrentUser();
@@ -22,11 +21,11 @@ export default async function MeineWeltPage() {
     redirect("/anmelden?next=/meine-welt");
   }
 
-  let profile = EMPTY_USER_WORLD;
+  let profiles: Awaited<ReturnType<typeof listMyChildProfiles>> = [];
   let loadError: string | null = null;
 
   try {
-    profile = await loadMyWorld();
+    profiles = await listMyChildProfiles();
   } catch (error) {
     console.error("[MeineWeltPage]", error);
     const detail =
@@ -41,7 +40,7 @@ export default async function MeineWeltPage() {
         <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="flex items-start justify-between gap-4">
             <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-              Für dich
+              Familie
             </p>
             {user.email ? (
               <p
@@ -56,8 +55,9 @@ export default async function MeineWeltPage() {
             Meine Welt
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Hier pflegst du, wer du bist und was du dir wünschst — damit Leseno
-            Geschichten schreiben kann, die wirklich zu dir passen.
+            Lege für jedes Kind ein eigenes Profil an — mit Namen, Freunden,
+            Interessen und Wünschen. So werden persönliche Geschichten wirklich
+            passend.
           </p>
 
           {loadError ? (
@@ -66,7 +66,7 @@ export default async function MeineWeltPage() {
             </p>
           ) : (
             <div className="mt-10">
-              <MyWorldForm initialProfile={profile} />
+              <MyWorldManager initialProfiles={profiles} />
             </div>
           )}
         </section>

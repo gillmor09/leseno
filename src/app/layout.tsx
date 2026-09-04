@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Leseno — Eigene Geschichten mit Wissen und Staunen",
   description:
-    "Die Leseapp für Kinder von 5 bis 10: Thema wählen, Schulstufe setzen, Ton drehen — und beim Lesen echtes Wissen mitnehmen. Mit Silbenhilfe, Vorlesen und Meine Welt.",
+    "Die Leseapp für Kinder von 5 bis 10: eigene Geschichten mit Bildern, echtem Wissen und „Warum?“ zum Nachforschen — altersgerecht und mit Vorlesen.",
 };
 
 export default function RootLayout({

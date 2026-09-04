@@ -10,14 +10,14 @@ import { toUserFacingMessage } from "@/lib/errors/user-facing";
 import { assertBotGuard } from "@/lib/security/bot-guard";
 import { buildPersonalStoryContext } from "@/lib/stories/personal";
 import { storyGenerateSchema } from "@/lib/validations/story-generate";
-import { loadMyWorld } from "@/lib/world/repository";
+import { loadChildProfile } from "@/lib/world/repository";
 
 const STORY_GENERATE_FALLBACK =
   "Die Geschichte konnte gerade nicht entstehen. Bitte versuche es gleich noch einmal.";
 
 /**
  * Starts the free-tier story pipeline: facts → story (+ optional images/layout).
- * In personal mode, seeds come from Meine Welt (server-side).
+ * In personal mode, seeds come from the selected Meine-Welt child profile (server-side).
  * Provider errors are logged server-side; the client only gets fixed German copy.
  */
 export async function generateFreeStoryAction(
@@ -44,28 +44,46 @@ export async function generateFreeStoryAction(
   try {
     let personal = null as ReturnType<typeof buildPersonalStoryContext> | null;
     let topic = parsed.data.topic?.trim() ?? "";
+    let schoolStage = parsed.data.schoolStage;
+    let includeImages = parsed.data.includeImages;
+    let syllableHelp = parsed.data.syllableHelp;
 
     if (parsed.data.personalMode) {
       const user = await getCurrentUser();
       if (!user) {
         return {
           success: false,
-          error: "Für „Ganz persönlich“ melde dich bitte zuerst an.",
+          error: "Für eine persönliche Geschichte melde dich bitte zuerst an.",
         };
       }
-      const world = await loadMyWorld();
-      personal = buildPersonalStoryContext(world);
+      if (!parsed.data.profileId) {
+        return {
+          success: false,
+          error: "Bitte wähl ein Kinder-Profil.",
+        };
+      }
+      const profile = await loadChildProfile(parsed.data.profileId);
+      if (!profile) {
+        return {
+          success: false,
+          error: "Dieses Profil wurde nicht gefunden. Bitte Meine Welt prüfen.",
+        };
+      }
+      personal = buildPersonalStoryContext(profile);
       topic = personal.topic;
+      schoolStage = profile.schoolStage;
+      includeImages = profile.includeImages;
+      syllableHelp = profile.syllableHelp;
     }
 
     const result = await generateStoryPipeline({
       topic,
-      schoolStage: parsed.data.schoolStage,
+      schoolStage,
       lengthStep: parsed.data.lengthStep,
       mood: parsed.data.mood,
       personal,
-      syllableHelp: parsed.data.syllableHelp,
-      includeImages: parsed.data.includeImages,
+      syllableHelp,
+      includeImages,
     });
     return { success: true, data: result };
   } catch (error) {

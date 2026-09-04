@@ -30,12 +30,9 @@ export function StoryLengthSlider({
   const percent = steps.length > 1 ? (index / (steps.length - 1)) * 100 : 0;
 
   return (
-    <fieldset>
-      <legend className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+    <div>
+      <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
         Textlänge
-      </legend>
-      <p className="mt-1 text-sm text-zinc-600">
-        Schieb den Regler — vom kurzen Spaß bis zur langen Vorlesegeschichte.
       </p>
 
       <div className="mt-5 px-1">
@@ -86,6 +83,6 @@ export function StoryLengthSlider({
           })}
         </div>
       </div>
-    </fieldset>
+    </div>
   );
 }

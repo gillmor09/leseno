@@ -1,16 +1,14 @@
 /**
  * Shared shell for gated membership composers (`/paket1`–`/paket3`).
- * Copy matches the public `/basis` composer UI.
+ * Copy matches the public `/basis` composer UI; always signed-in → profile picker.
  */
 
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { FreeStoryForm } from "@/components/features/stories/free-story-form";
 import { requireMembershipPage } from "@/lib/auth/require-membership";
-import { getCurrentUser } from "@/lib/auth/session";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
-import { canUsePersonalMode } from "@/lib/stories/personal";
-import { loadMyWorld } from "@/lib/world/repository";
+import { loadChildProfileOptionsForUser } from "@/lib/world/story-options";
 import {
   MEMBERSHIP_ROLE_OPTIONS,
   type MembershipRoleId,
@@ -27,19 +25,9 @@ export async function MembershipStoryPage({
   await requireMembershipPage(role);
 
   const lengthCatalog = await loadStoryLengthCatalog();
-  const user = await getCurrentUser();
   const roleLabel =
     MEMBERSHIP_ROLE_OPTIONS.find((entry) => entry.id === role)?.label ?? role;
-
-  let personalAvailable = false;
-  if (user) {
-    try {
-      const world = await loadMyWorld();
-      personalAvailable = canUsePersonalMode(world);
-    } catch {
-      personalAvailable = false;
-    }
-  }
+  const childProfiles = await loadChildProfileOptionsForUser(true);
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -59,7 +47,7 @@ export async function MembershipStoryPage({
           <div className="mt-10">
             <FreeStoryForm
               lengthCatalog={lengthCatalog}
-              personalAvailable={personalAvailable}
+              childProfiles={childProfiles}
             />
           </div>
         </section>

@@ -361,7 +361,8 @@ async function generateIllustrationPixels(
 
 /**
  * Runs facts, then story (+ optional FLUX images ∥ story), then optional layout.
- * `includeImages: false` skips illustration generation and Mistral embedding.
+ * `includeImages: true` enables illustration generation and Mistral embedding.
+ * Default / omitted is text-only.
  */
 export async function generateStoryPipeline(
   input: StoryGenerateInput,
@@ -371,7 +372,7 @@ export async function generateStoryPipeline(
     loadPromptCatalogSafe(),
   ]);
 
-  const includeImages = input.includeImages !== false;
+  const includeImages = input.includeImages === true;
 
   const { factCount, wordRange, imageCount } = resolveLengthContext(
     lengthCatalog,

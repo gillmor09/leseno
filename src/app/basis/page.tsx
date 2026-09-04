@@ -4,8 +4,7 @@ import { AppHeader } from "@/components/features/landing/app-header";
 import { FreeStoryForm } from "@/components/features/stories/free-story-form";
 import { getCurrentUser } from "@/lib/auth/session";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
-import { canUsePersonalMode } from "@/lib/stories/personal";
-import { loadMyWorld } from "@/lib/world/repository";
+import { loadChildProfileOptionsForUser } from "@/lib/world/story-options";
 
 export const metadata: Metadata = {
   title: "Basis — Deine Geschichte starten — Leseno",
@@ -15,21 +14,12 @@ export const metadata: Metadata = {
 
 /**
  * Basis-tier composer (public freemium entry, formerly `/kostenlos`).
- * Personal mode needs a signed-in Meine-Welt profile.
+ * Signed-in users get a child-profile picker above the topic card.
  */
 export default async function BasisPage() {
   const lengthCatalog = await loadStoryLengthCatalog();
   const user = await getCurrentUser();
-
-  let personalAvailable = false;
-  if (user) {
-    try {
-      const world = await loadMyWorld();
-      personalAvailable = canUsePersonalMode(world);
-    } catch {
-      personalAvailable = false;
-    }
-  }
+  const childProfiles = await loadChildProfileOptionsForUser(Boolean(user));
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -49,7 +39,7 @@ export default async function BasisPage() {
           <div className="mt-10">
             <FreeStoryForm
               lengthCatalog={lengthCatalog}
-              personalAvailable={personalAvailable}
+              childProfiles={childProfiles}
             />
           </div>
         </section>

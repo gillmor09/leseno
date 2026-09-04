@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Free-tier story form: Top-10 topic or „Ganz persönlich“, school stage, length, mood.
+ * Free-tier story form: Freies lesen (topic + school) or profile-driven personal story.
  * Full-screen wait overlay while generating; selection card collapses when ready.
  * PDF: html2pdf blob → large preview dialog → download.
  * Round play button: OpenAI TTS + Whisper word highlight (`synthesizeStorySpeechAction`).
@@ -18,6 +18,7 @@ import {
   Play,
   Smile,
   Sparkles,
+  X,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -38,6 +39,9 @@ import {
 } from "@/lib/stories/export-story-document";
 import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
 import { StoryFactsList } from "@/components/features/stories/story-facts-list";
+import { ChildProfilePickerCard } from "@/components/features/stories/child-profile-picker-card";
+import type { ChildProfileOption } from "@/lib/world/catalog";
+import { FREE_READING_EXTRAS } from "@/lib/world/catalog";
 import {
   STORY_SCHOOL_STAGES,
   STORY_MOODS,
@@ -71,21 +75,22 @@ const moodIcons = {
  */
 export function FreeStoryForm({
   lengthCatalog,
-  personalAvailable = false,
+  childProfiles = null,
 }: {
   lengthCatalog: StoryLengthCatalog;
-  /** True when Meine Welt has name + interest/wish for personal mode. */
-  personalAvailable?: boolean;
+  /**
+   * Signed-in child profiles for the picker card (null = guest / hide card).
+   * Selecting a ready profile starts a personal story from that world.
+   */
+  childProfiles?: ChildProfileOption[] | null;
 }) {
   const [topic, setTopic] = useState<StoryTopTopic | "">(
     STORY_TOP_TOPICS[0],
   );
-  const [personalMode, setPersonalMode] = useState(false);
-  const [syllableHelp, setSyllableHelp] = useState(false);
-  /** Illustrations via FLUX + layout; off = text-only story (faster). */
-  const [includeImages, setIncludeImages] = useState(true);
-  /** Opt-in: Whisper word timings + orange follow-along highlight while reading aloud. */
-  const [wordHighlight, setWordHighlight] = useState(false);
+  /** `null` = Freies lesen (default on page load). Profile = personal story. */
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
+    null,
+  );
   const [schoolStage, setSchoolStage] =
     useState<StorySchoolStageId>("klasse_3");
   const [lengthStep, setLengthStep] = useState<StoryLengthStepId>("mittel");
@@ -98,6 +103,11 @@ export function FreeStoryForm({
   const [statusText, setStatusText] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [selectionExpanded, setSelectionExpanded] = useState(true);
+  const [profileGapDialog, setProfileGapDialog] = useState<{
+    displayName: string;
+    missingName: boolean;
+    missingTopics: boolean;
+  } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
@@ -120,6 +130,24 @@ export function FreeStoryForm({
   const ttsRafRef = useRef<number | null>(null);
   const ttsSpeedRef = useRef(ttsSpeed);
   ttsSpeedRef.current = ttsSpeed;
+
+  const selectedProfile =
+    selectedProfileId == null
+      ? null
+      : (childProfiles?.find((profile) => profile.id === selectedProfileId) ??
+        null);
+  const activeProfileId = selectedProfile?.id ?? null;
+  /** Profile selection drives personal stories (no separate toggle). */
+  const personalMode = Boolean(selectedProfile);
+  const includeImages =
+    selectedProfile?.includeImages ?? FREE_READING_EXTRAS.includeImages;
+  const syllableHelp =
+    selectedProfile?.syllableHelp ?? FREE_READING_EXTRAS.syllableHelp;
+  const wordHighlight =
+    selectedProfile?.wordHighlight ?? FREE_READING_EXTRAS.wordHighlight;
+  const readableAloud =
+    selectedProfile?.readableAloud ?? FREE_READING_EXTRAS.readableAloud;
+
   const wordHighlightRef = useRef(wordHighlight);
   wordHighlightRef.current = wordHighlight;
 
@@ -276,6 +304,7 @@ export function FreeStoryForm({
 
   async function handleToggleTts() {
     if (isTtsLoading) return;
+    if (!readableAloud) return;
 
     if (isTtsPlaying && audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause();
@@ -368,25 +397,18 @@ export function FreeStoryForm({
   }, [isPending, isTtsLoading]);
 
   useEffect(() => {
+    if (!readableAloud) {
+      stopTtsPlayback();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stop when Vorlesbar off
+  }, [readableAloud]);
+
+  useEffect(() => {
     return () => {
       stopTtsPlayback();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only
   }, []);
-
-  function selectTopic(next: StoryTopTopic) {
-    setPersonalMode(false);
-    setTopic(next);
-  }
-
-  function togglePersonal(next: boolean) {
-    setPersonalMode(next);
-    if (next) {
-      setTopic("");
-    } else if (!topic) {
-      setTopic(STORY_TOP_TOPICS[0]);
-    }
-  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -395,19 +417,15 @@ export function FreeStoryForm({
     setStorySchoolStage(null);
     setStoryMood(null);
 
-    if (personalMode && !personalAvailable) {
-      setFieldError(
-        "Für „Ganz persönlich“ brauchst du in Meine Welt einen Namen und mindestens ein Interesse oder einen Wunsch unter „Das möchte ich mal erleben“.",
-      );
-      toast.error(
-        "Bitte ergänze zuerst deine Welt — oder wähl ein Top-Thema.",
-      );
+    if (personalMode && !activeProfileId) {
+      setFieldError("Bitte wähl ein Kinder-Profil.");
+      toast.error("Bitte wähl ein Kinder-Profil.");
       return;
     }
 
     if (!personalMode && !topic) {
-      setFieldError("Bitte wähl ein Thema oder schalte „Ganz persönlich“ ein.");
-      toast.error("Bitte wähl ein Thema oder schalte „Ganz persönlich“ ein.");
+      setFieldError("Bitte wähl ein Thema.");
+      toast.error("Bitte wähl ein Thema.");
       return;
     }
 
@@ -421,6 +439,7 @@ export function FreeStoryForm({
       stopTtsPlayback();
       const result = await generateFreeStoryAction({
         personalMode,
+        profileId: personalMode ? activeProfileId ?? undefined : undefined,
         syllableHelp,
         includeImages,
         topic: personalMode ? undefined : topic,
@@ -490,7 +509,7 @@ export function FreeStoryForm({
   const hasStory = Boolean(output) && !isPending;
   const selectionCollapsed = hasStory && !selectionExpanded;
   const summaryTopic = personalMode
-    ? "Ganz persönlich"
+    ? `Persönlich (${selectedProfile?.displayName ?? "Profil"})`
     : topic || "Thema";
   const summaryStage =
     STORY_SCHOOL_STAGES.find((stage) => stage.id === schoolStage)?.label ??
@@ -498,21 +517,120 @@ export function FreeStoryForm({
   const summaryMood =
     STORY_MOODS.find((item) => item.id === mood)?.label ?? mood;
   const summaryExtras = [
+    personalMode
+      ? null
+      : childProfiles !== null
+        ? "Freies lesen"
+        : null,
     summaryStage,
     summaryMood,
-    includeImages ? "Mit Bildern" : "Ohne Bilder",
+    includeImages ? "Mit Bildern" : null,
     syllableHelp ? "Silbenhilfe" : null,
     wordHighlight ? "Wort-Markierung" : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
+  const selectionCardClass =
+    "rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8";
+
+  function handleProfileSelect(profileId: string | null) {
+    if (profileId === null) {
+      setSelectedProfileId(null);
+      if (!topic) setTopic(STORY_TOP_TOPICS[0]);
+      return;
+    }
+    const next = childProfiles?.find((profile) => profile.id === profileId);
+    if (!next) return;
+    if (!next.personalReady) {
+      setProfileGapDialog({
+        displayName: next.displayName,
+        missingName: !next.hasName,
+        missingTopics: !next.hasTopicSeeds,
+      });
+      return;
+    }
+    setSelectedProfileId(profileId);
+    setSchoolStage(next.schoolStage);
+  }
+
   return (
     <div className="grid items-start gap-8">
+      {childProfiles !== null && !selectionCollapsed ? (
+        <ChildProfilePickerCard
+          profiles={childProfiles}
+          selectedId={selectedProfileId}
+          onSelect={handleProfileSelect}
+          disabled={isPending}
+        />
+      ) : null}
+
+      {profileGapDialog
+        ? createPortal(
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="profile-gap-title"
+              aria-describedby="profile-gap-desc"
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/55 p-4 backdrop-blur-sm"
+              onClick={() => setProfileGapDialog(null)}
+            >
+              <div
+                className="w-full max-w-md rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-zinc-950/10"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h2
+                    id="profile-gap-title"
+                    className="text-xl font-extrabold text-zinc-950"
+                  >
+                    Profil noch unvollständig
+                  </h2>
+                  <button
+                    type="button"
+                    className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-all duration-200 ease-in-out hover:bg-gray-100 hover:text-zinc-950"
+                    onClick={() => setProfileGapDialog(null)}
+                  >
+                    <X className="size-5" aria-hidden />
+                    <span className="sr-only">Schließen</span>
+                  </button>
+                </div>
+                <p
+                  id="profile-gap-desc"
+                  className="mt-3 text-sm leading-relaxed text-zinc-600"
+                >
+                  Für „{profileGapDialog.displayName}“ fehlen Angaben, damit
+                  eine persönliche Geschichte entstehen kann:
+                </p>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm font-semibold text-zinc-800">
+                  {profileGapDialog.missingName ? (
+                    <li>Name des Kindes</li>
+                  ) : null}
+                  {profileGapDialog.missingTopics ? (
+                    <li>
+                      Mindestens ein Interesse oder etwas unter „Das möchte ich
+                      mal erleben“
+                    </li>
+                  ) : null}
+                </ul>
+                <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                  <a
+                    href="/meine-welt"
+                    className="inline-flex items-center justify-center rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
+                  >
+                    In Meine Welt ergänzen
+                  </a>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
       <form
         noValidate
         onSubmit={handleSubmit}
-        className="relative rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
+        className="grid gap-6"
       >
         <BotGuardFields
           website={botGuard.website}
@@ -521,7 +639,7 @@ export function FreeStoryForm({
         />
 
         {selectionCollapsed ? (
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className={cn(selectionCardClass, "flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between")}>
             <div>
               <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
                 Deine Auswahl
@@ -546,7 +664,7 @@ export function FreeStoryForm({
         ) : (
           <>
             {hasStory ? (
-              <div className="mb-6 flex items-center justify-between gap-3">
+              <div className={cn(selectionCardClass, "flex items-center justify-between gap-3 py-4 sm:py-5")}>
                 <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
                   Auswahl
                 </p>
@@ -560,195 +678,66 @@ export function FreeStoryForm({
               </div>
             ) : null}
 
-            <div>
-              <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                Thema
-              </p>
-              <p className="mt-1 text-sm text-zinc-600">
-                Wähl eines der Top-Themen — oder mach’s ganz persönlich aus
-                deiner Welt.
-              </p>
-              <div
-                className="mt-3 flex flex-wrap gap-2"
-                role="group"
-                aria-label="Thema"
-              >
-                {STORY_TOP_TOPICS.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => selectTopic(item)}
-                    className={cn(
-                      "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
-                      !personalMode && topic === item
-                        ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
-                        : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
-                    )}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-5 flex items-center justify-between gap-4 rounded-2xl bg-gray-100 px-4 py-3 ring-1 ring-zinc-950/10">
-                <div>
-                  <p className="text-sm font-extrabold text-zinc-950">
-                    Ganz persönlich
-                  </p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 sm:text-sm">
-                    {personalAvailable
-                      ? "Nutzt Name, Freunde und ein zufälliges Interesse oder Wunsch-Erlebnis aus Meine Welt."
-                      : "Melde dich an und fülle in Meine Welt Name sowie Interesse oder „Das möchte ich mal erleben“."}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={personalMode}
-                  disabled={isPending || !personalAvailable}
-                  onClick={() => togglePersonal(!personalMode)}
-                  className={cn(
-                    "relative h-8 w-14 shrink-0 rounded-full transition-all duration-200 ease-in-out",
-                    personalMode ? "bg-orange-700" : "bg-zinc-300",
-                    (!personalAvailable || isPending) && "opacity-50",
-                  )}
+            {!personalMode ? (
+              <section className={selectionCardClass}>
+                <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+                  Thema
+                </p>
+                <p className="mt-1 text-sm text-zinc-600">
+                  Wähl eines der Top-Themen für freies Lesen.
+                </p>
+                <div
+                  className="mt-3 flex flex-wrap gap-2"
+                  role="group"
+                  aria-label="Thema"
                 >
-                  <span
-                    className={cn(
-                      "absolute top-1 left-1 size-6 rounded-full bg-white shadow transition-all duration-200 ease-in-out",
-                      personalMode && "translate-x-6",
-                    )}
-                  />
-                  <span className="sr-only">Ganz persönlich</span>
-                </button>
-              </div>
-
-              <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl bg-gray-100 px-4 py-3 ring-1 ring-zinc-950/10">
-                <div>
-                  <p className="text-sm font-extrabold text-zinc-950">
-                    Bilder
-                  </p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 sm:text-sm">
-                    Illustrationen in die Geschichte einbauen. Aus = nur Text
-                    (schneller).
-                  </p>
+                  {STORY_TOP_TOPICS.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => setTopic(item)}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
+                        topic === item
+                          ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                          : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
+                      )}
+                    >
+                      {item}
+                    </button>
+                  ))}
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={includeImages}
-                  disabled={isPending}
-                  onClick={() => setIncludeImages((value) => !value)}
-                  className={cn(
-                    "relative h-8 w-14 shrink-0 rounded-full transition-all duration-200 ease-in-out",
-                    includeImages ? "bg-orange-700" : "bg-zinc-300",
-                    isPending && "opacity-50",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "absolute top-1 left-1 size-6 rounded-full bg-white shadow transition-all duration-200 ease-in-out",
-                      includeImages && "translate-x-6",
-                    )}
-                  />
-                  <span className="sr-only">Bilder</span>
-                </button>
-              </div>
+              </section>
+            ) : null}
 
-              <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl bg-gray-100 px-4 py-3 ring-1 ring-zinc-950/10">
-                <div>
-                  <p className="text-sm font-extrabold text-zinc-950">
-                    Silbenhilfe
-                  </p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 sm:text-sm">
-                    Silben abwechselnd blau und rot — wie im Erstlesebuch.
-                  </p>
+            {!personalMode ? (
+              <section className={selectionCardClass}>
+                <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+                  Schulstufe
+                </p>
+                <p className="mt-1 text-sm text-zinc-600">
+                  So passen Sprache und Länge zu dem, was du schon gut lesen
+                  kannst.
+                </p>
+                <div
+                  className="mt-3 flex flex-wrap gap-2"
+                  role="group"
+                  aria-label="Schulstufe"
+                >
+                  {STORY_SCHOOL_STAGES.map((stage) => (
+                    <ChoiceChip
+                      key={stage.id}
+                      active={schoolStage === stage.id}
+                      onClick={() => setSchoolStage(stage.id)}
+                      label={stage.label}
+                    />
+                  ))}
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={syllableHelp}
-                  disabled={isPending}
-                  onClick={() => setSyllableHelp((value) => !value)}
-                  className={cn(
-                    "relative h-8 w-14 shrink-0 rounded-full transition-all duration-200 ease-in-out",
-                    syllableHelp ? "bg-orange-700" : "bg-zinc-300",
-                    isPending && "opacity-50",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "absolute top-1 left-1 size-6 rounded-full bg-white shadow transition-all duration-200 ease-in-out",
-                      syllableHelp && "translate-x-6",
-                    )}
-                  />
-                  <span className="sr-only">Silbenhilfe</span>
-                </button>
-              </div>
+              </section>
+            ) : null}
 
-              <div className="mt-3 flex items-center justify-between gap-4 rounded-2xl bg-gray-100 px-4 py-3 ring-1 ring-zinc-950/10">
-                <div>
-                  <p className="text-sm font-extrabold text-zinc-950">
-                    Wort-Markierung
-                  </p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-zinc-600 sm:text-sm">
-                    Beim Vorlesen das aktuelle Wort orange hervorheben (etwas
-                    längere Vorbereitung).
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={wordHighlight}
-                  disabled={isPending || isTtsLoading}
-                  onClick={() => {
-                    setWordHighlight((value) => !value);
-                    // Cached audio may lack / include Whisper timings — regenerate on next play.
-                    stopTtsPlayback();
-                  }}
-                  className={cn(
-                    "relative h-8 w-14 shrink-0 rounded-full transition-all duration-200 ease-in-out",
-                    wordHighlight ? "bg-orange-700" : "bg-zinc-300",
-                    (isPending || isTtsLoading) && "opacity-50",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "absolute top-1 left-1 size-6 rounded-full bg-white shadow transition-all duration-200 ease-in-out",
-                      wordHighlight && "translate-x-6",
-                    )}
-                  />
-                  <span className="sr-only">Wort-Markierung</span>
-                </button>
-              </div>
-            </div>
-
-            <fieldset className="mt-8" disabled={isPending}>
-              <legend className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                Schulstufe
-              </legend>
-              <p className="mt-1 text-sm text-zinc-600">
-                So passen Sprache und Länge zu dem, was du schon gut lesen
-                kannst.
-              </p>
-              <div
-                className="mt-3 flex flex-wrap gap-2"
-                role="group"
-                aria-label="Schulstufe"
-              >
-                {STORY_SCHOOL_STAGES.map((stage) => (
-                  <ChoiceChip
-                    key={stage.id}
-                    active={schoolStage === stage.id}
-                    onClick={() => setSchoolStage(stage.id)}
-                    label={stage.label}
-                  />
-                ))}
-              </div>
-            </fieldset>
-
-            <div className="mt-8">
+            <div className={selectionCardClass}>
               <StoryLengthSlider
                 catalog={lengthCatalog}
                 value={lengthStep}
@@ -756,11 +745,11 @@ export function FreeStoryForm({
               />
             </div>
 
-            <fieldset className="mt-8" disabled={isPending}>
-              <legend className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+            <section className={selectionCardClass}>
+              <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
                 Art der Geschichte
-              </legend>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              </p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {STORY_MOODS.map((item) => {
                   const Icon = moodIcons[item.id];
                   const active = mood === item.id;
@@ -768,33 +757,27 @@ export function FreeStoryForm({
                     <button
                       key={item.id}
                       type="button"
+                      disabled={isPending}
                       onClick={() => setMood(item.id)}
                       className={cn(
-                        "flex items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm font-extrabold ring-1 transition-all duration-200 ease-in-out sm:flex-col sm:items-start sm:gap-3",
+                        "flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-extrabold ring-1 transition-all duration-200 ease-in-out",
                         active
-                          ? "bg-orange-700 text-white ring-orange-700"
+                          ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
                           : "bg-gray-100 text-zinc-950 ring-zinc-950/10 hover:bg-white",
                       )}
                     >
-                      <span
-                        className={cn(
-                          "flex size-9 items-center justify-center rounded-full",
-                          active
-                            ? "bg-yellow-400 text-zinc-950"
-                            : "bg-white text-orange-700",
-                        )}
-                      >
-                        <Icon className="size-4" aria-hidden />
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-white text-orange-700">
+                        <Icon className="size-3.5" aria-hidden />
                       </span>
                       {item.label}
                     </button>
                   );
                 })}
               </div>
-            </fieldset>
+            </section>
 
             {fieldError ? (
-              <p className="mt-6 text-sm font-semibold text-orange-800">
+              <p className="text-sm font-semibold text-orange-800">
                 {fieldError}
               </p>
             ) : null}
@@ -803,7 +786,7 @@ export function FreeStoryForm({
               type="submit"
               disabled={isPending}
               className={cn(
-                "mt-8 inline-flex w-full items-center justify-center gap-2 rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800",
+                "inline-flex w-full items-center justify-center gap-2 rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800",
                 isPending && "opacity-70",
               )}
             >
@@ -834,68 +817,72 @@ export function FreeStoryForm({
               </p>
               <div className="flex flex-col items-end gap-3 self-end sm:self-auto">
                 <div className="flex items-center gap-2">
-                  <label
-                    htmlFor="story-tts-speed"
-                    className="flex min-w-[9.5rem] flex-col gap-1"
-                  >
-                    <span className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
-                      Tempo{" "}
-                      <span className="tabular-nums text-orange-700">
-                        {ttsSpeed.toFixed(1).replace(".", ",")}×
-                      </span>
-                    </span>
-                    <input
-                      id="story-tts-speed"
-                      type="range"
-                      min={0.8}
-                      max={1.1}
-                      step={0.1}
-                      value={ttsSpeed}
-                      disabled={isTtsLoading}
-                      aria-valuetext={`${ttsSpeed.toFixed(1).replace(".", ",")} mal`}
-                      onChange={(event) => {
-                        const next = Number(event.target.value);
-                        setTtsSpeed(next);
-                        ttsSpeedRef.current = next;
-                        applyTtsPlaybackRate(next);
-                      }}
-                      className="h-2 w-full cursor-pointer appearance-none rounded-full bg-gray-100 ring-1 ring-zinc-950/10 disabled:cursor-not-allowed disabled:opacity-70 [&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-yellow-400 [&::-moz-range-thumb]:shadow-sm [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-yellow-400 [&::-webkit-slider-thumb]:shadow-sm"
-                    />
-                    <span className="flex justify-between text-[0.65rem] font-semibold text-zinc-500">
-                      <span>Langsamer</span>
-                      <span>Schneller</span>
-                    </span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleToggleTts();
-                    }}
-                    disabled={isTtsLoading || !output}
-                    aria-label={
-                      isTtsLoading
-                        ? "Vorlesen wird vorbereitet"
-                        : isTtsPlaying
-                          ? "Vorlesen pausieren"
-                          : "Geschichte vorlesen"
-                    }
-                    title={
-                      isTtsLoading
-                        ? "Vorlesen wird vorbereitet …"
-                        : isTtsPlaying
-                          ? "Pausieren"
-                          : "Vorlesen"
-                    }
-                    className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-orange-700 text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
-                  >
-                    {isTtsLoading ? (
-                      <Loader2 className="size-5 animate-spin" aria-hidden />
-                    ) : isTtsPlaying ? (
-                      <Pause className="size-5" aria-hidden />
-                    ) : (
-                      <Play className="size-5 translate-x-px" aria-hidden />
-                    )}
-                  </button>
+                  {readableAloud ? (
+                    <>
+                      <label
+                        htmlFor="story-tts-speed"
+                        className="flex min-w-[9.5rem] flex-col gap-1"
+                      >
+                        <span className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
+                          Tempo{" "}
+                          <span className="tabular-nums text-orange-700">
+                            {ttsSpeed.toFixed(1).replace(".", ",")}×
+                          </span>
+                        </span>
+                        <input
+                          id="story-tts-speed"
+                          type="range"
+                          min={0.8}
+                          max={1.1}
+                          step={0.1}
+                          value={ttsSpeed}
+                          disabled={isTtsLoading}
+                          aria-valuetext={`${ttsSpeed.toFixed(1).replace(".", ",")} mal`}
+                          onChange={(event) => {
+                            const next = Number(event.target.value);
+                            setTtsSpeed(next);
+                            ttsSpeedRef.current = next;
+                            applyTtsPlaybackRate(next);
+                          }}
+                          className="h-2 w-full cursor-pointer appearance-none rounded-full bg-gray-100 ring-1 ring-zinc-950/10 disabled:cursor-not-allowed disabled:opacity-70 [&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-yellow-400 [&::-moz-range-thumb]:shadow-sm [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-yellow-400 [&::-webkit-slider-thumb]:shadow-sm"
+                        />
+                        <span className="flex justify-between text-[0.65rem] font-semibold text-zinc-500">
+                          <span>Langsamer</span>
+                          <span>Schneller</span>
+                        </span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleToggleTts();
+                        }}
+                        disabled={isTtsLoading || !output}
+                        aria-label={
+                          isTtsLoading
+                            ? "Vorlesen wird vorbereitet"
+                            : isTtsPlaying
+                              ? "Vorlesen pausieren"
+                              : "Geschichte vorlesen"
+                        }
+                        title={
+                          isTtsLoading
+                            ? "Vorlesen wird vorbereitet …"
+                            : isTtsPlaying
+                              ? "Pausieren"
+                              : "Vorlesen"
+                        }
+                        className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-orange-700 text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
+                      >
+                        {isTtsLoading ? (
+                          <Loader2 className="size-5 animate-spin" aria-hidden />
+                        ) : isTtsPlaying ? (
+                          <Pause className="size-5" aria-hidden />
+                        ) : (
+                          <Play className="size-5 translate-x-px" aria-hidden />
+                        )}
+                      </button>
+                    </>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {

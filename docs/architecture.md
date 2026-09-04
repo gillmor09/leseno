@@ -21,7 +21,7 @@ Flow: **UI → Server Action (Zod + guards) → `lib` → Supabase / AI provider
 2. **Story HTML ∥ FLUX images** — parallel; images via IONOS FLUX (256×256 data URLs)  
 3. **Layout** — Mistral embeds `__ILL_*__` placeholders; server sanitizes HTML (DOMPurify)
 
-Personal mode: topic/cast resolved **server-side** from `user_world` (never trust client cast).
+Personal mode: topic/cast resolved **server-side** from the selected `child_profiles` row (never trust client cast).
 
 **Silbenhilfe:** optional toggle → prompt reminds normal capitalization (no spans from the model); after layout, `applySyllableHelpMarkup` wraps syllables via German hyphenation (`hyphen/de`) as `<span class="silbe silbe--a|b">`.
 
@@ -33,7 +33,7 @@ Personal mode: topic/cast resolved **server-side** from `user_world` (never trus
 
 ## Meine Welt
 
-Table `leseno.user_world`; RPCs `get_my_world` / `upsert_my_world` bound to `auth.uid()`.
+Table `leseno.child_profiles` (1:N per auth user); RPCs `list_my_child_profiles` / `upsert_my_child_profile` / `delete_my_child_profile`.
 
 ## Bot guard
 
