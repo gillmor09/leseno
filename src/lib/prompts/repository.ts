@@ -6,7 +6,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
+  FALLBACK_AI_MODELS,
   FALLBACK_PROMPT_ADMIN_CATALOG,
+  FALLBACK_PROMPT_TEMPLATES,
   type AiModelConfig,
   type PromptAdminCatalog,
   type PromptTemplateConfig,
