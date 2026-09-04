@@ -12,8 +12,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * Admin for story-length word bands. Reachable via the header cog.
- * Session lock can wrap this route once auth exists.
+ * Admin for story-length word bands. Guarded by admin layout.
  */
 export default async function StoryLengthAdminPage() {
   let catalog = FALLBACK_STORY_LENGTH_CATALOG;

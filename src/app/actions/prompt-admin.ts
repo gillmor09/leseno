@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import type { ActionResult } from "@/lib/types/actions";
 import {
   updateAiModels,
@@ -13,12 +14,16 @@ import {
 } from "@/lib/validations/prompt-admin";
 
 /**
- * Saves model settings and prompt templates for the two-step story pipeline.
- * Auth can wrap this action later; writes already go through the service role.
+ * Saves model settings for the story pipeline. Admin role required.
  */
 export async function saveAiModelsAction(
   input: unknown,
 ): Promise<ActionResult> {
+  const denied = await denyUnlessAdmin();
+  if (denied) {
+    return { success: false, error: denied };
+  }
+
   const parsed = aiModelsFormSchema.safeParse(input);
   if (!parsed.success) {
     const first = parsed.error.issues[0];
@@ -45,12 +50,16 @@ export async function saveAiModelsAction(
 }
 
 /**
- * Saves prompt templates for the two-step story pipeline.
- * Auth can wrap this action later; writes already go through the service role.
+ * Saves prompt templates for the story pipeline. Admin role required.
  */
 export async function savePromptTemplatesAction(
   input: unknown,
 ): Promise<ActionResult> {
+  const denied = await denyUnlessAdmin();
+  if (denied) {
+    return { success: false, error: denied };
+  }
+
   const parsed = promptTemplatesFormSchema.safeParse(input);
   if (!parsed.success) {
     const first = parsed.error.issues[0];

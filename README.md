@@ -20,5 +20,6 @@ Or use Cursor / VS Code tasks:
 ## Stack notes
 
 - App DB schema name: `leseno` (see `src/lib/supabase/schema.ts`)
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
 - Cursor agent rules: `.cursor/rules/`
 - SQL migrations: `supabase/migrations/`

@@ -78,13 +78,24 @@ export const FALLBACK_AI_MODELS: AiModelConfig[] = [
     notes:
       "Betten Illustrationen ein; Text fließt mit 1rem Abstand um die Bilder.",
   },
+  {
+    id: "tts-default",
+    label: "Vorlesen (OpenAI TTS)",
+    provider: "openai-tts",
+    modelSlug: "tts-1",
+    supportsSystemPrompt: false,
+    supportsJsonOutput: false,
+    isActive: true,
+    notes:
+      "Liest die Geschichte vor über OpenAI `/v1/audio/speech` (`OPENAI_API_KEY`, Stimme nova).",
+  },
 ];
 
 const LAYOUT_SYSTEM =
-  "Du bist Layout-Redakteur für Kindergeschichten. Du bettest fertige Illustrationen in bestehendes HTML ein, ohne den Textsinn zu ändern. Der Text muss um die Bilder fließen. Abstände setzt das CSS (1rem) — setze kein style-Attribut. Behalte h1, p, strong, em. Gib nur HTML zurück — keine Markdown-Codeblöcke, keine Erklärungen.";
+  "Du bist Layout-Redakteur für Kindergeschichten. Du bettest fertige Illustrationen in bestehendes HTML ein, ohne den Textsinn zu ändern. Der Text muss um die Bilder fließen. Abstände setzt das CSS (1rem) — setze kein style-Attribut. Behalte h1, p, strong, em und alle span.silbe / silbe--a / silbe--b unverändert. Gib nur HTML zurück — keine Markdown-Codeblöcke, keine Erklärungen.";
 
 const LAYOUT_USER =
-  "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\n\nVerfügbare Illustrationen (nutze genau diese Attribute):\n{{images_manifest}}\n\nGeschichten-HTML:\n{{story_html}}\n\nAufgabe:\n- Betten jede Illustration genau einmal so ein, dass das <img> das erste Kind seines <p> ist und der Umfließ-Text im selben <p> direkt danach folgt:\n  <p><img src=\"__ILL_id__\" alt=\"…\" width=\"256\" height=\"256\" class=\"story-illustration story-illustration--left\" />Text der auf gleicher Höhe wie die Bildoberkante beginnt und rechts/links umfließt…</p>\n- Nutze die Manifest-Klasse (--left oder --right).\n- Kein alleinstehendes Bild zwischen zwei leeren Absätzen; Text und Bild gehören in denselben Absatz.\n- Kein style-Attribut; Abstände (1rem oben und seitlich) kommen aus CSS.\n- Ändere den Textinhalt nicht.\n- Gib ausschließlich das vollständige HTML zurück.";
+  "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\n\nVerfügbare Illustrationen (nutze genau diese Attribute):\n{{images_manifest}}\n\nGeschichten-HTML:\n{{story_html}}\n\nAufgabe:\n- Betten jede Illustration genau einmal so ein, dass das <img> das erste Kind seines <p> ist und der Umfließ-Text im selben <p> direkt danach folgt:\n  <p><img src=\"__ILL_id__\" alt=\"…\" width=\"256\" height=\"256\" class=\"story-illustration story-illustration--left\" />Text der auf gleicher Höhe wie die Bildoberkante beginnt und rechts/links umfließt…</p>\n- Nutze die Manifest-Klasse (--left oder --right).\n- Kein alleinstehendes Bild zwischen zwei leeren Absätzen; Text und Bild gehören in denselben Absatz.\n- Kein style-Attribut; Abstände (1rem oben und seitlich) kommen aus CSS.\n- Ändere den Textinhalt nicht — insbesondere Silben-<span class=\"silbe …\"> und deren Klassen beibehalten.\n- Gib ausschließlich das vollständige HTML zurück.";
 
 export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
   {
@@ -145,7 +156,7 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     systemTemplate:
       "Du schreibst warmherzige, fantasievolle Geschichten auf Deutsch für Kinder. Baue die Fakten natürlich in die Geschichte ein und achte darauf, dass der Ton zur gewünschten Stimmung passt. Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
     userTemplate:
-      "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortspanne: {{target_word_range}}\nEinzubauende Fakten:\n{{facts_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em).",
+      "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortspanne: {{target_word_range}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
     placeholders: [
       "topic",
       "school_stage",
@@ -153,11 +164,12 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
       "length_step",
       "target_word_range",
       "facts_block",
+      "syllable_help_block",
     ],
     assemblyNotes:
-      "Läuft parallel zur direkten FLUX-Bildgenerierung. Danach folgt die Layout-Stufe.",
+      "Silbenhilfe: syllable_help_block steuert nur Schreibregeln; Spans setzt die Pipeline nach dem Layout.",
     outputContract:
-      "Vollständige Geschichte als HTML (h1, p, ggf. strong/em). Keine Bilder.",
+      "Vollständige Geschichte als HTML (h1, p, ggf. strong/em). Keine Bilder, keine Silben-spans.",
   },
   {
     id: "fallback-story-write-personal",
@@ -170,7 +182,7 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     systemTemplate:
       "Du schreibst warmherzige, fantasievolle Geschichten auf Deutsch für Kinder. Die genannte Hauptfigur ist die zentrale Protagonist:in und behält genau diesen Namen. Freundesnamen aus der Liste darfst du als Freund:innen einbauen. Baue die Fakten natürlich ein. Gib ausschließlich HTML aus: eine Überschrift (h1) und Absätze (p). Keine Bilder, keine Markdown-Codeblöcke.",
     userTemplate:
-      "{{personal_block}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortspanne: {{target_word_range}}\nEinzubauende Fakten:\n{{facts_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. {{protagonist_name}} ist die Hauptfigur. Weitere Namen falls sinnvoll: {{friends_list}}. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em).",
+      "{{personal_block}}\nSchulstufe: {{school_stage}}\nGeschichts-Stimmung: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nZiel-Wortspanne: {{target_word_range}}\nEinzubauende Fakten:\n{{facts_block}}\n{{syllable_help_block}}\nSchreibe eine vollständige Geschichte auf Deutsch als HTML. {{protagonist_name}} ist die Hauptfigur. Weitere Namen falls sinnvoll: {{friends_list}}. Die Fakten sollen inhaltlich korrekt, fließend eingebettet und laut vorlesbar sein. Nur HTML-Tags h1 und p (optional strong/em). Keine Silben-spans.",
     placeholders: [
       "personal_block",
       "topic",
@@ -181,11 +193,12 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
       "length_step",
       "target_word_range",
       "facts_block",
+      "syllable_help_block",
     ],
     assemblyNotes:
-      "Nur bei „Ganz persönlich“. Protagonist und Freunde kommen aus Meine Welt.",
+      "Silbenhilfe: syllable_help_block steuert nur Schreibregeln; Spans setzt die Pipeline nach dem Layout.",
     outputContract:
-      "Vollständige Geschichte als HTML (h1, p, ggf. strong/em). Keine Bilder.",
+      "Vollständige Geschichte als HTML (h1, p, ggf. strong/em). Keine Bilder, keine Silben-spans.",
   },
   {
     id: "fallback-story-layout",

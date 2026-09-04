@@ -6,16 +6,19 @@ import {
   type StoryGenerateResult,
 } from "@/lib/ai/pipeline";
 import { getCurrentUser } from "@/lib/auth/session";
+import { toUserFacingMessage } from "@/lib/errors/user-facing";
 import { assertBotGuard } from "@/lib/security/bot-guard";
-import {
-  buildPersonalStoryContext,
-} from "@/lib/stories/personal";
+import { buildPersonalStoryContext } from "@/lib/stories/personal";
 import { storyGenerateSchema } from "@/lib/validations/story-generate";
 import { loadMyWorld } from "@/lib/world/repository";
 
+const STORY_GENERATE_FALLBACK =
+  "Die Geschichte konnte gerade nicht entstehen. Bitte versuche es gleich noch einmal.";
+
 /**
- * Starts the free-tier story pipeline: facts → (story || FLUX images) → layout.
+ * Starts the free-tier story pipeline: facts → story (+ optional images/layout).
  * In personal mode, seeds come from Meine Welt (server-side).
+ * Provider errors are logged server-side; the client only gets fixed German copy.
  */
 export async function generateFreeStoryAction(
   input: unknown,
@@ -61,17 +64,15 @@ export async function generateFreeStoryAction(
       lengthStep: parsed.data.lengthStep,
       mood: parsed.data.mood,
       personal,
+      syllableHelp: parsed.data.syllableHelp,
+      includeImages: parsed.data.includeImages,
     });
     return { success: true, data: result };
   } catch (error) {
     console.error("[generateFreeStoryAction]", error);
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Die Geschichte konnte nicht erzeugt werden.";
     return {
       success: false,
-      error: message,
+      error: toUserFacingMessage(error, STORY_GENERATE_FALLBACK),
     };
   }
 }

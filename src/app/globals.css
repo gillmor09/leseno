@@ -75,3 +75,28 @@ a[aria-disabled="true"],
 .story-html p:has(+ p > img.story-illustration:first-child) {
   margin-bottom: 0 !important;
 }
+
+/**
+ * Silbenhilfe (Erstlese-Zweifarbdruck): alternating syllable colors.
+ * Markup: <span class="silbe silbe--a">…</span><span class="silbe silbe--b">…</span>
+ */
+.story-html span.silbe--a {
+  color: #1d4ed8;
+}
+
+.story-html span.silbe--b {
+  color: #dc2626;
+}
+
+/**
+ * TTS follow-along: current spoken word (Whisper timings).
+ * Background sits on the word wrapper; silbe colors stay on inner spans.
+ */
+.story-html .tts-word--active,
+[data-tts-root] .tts-word--active {
+  font-weight: 800;
+  background-color: color-mix(in oklab, #f97316 28%, transparent);
+  border-radius: 0.2em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}

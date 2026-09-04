@@ -5,6 +5,7 @@
  */
 
 import type { UserWorldProfile } from "@/lib/world/catalog";
+import { UserFacingError } from "@/lib/errors/user-facing";
 
 export type PersonalStoryContext = {
   topic: string;
@@ -25,7 +26,7 @@ export function buildPersonalStoryContext(
 ): PersonalStoryContext {
   const protagonistName = world.displayName.trim();
   if (!protagonistName) {
-    throw new Error(
+    throw new UserFacingError(
       "Für „Ganz persönlich“ brauchst du in Meine Welt einen Namen.",
     );
   }
@@ -44,7 +45,7 @@ export function buildPersonalStoryContext(
     ];
 
   if (pool.length === 0) {
-    throw new Error(
+    throw new UserFacingError(
       "Für „Ganz persönlich“ brauchst du in Meine Welt mindestens ein Interesse oder etwas unter „Das möchte ich mal erleben“.",
     );
   }

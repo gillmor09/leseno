@@ -1,3 +1,9 @@
+# Leseno — agent notes
+
+Product architecture (layers, pipeline, admin, world, bot guard): **[docs/architecture.md](docs/architecture.md)**.
+
+Cursor rules: `.cursor/rules/`. Migrations: `supabase/migrations/`.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know

@@ -1,11 +1,10 @@
 /**
- * Builds a self-contained HTML document for print → PDF that mirrors the
+ * Builds a self-contained HTML document for PDF preview / print that mirrors the
  * on-screen story card + learned list (floats, Nunito, brand colors).
- * Export uses a hidden iframe + `print()` so the OS “Als PDF speichern”
- * dialog opens — no blank webpage tab.
+ * Expects pipeline-sanitized story HTML. Preview opens in-app; save uses print().
  */
 
-import { sanitizeStoryHtml, looksLikeHtml } from "@/lib/stories/sanitize-story-html";
+import { looksLikeHtml } from "@/lib/stories/looks-like-html";
 
 function escapeHtml(value: string): string {
   return value
@@ -30,11 +29,25 @@ export function exportFontSizeForSchoolStage(
   return 1.125;
 }
 
+/**
+ * Early readers (Vorschule / 1. Klasse): looser line + letter spacing in PDF.
+ */
+export function exportSpacingCssForSchoolStage(
+  stage: string | null | undefined,
+): string {
+  if (stage === "vorschule" || stage === "klasse_1") {
+    return "line-height: 1.85; letter-spacing: 0.04em;";
+  }
+  return "line-height: 1.65; letter-spacing: normal;";
+}
+
 export type StoryExportInput = {
   storyHtml: string;
   learnedFacts: string[];
   /** Relative rem size for story body. */
   bodyFontSizeRem?: number;
+  /** School stage for early-reader spacing in the export. */
+  schoolStage?: string | null;
 };
 
 /**
@@ -42,8 +55,9 @@ export type StoryExportInput = {
  */
 export function buildStoryExportDocument(input: StoryExportInput): string {
   const fontSize = input.bodyFontSizeRem ?? 1.125;
+  const spacingCss = exportSpacingCssForSchoolStage(input.schoolStage);
   const storyInner = looksLikeHtml(input.storyHtml)
-    ? sanitizeStoryHtml(input.storyHtml)
+    ? input.storyHtml
     : `<p>${escapeHtml(input.storyHtml).replaceAll("\n", "<br />")}</p>`;
 
   const factsBlock =
@@ -118,9 +132,9 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
     }
     .story-html {
       margin-top: 1rem;
-      line-height: 1.65;
       color: #3f3f46;
       ${storyFontSizeCss(fontSize)}
+      ${spacingCss}
     }
     .story-html::after {
       content: "";
@@ -149,6 +163,8 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
       color: #18181b;
     }
     .story-html em { font-style: italic; }
+    .story-html span.silbe--a { color: #1d4ed8; }
+    .story-html span.silbe--b { color: #dc2626; }
     .story-html img.story-illustration {
       display: block;
       width: 256px;
@@ -273,8 +289,8 @@ function waitForImages(doc: Document): Promise<void> {
 }
 
 /**
- * Opens the system print dialog (choose „Als PDF speichern“) via a hidden iframe.
- * Does not navigate to a separate webpage tab.
+ * @deprecated Prefer in-app `StoryPdfPreviewDialog` + `buildStoryExportDocument`.
+ * Opens the system print dialog via a hidden iframe (legacy).
  */
 export async function openStoryPrintDialog(
   input: StoryExportInput,
@@ -308,7 +324,6 @@ export async function openStoryPrintDialog(
 
   try {
     await waitForImages(frameDoc);
-    // Brief settle so layout/floats finish before the print snapshot.
     await new Promise((resolve) => window.setTimeout(resolve, 250));
     frameWindow.focus();
     frameWindow.print();

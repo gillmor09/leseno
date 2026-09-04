@@ -1,5 +1,5 @@
 /**
- * Story pipeline: facts → (FLUX images || story HTML) in parallel → Mistral layout.
+ * Story pipeline: facts → story (+ optional FLUX ∥ story) → optional layout.
  */
 
 import { fillPromptTemplate } from "@/lib/ai/assemble";
@@ -34,6 +34,9 @@ import {
 } from "@/lib/stories/options";
 import type { PersonalStoryContext } from "@/lib/stories/personal";
 import { buildPersonalPromptBlock } from "@/lib/stories/personal";
+import { buildSyllableHelpPromptBlock, applySyllableHelpMarkup } from "@/lib/stories/syllable-help";
+import { sanitizeStoryHtml } from "@/lib/stories/sanitize-story-html";
+import { UserFacingError } from "@/lib/errors/user-facing";
 
 export type StoryGenerateInput = {
   topic: string;
@@ -42,6 +45,10 @@ export type StoryGenerateInput = {
   mood: StoryMoodId;
   /** Set when "Ganz persönlich" is active (Meine Welt). */
   personal?: PersonalStoryContext | null;
+  /** Erstlese two-color syllable markup in story HTML. */
+  syllableHelp?: boolean;
+  /** When false, skip FLUX pixels and Mistral layout (story HTML only). */
+  includeImages?: boolean;
 };
 
 export type StoryGenerateResult = {
@@ -336,26 +343,26 @@ async function generateIllustrationPixels(
   plans: FluxIllustrationPlan[],
   modelSlug: string,
 ): Promise<GeneratedIllustration[]> {
-  const generated: GeneratedIllustration[] = [];
-
-  for (const plan of plans) {
-    const image = await generateIonosImage({
-      prompt: plan.imagePrompt,
-      size: "256x256",
-      modelSlug,
-      outputFormat: "png",
-    });
-    generated.push({
-      ...plan,
-      dataUrl: image.dataUrl,
-    });
-  }
-
-  return generated;
+  // Max 3 images — run in parallel (bounded by plan count).
+  return Promise.all(
+    plans.map(async (plan) => {
+      const image = await generateIonosImage({
+        prompt: plan.imagePrompt,
+        size: "256x256",
+        modelSlug,
+        outputFormat: "png",
+      });
+      return {
+        ...plan,
+        dataUrl: image.dataUrl,
+      };
+    }),
+  );
 }
 
 /**
- * Runs facts, then story + FLUX images in parallel, then Mistral HTML layout.
+ * Runs facts, then story (+ optional FLUX images ∥ story), then optional layout.
+ * `includeImages: false` skips illustration generation and Mistral embedding.
  */
 export async function generateStoryPipeline(
   input: StoryGenerateInput,
@@ -364,6 +371,8 @@ export async function generateStoryPipeline(
     loadStoryLengthCatalog(),
     loadPromptCatalogSafe(),
   ]);
+
+  const includeImages = input.includeImages !== false;
 
   const { factCount, wordRange, imageCount } = resolveLengthContext(
     lengthCatalog,
@@ -385,23 +394,16 @@ export async function generateStoryPipeline(
         "story-write",
       )
     : requireTemplate(promptCatalog, "story-write");
-  const layoutTemplate = requireTemplate(promptCatalog, "story-layout");
 
   const factsModel = resolveModel(
     promptCatalog,
     factsTemplate.modelId,
     factsTemplate.label,
   );
-  const imagesModel = resolveImagesModel(promptCatalog);
   const storyModel = resolveModel(
     promptCatalog,
     storyTemplate.modelId,
     storyTemplate.label,
-  );
-  const layoutModel = resolveModel(
-    promptCatalog,
-    layoutTemplate.modelId,
-    layoutTemplate.label,
   );
 
   const sharedValues = {
@@ -417,6 +419,9 @@ export async function generateStoryPipeline(
     protagonist_name: input.personal?.protagonistName ?? "",
     friends_list:
       input.personal?.friendNames.join(", ") ?? "",
+    syllable_help_block: buildSyllableHelpPromptBlock(
+      Boolean(input.syllableHelp),
+    ),
   };
 
   const factsRaw = await generateText({
@@ -431,7 +436,7 @@ export async function generateStoryPipeline(
 
   const facts = parseFactsFromModelText(factsRaw, factCount);
   if (facts.length === 0) {
-    throw new Error("Es konnte kein Wissen zum Thema gefunden werden.");
+    throw new UserFacingError("Es konnte kein Wissen zum Thema gefunden werden.");
   }
 
   const factsBlock = buildFactsBlock(facts);
@@ -439,6 +444,55 @@ export async function generateStoryPipeline(
     ...sharedValues,
     facts_block: factsBlock,
   };
+
+  if (!includeImages) {
+    const storyHtmlRaw = stripCodeFence(
+      await generateText({
+        model: storyModel,
+        systemInstruction: fillPromptTemplate(
+          storyTemplate.systemTemplate,
+          afterFactsValues,
+        ),
+        userText: fillPromptTemplate(
+          storyTemplate.userTemplate,
+          afterFactsValues,
+        ),
+        preferJson: false,
+      }),
+    );
+
+    if (!storyHtmlRaw.trim()) {
+      throw new UserFacingError("Die Geschichte kam leer zurück.");
+    }
+
+    const withSyllables = input.syllableHelp
+      ? applySyllableHelpMarkup(storyHtmlRaw)
+      : storyHtmlRaw;
+    const story = sanitizeStoryHtml(withSyllables);
+    if (!story.trim()) {
+      throw new UserFacingError("Die Geschichte kam leer zurück.");
+    }
+
+    return {
+      story,
+      facts,
+      factCount,
+      wordRange,
+      factsModelId: factsModel.id,
+      storyModelId: storyModel.id,
+      imagesModelId: "",
+      layoutModelId: "",
+      imageCount: 0,
+    };
+  }
+
+  const layoutTemplate = requireTemplate(promptCatalog, "story-layout");
+  const imagesModel = resolveImagesModel(promptCatalog);
+  const layoutModel = resolveModel(
+    promptCatalog,
+    layoutTemplate.modelId,
+    layoutTemplate.label,
+  );
 
   const fluxPlans = buildFluxIllustrationPlans({
     topic: input.topic,
@@ -469,10 +523,12 @@ export async function generateStoryPipeline(
   ]);
 
   if (!storyHtmlRaw.trim()) {
-    throw new Error("Die Geschichte kam leer zurück.");
+    throw new UserFacingError("Die Geschichte kam leer zurück.");
   }
   if (illustrations.length === 0) {
-    throw new Error("Es konnten keine Illustrationen erzeugt werden.");
+    throw new UserFacingError(
+      "Es konnten keine Illustrationen erzeugt werden.",
+    );
   }
 
   const layoutValues = {
@@ -491,7 +547,14 @@ export async function generateStoryPipeline(
     preferJson: false,
   });
 
-  const story = resolveIllustrationPlaceholders(layoutRaw, illustrations);
+  const withImages = resolveIllustrationPlaceholders(layoutRaw, illustrations);
+  const withSyllables = input.syllableHelp
+    ? applySyllableHelpMarkup(withImages)
+    : withImages;
+  const story = sanitizeStoryHtml(withSyllables);
+  if (!story.trim()) {
+    throw new UserFacingError("Die Geschichte kam leer zurück.");
+  }
 
   return {
     story,

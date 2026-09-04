@@ -1,9 +1,11 @@
 /**
- * Sanitizes AI story HTML before rendering in the story card.
- * Allowlist covers headings, paragraphs, lists, and basic emphasis only.
+ * Sanitizes AI story HTML before it leaves the server (pipeline / actions).
+ * Marked server-only so isomorphic-dompurify stays out of the client bundle.
  */
 
+import "server-only";
 import DOMPurify from "isomorphic-dompurify";
+import { looksLikeHtml } from "@/lib/stories/looks-like-html";
 
 const ALLOWED_TAGS = [
   "h1",
@@ -26,15 +28,11 @@ const ALLOWED_TAGS = [
 
 const ALLOWED_ATTR = ["class", "src", "alt", "width", "height", "loading"];
 
-/**
- * True when the string contains markup that should be rendered as HTML.
- */
-export function looksLikeHtml(text: string): boolean {
-  return /<\/?[a-z][a-z0-9]*\b[^>]*>/i.test(text);
-}
+export { looksLikeHtml };
 
 /**
  * Strips markdown fences and sanitizes story HTML for safe display.
+ * Allows data: image URLs for embedded FLUX illustrations.
  */
 export function sanitizeStoryHtml(raw: string): string {
   const trimmed = raw.trim();
@@ -47,6 +45,7 @@ export function sanitizeStoryHtml(raw: string): string {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOW_DATA_ATTR: false,
-    ALLOWED_URI_REGEXP: /^(?:(?:https?|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
+    ALLOWED_URI_REGEXP:
+      /^(?:(?:https?|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 }

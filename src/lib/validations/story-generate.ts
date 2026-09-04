@@ -30,6 +30,9 @@ const topTopicIds = [...STORY_TOP_TOPICS] as [
 export const storyGenerateSchema = z
   .object({
     personalMode: z.boolean().default(false),
+    syllableHelp: z.boolean().default(false),
+    /** When false, skip FLUX generation and layout embedding. */
+    includeImages: z.boolean().default(true),
     topic: z.string().trim().optional(),
     schoolStage: z.enum(schoolStageIds, {
       message: "Bitte eine gültige Schulstufe wählen.",

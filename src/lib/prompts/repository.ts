@@ -1,9 +1,8 @@
 /**
  * Loads and updates AI model + prompt-template settings from the `leseno` schema.
- * Public pages can later read these through the anon client; admin writes use the service role.
+ * Reads and writes use the service role so prompt IP is not exposed to anon.
  */
 
-import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
   FALLBACK_AI_MODELS,
@@ -103,7 +102,8 @@ function mergeWithFallback(catalog: PromptAdminCatalog): PromptAdminCatalog {
 export async function loadPromptAdminCatalog(options?: {
   mergeFallback?: boolean;
 }): Promise<PromptAdminCatalog> {
-  const supabase = await createClient(null);
+  // Service role: prompt bodies must not be readable via the anon key.
+  const supabase = createServiceClient(null);
   const [modelsResult, promptsResult] = await Promise.all([
     supabase.rpc("list_ai_models"),
     supabase.rpc("list_prompt_templates"),

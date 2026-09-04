@@ -1,7 +1,14 @@
 /**
  * Lightweight bot protection for public Server Actions.
  * Combines honeypot, minimum form fill time, and per-IP rate limits.
- * In-memory limits are per process — enough for a single Coolify instance.
+ *
+ * ## Multi-instance / Coolify
+ * Rate buckets live in an in-process `Map`. That is enough for a **single**
+ * Node process (typical Coolify `replicas: 1`). With multiple replicas or
+ * rolling deploys, each instance has its own counters — effective limits are
+ * weaker (roughly × replica count). If you scale out, replace the Map with a
+ * shared store (Redis / Upstash) or an edge rate limiter in front of the app.
+ * Honeypot + min-fill-time still work per request without shared state.
  */
 
 import { headers } from "next/headers";
@@ -20,6 +27,7 @@ type RateBucket = {
   resetAt: number;
 };
 
+/** Per-process only — see module doc on multi-instance limits. */
 const rateBuckets = new Map<string, RateBucket>();
 
 const GENERIC_BOT_ERROR =

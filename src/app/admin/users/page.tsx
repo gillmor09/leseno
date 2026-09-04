@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 /**
  * Admin page for user emails and app roles.
- * New signups appear here automatically with the default guest role.
+ * Guarded by `src/app/admin/layout.tsx` (admin role required).
  */
 export default async function UsersAdminPage() {
   const users = await loadUsersForAdmin();

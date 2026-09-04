@@ -1,15 +1,13 @@
 /**
- * Renders story body: sanitized HTML with readable typography, or plain text.
+ * Renders story body HTML (already sanitized on the server) or plain text.
  * Illustration float/spacing lives in `globals.css` (`.story-html img.story-illustration*`).
+ * TTS highlight wraps words under `[data-tts-root]` (see `tts-dom-highlight.ts`).
  */
 
 "use client";
 
 import { cn } from "@/lib/utils";
-import {
-  looksLikeHtml,
-  sanitizeStoryHtml,
-} from "@/lib/stories/sanitize-story-html";
+import { looksLikeHtml } from "@/lib/stories/looks-like-html";
 
 type StoryHtmlBodyProps = {
   content: string;
@@ -17,12 +15,13 @@ type StoryHtmlBodyProps = {
 };
 
 /**
- * Story card body. HTML from the model is sanitized; plain text keeps line breaks.
+ * Story card body. Expects pipeline-sanitized HTML; plain text keeps line breaks.
  */
 export function StoryHtmlBody({ content, className }: StoryHtmlBodyProps) {
   if (!looksLikeHtml(content)) {
     return (
       <div
+        data-tts-root
         className={cn(
           "mt-4 whitespace-pre-wrap leading-relaxed text-zinc-700",
           className,
@@ -33,10 +32,9 @@ export function StoryHtmlBody({ content, className }: StoryHtmlBodyProps) {
     );
   }
 
-  const html = sanitizeStoryHtml(content);
-
   return (
     <div
+      data-tts-root
       className={cn(
         "story-html mt-4 leading-relaxed text-zinc-700",
         "[&_h1]:mt-0 [&_h1]:mb-4 [&_h1]:text-[1.25em] [&_h1]:font-extrabold [&_h1]:text-zinc-950 [&_h1]:leading-tight",
@@ -53,7 +51,7 @@ export function StoryHtmlBody({ content, className }: StoryHtmlBodyProps) {
         "[&_em]:italic",
         className,
       )}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: content }}
     />
   );
 }
