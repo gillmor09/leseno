@@ -146,6 +146,21 @@ export function LandingHeader({
     },
   ] as const;
 
+  const headerBtnBase =
+    "inline-flex rounded-full px-3 py-2 text-sm font-bold text-white transition-all duration-200 ease-in-out sm:px-4";
+  const headerBtnIdle = "bg-zinc-800 hover:bg-zinc-900";
+  const headerBtnActive = "bg-orange-700 hover:bg-orange-800";
+
+  const storyPath = storyHref ?? "/basis";
+  const storyActive = pathname === storyPath;
+  const worldActive = pathname === "/meine-welt";
+  const registerActive = pathname === "/registrieren";
+  const signInActive =
+    pathname === "/anmelden" ||
+    pathname === "/passwort-vergessen" ||
+    pathname === "/passwort-zuruecksetzen" ||
+    pathname === "/email-vergessen";
+
   return (
     <>
       <header className="sticky top-0 z-50 border-b border-zinc-950/10 bg-white/95 backdrop-blur-md">
@@ -189,12 +204,10 @@ export function LandingHeader({
             {isSignedIn ? (
               <>
                 <a
-                  href={storyHref ?? "/basis"}
+                  href={storyPath}
                   className={cn(
-                    "inline-flex rounded-full px-3 py-2 text-sm font-bold transition-all duration-200 ease-in-out sm:px-4",
-                    pathname === (storyHref ?? "/basis")
-                      ? "bg-zinc-800 text-white hover:bg-zinc-900"
-                      : "bg-orange-700 text-white hover:bg-orange-800",
+                    headerBtnBase,
+                    storyActive ? headerBtnActive : headerBtnIdle,
                   )}
                 >
                   Meine Geschichte
@@ -202,10 +215,8 @@ export function LandingHeader({
                 <a
                   href="/meine-welt"
                   className={cn(
-                    "inline-flex rounded-full px-3 py-2 text-sm font-bold transition-all duration-200 ease-in-out sm:px-4",
-                    pathname === "/meine-welt"
-                      ? "bg-zinc-800 text-white hover:bg-zinc-900"
-                      : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
+                    headerBtnBase,
+                    worldActive ? headerBtnActive : headerBtnIdle,
                   )}
                 >
                   Meine Welt
@@ -226,10 +237,9 @@ export function LandingHeader({
                 <a
                   href="/registrieren"
                   className={cn(
-                    "hidden rounded-full px-4 py-2 text-sm font-bold text-white transition-all duration-200 ease-in-out sm:inline-flex",
-                    pathname === "/registrieren"
-                      ? "bg-zinc-800 hover:bg-zinc-900"
-                      : "bg-orange-700 hover:bg-orange-800",
+                    "hidden sm:inline-flex",
+                    headerBtnBase,
+                    registerActive ? headerBtnActive : headerBtnIdle,
                   )}
                 >
                   Jetzt registrieren
@@ -237,14 +247,9 @@ export function LandingHeader({
                 <a
                   href="/anmelden"
                   className={cn(
-                    "hidden rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out sm:inline-flex",
-                    pathname === "/anmelden" ||
-                      pathname === "/registrieren" ||
-                      pathname === "/passwort-vergessen" ||
-                      pathname === "/passwort-zuruecksetzen" ||
-                      pathname === "/email-vergessen"
-                      ? "bg-zinc-800 text-white hover:bg-zinc-900"
-                      : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
+                    "hidden sm:inline-flex",
+                    headerBtnBase,
+                    signInActive ? headerBtnActive : headerBtnIdle,
                   )}
                 >
                   Anmelden
@@ -324,9 +329,7 @@ export function LandingHeader({
                 onClick={() => setOpen(false)}
                 className={cn(
                   "mt-2 rounded-full px-4 py-2.5 text-center text-sm font-bold text-white transition-all duration-200 ease-in-out",
-                  pathname === "/registrieren"
-                    ? "bg-zinc-800 hover:bg-zinc-900"
-                    : "bg-orange-700 hover:bg-orange-800",
+                  registerActive ? headerBtnActive : headerBtnIdle,
                 )}
               >
                 Jetzt registrieren
@@ -335,14 +338,8 @@ export function LandingHeader({
                 href="/anmelden"
                 onClick={() => setOpen(false)}
                 className={cn(
-                  "rounded-full px-4 py-2.5 text-center text-sm font-bold transition-all duration-200 ease-in-out",
-                  pathname === "/anmelden" ||
-                    pathname === "/registrieren" ||
-                    pathname === "/passwort-vergessen" ||
-                    pathname === "/passwort-zuruecksetzen" ||
-                    pathname === "/email-vergessen"
-                    ? "bg-zinc-800 text-white hover:bg-zinc-900"
-                    : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
+                  "rounded-full px-4 py-2.5 text-center text-sm font-bold text-white transition-all duration-200 ease-in-out",
+                  signInActive ? headerBtnActive : headerBtnIdle,
                 )}
               >
                 Anmelden
