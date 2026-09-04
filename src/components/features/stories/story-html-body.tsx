@@ -1,5 +1,6 @@
 /**
  * Renders story body: sanitized HTML with readable typography, or plain text.
+ * Illustration float/spacing lives in `globals.css` (`.story-html img.story-illustration*`).
  */
 
 "use client";

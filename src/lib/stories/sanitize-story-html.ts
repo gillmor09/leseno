@@ -21,9 +21,10 @@ const ALLOWED_TAGS = [
   "li",
   "blockquote",
   "span",
+  "img",
 ];
 
-const ALLOWED_ATTR = ["class"];
+const ALLOWED_ATTR = ["class", "src", "alt", "width", "height", "loading"];
 
 /**
  * True when the string contains markup that should be rendered as HTML.
@@ -46,5 +47,6 @@ export function sanitizeStoryHtml(raw: string): string {
     ALLOWED_TAGS,
     ALLOWED_ATTR,
     ALLOW_DATA_ATTR: false,
+    ALLOWED_URI_REGEXP: /^(?:(?:https?|data):|[^a-z]|[a-z+.\-]+(?:[^a-z+.\-:]|$))/i,
   });
 }

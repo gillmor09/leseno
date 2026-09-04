@@ -1,6 +1,6 @@
 /**
  * Free-tier story composer options (school stages instead of numeric ages).
- * Generation logic will consume these values later; keep labels in sync with the UI.
+ * Generation logic consumes these values; keep labels in sync with the UI.
  */
 
 export const STORY_SCHOOL_STAGES = [
@@ -22,11 +22,21 @@ export const STORY_MOODS = [
 
 export type StoryMoodId = (typeof STORY_MOODS)[number]["id"];
 
-export const TOPIC_EXAMPLES = [
-  "Dinosaurier",
-  "Weltall",
-  "Vulkane",
-  "Freundschaft",
-  "Tiere im Meer",
-  "Ritter",
+/** Top-10 theme chips on `/kostenlos` (no free-text topic). */
+export const STORY_TOP_TOPICS = [
+  "Magie & Geheimnisse",
+  "Abenteuer & Entdeckungen",
+  "Tierwelt & Tierhelden",
+  "Lachen & Quatsch",
+  "Detektive & Rätsel",
+  "Freundschaft & Banden",
+  "Helden, Gaming & Action",
+  "Dinos & Urzeit",
+  "Grusel & Monster",
+  "Sport & Power",
 ] as const;
+
+export type StoryTopTopic = (typeof STORY_TOP_TOPICS)[number];
+
+/** @deprecated Prefer STORY_TOP_TOPICS */
+export const TOPIC_EXAMPLES = STORY_TOP_TOPICS;

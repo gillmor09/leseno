@@ -27,7 +27,7 @@ const steps = [
   {
     number: "03",
     title: "Setz den Ton",
-    text: "Lustig, spannend oder motivierend. In jeder Geschichte stecken echte Fakten, die nach dem Lesen bei dir bleiben.",
+    text: "Lustig, spannend oder motivierend. In jeder Geschichte steckt echtes Wissen und Staunen, das nach dem Lesen bei dir bleibt.",
     icon: BookOpen,
   },
 ] as const;
@@ -60,7 +60,7 @@ const moods = [
 ] as const;
 
 const parentPoints = [
-  "In jeder Geschichte stecken echte Fakten — Lesespaß mit Substanz.",
+  "In jeder Geschichte stecken Neues und Staunen — Lesespaß mit Substanz.",
   "Die Sprache richtet sich nach dem Alter, nicht nach einem Einheitsmaß.",
   "Freemium: Probier erst aus, dann entscheidest du, was ihr braucht.",
   "Keine Werbeflut, kein alberner Ton. Ernst gemeinte Lesefreude.",
@@ -98,7 +98,7 @@ function HeroSection() {
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
             Wähl ein Thema, gib deine Schulstufe an und such dir den Ton aus.
             Leseno schreibt daraus deine Geschichte — lustig, spannend oder
-            motivierend. Mit echten Fakten, die bei dir hängen bleiben.
+            motivierend. Mit Wissen und Neugier, die bei dir hängen bleiben.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a
@@ -149,7 +149,7 @@ function HeroSection() {
               </span>
             </div>
             <p className="mt-3 rounded-xl bg-orange-50 px-3 py-2 text-xs leading-relaxed font-semibold text-orange-900">
-              Fakt: Lava ist oft über 700 °C heiß — heißer als ein Backofen.
+              Staunen: Lava ist oft über 700 °C heiß — heißer als ein Backofen.
             </p>
           </div>
         </div>
@@ -214,7 +214,7 @@ function MoodsSection() {
           Lustig, spannend oder motivierend — du entscheidest.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Dieselbe Neugier, drei Wege. Du änderst den Ton. Die Fakten bleiben.
+          Dieselbe Neugier, drei Wege. Du änderst den Ton. Das Wissen bleibt.
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-3">
           {moods.map((mood) => {
@@ -265,17 +265,17 @@ function FactsSection() {
             Beim Lesen wirst du nebenbei klüger.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-300">
-            Jede Leseno-Geschichte trägt echte Fakten. Nicht als Test danach —
-            sondern mitten in deinem Abenteuer. Du liest, weil es Spaß macht.
-            Und nimmst etwas mit, das stimmt.
+            Jede Leseno-Geschichte trägt echtes Wissen und Staunen. Nicht als
+            Test danach — sondern mitten in deinem Abenteuer. Du liest, weil es
+            Spaß macht. Und nimmst etwas mit, das stimmt.
           </p>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2">
           {[
             "Wusstest du? Ein Kolibri kann rückwärts fliegen.",
-            "Fakt: Bienen tanzen, um den Weg zur Blüte zu zeigen.",
-            "Fakt: Der Mond hat keine eigene Luft zum Atmen.",
-            "Wusstest du? Vulkane können unter dem Meer liegen.",
+            "Neues: Bienen tanzen, um den Weg zur Blüte zu zeigen.",
+            "Staunen: Der Mond hat keine eigene Luft zum Atmen.",
+            "Neugier: Vulkane können unter dem Meer liegen.",
           ].map((fact) => (
             <li
               key={fact}
@@ -366,7 +366,7 @@ function PricingSection() {
               </li>
               <li className="flex gap-2">
                 <Check className="mt-0.5 size-4 shrink-0 text-orange-700" aria-hidden />
-                Echte Fakten in jeder Geschichte
+                Wissen und Staunen in jeder Geschichte
               </li>
             </ul>
             <a

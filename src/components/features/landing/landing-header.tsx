@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, type MouseEvent } from "react";
+import { useState, useTransition, type MouseEvent } from "react";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
-import { Menu, Settings, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut, Menu, Settings, X } from "lucide-react";
+import { toast } from "sonner";
+import { signOutAction } from "@/app/actions/auth";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -21,13 +23,21 @@ function goToSection(href: string) {
 
 /**
  * Shared chrome for marketing pages. Hash links stay on `/`; other routes go home first.
- * The admin cog is only shown when `isAdmin` is true (signed-in Admin role).
+ * Signed-in users see Meine Welt + Abmelden; guests see Registrieren / Anmelden.
  */
-export function LandingHeader({ isAdmin = false }: { isAdmin?: boolean }) {
+export function LandingHeader({
+  isAdmin = false,
+  isSignedIn = false,
+}: {
+  isAdmin?: boolean;
+  isSignedIn?: boolean;
+}) {
   const pathname = usePathname();
+  const router = useRouter();
   const onHome = pathname === "/";
   const [open, setOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [signingOut, startSignOut] = useTransition();
 
   function handleNavClick(event: MouseEvent<HTMLAnchorElement>, hash: string) {
     if (!onHome) {
@@ -39,6 +49,20 @@ export function LandingHeader({ isAdmin = false }: { isAdmin?: boolean }) {
     window.setTimeout(() => {
       goToSection(hash);
     }, 50);
+  }
+
+  function handleSignOut() {
+    startSignOut(async () => {
+      const result = await signOutAction();
+      if (!result.success) {
+        toast.error(result.error ?? "Abmelden hat nicht geklappt.");
+        return;
+      }
+      setOpen(false);
+      toast.success("Du bist abgemeldet.");
+      router.push("/");
+      router.refresh();
+    });
   }
 
   const adminItems = [
@@ -117,32 +141,62 @@ export function LandingHeader({ isAdmin = false }: { isAdmin?: boolean }) {
                 <span className="sr-only">Admin öffnen</span>
               </button>
             ) : null}
-            <a
-              href="/registrieren"
-              className={cn(
-                "hidden rounded-full px-4 py-2 text-sm font-bold text-white transition-all duration-200 ease-in-out sm:inline-flex",
-                pathname === "/registrieren"
-                  ? "bg-zinc-800 hover:bg-zinc-900"
-                  : "bg-orange-700 hover:bg-orange-800",
-              )}
-            >
-              Jetzt registrieren
-            </a>
-            <a
-              href="/anmelden"
-              className={cn(
-                "hidden rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out sm:inline-flex",
-                pathname === "/anmelden" ||
-                  pathname === "/registrieren" ||
-                  pathname === "/passwort-vergessen" ||
-                  pathname === "/passwort-zuruecksetzen" ||
-                  pathname === "/email-vergessen"
-                  ? "bg-zinc-800 text-white hover:bg-zinc-900"
-                  : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
-              )}
-            >
-              Anmelden
-            </a>
+
+            {isSignedIn ? (
+              <>
+                <a
+                  href="/meine-welt"
+                  className={cn(
+                    "inline-flex rounded-full px-3 py-2 text-sm font-bold transition-all duration-200 ease-in-out sm:px-4",
+                    pathname === "/meine-welt"
+                      ? "bg-zinc-800 text-white hover:bg-zinc-900"
+                      : "bg-orange-700 text-white hover:bg-orange-800",
+                  )}
+                >
+                  Meine Welt
+                </a>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  title="Abmelden"
+                  className="inline-flex size-10 items-center justify-center rounded-full text-zinc-600 transition-all duration-200 ease-in-out hover:bg-gray-100 hover:text-orange-700 disabled:opacity-70"
+                >
+                  <LogOut className="size-5" aria-hidden />
+                  <span className="sr-only">Abmelden</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <a
+                  href="/registrieren"
+                  className={cn(
+                    "hidden rounded-full px-4 py-2 text-sm font-bold text-white transition-all duration-200 ease-in-out sm:inline-flex",
+                    pathname === "/registrieren"
+                      ? "bg-zinc-800 hover:bg-zinc-900"
+                      : "bg-orange-700 hover:bg-orange-800",
+                  )}
+                >
+                  Jetzt registrieren
+                </a>
+                <a
+                  href="/anmelden"
+                  className={cn(
+                    "hidden rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out sm:inline-flex",
+                    pathname === "/anmelden" ||
+                      pathname === "/registrieren" ||
+                      pathname === "/passwort-vergessen" ||
+                      pathname === "/passwort-zuruecksetzen" ||
+                      pathname === "/email-vergessen"
+                      ? "bg-zinc-800 text-white hover:bg-zinc-900"
+                      : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
+                  )}
+                >
+                  Anmelden
+                </a>
+              </>
+            )}
+
             <button
               type="button"
               className="inline-flex size-10 items-center justify-center rounded-full text-zinc-950 transition-all duration-200 ease-in-out hover:bg-gray-100 md:hidden"
@@ -180,34 +234,62 @@ export function LandingHeader({ isAdmin = false }: { isAdmin?: boolean }) {
                 {item.label}
               </a>
             ))}
-            <a
-              href="/registrieren"
-              onClick={() => setOpen(false)}
-              className={cn(
-                "mt-2 rounded-full px-4 py-2.5 text-center text-sm font-bold text-white transition-all duration-200 ease-in-out",
-                pathname === "/registrieren"
-                  ? "bg-zinc-800 hover:bg-zinc-900"
-                  : "bg-orange-700 hover:bg-orange-800",
-              )}
-            >
-              Jetzt registrieren
-            </a>
-            <a
-              href="/anmelden"
-              onClick={() => setOpen(false)}
-              className={cn(
-                "rounded-full px-4 py-2.5 text-center text-sm font-bold transition-all duration-200 ease-in-out",
-                pathname === "/anmelden" ||
-                  pathname === "/registrieren" ||
-                  pathname === "/passwort-vergessen" ||
-                  pathname === "/passwort-zuruecksetzen" ||
-                  pathname === "/email-vergessen"
-                  ? "bg-zinc-800 text-white hover:bg-zinc-900"
-                  : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
-              )}
-            >
-              Anmelden
-            </a>
+            {isSignedIn ? (
+              <>
+                <a
+                  href="/meine-welt"
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    "mt-2 rounded-full px-4 py-2.5 text-center text-sm font-bold text-white transition-all duration-200 ease-in-out",
+                    pathname === "/meine-welt"
+                      ? "bg-zinc-800 hover:bg-zinc-900"
+                      : "bg-orange-700 hover:bg-orange-800",
+                  )}
+                >
+                  Meine Welt
+                </a>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={signingOut}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-zinc-700 ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out hover:bg-gray-100 disabled:opacity-70"
+                >
+                  <LogOut className="size-4" aria-hidden />
+                  Abmelden
+                </button>
+              </>
+            ) : (
+              <>
+                <a
+                  href="/registrieren"
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    "mt-2 rounded-full px-4 py-2.5 text-center text-sm font-bold text-white transition-all duration-200 ease-in-out",
+                    pathname === "/registrieren"
+                      ? "bg-zinc-800 hover:bg-zinc-900"
+                      : "bg-orange-700 hover:bg-orange-800",
+                  )}
+                >
+                  Jetzt registrieren
+                </a>
+                <a
+                  href="/anmelden"
+                  onClick={() => setOpen(false)}
+                  className={cn(
+                    "rounded-full px-4 py-2.5 text-center text-sm font-bold transition-all duration-200 ease-in-out",
+                    pathname === "/anmelden" ||
+                      pathname === "/registrieren" ||
+                      pathname === "/passwort-vergessen" ||
+                      pathname === "/passwort-zuruecksetzen" ||
+                      pathname === "/email-vergessen"
+                      ? "bg-zinc-800 text-white hover:bg-zinc-900"
+                      : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
+                  )}
+                >
+                  Anmelden
+                </a>
+              </>
+            )}
           </nav>
         </div>
       </header>

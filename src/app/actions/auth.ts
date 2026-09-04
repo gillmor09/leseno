@@ -273,3 +273,18 @@ export async function requestEmailReminderAction(
     data: "Deine Anfrage wurde gespeichert. Wir melden uns an die angegebene E-Mail-Adresse.",
   };
 }
+
+/**
+ * Ends the current Auth session and clears cookies.
+ */
+export async function signOutAction(): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signOut();
+
+  if (error) {
+    return { success: false, error: "Abmelden hat nicht geklappt." };
+  }
+
+  return { success: true };
+}
+

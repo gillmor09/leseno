@@ -1,11 +1,8 @@
 /**
- * OpenAI-compatible chat completions client.
- * Primary target: IONOS Cloud AI Model Hub (`IONOS_API_TOKEN`).
- * See https://docs.ionos.com/cloud/ai/ai-model-hub/how-tos/text-generation.md
+ * OpenAI-compatible chat completions client for IONOS AI Model Hub.
  */
 
-const DEFAULT_IONOS_BASE_URL =
-  "https://openai.inference.de-txl.ionos.com/v1";
+import { getIonosApiToken, getIonosBaseUrl } from "@/lib/ai/ionos";
 
 export type OpenAiCompatibleGenerateInput = {
   modelSlug: string;
@@ -18,22 +15,6 @@ export type OpenAiCompatibleGenerateResult = {
   text: string;
   modelSlug: string;
 };
-
-function getIonosApiToken(): string {
-  const token = process.env.IONOS_API_TOKEN?.trim() ?? "";
-  if (!token) {
-    throw new Error(
-      "IONOS_API_TOKEN fehlt. Bitte in .env.local und Coolify setzen.",
-    );
-  }
-  return token;
-}
-
-function getIonosBaseUrl(): string {
-  const configured =
-    process.env.IONOS_OPENAI_BASE_URL?.trim() || DEFAULT_IONOS_BASE_URL;
-  return configured.replace(/\/+$/, "");
-}
 
 type ChatCompletionResponse = {
   choices?: Array<{

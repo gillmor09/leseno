@@ -2,19 +2,33 @@ import type { Metadata } from "next";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { FreeStoryForm } from "@/components/features/stories/free-story-form";
+import { getCurrentUser } from "@/lib/auth/session";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
+import { canUsePersonalMode } from "@/lib/stories/personal";
+import { loadMyWorld } from "@/lib/world/repository";
 
 export const metadata: Metadata = {
   title: "Kostenlos deine Geschichte starten — Leseno",
   description:
-    "Wähl dein Thema, gib deine Schulstufe an, stell die Textlänge ein und such den Ton — dann lies deine eigene Geschichte mit echten Fakten.",
+    "Wähl ein Top-Thema oder „Ganz persönlich“, stell Schulstufe und Länge ein — dann lies deine Geschichte mit Wissen und Staunen.",
 };
 
 /**
- * Free-tier composer. Shared chrome with the landing page; generation comes later.
+ * Free-tier composer. Personal mode needs a signed-in Meine-Welt profile.
  */
 export default async function KostenlosPage() {
   const lengthCatalog = await loadStoryLengthCatalog();
+  const user = await getCurrentUser();
+
+  let personalAvailable = false;
+  if (user) {
+    try {
+      const world = await loadMyWorld();
+      personalAvailable = canUsePersonalMode(world);
+    } catch {
+      personalAvailable = false;
+    }
+  }
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -28,12 +42,14 @@ export default async function KostenlosPage() {
             Wähl dein Thema. Wir schreiben deine Geschichte.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Stell deine Schulstufe und die Textlänge ein, dann wähl lustig,
-            spannend oder motivierend. In jeder Geschichte stecken echte Fakten
-            für dich.
+            Nimm ein Top-Thema oder schalte „Ganz persönlich“ ein. Dann stell
+            Schulstufe und Textlänge ein — lustig, spannend oder motivierend.
           </p>
           <div className="mt-10">
-            <FreeStoryForm lengthCatalog={lengthCatalog} />
+            <FreeStoryForm
+              lengthCatalog={lengthCatalog}
+              personalAvailable={personalAvailable}
+            />
           </div>
         </section>
       </main>

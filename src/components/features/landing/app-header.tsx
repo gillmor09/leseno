@@ -1,10 +1,13 @@
 import { LandingHeader } from "@/components/features/landing/landing-header";
-import { isCurrentUserAdmin } from "@/lib/auth/session";
+import { getCurrentUser } from "@/lib/auth/session";
 
 /**
- * Server wrapper so the cog / admin overlay only renders for signed-in admins.
+ * Server wrapper: admin cog for admins; Meine Welt / Abmelden when signed in.
  */
 export async function AppHeader() {
-  const isAdmin = await isCurrentUserAdmin();
-  return <LandingHeader isAdmin={isAdmin} />;
+  const user = await getCurrentUser();
+  const isAdmin = user?.app_metadata?.role === "admin";
+  return (
+    <LandingHeader isAdmin={Boolean(isAdmin)} isSignedIn={Boolean(user)} />
+  );
 }

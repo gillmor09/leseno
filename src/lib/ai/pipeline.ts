@@ -1,9 +1,15 @@
 /**
- * Two-stage story pipeline: research facts, then write the story.
- * Models and prompt templates come from the admin catalog (DB with fallback).
+ * Story pipeline: facts → (FLUX images || story HTML) in parallel → Mistral layout.
  */
 
 import { fillPromptTemplate } from "@/lib/ai/assemble";
+import {
+  buildFluxIllustrationPlans,
+  illustrationCountForWordTarget,
+  type FluxIllustrationPlan,
+} from "@/lib/ai/flux-illustrations";
+import { generateIonosImage } from "@/lib/ai/ionos-images";
+import { getIonosImageModelSlug } from "@/lib/ai/ionos";
 import { generateText } from "@/lib/ai/provider";
 import {
   FALLBACK_PROMPT_ADMIN_CATALOG,
@@ -26,12 +32,16 @@ import {
   type StoryMoodId,
   type StorySchoolStageId,
 } from "@/lib/stories/options";
+import type { PersonalStoryContext } from "@/lib/stories/personal";
+import { buildPersonalPromptBlock } from "@/lib/stories/personal";
 
 export type StoryGenerateInput = {
   topic: string;
   schoolStage: StorySchoolStageId;
   lengthStep: StoryLengthStepId;
   mood: StoryMoodId;
+  /** Set when "Ganz persönlich" is active (Meine Welt). */
+  personal?: PersonalStoryContext | null;
 };
 
 export type StoryGenerateResult = {
@@ -41,11 +51,18 @@ export type StoryGenerateResult = {
   wordRange: string;
   factsModelId: string;
   storyModelId: string;
+  imagesModelId: string;
+  layoutModelId: string;
+  imageCount: number;
+};
+
+type GeneratedIllustration = FluxIllustrationPlan & {
+  dataUrl: string;
 };
 
 async function loadPromptCatalogSafe(): Promise<PromptAdminCatalog> {
   try {
-    return await loadPromptAdminCatalog();
+    return await loadPromptAdminCatalog({ mergeFallback: true });
   } catch {
     return FALLBACK_PROMPT_ADMIN_CATALOG;
   }
@@ -62,6 +79,20 @@ function requireTemplate(
   return template;
 }
 
+/**
+ * Prefers a personal-mode template when present; otherwise falls back to the base key.
+ */
+function requireTemplatePrefer(
+  catalog: PromptAdminCatalog,
+  preferredKey: string,
+  fallbackKey: string,
+): PromptTemplateConfig {
+  return (
+    catalog.prompts.find((prompt) => prompt.key === preferredKey) ??
+    requireTemplate(catalog, fallbackKey)
+  );
+}
+
 function resolveModel(
   catalog: PromptAdminCatalog,
   modelId: string | null,
@@ -75,6 +106,14 @@ function resolveModel(
     throw new Error(
       `Das Modell „${modelId}“ für „${stageLabel}“ wurde nicht gefunden.`,
     );
+  }
+  return model;
+}
+
+function resolveImagesModel(catalog: PromptAdminCatalog): AiModelConfig {
+  const model = catalog.models.find((entry) => entry.id === "images-default");
+  if (!model) {
+    throw new Error('Das Modell „images-default“ (FLUX) fehlt in der Verwaltung.');
   }
   return model;
 }
@@ -97,10 +136,11 @@ function labelForLengthStep(stepId: StoryLengthStepId): string {
 
 /**
  * Parses fact lists from JSON arrays or numbered / bullet lines.
+ * Strips fences and ignores JSON scaffolding so the UI only shows plain facts.
  */
 function factItemToString(item: unknown): string {
   if (typeof item === "string") {
-    return item.trim();
+    return cleanFactText(item);
   }
   if (typeof item === "number" || typeof item === "boolean") {
     return String(item);
@@ -119,59 +159,121 @@ function factItemToString(item: unknown): string {
     "beschreibung",
     "value",
     "statement",
+    "body",
   ];
 
   for (const key of preferredKeys) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) {
-      return value.trim();
+      return cleanFactText(value);
     }
   }
 
-  for (const value of Object.values(record)) {
+  // Avoid picking up ids, labels, or nested prompt leftovers.
+  for (const [key, value] of Object.entries(record)) {
+    if (/^(id|type|source|model|prompt|role|index)$/i.test(key)) continue;
     if (typeof value === "string" && value.trim()) {
-      return value.trim();
+      return cleanFactText(value);
     }
   }
 
   return "";
 }
 
-export function parseFactsFromModelText(raw: string, expectedCount: number): string[] {
-  const trimmed = raw.trim();
+function cleanFactText(raw: string): string {
+  return raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .replace(/^[\s\-–—*•\d.)"']+/, "")
+    .replace(/["']\s*$/, "")
+    .trim();
+}
+
+function looksLikeJsonNoise(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return true;
+  if (/^[{[\]},]$/.test(trimmed)) return true;
+  if (/^["']?(facts|illustrations|items|data|prompt|model)["']?\s*:/i.test(trimmed)) {
+    return true;
+  }
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return true;
+  if (trimmed.includes("[object Object]")) return true;
+  if (/^```/.test(trimmed)) return true;
+  return false;
+}
+
+function extractJsonPayload(raw: string): unknown | null {
+  const stripped = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
 
   try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map(factItemToString)
-        .filter(Boolean)
-        .slice(0, expectedCount);
-    }
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      Array.isArray((parsed as { facts?: unknown }).facts)
-    ) {
-      return ((parsed as { facts: unknown[] }).facts as unknown[])
-        .map(factItemToString)
-        .filter(Boolean)
-        .slice(0, expectedCount);
-    }
+    return JSON.parse(stripped) as unknown;
   } catch {
-    // Fall through to line parsing.
+    const start = stripped.search(/[\[{]/);
+    const endObj = stripped.lastIndexOf("}");
+    const endArr = stripped.lastIndexOf("]");
+    const end = Math.max(endObj, endArr);
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(stripped.slice(start, end + 1)) as unknown;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function factsFromParsedJson(parsed: unknown, expectedCount: number): string[] {
+  if (Array.isArray(parsed)) {
+    return parsed.map(factItemToString).filter(Boolean).slice(0, expectedCount);
+  }
+  if (!parsed || typeof parsed !== "object") {
+    return [];
   }
 
-  const lines = trimmed
+  const record = parsed as Record<string, unknown>;
+  for (const key of ["facts", "items", "data", "results", "fakten"]) {
+    if (Array.isArray(record[key])) {
+      return (record[key] as unknown[])
+        .map(factItemToString)
+        .filter(Boolean)
+        .slice(0, expectedCount);
+    }
+  }
+
+  return [];
+}
+
+export function parseFactsFromModelText(
+  raw: string,
+  expectedCount: number,
+): string[] {
+  const parsed = extractJsonPayload(raw);
+  if (parsed !== null) {
+    const fromJson = factsFromParsedJson(parsed, expectedCount);
+    if (fromJson.length > 0) {
+      return fromJson;
+    }
+  }
+
+  const lines = raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
     .split(/\r?\n/)
-    .map((line) => line.replace(/^[\s\-–—*•\d.)]+/, "").trim())
-    .filter((line) => line.length > 8 && !line.includes("[object Object]"));
+    .map((line) => cleanFactText(line))
+    .filter((line) => line.length > 8 && !looksLikeJsonNoise(line));
 
   if (lines.length > 0) {
     return lines.slice(0, expectedCount);
   }
 
-  return [trimmed].filter((line) => line && !line.includes("[object Object]")).slice(0, expectedCount);
+  const fallback = cleanFactText(raw);
+  return fallback && !looksLikeJsonNoise(fallback) ? [fallback] : [];
 }
 
 function buildFactsBlock(facts: string[]): string {
@@ -189,11 +291,71 @@ function resolveLengthContext(
   );
   const factCount = Math.max(1, limit?.factCount ?? 2);
   const wordRange = formatWordRange(limit);
-  return { factCount, wordRange };
+  const imageCount = illustrationCountForWordTarget(
+    limit?.minWords ?? 0,
+    limit?.maxWords ?? null,
+  );
+  return { factCount, wordRange, imageCount };
+}
+
+function stripCodeFence(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^```(?:json|html)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+function buildImagesManifest(images: GeneratedIllustration[]): string {
+  return images
+    .map((image) => {
+      const hint = image.placementHint
+        ? ` | Platzierung: ${image.placementHint}`
+        : "";
+      return `- id=${image.id} | alt=${image.alt}${hint} | class="story-illustration ${image.floatClass}" | src=__ILL_${image.id}__ | width=256 height=256`;
+    })
+    .join("\n");
 }
 
 /**
- * Runs facts-research then story-write using admin-configured models/prompts.
+ * Replaces `__ILL_<id>__` placeholders with data URLs after layout.
+ */
+export function resolveIllustrationPlaceholders(
+  html: string,
+  images: GeneratedIllustration[],
+): string {
+  let result = stripCodeFence(html);
+  for (const image of images) {
+    const token = `__ILL_${image.id}__`;
+    result = result.split(token).join(image.dataUrl);
+  }
+  return result;
+}
+
+async function generateIllustrationPixels(
+  plans: FluxIllustrationPlan[],
+  modelSlug: string,
+): Promise<GeneratedIllustration[]> {
+  const generated: GeneratedIllustration[] = [];
+
+  for (const plan of plans) {
+    const image = await generateIonosImage({
+      prompt: plan.imagePrompt,
+      size: "256x256",
+      modelSlug,
+      outputFormat: "png",
+    });
+    generated.push({
+      ...plan,
+      dataUrl: image.dataUrl,
+    });
+  }
+
+  return generated;
+}
+
+/**
+ * Runs facts, then story + FLUX images in parallel, then Mistral HTML layout.
  */
 export async function generateStoryPipeline(
   input: StoryGenerateInput,
@@ -203,19 +365,43 @@ export async function generateStoryPipeline(
     loadPromptCatalogSafe(),
   ]);
 
-  const { factCount, wordRange } = resolveLengthContext(lengthCatalog, input);
+  const { factCount, wordRange, imageCount } = resolveLengthContext(
+    lengthCatalog,
+    input,
+  );
 
-  const factsTemplate = requireTemplate(promptCatalog, "facts-research");
-  const storyTemplate = requireTemplate(promptCatalog, "story-write");
+  const isPersonal = Boolean(input.personal);
+  const factsTemplate = isPersonal
+    ? requireTemplatePrefer(
+        promptCatalog,
+        "facts-research-personal",
+        "facts-research",
+      )
+    : requireTemplate(promptCatalog, "facts-research");
+  const storyTemplate = isPersonal
+    ? requireTemplatePrefer(
+        promptCatalog,
+        "story-write-personal",
+        "story-write",
+      )
+    : requireTemplate(promptCatalog, "story-write");
+  const layoutTemplate = requireTemplate(promptCatalog, "story-layout");
+
   const factsModel = resolveModel(
     promptCatalog,
     factsTemplate.modelId,
     factsTemplate.label,
   );
+  const imagesModel = resolveImagesModel(promptCatalog);
   const storyModel = resolveModel(
     promptCatalog,
     storyTemplate.modelId,
     storyTemplate.label,
+  );
+  const layoutModel = resolveModel(
+    promptCatalog,
+    layoutTemplate.modelId,
+    layoutTemplate.label,
   );
 
   const sharedValues = {
@@ -225,49 +411,97 @@ export async function generateStoryPipeline(
     length_step: labelForLengthStep(input.lengthStep),
     fact_count: factCount,
     target_word_range: wordRange,
+    personal_block: input.personal
+      ? buildPersonalPromptBlock(input.personal)
+      : "",
+    protagonist_name: input.personal?.protagonistName ?? "",
+    friends_list:
+      input.personal?.friendNames.join(", ") ?? "",
   };
-
-  const factsUser = fillPromptTemplate(factsTemplate.userTemplate, sharedValues);
-  const factsSystem = fillPromptTemplate(
-    factsTemplate.systemTemplate,
-    sharedValues,
-  );
 
   const factsRaw = await generateText({
     model: factsModel,
-    systemInstruction: factsSystem,
-    userText: factsUser,
+    systemInstruction: fillPromptTemplate(
+      factsTemplate.systemTemplate,
+      sharedValues,
+    ),
+    userText: fillPromptTemplate(factsTemplate.userTemplate, sharedValues),
     preferJson: true,
   });
 
   const facts = parseFactsFromModelText(factsRaw, factCount);
   if (facts.length === 0) {
-    throw new Error("Es konnten keine Fakten ermittelt werden.");
+    throw new Error("Es konnte kein Wissen zum Thema gefunden werden.");
   }
 
-  const storyValues = {
+  const factsBlock = buildFactsBlock(facts);
+  const afterFactsValues = {
     ...sharedValues,
-    facts_block: buildFactsBlock(facts),
+    facts_block: factsBlock,
   };
-  const storyUser = fillPromptTemplate(storyTemplate.userTemplate, storyValues);
-  const storySystem = fillPromptTemplate(
-    storyTemplate.systemTemplate,
-    storyValues,
-  );
 
-  const story = await generateText({
-    model: storyModel,
-    systemInstruction: storySystem,
-    userText: storyUser,
+  const fluxPlans = buildFluxIllustrationPlans({
+    topic: input.topic,
+    schoolStageLabel: sharedValues.school_stage,
+    moodLabel: sharedValues.story_mood,
+    facts,
+    imageCount,
+    protagonistName: input.personal?.protagonistName,
+    friendNames: input.personal?.friendNames,
+  });
+
+  const fluxModelSlug =
+    imagesModel.provider.trim().toLowerCase() === "ionos-image"
+      ? imagesModel.modelSlug
+      : getIonosImageModelSlug();
+
+  const [storyHtmlRaw, illustrations] = await Promise.all([
+    generateText({
+      model: storyModel,
+      systemInstruction: fillPromptTemplate(
+        storyTemplate.systemTemplate,
+        afterFactsValues,
+      ),
+      userText: fillPromptTemplate(storyTemplate.userTemplate, afterFactsValues),
+      preferJson: false,
+    }).then((text) => stripCodeFence(text)),
+    generateIllustrationPixels(fluxPlans, fluxModelSlug),
+  ]);
+
+  if (!storyHtmlRaw.trim()) {
+    throw new Error("Die Geschichte kam leer zurück.");
+  }
+  if (illustrations.length === 0) {
+    throw new Error("Es konnten keine Illustrationen erzeugt werden.");
+  }
+
+  const layoutValues = {
+    ...sharedValues,
+    story_html: storyHtmlRaw,
+    images_manifest: buildImagesManifest(illustrations),
+  };
+
+  const layoutRaw = await generateText({
+    model: layoutModel,
+    systemInstruction: fillPromptTemplate(
+      layoutTemplate.systemTemplate,
+      layoutValues,
+    ),
+    userText: fillPromptTemplate(layoutTemplate.userTemplate, layoutValues),
     preferJson: false,
   });
 
+  const story = resolveIllustrationPlaceholders(layoutRaw, illustrations);
+
   return {
-    story: story.trim(),
+    story,
     facts,
     factCount,
     wordRange,
     factsModelId: factsModel.id,
     storyModelId: storyModel.id,
+    imagesModelId: imagesModel.id,
+    layoutModelId: layoutModel.id,
+    imageCount: illustrations.length,
   };
 }

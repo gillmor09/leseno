@@ -5,12 +5,17 @@ import {
   generateStoryPipeline,
   type StoryGenerateResult,
 } from "@/lib/ai/pipeline";
+import { getCurrentUser } from "@/lib/auth/session";
 import { assertBotGuard } from "@/lib/security/bot-guard";
+import {
+  buildPersonalStoryContext,
+} from "@/lib/stories/personal";
 import { storyGenerateSchema } from "@/lib/validations/story-generate";
+import { loadMyWorld } from "@/lib/world/repository";
 
 /**
- * Starts the free-tier story pipeline: facts research, then story writing.
- * Both stages use the models assigned in the prompt admin catalog.
+ * Starts the free-tier story pipeline: facts → (story || FLUX images) → layout.
+ * In personal mode, seeds come from Meine Welt (server-side).
  */
 export async function generateFreeStoryAction(
   input: unknown,
@@ -34,7 +39,29 @@ export async function generateFreeStoryAction(
   }
 
   try {
-    const result = await generateStoryPipeline(parsed.data);
+    let personal = null as ReturnType<typeof buildPersonalStoryContext> | null;
+    let topic = parsed.data.topic?.trim() ?? "";
+
+    if (parsed.data.personalMode) {
+      const user = await getCurrentUser();
+      if (!user) {
+        return {
+          success: false,
+          error: "Für „Ganz persönlich“ melde dich bitte zuerst an.",
+        };
+      }
+      const world = await loadMyWorld();
+      personal = buildPersonalStoryContext(world);
+      topic = personal.topic;
+    }
+
+    const result = await generateStoryPipeline({
+      topic,
+      schoolStage: parsed.data.schoolStage,
+      lengthStep: parsed.data.lengthStep,
+      mood: parsed.data.mood,
+      personal,
+    });
     return { success: true, data: result };
   } catch (error) {
     console.error("[generateFreeStoryAction]", error);

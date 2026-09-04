@@ -10,9 +10,17 @@ export const metadata: Metadata = {
 export default async function SignInPage({
   searchParams,
 }: {
-  searchParams: Promise<{ bestaetigt?: string; bestaetigung?: string }>;
+  searchParams: Promise<{
+    bestaetigt?: string;
+    bestaetigung?: string;
+    next?: string;
+  }>;
 }) {
   const params = await searchParams;
+  const nextPath =
+    params.next?.startsWith("/") && !params.next.startsWith("//")
+      ? params.next
+      : "/kostenlos";
 
   return (
     <AuthShell
@@ -23,6 +31,7 @@ export default async function SignInPage({
       <SignInForm
         emailConfirmed={params.bestaetigt === "1"}
         confirmationFailed={params.bestaetigung === "fehlgeschlagen"}
+        nextPath={nextPath}
       />
     </AuthShell>
   );

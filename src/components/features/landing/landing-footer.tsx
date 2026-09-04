@@ -23,7 +23,7 @@ export function LandingFooter() {
         </div>
         <p className="max-w-md text-sm leading-relaxed text-zinc-400">
           Für dich von 5 bis 10 — und für die Erwachsenen, die dich beim Lesen
-          begleiten. Geschichten mit echten Fakten, ohne albernen Kram.
+          begleiten. Geschichten mit Wissen und Staunen, ohne albernen Kram.
         </p>
       </div>
     </footer>

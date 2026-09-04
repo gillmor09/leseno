@@ -78,7 +78,29 @@ function toPromptAdminCatalog(
   };
 }
 
-export async function loadPromptAdminCatalog(): Promise<PromptAdminCatalog> {
+function mergeWithFallback(catalog: PromptAdminCatalog): PromptAdminCatalog {
+  const modelIds = new Set(catalog.models.map((model) => model.id));
+  const models = [
+    ...catalog.models,
+    ...FALLBACK_AI_MODELS.filter((model) => !modelIds.has(model.id)),
+  ];
+
+  const promptKeys = new Set(catalog.prompts.map((prompt) => prompt.key));
+  const prompts = [
+    ...catalog.prompts,
+    ...FALLBACK_PROMPT_TEMPLATES.filter((prompt) => !promptKeys.has(prompt.key)),
+  ].sort((a, b) => a.stageOrder - b.stageOrder);
+
+  return { models, prompts };
+}
+
+/**
+ * Loads models/prompts from DB. For the story pipeline, pass `mergeFallback`
+ * so missing illustration/layout stages still resolve before the migration runs.
+ */
+export async function loadPromptAdminCatalog(options?: {
+  mergeFallback?: boolean;
+}): Promise<PromptAdminCatalog> {
   const supabase = await createClient(null);
   const [modelsResult, promptsResult] = await Promise.all([
     supabase.rpc("list_ai_models"),
@@ -101,7 +123,7 @@ export async function loadPromptAdminCatalog(): Promise<PromptAdminCatalog> {
     return FALLBACK_PROMPT_ADMIN_CATALOG;
   }
 
-  return catalog;
+  return options?.mergeFallback ? mergeWithFallback(catalog) : catalog;
 }
 
 export async function updatePromptAdminCatalog(
