@@ -81,20 +81,31 @@ export function renderAuthEmailTemplate(
 }
 
 /**
- * Builds the Auth verify URL Supabase expects in custom emails.
+ * Default post-confirm path for an auth email action type.
+ */
+export function nextPathForEmailAction(emailActionType: string): string {
+  if (emailActionType === "recovery") return "/passwort-zuruecksetzen";
+  return "/anmelden";
+}
+
+/**
+ * App-owned confirmation link verified via `token_hash` on `/auth/callback`.
+ * Avoids GoTrue `/auth/v1/verify` redirects that land without a PKCE `code`
+ * (and often with a wrong `:3000` Site URL).
  */
 export function buildAuthConfirmationUrl(input: {
-  supabaseUrl: string;
+  siteUrl: string;
   tokenHash: string;
   emailActionType: string;
-  redirectTo: string;
+  nextPath?: string;
 }): string {
-  const base = input.supabaseUrl.replace(/\/$/, "");
-  const url = new URL(`${base}/auth/v1/verify`);
-  url.searchParams.set("token", input.tokenHash);
+  const base = input.siteUrl.replace(/\/$/, "");
+  const url = new URL(`${base}/auth/callback`);
+  url.searchParams.set("token_hash", input.tokenHash);
   url.searchParams.set("type", input.emailActionType);
-  if (input.redirectTo) {
-    url.searchParams.set("redirect_to", input.redirectTo);
-  }
+  url.searchParams.set(
+    "next",
+    input.nextPath ?? nextPathForEmailAction(input.emailActionType),
+  );
   return url.toString();
 }

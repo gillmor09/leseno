@@ -4,10 +4,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { createClient } from "@/lib/supabase/server";
 import { buildAuthConfirmationUrl } from "@/lib/auth/email-templates";
 import {
-  ensureAuthLinkUsesPublicSite,
   getAuthEmailSiteUrl,
 } from "@/lib/site-url";
-import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { assertBotGuard } from "@/lib/security/bot-guard";
 import type { ActionResult } from "@/lib/types/actions";
 import {
@@ -19,9 +17,30 @@ import {
 } from "@/lib/validations/auth";
 
 /**
- * Prefer a verify URL we control (`redirect_to` = public site) over GoTrue's
- * `action_link`, which often embeds SITE_URL=localhost.
+ * Prefer a confirm URL we control (`/auth/callback?token_hash=…`).
+ * Never email GoTrue `/auth/v1/verify` — it confirms the user but returns
+ * without a PKCE code, so our callback looked like a failure.
  */
+function tokenHashFromGenerateLink(
+  hashedToken: string | undefined,
+  actionLink: string | undefined,
+): string {
+  const direct = hashedToken?.trim() ?? "";
+  if (direct) return direct;
+  const link = actionLink?.trim() ?? "";
+  if (!link) return "";
+  try {
+    const parsed = new URL(link);
+    return (
+      parsed.searchParams.get("token")?.trim() ||
+      parsed.searchParams.get("token_hash")?.trim() ||
+      ""
+    );
+  } catch {
+    return "";
+  }
+}
+
 function confirmationUrlFromGenerateLink(input: {
   actionLink: string | undefined;
   hashedToken: string | undefined;
@@ -29,17 +48,19 @@ function confirmationUrlFromGenerateLink(input: {
   redirectTo: string;
   siteUrl: string;
 }): string {
-  const tokenHash = input.hashedToken?.trim() ?? "";
-  if (tokenHash) {
-    const { url: supabaseUrl } = getSupabasePublicConfig();
-    return buildAuthConfirmationUrl({
-      supabaseUrl,
-      tokenHash,
-      emailActionType: input.emailActionType,
-      redirectTo: input.redirectTo,
-    });
+  const tokenHash = tokenHashFromGenerateLink(
+    input.hashedToken,
+    input.actionLink,
+  );
+  if (!tokenHash) {
+    console.error("[auth] generateLink missing hashed_token / action_link token");
+    return "";
   }
-  return ensureAuthLinkUsesPublicSite(input.actionLink?.trim() || "", input.siteUrl);
+  return buildAuthConfirmationUrl({
+    siteUrl: input.siteUrl,
+    tokenHash,
+    emailActionType: input.emailActionType,
+  });
 }
 
 /**

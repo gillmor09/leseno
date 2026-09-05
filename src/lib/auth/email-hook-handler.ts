@@ -14,7 +14,6 @@ import {
   verifyAuthEmailHookRequest,
 } from "@/lib/auth/email-hook-security";
 import { sendTemplatedAuthEmail } from "@/lib/auth/send-templated-email";
-import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import {
   forcePublicSiteOrigin,
   getAuthEmailSiteUrl,
@@ -145,7 +144,6 @@ export async function handleAuthEmailHookPost(
     );
   }
 
-  const { url: supabaseUrl } = getSupabasePublicConfig();
   const tokenHash = payload.email_data?.token_hash?.trim() ?? "";
   const publicSite = getAuthEmailSiteUrl();
   const redirectRaw = payload.email_data?.redirect_to?.trim() ?? "";
@@ -157,10 +155,9 @@ export async function handleAuthEmailHookPost(
   const siteUrl = publicSite;
 
   const confirmationUrl = buildAuthConfirmationUrl({
-    supabaseUrl,
+    siteUrl: publicSite,
     tokenHash,
     emailActionType: actionType,
-    redirectTo,
   });
 
   try {
