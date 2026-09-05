@@ -7,6 +7,7 @@
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { saveAuthEmailTemplatesAction } from "@/app/actions/auth-email-templates";
+import { AuthEmailHtmlEditor } from "@/components/features/admin/auth-email-html-editor";
 import {
   AUTH_EMAIL_PLACEHOLDERS,
   type AuthEmailTemplate,
@@ -202,21 +203,23 @@ export function AuthEmailAdminForm({
                   className="mt-1 w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60"
                 />
               </label>
-              <label className="block">
+              <div>
                 <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                  HTML-Inhalt
+                  E-Mail-Inhalt
                 </span>
-                <textarea
+                <AuthEmailHtmlEditor
                   value={template.htmlBody}
                   disabled={!canSave}
-                  rows={16}
-                  spellCheck={false}
-                  onChange={(event) =>
-                    patch(template.id, "htmlBody", event.target.value)
-                  }
-                  className="mt-1 w-full rounded-2xl bg-gray-100 px-4 py-3 font-mono text-xs leading-relaxed text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60"
+                  onChange={(html) => patch(template.id, "htmlBody", html)}
                 />
-              </label>
+                <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                  Platzhalter unverändert lassen, z.&nbsp;B.{" "}
+                  <code className="rounded bg-gray-100 px-1 py-0.5">
+                    {"{{confirmation_url}}"}
+                  </code>
+                  .
+                </p>
+              </div>
             </div>
           </article>
         );

@@ -18,8 +18,12 @@ function formatCreatedAt(value: string) {
 
 export function UsersAdminForm({
   users: initialUsers,
+  canSave = true,
+  readOnlyNotice = null,
 }: {
   users: UserAdminRow[];
+  canSave?: boolean;
+  readOnlyNotice?: string | null;
 }) {
   const [users, setUsers] = useState(initialUsers);
   const [pending, setPending] = useState(false);
@@ -39,6 +43,12 @@ export function UsersAdminForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canSave) {
+      toast.error(
+        "Speichern ist nicht verfügbar — Service-Role oder Verbindung prüfen.",
+      );
+      return;
+    }
     setFieldError(null);
     setPending(true);
 
@@ -57,17 +67,25 @@ export function UsersAdminForm({
 
   return (
     <form noValidate onSubmit={handleSubmit} className="space-y-8">
+      {readOnlyNotice ? (
+        <p className="rounded-[1.75rem] bg-orange-50 p-6 text-sm font-semibold text-orange-900 ring-1 ring-orange-700/10">
+          {readOnlyNotice}
+        </p>
+      ) : null}
+
       <section className="overflow-hidden rounded-[1.75rem] bg-white shadow-xl ring-1 ring-zinc-950/10">
         <div className="border-b border-zinc-950/10 bg-gray-100 px-6 py-4">
           <h2 className="text-lg font-extrabold text-zinc-950">User</h2>
           <p className="text-sm text-zinc-600">
-            Neue Registrierungen starten automatisch mit der Rolle `Gast`.
+            Neue Registrierungen starten automatisch mit der Rolle Basis.
           </p>
         </div>
 
         {users.length === 0 ? (
           <p className="px-6 py-5 text-sm font-semibold text-zinc-600">
-            Noch keine User vorhanden.
+            {readOnlyNotice
+              ? "Keine User geladen."
+              : "Noch keine User vorhanden."}
           </p>
         ) : (
           <div className="divide-y divide-zinc-950/5">
@@ -84,10 +102,11 @@ export function UsersAdminForm({
                     <input
                       type="email"
                       value={user.email}
+                      disabled={!canSave}
                       onChange={(event) =>
                         patchUser(user.userId, "email", event.target.value)
                       }
-                      className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
+                      className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60"
                     />
                   </label>
                   <p className="text-xs text-zinc-500">
@@ -101,10 +120,11 @@ export function UsersAdminForm({
                   </span>
                   <select
                     value={user.role}
+                    disabled={!canSave}
                     onChange={(event) =>
                       patchUser(user.userId, "role", event.target.value)
                     }
-                    className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
+                    className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60"
                   >
                     {USER_ROLE_OPTIONS.map((role) => (
                       <option key={role.id} value={role.id}>
@@ -125,10 +145,10 @@ export function UsersAdminForm({
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={!canSave || pending}
         className={cn(
           "inline-flex rounded-full bg-orange-700 px-6 py-3 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800",
-          pending && "opacity-70",
+          (!canSave || pending) && "opacity-70",
         )}
       >
         {pending ? "Speichert …" : "Speichern"}

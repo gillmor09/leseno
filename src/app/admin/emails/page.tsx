@@ -57,9 +57,10 @@ export default async function AuthEmailsAdminPage() {
             Auth-E-Mails
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            HTML und Betreff für Registrierung und „Passwort vergessen“. Die
-            Seiten unter Hooks werden von Supabase Auth aufgerufen und versenden
-            die Mails über SMTP.
+            HTML und Betreff für Registrierung und „Passwort vergessen“. Den
+            Inhalt bearbeitest du im Rich-Text-Editor. Die Seiten unter Hooks
+            werden von Supabase Auth aufgerufen und versenden die Mails über
+            SMTP.
           </p>
           <div className="mt-10">
             <AuthEmailAdminForm

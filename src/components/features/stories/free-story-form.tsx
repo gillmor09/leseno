@@ -1027,7 +1027,7 @@ function StoryWaitOverlay({
         <p className="mt-3 text-sm leading-relaxed text-zinc-600">
           {includeImages
             ? "Zuerst hole ich Neues zum Staunen. Danach entstehen Geschichte und Bilder parallel — zum Schluss fließt der Text um die Bilder. Das kann einen Moment dauern."
-            : "Zuerst hole ich Neues zum Staunen. Danach schreibe ich die Geschichte — ohne Illustrationen, damit es schneller geht."}
+            : "Zuerst hole ich Neues zum Staunen. Danach schreibe ich die Geschichte."}
         </p>
       </div>
     </div>,

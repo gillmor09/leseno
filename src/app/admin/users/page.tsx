@@ -3,6 +3,8 @@ import { UsersAdminForm } from "@/components/features/admin/users-admin-form";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { loadUsersForAdmin } from "@/lib/users/repository";
+import { hasServiceRoleConfig } from "@/lib/supabase/service";
+import type { UserAdminRow } from "@/lib/users/catalog";
 
 export const metadata: Metadata = {
   title: "User — Leseno Admin",
@@ -12,9 +14,30 @@ export const metadata: Metadata = {
 /**
  * Admin page for user emails and app roles.
  * Guarded by `src/app/admin/layout.tsx` (admin role required).
+ * Loads users at request time; failures show a read-only notice (no build crash).
  */
 export default async function UsersAdminPage() {
-  const users = await loadUsersForAdmin();
+  let users: UserAdminRow[] = [];
+  let canSave = false;
+  let readOnlyNotice: string | null = null;
+
+  try {
+    users = await loadUsersForAdmin();
+    canSave = hasServiceRoleConfig();
+    if (!canSave) {
+      readOnlyNotice =
+        "Vorschau: `SUPABASE_SERVICE_ROLE_KEY` fehlt. Bitte `.env.local` / Coolify prüfen.";
+    }
+  } catch (error) {
+    if (!hasServiceRoleConfig()) {
+      readOnlyNotice =
+        "Vorschau: `SUPABASE_SERVICE_ROLE_KEY` fehlt. Bitte `.env.local` / Coolify prüfen.";
+    } else {
+      const message =
+        error instanceof Error ? error.message : "User konnten nicht geladen werden.";
+      readOnlyNotice = `Vorschau: ${message}`;
+    }
+  }
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -32,7 +55,11 @@ export default async function UsersAdminPage() {
             passende Rolle zu.
           </p>
           <div className="mt-10">
-            <UsersAdminForm users={users} />
+            <UsersAdminForm
+              users={users}
+              canSave={canSave}
+              readOnlyNotice={readOnlyNotice}
+            />
           </div>
         </section>
       </main>

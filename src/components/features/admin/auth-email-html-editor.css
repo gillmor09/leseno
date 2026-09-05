@@ -1,0 +1,48 @@
+/* Quill chrome for Auth email admin editor — scoped under .auth-email-quill */
+
+.auth-email-quill .ql-toolbar.ql-snow {
+  border: none;
+  border-bottom: 1px solid rgb(24 24 27 / 0.1);
+  background: rgb(243 244 246);
+  font-family: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+}
+
+.auth-email-quill .ql-container.ql-snow {
+  border: none;
+  font-family: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.95rem;
+  min-height: 16rem;
+}
+
+.auth-email-quill .ql-editor {
+  min-height: 16rem;
+  line-height: 1.55;
+  color: rgb(9 9 11);
+}
+
+.auth-email-quill .ql-editor.ql-blank::before {
+  color: rgb(113 113 122);
+  font-style: normal;
+}
+
+.auth-email-quill .ql-snow .ql-stroke {
+  stroke: rgb(63 63 70);
+}
+
+.auth-email-quill .ql-snow .ql-fill {
+  fill: rgb(63 63 70);
+}
+
+.auth-email-quill .ql-snow.ql-toolbar button:hover .ql-stroke,
+.auth-email-quill .ql-snow .ql-toolbar button:hover .ql-stroke,
+.auth-email-quill .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+.auth-email-quill .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: rgb(194 65 12);
+}
+
+.auth-email-quill .ql-snow.ql-toolbar button:hover .ql-fill,
+.auth-email-quill .ql-snow .ql-toolbar button:hover .ql-fill,
+.auth-email-quill .ql-snow.ql-toolbar button.ql-active .ql-fill,
+.auth-email-quill .ql-snow .ql-toolbar button.ql-active .ql-fill {
+  fill: rgb(194 65 12);
+}

@@ -13,8 +13,8 @@ export const metadata: Metadata = {
 };
 
 /**
- * Basis-tier composer (public freemium entry, formerly `/kostenlos`).
- * Signed-in users get a child-profile picker above the topic card.
+ * Basis-tier composer for registered Basis members (`/basis`).
+ * Public try-out without signup lives at `/kostenlos`.
  */
 export default async function BasisPage() {
   const lengthCatalog = await loadStoryLengthCatalog();

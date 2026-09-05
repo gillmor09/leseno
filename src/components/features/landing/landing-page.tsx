@@ -608,9 +608,12 @@ function PricingSection() {
                 Einblick in den Lesefortschritt
               </li>
             </ul>
-            <p className="mt-8 inline-flex w-full items-center justify-center rounded-full bg-yellow-400 px-5 py-3 text-sm font-bold text-zinc-950">
-              Bald für euch da
-            </p>
+            <a
+              href="/preise"
+              className="mt-8 inline-flex w-full items-center justify-center rounded-full bg-yellow-400 px-5 py-3 text-sm font-bold text-zinc-950 transition-all duration-200 ease-in-out hover:bg-yellow-300"
+            >
+              Vorteile entdecken
+            </a>
           </article>
         </div>
       </div>
