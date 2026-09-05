@@ -23,6 +23,7 @@ const packages = [
       "10 Geschichten frei",
       "Auswahl nach Thema, Art der Geschichte und Länge der Geschichte",
       "Meine Welt für eine Person",
+      "Export als PDF zum Offline-Lesen",
     ],
   },
   {
@@ -34,7 +35,6 @@ const packages = [
     featured: true,
     tone: "dark" as const,
     features: [
-      "20 Geschichten frei",
       "Meine Welt für beliebig viele Personen",
       "Bilder in den Geschichten",
       "Warum-Fragen zum Eintauchen in Themen",
@@ -49,7 +49,6 @@ const packages = [
     featured: false,
     tone: "light" as const,
     features: [
-      "30 Geschichten frei",
       "Silbenmethode für Erstleser",
       "Vorlesefunktion mit Markierung",
       "Noch tieferes Eintauchen durch Hintergrundwissen",
@@ -160,6 +159,40 @@ export default function PreisePage() {
               );
             })}
           </div>
+
+          <article className="mt-6 rounded-[1.75rem] bg-white p-8 shadow-xl ring-1 ring-zinc-950/10 sm:p-10">
+            <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+              Credits
+            </p>
+            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-zinc-950">
+              Geschichten flexibel hinzubuchen
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-600 sm:text-base">
+              Wenn das Monatskontingent mal nicht reicht: Credits nachladen und
+              genau so viele Geschichten erzeugen, wie ihr gerade braucht —
+              ohne Paketwechsel, ohne Wartezeit bis zum nächsten Monat.
+            </p>
+            <div className="mt-6 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <p className="flex items-baseline gap-1">
+                <span className="text-3xl font-extrabold tracking-tight text-zinc-950">
+                  5&nbsp;€
+                </span>
+                <span className="text-sm font-semibold text-zinc-500">
+                  für 300 Credits*
+                </span>
+              </p>
+            </div>
+            <p className="mt-6 inline-flex items-center justify-center rounded-full bg-zinc-800 px-5 py-3 text-sm font-bold text-white">
+              Bald buchbar
+            </p>
+            <p className="mt-4 max-w-3xl text-sm leading-relaxed text-zinc-600">
+              *1 sehr kurze Geschichte kostet 10 Credits, kurz 20 Credits,
+              mittel 30 Credits, lang 40 Credits und sehr lang 50 Credits.
+            </p>
+            <p className="mt-2 max-w-3xl text-sm font-extrabold leading-relaxed text-zinc-950">
+              So kannst du bis zu 30 Geschichten zusätzlich lesen!
+            </p>
+          </article>
 
           <p className="mt-10 text-center text-sm font-semibold text-zinc-500">
             Noch unsicher?{" "}
