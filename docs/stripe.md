@@ -10,11 +10,13 @@ Leseno uses **Stripe Checkout** + **Billing** for Plus / Pro / Ultimate subscrip
    - Ultimate → 15,00 € / Monat  
 2. Create Product (one-time EUR): Credits → 5,00 € (300 Credits).  
 3. Copy each **Price id** (`price_…`).  
-4. **Payment methods:** enable Card + **PayPal** (and optionally SEPA).  
-5. **Customer Portal:** activate (cancel / payment method).  
+4. **Payment methods** (Einstellungen → Zahlungsmethoden): **Karten**, **SEPA-Lastschrift** und **PayPal** aktivieren. PayPal ggf. mit PayPal-Konto verknüpfen. Preise müssen in **EUR** sein (sonst kein SEPA).  
+5. **Customer Portal:** activate (cancel / payment method), Sprache Deutsch falls angeboten.  
 6. **Webhooks** → endpoint `https://<dein-host>/api/stripe/webhook`  
    Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`.  
 7. Copy the webhook **signing secret** (`whsec_…`).
+
+Checkout in der App: `locale=de`, Methoden `card` + `sepa_debit` + `paypal` (Fallback, wenn eine Methode im Konto fehlt).
 
 Local test: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
 

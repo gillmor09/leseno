@@ -1,6 +1,6 @@
 /**
  * Creates Stripe Checkout sessions (subscription packages + credits pack).
- * PayPal is offered alongside cards when enabled in the Stripe Dashboard.
+ * German locale; card + SEPA + PayPal when enabled in the Stripe Dashboard.
  */
 
 import type Stripe from "stripe";
@@ -17,37 +17,46 @@ import {
   saveStripeCustomerId,
 } from "@/lib/stripe/billing-sync";
 
-/** Card + PayPal (enable PayPal under Stripe → Payment methods). */
-const CHECKOUT_PAYMENT_METHOD_TYPES: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
-  ["card", "paypal"];
+type PaymentMethodType =
+  Stripe.Checkout.SessionCreateParams.PaymentMethodType;
 
-const CHECKOUT_CARD_ONLY: Stripe.Checkout.SessionCreateParams.PaymentMethodType[] =
-  ["card"];
+/** Progressive fallbacks if a method is not activated on the Stripe account. */
+const CHECKOUT_PAYMENT_METHOD_FALLBACKS: PaymentMethodType[][] = [
+  ["card", "sepa_debit", "paypal"],
+  ["card", "sepa_debit"],
+  ["card", "paypal"],
+  ["card"],
+];
 
 async function createCheckoutSession(
   params: Stripe.Checkout.SessionCreateParams,
 ): Promise<Stripe.Checkout.Session> {
   const stripe = getStripe();
-  try {
-    return await stripe.checkout.sessions.create({
-      ...params,
-      payment_method_types: CHECKOUT_PAYMENT_METHOD_TYPES,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "";
-    // PayPal not activated in Dashboard yet → still allow card checkout.
-    if (/paypal/i.test(message) || /payment_method_types/i.test(message)) {
+  const base: Stripe.Checkout.SessionCreateParams = {
+    ...params,
+    locale: "de",
+  };
+
+  let lastError: unknown;
+  for (const methods of CHECKOUT_PAYMENT_METHOD_FALLBACKS) {
+    try {
+      return await stripe.checkout.sessions.create({
+        ...base,
+        payment_method_types: methods,
+      });
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
       console.warn(
-        "[stripe] PayPal Checkout unavailable, falling back to card:",
+        `[stripe] Checkout with [${methods.join(", ")}] failed:`,
         message,
       );
-      return stripe.checkout.sessions.create({
-        ...params,
-        payment_method_types: CHECKOUT_CARD_ONLY,
-      });
     }
-    throw error;
   }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Stripe Checkout konnte nicht erstellt werden.");
 }
 
 async function ensureStripeCustomer(input: {
@@ -63,6 +72,7 @@ async function ensureStripeCustomer(input: {
   const customer = await stripe.customers.create({
     email: input.email,
     metadata: { userId: input.userId },
+    preferred_locales: ["de"],
   });
   await saveStripeCustomerId(input.userId, customer.id);
   return customer.id;
@@ -96,6 +106,7 @@ export async function createMembershipCheckoutUrl(input: {
     success_url: `${siteUrl}/preise/erfolg?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${siteUrl}/preise?checkout=abgebrochen`,
     allow_promotion_codes: true,
+    billing_address_collection: "auto",
     metadata: {
       kind: "membership",
       userId: input.userId,
@@ -141,6 +152,7 @@ export async function createCreditsCheckoutUrl(input: {
     success_url: `${siteUrl}/preise/erfolg?credits=1&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${siteUrl}/preise?checkout=abgebrochen`,
     allow_promotion_codes: true,
+    billing_address_collection: "auto",
     metadata: {
       kind: "credits",
       userId: input.userId,
@@ -169,6 +181,7 @@ export async function createBillingPortalUrl(input: {
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
     return_url: `${siteUrl}/preise`,
+    locale: "de",
   });
   return session.url;
 }
