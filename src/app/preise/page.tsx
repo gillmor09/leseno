@@ -16,14 +16,13 @@ const packages = [
     name: "Plus",
     tagline: "Mehr Lesen für den Alltag",
     blurb: "Ideal, wenn Leseno regelmäßig mit dabei sein soll — für ein Kind oder die ersten Familien-Profile.",
+    priceEuro: 5,
     featured: false,
     tone: "light" as const,
     features: [
-      "Mehr Geschichten im Monat als bei Basis",
-      "Familien-Profile in Meine Welt",
-      "Persönliche Geschichten mit Lesewünschen und Erlebnissen",
-      "Silbenhilfe, Vorlesen und „Warum?“",
-      "Illustrationen in der Geschichte",
+      "10 Geschichten frei",
+      "Auswahl nach Thema, Art der Geschichte und Länge der Geschichte",
+      "Meine Welt für eine Person",
     ],
   },
   {
@@ -31,14 +30,14 @@ const packages = [
     name: "Pro",
     tagline: "Für die ganze Lesefamilie",
     blurb: "Mehr Raum für mehrere Kinder, stärkere Begleitung und mehr Geschichten — wenn Leseno zum festen Ritual wird.",
+    priceEuro: 10,
     featured: true,
     tone: "dark" as const,
     features: [
-      "Alles aus Plus",
-      "Noch mehr Geschichten im Monat",
-      "Mehr Kinder-Profile unter einem Konto",
-      "Einblick in den Lesefortschritt",
-      "Priorisierte Erstellung mit Bildern",
+      "20 Geschichten frei",
+      "Meine Welt für beliebig viele Personen",
+      "Bilder in den Geschichten",
+      "Warum-Fragen zum Eintauchen in Themen",
     ],
   },
   {
@@ -46,14 +45,14 @@ const packages = [
     name: "Ultimate",
     tagline: "Maximum Lesespaß & Wissen",
     blurb: "Das volle Paket: maximale Freiheit, maximale Begleitung — für Familien, die Leseno intensiv nutzen.",
+    priceEuro: 15,
     featured: false,
     tone: "light" as const,
     features: [
-      "Alles aus Pro",
-      "Höchstes Geschichten-Kontingent",
-      "Alle Familien-Profile ohne enge Grenzen",
-      "Volle Extras: Bilder, Silbenhilfe, Vorlesen, Markierung",
-      "Früher Zugang zu neuen Funktionen",
+      "30 Geschichten frei",
+      "Silbenmethode für Erstleser",
+      "Vorlesefunktion mit Markierung",
+      "Noch tieferes Eintauchen durch Hintergrundwissen",
     ],
   },
 ] as const;
@@ -75,7 +74,8 @@ export default function PreisePage() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             Von Plus über Pro bis Ultimate: mehr Geschichten, mehr Familie, mehr
-            Begleitung — unter einem Konto. Preise und Buchung folgen in Kürze.
+            Begleitung — unter einem Konto. Monatlich kündbar. Buchung folgt in
+            Kürze.
           </p>
 
           <div className="mt-10 grid gap-6 lg:grid-cols-3">
@@ -131,16 +131,31 @@ export default function PreisePage() {
                       </li>
                     ))}
                   </ul>
-                  <p
-                    className={cn(
-                      "mt-8 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-bold",
-                      dark
-                        ? "bg-yellow-400 text-zinc-950"
-                        : "bg-zinc-800 text-white",
-                    )}
-                  >
-                    Bald buchbar
-                  </p>
+                  <div className="mt-8">
+                    <p className="flex items-baseline gap-1">
+                      <span className="text-3xl font-extrabold tracking-tight">
+                        {pkg.priceEuro}&nbsp;€
+                      </span>
+                      <span
+                        className={cn(
+                          "text-sm font-semibold",
+                          dark ? "text-zinc-400" : "text-zinc-500",
+                        )}
+                      >
+                        / Monat
+                      </span>
+                    </p>
+                    <p
+                      className={cn(
+                        "mt-4 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-bold",
+                        dark
+                          ? "bg-yellow-400 text-zinc-950"
+                          : "bg-zinc-800 text-white",
+                      )}
+                    >
+                      Bald buchbar
+                    </p>
+                  </div>
                 </article>
               );
             })}
