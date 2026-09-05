@@ -29,7 +29,7 @@ export async function saveStoryLengthLimitsAction(
 
   try {
     await updateStoryLengthLimits(parsed.data.limits);
-    revalidatePath("/basis");
+    revalidatePath("/geschichte");
     revalidatePath("/admin/textlaenge");
     revalidatePath("/admin/prompts");
     return { success: true };

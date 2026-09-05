@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/types/actions";
+import { loadFeaturesForCurrentUser } from "@/lib/users/package-access";
+import { featuresInclude } from "@/lib/users/packages";
 import {
   deleteChildProfile,
+  listMyChildProfiles,
   saveChildProfile,
 } from "@/lib/world/repository";
 import {
@@ -13,14 +16,12 @@ import {
 
 function revalidateWorldPaths() {
   revalidatePath("/meine-welt");
-  revalidatePath("/basis");
-  revalidatePath("/paket1");
-  revalidatePath("/paket2");
-  revalidatePath("/paket3");
+  revalidatePath("/geschichte");
 }
 
 /**
  * Creates or updates a Meine-Welt child profile for the signed-in user.
+ * Enforces package features (`meine_welt`, `meine_welt_familie`, reading extras).
  */
 export async function saveChildProfileAction(
   input: unknown,
@@ -34,6 +35,26 @@ export async function saveChildProfileAction(
   }
 
   try {
+    const features = await loadFeaturesForCurrentUser();
+    if (!featuresInclude(features, "meine_welt")) {
+      return {
+        success: false,
+        error: "Meine Welt gehört nicht zu deinem Paket.",
+      };
+    }
+
+    const isCreate = parsed.data.id == null;
+    if (isCreate && !featuresInclude(features, "meine_welt_familie")) {
+      const existing = await listMyChildProfiles();
+      if (existing.length >= 1) {
+        return {
+          success: false,
+          error:
+            "In deinem Paket ist nur ein Kinder-Profil möglich. Upgrade für die Familien-Funktion.",
+        };
+      }
+    }
+
     const id = await saveChildProfile({
       id: parsed.data.id,
       fields: {
@@ -45,10 +66,15 @@ export async function saveChildProfileAction(
         interests: parsed.data.interests,
         experiences: parsed.data.experiences,
         fears: parsed.data.fears,
-        includeImages: parsed.data.includeImages,
-        syllableHelp: parsed.data.syllableHelp,
-        wordHighlight: parsed.data.wordHighlight,
-        readableAloud: parsed.data.readableAloud,
+        includeImages:
+          featuresInclude(features, "bilder") && parsed.data.includeImages,
+        syllableHelp:
+          featuresInclude(features, "silbenmethode") &&
+          parsed.data.syllableHelp,
+        wordHighlight:
+          featuresInclude(features, "markierung") && parsed.data.wordHighlight,
+        readableAloud:
+          featuresInclude(features, "vorlesen") && parsed.data.readableAloud,
         isDefault: parsed.data.isDefault,
       },
     });
@@ -81,6 +107,14 @@ export async function deleteChildProfileAction(
   }
 
   try {
+    const features = await loadFeaturesForCurrentUser();
+    if (!featuresInclude(features, "meine_welt")) {
+      return {
+        success: false,
+        error: "Meine Welt gehört nicht zu deinem Paket.",
+      };
+    }
+
     await deleteChildProfile(parsed.data.id);
     revalidateWorldPaths();
     return { success: true };

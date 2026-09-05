@@ -19,10 +19,14 @@ type StoryFactsListProps = {
   className?: string;
   headingId?: string;
   showHeader?: boolean;
+  /** When false, facts show without „Warum?“ / FactWhyDialog (e.g. trial). */
+  allowFactWhy?: boolean;
+  /** When false, hide „Ich will mehr wissen“ (package `hintergrund`). */
+  allowFactWhyMore?: boolean;
 };
 
 /**
- * Numbered fact rows + Warum button; dialog uses school stage for age-appropriate wording.
+ * Numbered fact rows + optional Warum button; dialog uses school stage for age-appropriate wording.
  */
 export function StoryFactsList({
   facts,
@@ -31,6 +35,8 @@ export function StoryFactsList({
   className,
   headingId = "learned-facts-heading",
   showHeader = true,
+  allowFactWhy = true,
+  allowFactWhyMore = true,
 }: StoryFactsListProps) {
   const [activeFact, setActiveFact] = useState<string | null>(null);
 
@@ -91,30 +97,35 @@ export function StoryFactsList({
               ) : null}
               <div className="min-w-0 flex-1">
                 <p>{fact}</p>
-                <button
-                  type="button"
-                  onClick={() => setActiveFact(fact)}
-                  className={cn(
-                    "mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold tracking-wide uppercase transition-all duration-200 ease-in-out",
-                    isStory
-                      ? "bg-yellow-400 text-zinc-950 hover:bg-yellow-300"
-                      : "bg-yellow-400 text-zinc-950 hover:bg-yellow-300",
-                  )}
-                >
-                  Warum?
-                </button>
+                {allowFactWhy ? (
+                  <button
+                    type="button"
+                    onClick={() => setActiveFact(fact)}
+                    className={cn(
+                      "mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold tracking-wide uppercase transition-all duration-200 ease-in-out",
+                      isStory
+                        ? "bg-yellow-400 text-zinc-950 hover:bg-yellow-300"
+                        : "bg-yellow-400 text-zinc-950 hover:bg-yellow-300",
+                    )}
+                  >
+                    Warum?
+                  </button>
+                ) : null}
               </div>
             </li>
           ))}
         </ul>
       </section>
 
-      <FactWhyDialog
-        open={Boolean(activeFact)}
-        fact={activeFact ?? ""}
-        schoolStage={schoolStage}
-        onClose={() => setActiveFact(null)}
-      />
+      {allowFactWhy ? (
+        <FactWhyDialog
+          open={Boolean(activeFact)}
+          fact={activeFact ?? ""}
+          schoolStage={schoolStage}
+          allowMore={allowFactWhyMore}
+          onClose={() => setActiveFact(null)}
+        />
+      ) : null}
     </>
   );
 }

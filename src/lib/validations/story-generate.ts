@@ -36,6 +36,11 @@ export const storyGenerateSchema = z
     syllableHelp: z.boolean().default(false),
     /** When false, skip FLUX generation and layout embedding. */
     includeImages: z.boolean().default(false),
+    /**
+     * Public `/kostenlos` try-out: stricter options + IP daily quota.
+     * Must not be combined with personalMode.
+     */
+    trialMode: z.boolean().default(false),
     topic: z.string().trim().optional(),
     schoolStage: z.enum(schoolStageIds, {
       message: "Bitte eine gültige Schulstufe wählen.",
@@ -48,6 +53,13 @@ export const storyGenerateSchema = z
     }),
   })
   .superRefine((value, ctx) => {
+    if (value.trialMode && value.personalMode) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["trialMode"],
+        message: "Der Testmodus gilt nur für Freies Lesen.",
+      });
+    }
     if (value.personalMode) {
       if (!value.profileId) {
         ctx.addIssue({

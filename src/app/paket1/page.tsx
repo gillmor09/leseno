@@ -1,5 +1,7 @@
-import { MembershipStoryPage } from "@/components/features/stories/membership-story-page";
+import { redirect } from "next/navigation";
+import { STORY_PATH } from "@/lib/users/catalog";
 
+/** Legacy Paket-1 composer URL → shared `/geschichte`. */
 export default function Paket1Page() {
-  return <MembershipStoryPage role="paket1" />;
+  redirect(STORY_PATH);
 }

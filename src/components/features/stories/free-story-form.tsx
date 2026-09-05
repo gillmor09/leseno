@@ -63,6 +63,16 @@ import {
   type TtsMediaClock,
 } from "@/lib/stories/tts-dom-highlight";
 import type { StoryTtsWordTiming } from "@/app/actions/story-tts";
+import {
+  TRIAL_ALLOWED_SCHOOL_STAGES,
+  TRIAL_DEFAULT_LENGTH_STEP,
+  TRIAL_DEFAULT_SCHOOL_STAGE,
+  TRIAL_DISABLED_LENGTH_STEPS,
+} from "@/lib/stories/trial-limits";
+import {
+  featuresInclude,
+  type PackageFeatureId,
+} from "@/lib/users/packages";
 
 const moodIcons = {
   lustig: Smile,
@@ -71,12 +81,15 @@ const moodIcons = {
 } as const;
 
 /**
- * Controlled composer for `/basis` and membership package pages.
+ * Controlled composer for `/geschichte` and `/kostenlos` trial.
  * Collects inputs and fills the output pane via `generateFreeStoryAction`.
+ * Membership features come from `enabledFeatures` (package catalog).
  */
 export function FreeStoryForm({
   lengthCatalog,
   childProfiles = null,
+  trialMode = false,
+  enabledFeatures = [],
 }: {
   lengthCatalog: StoryLengthCatalog;
   /**
@@ -84,11 +97,19 @@ export function FreeStoryForm({
    * Selecting a ready profile starts a personal story from that world.
    */
   childProfiles?: ChildProfileOption[] | null;
+  /** Public `/kostenlos` limits: grades, length, no TTS/PDF/images, IP quota. */
+  trialMode?: boolean;
+  /** Package feature flags from `membership_packages` (ignored in trialMode). */
+  enabledFeatures?: readonly PackageFeatureId[];
 }) {
-  const startupProfile =
-    childProfiles?.find(
-      (profile) => profile.isDefault && profile.personalReady,
-    ) ?? null;
+  const canFeature = (feature: PackageFeatureId) =>
+    !trialMode && featuresInclude(enabledFeatures, feature);
+
+  const startupProfile = trialMode
+    ? null
+    : (childProfiles?.find(
+        (profile) => profile.isDefault && profile.personalReady,
+      ) ?? null);
 
   const [topic, setTopic] = useState<StoryTopTopic | "">(
     STORY_TOP_TOPICS[0],
@@ -98,10 +119,14 @@ export function FreeStoryForm({
     startupProfile?.id ?? null,
   );
   const [schoolStage, setSchoolStage] = useState<StorySchoolStageId>(
-    startupProfile?.schoolStage ?? "klasse_3",
+    trialMode
+      ? TRIAL_DEFAULT_SCHOOL_STAGE
+      : (startupProfile?.schoolStage ?? "klasse_3"),
   );
   const [lengthStep, setLengthStep] = useState<StoryLengthStepId>(
-    startupProfile?.lengthStep ?? "mittel",
+    trialMode
+      ? TRIAL_DEFAULT_LENGTH_STEP
+      : (startupProfile?.lengthStep ?? "mittel"),
   );
   const [mood, setMood] = useState<StoryMoodId>(
     startupProfile?.mood ?? "spannend",
@@ -152,13 +177,20 @@ export function FreeStoryForm({
   /** Profile selection drives personal stories (no separate toggle). */
   const personalMode = Boolean(selectedProfile);
   const includeImages =
-    selectedProfile?.includeImages ?? FREE_READING_EXTRAS.includeImages;
+    canFeature("bilder") &&
+    (selectedProfile?.includeImages ?? FREE_READING_EXTRAS.includeImages);
   const syllableHelp =
-    selectedProfile?.syllableHelp ?? FREE_READING_EXTRAS.syllableHelp;
+    canFeature("silbenmethode") &&
+    (selectedProfile?.syllableHelp ?? FREE_READING_EXTRAS.syllableHelp);
   const wordHighlight =
-    selectedProfile?.wordHighlight ?? FREE_READING_EXTRAS.wordHighlight;
+    canFeature("markierung") &&
+    (selectedProfile?.wordHighlight ?? FREE_READING_EXTRAS.wordHighlight);
   const readableAloud =
-    selectedProfile?.readableAloud ?? FREE_READING_EXTRAS.readableAloud;
+    canFeature("vorlesen") &&
+    (selectedProfile?.readableAloud ?? FREE_READING_EXTRAS.readableAloud);
+  const allowPdfExport = canFeature("export");
+  const allowFactWhy = canFeature("warum");
+  const allowFactWhyMore = canFeature("hintergrund");
 
   const wordHighlightRef = useRef(wordHighlight);
   wordHighlightRef.current = wordHighlight;
@@ -462,11 +494,15 @@ export function FreeStoryForm({
     startTransition(async () => {
       stopTtsPlayback();
       const result = await generateFreeStoryAction({
-        personalMode,
-        profileId: personalMode ? activeProfileId ?? undefined : undefined,
+        personalMode: trialMode ? false : personalMode,
+        profileId:
+          trialMode || !personalMode
+            ? undefined
+            : (activeProfileId ?? undefined),
         syllableHelp,
         includeImages,
-        topic: personalMode ? undefined : topic,
+        trialMode,
+        topic: trialMode || !personalMode ? topic : undefined,
         schoolStage,
         lengthStep,
         mood,
@@ -593,7 +629,7 @@ export function FreeStoryForm({
 
   return (
     <div className="grid items-start gap-8">
-      {childProfiles !== null && !selectionCollapsed ? (
+      {childProfiles !== null && !trialMode && !selectionCollapsed ? (
         <ChildProfilePickerCard
           profiles={childProfiles}
           selectedId={selectedProfileId}
@@ -786,14 +822,22 @@ export function FreeStoryForm({
                   role="group"
                   aria-label="Schulstufe"
                 >
-                  {STORY_SCHOOL_STAGES.map((stage) => (
-                    <ChoiceChip
-                      key={stage.id}
-                      active={schoolStage === stage.id}
-                      onClick={() => setSchoolStage(stage.id)}
-                      label={stage.label}
-                    />
-                  ))}
+                  {STORY_SCHOOL_STAGES.map((stage) => {
+                    const allowed = trialMode
+                      ? (TRIAL_ALLOWED_SCHOOL_STAGES as readonly string[]).includes(
+                          stage.id,
+                        )
+                      : true;
+                    return (
+                      <ChoiceChip
+                        key={stage.id}
+                        active={schoolStage === stage.id}
+                        disabled={!allowed}
+                        onClick={() => setSchoolStage(stage.id)}
+                        label={stage.label}
+                      />
+                    );
+                  })}
                 </div>
               </section>
             ) : null}
@@ -811,6 +855,9 @@ export function FreeStoryForm({
                     catalog={lengthCatalog}
                     value={lengthStep}
                     onChange={setLengthStep}
+                    disabledStepIds={
+                      trialMode ? TRIAL_DISABLED_LENGTH_STEPS : undefined
+                    }
                   />
                 </div>
 
@@ -954,21 +1001,23 @@ export function FreeStoryForm({
                       </button>
                     </>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleExportPdf();
-                    }}
-                    disabled={isExporting}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-orange-700 px-4 py-2.5 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
-                  >
-                    {isExporting ? (
-                      <Loader2 className="size-4 animate-spin" aria-hidden />
-                    ) : (
-                      <FileDown className="size-4" aria-hidden />
-                    )}
-                    {isExporting ? "PDF wird vorbereitet …" : "Als PDF"}
-                  </button>
+                  {allowPdfExport ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleExportPdf();
+                      }}
+                      disabled={isExporting}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-orange-700 px-4 py-2.5 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
+                    >
+                      {isExporting ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden />
+                      ) : (
+                        <FileDown className="size-4" aria-hidden />
+                      )}
+                      {isExporting ? "PDF wird vorbereitet …" : "Als PDF"}
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -985,6 +1034,8 @@ export function FreeStoryForm({
             <StoryFactsList
               facts={learnedFacts}
               schoolStage={storySchoolStage ?? schoolStage}
+              allowFactWhy={allowFactWhy}
+              allowFactWhyMore={allowFactWhyMore}
             />
           ) : null}
         </div>
@@ -1126,20 +1177,29 @@ function ChoiceChip({
   active,
   label,
   onClick,
+  disabled = false,
 }: {
   active: boolean;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
+      title={disabled ? "Im kostenlosen Test nicht verfügbar" : undefined}
       onClick={onClick}
       className={cn(
         "rounded-full px-3.5 py-2 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
-        active
-          ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
-          : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
+        disabled &&
+          "cursor-not-allowed bg-gray-50 text-zinc-300 ring-zinc-950/5",
+        !disabled &&
+          active &&
+          "bg-yellow-400 text-zinc-950 ring-yellow-400",
+        !disabled &&
+          !active &&
+          "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
       )}
     >
       {label}

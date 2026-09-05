@@ -6,6 +6,8 @@ import {
   storyPathForRole,
   type MembershipRoleId,
 } from "@/lib/users/catalog";
+import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
+import { featuresInclude } from "@/lib/users/packages";
 
 /**
  * Server wrapper: admin cog for admins; Meine Welt / story page / Abmelden when signed in.
@@ -24,6 +26,9 @@ export async function AppHeader() {
   const testRole: MembershipRoleId | null =
     adminImpersonating && role && isMembershipRoleId(role) ? role : null;
 
+  const access = user ? await loadPackageAccessForCurrentUser() : null;
+  const showMeineWelt = featuresInclude(access?.features ?? [], "meine_welt");
+
   return (
     <LandingHeader
       isAdmin={Boolean(isAdmin)}
@@ -31,6 +36,7 @@ export async function AppHeader() {
       testRole={testRole}
       isSignedIn={Boolean(user)}
       storyHref={storyPathForRole(role)}
+      showMeineWelt={showMeineWelt}
     />
   );
 }

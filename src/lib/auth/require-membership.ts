@@ -1,26 +1,23 @@
 /**
- * Page gates by Auth `app_metadata.role` (1:1 role → membership story page).
- * Admin may open every membership page for support.
+ * Page gates for the shared membership story composer (`/geschichte`).
+ * Any membership role or admin may open it; guests → anmelden.
  */
 
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   isMembershipRoleId,
-  storyPathForRole,
-  type MembershipRoleId,
+  STORY_PATH,
 } from "@/lib/users/catalog";
 
 /**
- * Requires a signed-in user whose role matches `requiredRole` (or admin).
- * Guests → anmelden; wrong package → their own story page or home.
+ * Requires a signed-in user with a membership role (or admin).
+ * Returns the Auth role string for package feature resolution.
  */
-export async function requireMembershipPage(
-  requiredRole: MembershipRoleId,
-): Promise<void> {
+export async function requireAnyMembershipPage(): Promise<{ role: string }> {
   const user = await getCurrentUser();
   if (!user) {
-    redirect(`/anmelden?next=/${requiredRole}`);
+    redirect(`/anmelden?next=${STORY_PATH}`);
   }
 
   const role =
@@ -28,16 +25,8 @@ export async function requireMembershipPage(
       ? user.app_metadata.role
       : "";
 
-  if (role === "admin") {
-    return;
-  }
-
-  if (role === requiredRole) {
-    return;
-  }
-
-  if (isMembershipRoleId(role)) {
-    redirect(storyPathForRole(role));
+  if (role === "admin" || isMembershipRoleId(role)) {
+    return { role };
   }
 
   redirect("/");

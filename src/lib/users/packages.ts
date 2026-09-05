@@ -140,3 +140,78 @@ export function packageHasFeature(
 ): boolean {
   return pkg.features.includes(feature);
 }
+
+/**
+ * Auth membership role → catalog package id (`paket1` → `plus`, …).
+ * Admin is not mapped; callers grant all features separately.
+ */
+export const MEMBERSHIP_ROLE_TO_PACKAGE_ID = {
+  basis: "basis",
+  paket1: "plus",
+  paket2: "pro",
+  paket3: "ultimate",
+} as const satisfies Record<string, UserPackageId>;
+
+export type MembershipRolePackageId =
+  keyof typeof MEMBERSHIP_ROLE_TO_PACKAGE_ID;
+
+export function isMembershipRolePackageId(
+  value: string,
+): value is MembershipRolePackageId {
+  return value in MEMBERSHIP_ROLE_TO_PACKAGE_ID;
+}
+
+/** Resolve package id for a membership role string; null for admin/unknown. */
+export function packageIdForMembershipRole(
+  role: string | null | undefined,
+): UserPackageId | null {
+  if (!role || !isMembershipRolePackageId(role)) return null;
+  return MEMBERSHIP_ROLE_TO_PACKAGE_ID[role];
+}
+
+/**
+ * Features + display label for a role against a loaded package catalog.
+ * Admin gets every feature; unknown roles get an empty Basis-like set.
+ */
+export function resolvePackageAccessForRole(
+  role: string | null | undefined,
+  packages: MembershipPackage[],
+): { packageId: UserPackageId | null; label: string; features: PackageFeatureId[] } {
+  if (role === "admin") {
+    return {
+      packageId: null,
+      label: "Admin",
+      features: [...PACKAGE_FEATURE_IDS],
+    };
+  }
+
+  const packageId = packageIdForMembershipRole(role);
+  if (!packageId) {
+    const basis =
+      packages.find((pkg) => pkg.id === "basis") ??
+      FALLBACK_MEMBERSHIP_PACKAGES[0]!;
+    return {
+      packageId: "basis",
+      label: basis.label,
+      features: [],
+    };
+  }
+
+  const pkg =
+    packages.find((entry) => entry.id === packageId) ??
+    FALLBACK_MEMBERSHIP_PACKAGES.find((entry) => entry.id === packageId) ??
+    FALLBACK_MEMBERSHIP_PACKAGES[0]!;
+
+  return {
+    packageId: pkg.id,
+    label: pkg.label,
+    features: pkg.features,
+  };
+}
+
+export function featuresInclude(
+  features: readonly PackageFeatureId[],
+  feature: PackageFeatureId,
+): boolean {
+  return features.includes(feature);
+}

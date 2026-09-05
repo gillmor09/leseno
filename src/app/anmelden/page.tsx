@@ -20,7 +20,7 @@ export default async function SignInPage({
   const nextPath =
     params.next?.startsWith("/") && !params.next.startsWith("//")
       ? params.next
-      : "/basis";
+      : "/geschichte";
 
   return (
     <AuthShell

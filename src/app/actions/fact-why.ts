@@ -2,6 +2,7 @@
 
 /**
  * Server Actions for fact „Warum?“ / „Ich will mehr wissen“.
+ * Gated by package features `warum` and `hintergrund`.
  */
 
 import type { ActionResult } from "@/lib/types/actions";
@@ -11,10 +12,13 @@ import {
   explainFactWhy,
   explainFactWhyMore,
 } from "@/lib/stories/fact-why";
+import { currentUserHasFeature } from "@/lib/users/package-access";
 import { factWhyMoreSchema, factWhySchema } from "@/lib/validations/fact-why";
 
 const FACT_WHY_FALLBACK =
   "Die Erklärung konnte gerade nicht geladen werden. Bitte versuche es gleich noch einmal.";
+
+const FEATURE_DENIED = "Diese Funktion gehört nicht zu deinem Paket.";
 
 /**
  * Loads a short background explanation for one learned fact.
@@ -30,6 +34,10 @@ export async function explainFactWhyAction(
   });
   if (botError) {
     return { success: false, error: botError };
+  }
+
+  if (!(await currentUserHasFeature("warum"))) {
+    return { success: false, error: FEATURE_DENIED };
   }
 
   const parsed = factWhySchema.safeParse(input);
@@ -69,6 +77,10 @@ export async function explainFactWhyMoreAction(
   });
   if (botError) {
     return { success: false, error: botError };
+  }
+
+  if (!(await currentUserHasFeature("hintergrund"))) {
+    return { success: false, error: FEATURE_DENIED };
   }
 
   const parsed = factWhyMoreSchema.safeParse(input);

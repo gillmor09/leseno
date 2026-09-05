@@ -4,6 +4,9 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { MyWorldManager } from "@/components/features/world/my-world-manager";
 import { getCurrentUser } from "@/lib/auth/session";
+import { STORY_PATH } from "@/lib/users/catalog";
+import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
+import { featuresInclude } from "@/lib/users/packages";
 import { listMyChildProfiles } from "@/lib/world/repository";
 
 export const metadata: Metadata = {
@@ -14,12 +17,21 @@ export const metadata: Metadata = {
 
 /**
  * Signed-in personal hub for one or more child profiles.
+ * Requires package feature `meine_welt`; family add-ons need `meine_welt_familie`.
  */
 export default async function MeineWeltPage() {
   const user = await getCurrentUser();
   if (!user) {
     redirect("/anmelden?next=/meine-welt");
   }
+
+  const access = await loadPackageAccessForCurrentUser();
+  const features = access?.features ?? [];
+  if (!featuresInclude(features, "meine_welt")) {
+    redirect(STORY_PATH);
+  }
+
+  const allowFamily = featuresInclude(features, "meine_welt_familie");
 
   let profiles: Awaited<ReturnType<typeof listMyChildProfiles>> = [];
   let loadError: string | null = null;
@@ -40,7 +52,7 @@ export default async function MeineWeltPage() {
         <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
           <div className="flex items-start justify-between gap-4">
             <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-              Familie
+              {allowFamily ? "Familie" : "Meine Welt"}
             </p>
             {user.email ? (
               <p
@@ -55,9 +67,9 @@ export default async function MeineWeltPage() {
             Meine Welt
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Lege für jedes Kind ein eigenes Profil an — mit Namen, Freunden,
-            Interessen und Wünschen. So werden persönliche Geschichten wirklich
-            passend.
+            {allowFamily
+              ? "Lege für jedes Kind ein eigenes Profil an — mit Namen, Freunden, Interessen und Wünschen. So werden persönliche Geschichten wirklich passend."
+              : "Lege ein Profil für dein Kind an — mit Namen, Freunden, Interessen und Wünschen. So werden persönliche Geschichten wirklich passend."}
           </p>
 
           {loadError ? (
@@ -66,7 +78,11 @@ export default async function MeineWeltPage() {
             </p>
           ) : (
             <div className="mt-10">
-              <MyWorldManager initialProfiles={profiles} />
+              <MyWorldManager
+                initialProfiles={profiles}
+                allowFamily={allowFamily}
+                enabledFeatures={features}
+              />
             </div>
           )}
         </section>

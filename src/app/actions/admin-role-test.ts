@@ -11,6 +11,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import type { ActionResult } from "@/lib/types/actions";
 import {
   isMembershipRoleId,
+  STORY_PATH,
   type MembershipRoleId,
 } from "@/lib/users/catalog";
 import { isAdminImpersonating } from "@/lib/auth/admin-impersonation";
@@ -82,7 +83,7 @@ async function applyOwnRoleMetadata(input: {
   revalidatePath("/", "layout");
 
   const redirectTo =
-    input.role === "admin" ? "/admin/users" : `/${input.role}`;
+    input.role === "admin" ? "/admin/users" : STORY_PATH;
 
   return {
     success: true,

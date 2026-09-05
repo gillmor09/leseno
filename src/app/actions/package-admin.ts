@@ -31,6 +31,8 @@ export async function saveMembershipPackagesAction(
     await updateMembershipPackages(parsed.data.packages);
     revalidatePath("/admin/pakete");
     revalidatePath("/preise");
+    revalidatePath("/geschichte");
+    revalidatePath("/meine-welt");
     return { success: true };
   } catch (error) {
     console.error("[saveMembershipPackagesAction]", error);

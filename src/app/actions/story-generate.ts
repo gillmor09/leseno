@@ -9,6 +9,13 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { toUserFacingMessage } from "@/lib/errors/user-facing";
 import { assertBotGuard } from "@/lib/security/bot-guard";
 import { buildPersonalStoryContext } from "@/lib/stories/personal";
+import {
+  isTrialLengthStep,
+  isTrialSchoolStage,
+  TRIAL_MAX_STORIES_PER_IP_PER_DAY,
+} from "@/lib/stories/trial-limits";
+import { loadFeaturesForCurrentUser } from "@/lib/users/package-access";
+import { featuresInclude } from "@/lib/users/packages";
 import { storyGenerateSchema } from "@/lib/validations/story-generate";
 import { loadChildProfile } from "@/lib/world/repository";
 
@@ -41,6 +48,34 @@ export async function generateFreeStoryAction(
     };
   }
 
+  if (parsed.data.trialMode) {
+    const trialQuotaError = await assertBotGuard(input, {
+      action: "story-generate-trial-daily",
+      minFillMs: 0,
+      maxRequests: TRIAL_MAX_STORIES_PER_IP_PER_DAY,
+      windowMs: 24 * 60 * 60 * 1000,
+    });
+    if (trialQuotaError) {
+      return {
+        success: false,
+        error:
+          "Für heute sind die drei kostenlosen Geschichten für diese Adresse aufgebraucht. Bitte morgen erneut versuchen oder ein Konto anlegen.",
+      };
+    }
+    if (!isTrialSchoolStage(parsed.data.schoolStage)) {
+      return {
+        success: false,
+        error: "Im Testmodus sind nur 1. und 2. Klasse wählbar.",
+      };
+    }
+    if (!isTrialLengthStep(parsed.data.lengthStep)) {
+      return {
+        success: false,
+        error: "Im Testmodus sind „Lang“ und „Sehr lang“ nicht verfügbar.",
+      };
+    }
+  }
+
   try {
     let personal = null as ReturnType<typeof buildPersonalStoryContext> | null;
     let topic = parsed.data.topic?.trim() ?? "";
@@ -48,7 +83,18 @@ export async function generateFreeStoryAction(
     let includeImages = parsed.data.includeImages;
     let syllableHelp = parsed.data.syllableHelp;
 
+    const packageFeatures = parsed.data.trialMode
+      ? []
+      : await loadFeaturesForCurrentUser();
+
     if (parsed.data.personalMode) {
+      if (!featuresInclude(packageFeatures, "meine_welt")) {
+        return {
+          success: false,
+          error:
+            "Persönliche Geschichten gehören nicht zu deinem Paket. Bitte wähl Freies lesen oder upgrade.",
+        };
+      }
       const user = await getCurrentUser();
       if (!user) {
         return {
@@ -74,6 +120,18 @@ export async function generateFreeStoryAction(
       schoolStage = profile.schoolStage;
       includeImages = profile.includeImages;
       syllableHelp = profile.syllableHelp;
+    }
+
+    if (parsed.data.trialMode) {
+      includeImages = false;
+      syllableHelp = false;
+    } else {
+      if (!featuresInclude(packageFeatures, "bilder")) {
+        includeImages = false;
+      }
+      if (!featuresInclude(packageFeatures, "silbenmethode")) {
+        syllableHelp = false;
+      }
     }
 
     const result = await generateStoryPipeline({

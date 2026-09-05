@@ -3,16 +3,17 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { FreeStoryForm } from "@/components/features/stories/free-story-form";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
+import { TRIAL_MAX_STORIES_PER_IP_PER_DAY } from "@/lib/stories/trial-limits";
 
 export const metadata: Metadata = {
   title: "Kostenlos ausprobieren — Leseno",
   description:
-    "Probier Leseno ohne Konto: Thema wählen, Geschichte lesen — mit Bildern und echtem Wissen.",
+    "Probier Leseno ohne Konto: Thema wählen und Geschichte lesen — eingeschränkter Testmodus.",
 };
 
 /**
  * Public try-out composer (landing „Jetzt probieren“).
- * Membership entry after signup stays at `/basis` (and paket routes).
+ * Limited grades/length, no images/TTS/PDF/fact-why, max 3 stories per IP/day.
  */
 export default async function KostenlosPage() {
   const lengthCatalog = await loadStoryLengthCatalog();
@@ -29,11 +30,12 @@ export default async function KostenlosPage() {
             Wähl dein Thema. Lies deine Geschichte.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Kein Konto nötig. Stell Schulstufe und Textlänge ein — als Komödie,
-            Detektivgeschichte oder Motivationsgeschichte.
+            Kein Konto nötig. Im Test: 1. und 2. Klasse, Textlänge bis mittel —
+            ohne Bilder, Vorlesen, PDF und Warum-/Mehr-wissen. Maximal{" "}
+            {TRIAL_MAX_STORIES_PER_IP_PER_DAY} Geschichten pro Tag.
           </p>
           <div className="mt-10">
-            <FreeStoryForm lengthCatalog={lengthCatalog} />
+            <FreeStoryForm lengthCatalog={lengthCatalog} trialMode />
           </div>
         </section>
       </main>

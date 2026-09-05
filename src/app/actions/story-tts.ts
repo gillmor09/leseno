@@ -17,6 +17,8 @@ import {
   type AlignedTtsWord,
 } from "@/lib/stories/tts-word-align";
 import type { ActionResult } from "@/lib/types/actions";
+import { loadFeaturesForCurrentUser } from "@/lib/users/package-access";
+import { featuresInclude } from "@/lib/users/packages";
 import "@/lib/validations/configure-zod";
 import { z } from "zod";
 
@@ -78,9 +80,19 @@ export async function synthesizeStorySpeechAction(
     };
   }
 
+  const packageFeatures = await loadFeaturesForCurrentUser();
+  if (!featuresInclude(packageFeatures, "vorlesen")) {
+    return {
+      success: false,
+      error: "Vorlesen gehört nicht zu deinem Paket.",
+    };
+  }
+
   try {
     const plain = parsed.data.storyText;
-    const wordHighlight = parsed.data.wordHighlight;
+    const wordHighlight =
+      parsed.data.wordHighlight &&
+      featuresInclude(packageFeatures, "markierung");
     const textChunks = chunkTextForTts(plain);
     const fullTokens = wordHighlight ? tokenizeStoryWords(plain) : [];
     const audioChunks: StoryTtsChunk[] = [];

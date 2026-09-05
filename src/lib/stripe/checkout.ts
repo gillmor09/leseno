@@ -80,12 +80,13 @@ async function ensureStripeCustomer(input: {
 
 /**
  * Monthly package Checkout (Plus / Pro / Ultimate).
- * Returns the hosted Checkout URL.
+ * Returns the hosted Checkout URL. Caller must have collected withdrawal consent.
  */
 export async function createMembershipCheckoutUrl(input: {
   userId: string;
   email: string;
   packageId: PaidMembershipPackageId;
+  withdrawalConsent: true;
 }): Promise<string> {
   const priceId = getStripePriceIdForPackage(input.packageId);
   if (!priceId) {
@@ -97,6 +98,7 @@ export async function createMembershipCheckoutUrl(input: {
     userId: input.userId,
     email: input.email,
   });
+  const consentedAt = new Date().toISOString();
 
   const session = await createCheckoutSession({
     mode: "subscription",
@@ -107,15 +109,25 @@ export async function createMembershipCheckoutUrl(input: {
     cancel_url: `${siteUrl}/preise?checkout=abgebrochen`,
     allow_promotion_codes: true,
     billing_address_collection: "auto",
+    custom_text: {
+      submit: {
+        message:
+          "Digitale Inhalte starten nach Zahlung sofort. Du hast dem vorzeitigen Beginn und dem Erlöschen des Widerrufsrechts vor dem Checkout zugestimmt (siehe leseno.de/widerruf).",
+      },
+    },
     metadata: {
       kind: "membership",
       userId: input.userId,
       packageId: input.packageId,
+      withdrawalConsent: "true",
+      withdrawalConsentAt: consentedAt,
     },
     subscription_data: {
       metadata: {
         userId: input.userId,
         packageId: input.packageId,
+        withdrawalConsent: "true",
+        withdrawalConsentAt: consentedAt,
       },
     },
   });
@@ -126,11 +138,12 @@ export async function createMembershipCheckoutUrl(input: {
   return session.url;
 }
 
-/** One-time credits pack Checkout. */
+/** One-time credits pack Checkout (withdrawal consent required by caller). */
 export async function createCreditsCheckoutUrl(input: {
   userId: string;
   email: string;
   credits?: number;
+  withdrawalConsent: true;
 }): Promise<string> {
   const priceId = getStripeCreditsPriceId();
   if (!priceId) {
@@ -143,6 +156,7 @@ export async function createCreditsCheckoutUrl(input: {
     userId: input.userId,
     email: input.email,
   });
+  const consentedAt = new Date().toISOString();
 
   const session = await createCheckoutSession({
     mode: "payment",
@@ -153,10 +167,18 @@ export async function createCreditsCheckoutUrl(input: {
     cancel_url: `${siteUrl}/preise?checkout=abgebrochen`,
     allow_promotion_codes: true,
     billing_address_collection: "auto",
+    custom_text: {
+      submit: {
+        message:
+          "Credits werden sofort gutgeschrieben. Du hast dem vorzeitigen Beginn und dem Erlöschen des Widerrufsrechts vor dem Checkout zugestimmt (siehe leseno.de/widerruf).",
+      },
+    },
     metadata: {
       kind: "credits",
       userId: input.userId,
       credits: String(credits),
+      withdrawalConsent: "true",
+      withdrawalConsentAt: consentedAt,
     },
   });
 

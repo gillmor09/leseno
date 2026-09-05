@@ -122,7 +122,7 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
   // We still show the same success message to avoid leaking account existence,
   // but we only set the role when a fresh user was actually created.
   if (data.user?.id && data.user.identities && data.user.identities.length > 0) {
-    // Fresh signup — default membership role unlocks `/basis`.
+    // Fresh signup — default membership role unlocks `/geschichte`.
     const adminClient = createServiceClient(null);
     await adminClient.auth.admin.updateUserById(data.user.id, {
       app_metadata: { role: "basis" },

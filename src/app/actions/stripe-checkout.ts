@@ -14,15 +14,22 @@ import { getStripeSubscriptionIdForUser } from "@/lib/stripe/billing-sync";
 import type { ActionResult } from "@/lib/types/actions";
 import { getSiteUrl } from "@/lib/site-url";
 
+function requireWithdrawalConsent(consent: unknown): string | null {
+  if (consent !== true) {
+    return "Bitte dem vorzeitigen Beginn und dem Erlöschen des Widerrufsrechts zustimmen.";
+  }
+  return null;
+}
+
 /**
  * Starts Stripe Checkout for Plus / Pro / Ultimate (card + PayPal).
- * Unauthenticated users get a login redirect URL.
- * Users with an active subscription are sent to the Customer Portal instead.
+ * Requires explicit withdrawal waiver consent before new Checkout sessions.
  */
-export async function startMembershipCheckoutAction(
-  packageId: string,
-): Promise<ActionResult<{ url: string }>> {
-  if (!isPaidMembershipPackageId(packageId)) {
+export async function startMembershipCheckoutAction(input: {
+  packageId: string;
+  withdrawalConsent: boolean;
+}): Promise<ActionResult<{ url: string }>> {
+  if (!isPaidMembershipPackageId(input.packageId)) {
     return { success: false, error: "Unbekanntes Paket." };
   }
   if (!hasStripeCheckoutConfig()) {
@@ -54,10 +61,16 @@ export async function startMembershipCheckoutAction(
       return { success: true, data: { url } };
     }
 
+    const consentError = requireWithdrawalConsent(input.withdrawalConsent);
+    if (consentError) {
+      return { success: false, error: consentError };
+    }
+
     const url = await createMembershipCheckoutUrl({
       userId: user.id,
       email: user.email,
-      packageId,
+      packageId: input.packageId,
+      withdrawalConsent: true,
     });
     return { success: true, data: { url } };
   } catch (error) {
@@ -72,10 +85,10 @@ export async function startMembershipCheckoutAction(
   }
 }
 
-/** Starts Checkout for the 300-Credits top-up pack. */
-export async function startCreditsCheckoutAction(): Promise<
-  ActionResult<{ url: string }>
-> {
+/** Starts Checkout for the 300-Credits top-up pack (with withdrawal consent). */
+export async function startCreditsCheckoutAction(input: {
+  withdrawalConsent: boolean;
+}): Promise<ActionResult<{ url: string }>> {
   if (!hasStripeCheckoutConfig()) {
     return {
       success: false,
@@ -95,10 +108,16 @@ export async function startCreditsCheckoutAction(): Promise<
     };
   }
 
+  const consentError = requireWithdrawalConsent(input.withdrawalConsent);
+  if (consentError) {
+    return { success: false, error: consentError };
+  }
+
   try {
     const url = await createCreditsCheckoutUrl({
       userId: user.id,
       email: user.email,
+      withdrawalConsent: true,
     });
     return { success: true, data: { url } };
   } catch (error) {

@@ -16,7 +16,7 @@ Leseno uses **Stripe Checkout** + **Billing** for Plus / Pro / Ultimate subscrip
    Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`.  
 7. Copy the webhook **signing secret** (`whsec_…`).
 
-Checkout in der App: `locale=de`, Methoden `card` + `sepa_debit` + `paypal` (Fallback, wenn eine Methode im Konto fehlt).
+Checkout in der App: `locale=de`, Methoden `card` + `sepa_debit` + `paypal` (Fallback, wenn eine Methode im Konto fehlt). Vor Stripe erscheint ein Dialog mit ausdrücklicher Zustimmung zum vorzeitigen Leistungsbeginn / Erlöschen des Widerrufsrechts; die Zustimmung wird in den Checkout-Metadaten gespeichert.
 
 Local test: `stripe listen --forward-to localhost:3000/api/stripe/webhook`.
 

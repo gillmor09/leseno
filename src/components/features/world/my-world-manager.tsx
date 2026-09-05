@@ -11,19 +11,28 @@ import {
   EMPTY_CHILD_PROFILE_FIELDS,
   type ChildProfile,
 } from "@/lib/world/catalog";
+import type { PackageFeatureId } from "@/lib/users/packages";
 import { cn } from "@/lib/utils";
 
 type TabId = string | "new";
 
 export function MyWorldManager({
   initialProfiles,
+  allowFamily = true,
+  enabledFeatures = [],
 }: {
   initialProfiles: ChildProfile[];
+  /** Package `meine_welt_familie`: allow a second+ child profile. */
+  allowFamily?: boolean;
+  /** Package features that unlock profile reading extras. */
+  enabledFeatures?: readonly PackageFeatureId[];
 }) {
   const [profiles, setProfiles] = useState(initialProfiles);
   const [activeTab, setActiveTab] = useState<TabId>(
     initialProfiles[0]?.id ?? "new",
   );
+
+  const canAddChild = allowFamily || profiles.length === 0;
 
   const activeProfile = useMemo(
     () =>
@@ -61,7 +70,7 @@ export function MyWorldManager({
     );
   }
 
-  const showTabs = profiles.length > 1 || activeTab === "new";
+  const showTabs = profiles.length > 1 || (canAddChild && activeTab === "new");
 
   function handleSaved(saved: ChildProfile) {
     setProfiles((current) => {
@@ -128,21 +137,23 @@ export function MyWorldManager({
               </button>
             );
           })}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "new"}
-            onClick={() => setActiveTab("new")}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out",
-              activeTab === "new"
-                ? "bg-yellow-400 text-zinc-950"
-                : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
-            )}
-          >
-            <Plus className="size-4" aria-hidden />
-            Kind hinzufügen
-          </button>
+          {canAddChild ? (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "new"}
+              onClick={() => setActiveTab("new")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out",
+                activeTab === "new"
+                  ? "bg-yellow-400 text-zinc-950"
+                  : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100",
+              )}
+            >
+              <Plus className="size-4" aria-hidden />
+              Kind hinzufügen
+            </button>
+          ) : null}
         </div>
       ) : profiles.length === 1 ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -152,18 +163,20 @@ export function MyWorldManager({
               {profiles[0]!.displayName.trim() || "Ohne Namen"}
             </span>
           </p>
-          <button
-            type="button"
-            onClick={() => setActiveTab("new")}
-            className="inline-flex items-center gap-1.5 rounded-full bg-yellow-400 px-3 py-1.5 text-xs font-extrabold text-zinc-950 transition-all duration-200 ease-in-out hover:bg-yellow-300"
-          >
-            <Plus className="size-3.5" aria-hidden />
-            Weiteres Kind
-          </button>
+          {canAddChild ? (
+            <button
+              type="button"
+              onClick={() => setActiveTab("new")}
+              className="inline-flex items-center gap-1.5 rounded-full bg-yellow-400 px-3 py-1.5 text-xs font-extrabold text-zinc-950 transition-all duration-200 ease-in-out hover:bg-yellow-300"
+            >
+              <Plus className="size-3.5" aria-hidden />
+              Weiteres Kind
+            </button>
+          ) : null}
         </div>
       ) : null}
 
-      {activeTab === "new" ? (
+      {activeTab === "new" && canAddChild ? (
         <MyWorldProfileEditor
           key={`new-${profiles.length}`}
           profileId={null}
@@ -172,6 +185,7 @@ export function MyWorldManager({
           onClaimDefault={claimDefault}
           onSaved={handleSaved}
           canDelete={false}
+          enabledFeatures={enabledFeatures}
         />
       ) : activeProfile ? (
         <MyWorldProfileEditor
@@ -197,8 +211,9 @@ export function MyWorldManager({
           onSaved={handleSaved}
           onDeleted={handleDeleted}
           canDelete
+          enabledFeatures={enabledFeatures}
         />
-      ) : (
+      ) : canAddChild ? (
         <MyWorldProfileEditor
           key={`fallback-new-${profiles.length}`}
           profileId={null}
@@ -207,8 +222,9 @@ export function MyWorldManager({
           onClaimDefault={claimDefault}
           onSaved={handleSaved}
           canDelete={false}
+          enabledFeatures={enabledFeatures}
         />
-      )}
+      ) : null}
     </div>
   );
 }

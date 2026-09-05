@@ -50,7 +50,7 @@ export function promptValueForMood(mood: StoryMoodId): string {
   return `${entry.label} — ${entry.genreBrief}`;
 }
 
-/** Top-10 theme chips on `/basis` (no free-text topic). */
+/** Top-10 theme chips on `/geschichte` (no free-text topic). */
 export const STORY_TOP_TOPICS = [
   "Magie & Geheimnisse",
   "Abenteuer & Entdeckungen",

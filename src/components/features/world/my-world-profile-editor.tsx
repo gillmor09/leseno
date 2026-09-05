@@ -13,6 +13,10 @@ import {
 } from "@/app/actions/user-world";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import type { ChildProfile, ChildProfileFields } from "@/lib/world/catalog";
+import {
+  featuresInclude,
+  type PackageFeatureId,
+} from "@/lib/users/packages";
 import { STORY_LENGTH_STEPS } from "@/lib/stories/length";
 import type { StoryLengthStepId } from "@/lib/stories/length";
 import {
@@ -65,6 +69,8 @@ type MyWorldProfileEditorProps = {
   otherDefaultName?: string | null;
   /** Clears default on other local profiles after the user confirms the switch. */
   onClaimDefault?: () => void;
+  /** Package features that unlock reading extras toggles. */
+  enabledFeatures?: readonly PackageFeatureId[];
 };
 
 /**
@@ -78,6 +84,7 @@ export function MyWorldProfileEditor({
   canDelete = false,
   otherDefaultName = null,
   onClaimDefault,
+  enabledFeatures = [],
 }: MyWorldProfileEditorProps) {
   const [fields, setFields] = useState(initialFields);
   const [drafts, setDrafts] = useState<Record<ListKey, string>>({
@@ -445,26 +452,34 @@ export function MyWorldProfileEditor({
               [
                 {
                   key: "includeImages" as const,
+                  feature: "bilder" as const,
                   title: "Bilder",
                   hint: "Illustrationen in die Geschichte (langsamer)",
                 },
                 {
                   key: "syllableHelp" as const,
+                  feature: "silbenmethode" as const,
                   title: "Silbenhilfe",
                   hint: "Silben abwechselnd blau und rot",
                 },
                 {
                   key: "wordHighlight" as const,
+                  feature: "markierung" as const,
                   title: "Wort-Markierung",
                   hint: "Beim Vorlesen das aktuelle Wort markieren",
                 },
                 {
                   key: "readableAloud" as const,
+                  feature: "vorlesen" as const,
                   title: "Vorlesbar",
                   hint: "Play-Button und Tempo bei Geschichten",
                 },
               ] as const
-            ).map((item) => {
+            )
+              .filter((item) =>
+                featuresInclude(enabledFeatures, item.feature),
+              )
+              .map((item) => {
               const active = fields[item.key];
               return (
                 <div
@@ -506,6 +521,18 @@ export function MyWorldProfileEditor({
               );
             })}
           </div>
+          {(
+            [
+              "bilder",
+              "silbenmethode",
+              "markierung",
+              "vorlesen",
+            ] as const
+          ).every((feature) => !featuresInclude(enabledFeatures, feature)) ? (
+            <p className="mt-3 text-sm text-zinc-500">
+              In deinem Paket sind keine Lese-Extras freigeschaltet.
+            </p>
+          ) : null}
         </section>
 
         {fieldError ? (

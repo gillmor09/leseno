@@ -24,6 +24,8 @@ type FactWhyDialogProps = {
   fact: string;
   schoolStage: StorySchoolStageId;
   onClose: () => void;
+  /** Package `hintergrund`: show „Ich will mehr wissen“. */
+  allowMore?: boolean;
 };
 
 function paragraphsFromText(text: string): string[] {
@@ -41,6 +43,7 @@ export function FactWhyDialog({
   fact,
   schoolStage,
   onClose,
+  allowMore = true,
 }: FactWhyDialogProps) {
   const botGuard = useBotGuardFields();
   const [background, setBackground] = useState<string | null>(null);
@@ -204,7 +207,7 @@ export function FactWhyDialog({
             onWebsiteChange={botGuard.setWebsite}
             formStartedAt={botGuard.formStartedAt}
           />
-          {background && !more ? (
+          {background && !more && allowMore ? (
             <button
               type="button"
               disabled={isLoadingMore || isLoadingWhy}
@@ -217,7 +220,9 @@ export function FactWhyDialog({
             <p className="text-center text-xs font-semibold text-zinc-500">
               {more
                 ? "Viel Spaß beim Staunen — schließ das Fenster, wenn du fertig bist."
-                : "Gleich kannst du noch tiefer eintauchen."}
+                : allowMore
+                  ? "Gleich kannst du noch tiefer eintauchen."
+                  : "Schließ das Fenster, wenn du fertig bist."}
             </p>
           )}
         </div>

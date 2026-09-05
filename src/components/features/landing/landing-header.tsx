@@ -41,14 +41,17 @@ export function LandingHeader({
   testRole = null,
   isSignedIn = false,
   storyHref = null,
+  showMeineWelt = true,
 }: {
   isAdmin?: boolean;
   /** Admin temporarily using a membership role; cog stays for restore. */
   adminImpersonating?: boolean;
   testRole?: MembershipRoleId | null;
   isSignedIn?: boolean;
-  /** Membership composer path (`/basis`, `/paket1`, …); falls back to `/basis`. */
+  /** Membership composer path; falls back to `/geschichte`. */
   storyHref?: string | null;
+  /** Package `meine_welt`: show Meine-Welt nav link. */
+  showMeineWelt?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -120,6 +123,7 @@ export function LandingHeader({
   const adminItems = [
     { href: "/admin/users", label: "User" },
     { href: "/admin/aktivitaeten", label: "Aktivitäten" },
+    { href: "/admin/kontakt", label: "Kontaktanfragen" },
     { href: "/admin/pakete", label: "Pakete" },
     { href: "/admin/textlaenge", label: "Textlängen" },
     { href: "/admin/ki-modelle", label: "KI-Modelle" },
@@ -132,7 +136,7 @@ export function LandingHeader({
   const headerBtnIdle = "bg-zinc-800 hover:bg-zinc-900";
   const headerBtnActive = "bg-orange-700 hover:bg-orange-800";
 
-  const storyPath = storyHref ?? "/basis";
+  const storyPath = storyHref ?? "/geschichte";
   const storyActive = pathname === storyPath;
   const worldActive = pathname === "/meine-welt";
   const registerActive = pathname === "/registrieren";
@@ -193,15 +197,17 @@ export function LandingHeader({
                 >
                   Meine Geschichte
                 </a>
-                <a
-                  href="/meine-welt"
-                  className={cn(
-                    headerBtnBase,
-                    worldActive ? headerBtnActive : headerBtnIdle,
-                  )}
-                >
-                  Meine Welt
-                </a>
+                {showMeineWelt ? (
+                  <a
+                    href="/meine-welt"
+                    className={cn(
+                      headerBtnBase,
+                      worldActive ? headerBtnActive : headerBtnIdle,
+                    )}
+                  >
+                    Meine Welt
+                  </a>
+                ) : null}
                 <button
                   type="button"
                   onClick={handleSignOut}

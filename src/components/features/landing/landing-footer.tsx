@@ -22,12 +22,36 @@ export function LandingFooter() {
             </p>
           </div>
         </div>
-        <nav aria-label="Rechtliches">
+        <nav aria-label="Rechtliches" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Link
+            href="/kontakt"
+            className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
+          >
+            Kontakt
+          </Link>
           <Link
             href="/impressum"
             className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
           >
             Impressum
+          </Link>
+          <Link
+            href="/datenschutz"
+            className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
+          >
+            Datenschutz
+          </Link>
+          <Link
+            href="/agb"
+            className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
+          >
+            AGB
+          </Link>
+          <Link
+            href="/widerruf"
+            className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
+          >
+            Widerruf
           </Link>
         </nav>
       </div>

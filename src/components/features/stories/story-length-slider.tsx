@@ -15,19 +15,28 @@ type StoryLengthSliderProps = {
   catalog: StoryLengthCatalog;
   value: StoryLengthStepId;
   onChange: (stepId: StoryLengthStepId) => void;
+  /** Step ids that stay visible but cannot be selected (e.g. trial limits). */
+  disabledStepIds?: readonly StoryLengthStepId[];
 };
 
 export function StoryLengthSlider({
   catalog,
   value,
   onChange,
+  disabledStepIds = [],
 }: StoryLengthSliderProps) {
   const steps = catalog.steps;
+  const disabled = new Set(disabledStepIds);
   const index = Math.max(
     0,
     steps.findIndex((step) => step.id === value),
   );
   const percent = steps.length > 1 ? (index / (steps.length - 1)) * 100 : 0;
+
+  function selectStep(stepId: StoryLengthStepId) {
+    if (disabled.has(stepId)) return;
+    onChange(stepId);
+  }
 
   return (
     <div>
@@ -55,7 +64,7 @@ export function StoryLengthSlider({
             onChange={(event) => {
               const next = steps[Number(event.target.value)];
               if (next) {
-                onChange(next.id);
+                selectStep(next.id);
               }
             }}
             className="absolute inset-0 w-full cursor-pointer appearance-none bg-transparent [&::-moz-range-thumb]:size-8 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-4 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-yellow-400 [&::-moz-range-thumb]:shadow-md [&::-webkit-slider-thumb]:size-8 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-4 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-yellow-400 [&::-webkit-slider-thumb]:shadow-md"
@@ -65,16 +74,27 @@ export function StoryLengthSlider({
         <div className="mt-3 grid grid-cols-5 gap-1">
           {steps.map((step) => {
             const active = step.id === value;
+            const isDisabled = disabled.has(step.id);
             return (
               <button
                 key={step.id}
                 type="button"
-                onClick={() => onChange(step.id)}
+                disabled={isDisabled}
+                onClick={() => selectStep(step.id)}
+                title={
+                  isDisabled
+                    ? "Im kostenlosen Test nicht verfügbar"
+                    : undefined
+                }
                 className={cn(
                   "rounded-xl px-1 py-1.5 text-center text-[0.7rem] leading-tight font-extrabold transition-all duration-200 ease-in-out sm:text-xs",
-                  active
-                    ? "bg-yellow-400 text-zinc-950"
-                    : "text-zinc-500 hover:bg-gray-100",
+                  isDisabled && "cursor-not-allowed text-zinc-300 opacity-50",
+                  !isDisabled &&
+                    active &&
+                    "bg-yellow-400 text-zinc-950",
+                  !isDisabled &&
+                    !active &&
+                    "text-zinc-500 hover:bg-gray-100",
                 )}
               >
                 {step.label}
