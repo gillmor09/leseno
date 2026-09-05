@@ -69,6 +69,7 @@ import {
   TRIAL_DEFAULT_SCHOOL_STAGE,
   TRIAL_DISABLED_LENGTH_STEPS,
 } from "@/lib/stories/trial-limits";
+import { storyCreditsForLength } from "@/lib/stories/credits-cost";
 import {
   featuresInclude,
   type PackageFeatureId,
@@ -90,6 +91,8 @@ export function FreeStoryForm({
   childProfiles = null,
   trialMode = false,
   enabledFeatures = [],
+  initialCredits = 0,
+  onCreditsChange,
 }: {
   lengthCatalog: StoryLengthCatalog;
   /**
@@ -101,6 +104,10 @@ export function FreeStoryForm({
   trialMode?: boolean;
   /** Package feature flags from `membership_packages` (ignored in trialMode). */
   enabledFeatures?: readonly PackageFeatureId[];
+  /** Current credits balance (membership only; ignored in trialMode). */
+  initialCredits?: number;
+  /** Called after a successful paid story generation with the new balance. */
+  onCreditsChange?: (credits: number) => void;
 }) {
   const canFeature = (feature: PackageFeatureId) =>
     !trialMode && featuresInclude(enabledFeatures, feature);
@@ -191,6 +198,10 @@ export function FreeStoryForm({
   const allowPdfExport = canFeature("export");
   const allowFactWhy = canFeature("warum");
   const allowFactWhyMore = canFeature("hintergrund");
+  const storyCreditCost = trialMode
+    ? 0
+    : storyCreditsForLength(lengthStep);
+  const hasEnoughCredits = trialMode || initialCredits >= storyCreditCost;
 
   const wordHighlightRef = useRef(wordHighlight);
   wordHighlightRef.current = wordHighlight;
@@ -472,6 +483,14 @@ export function FreeStoryForm({
       return;
     }
 
+    if (!trialMode && !hasEnoughCredits) {
+      setFieldError(
+        `Für diese Länge brauchst du ${storyCreditCost} Credits. Du hast ${initialCredits.toLocaleString("de-DE")}.`,
+      );
+      toast.error("Nicht genug Credits für diese Geschichtenlänge.");
+      return;
+    }
+
     setStatusText(
       personalMode
         ? "Ich hole spannendes Wissen aus deiner Welt …"
@@ -526,6 +545,12 @@ export function FreeStoryForm({
       );
       setStorySchoolStage(schoolStage);
       setSelectionExpanded(false);
+      if (
+        typeof result.data.creditsRemaining === "number" &&
+        onCreditsChange
+      ) {
+        onCreditsChange(result.data.creditsRemaining);
+      }
     });
   }
 
@@ -900,12 +925,30 @@ export function FreeStoryForm({
               </p>
             ) : null}
 
+            {!trialMode ? (
+              <p
+                className={cn(
+                  "text-center text-sm font-semibold",
+                  hasEnoughCredits ? "text-zinc-600" : "text-orange-800",
+                )}
+              >
+                Kosten:{" "}
+                <span className="tabular-nums text-zinc-950">
+                  {storyCreditCost} Credits
+                </span>
+                {!hasEnoughCredits
+                  ? ` — du hast nur ${initialCredits.toLocaleString("de-DE")}`
+                  : null}
+              </p>
+            ) : null}
+
             <button
               type="submit"
-              disabled={isPending}
+              disabled={isPending || (!trialMode && !hasEnoughCredits)}
               className={cn(
                 "inline-flex w-full items-center justify-center gap-2 rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800",
-                isPending && "opacity-70",
+                (isPending || (!trialMode && !hasEnoughCredits)) &&
+                  "opacity-70",
               )}
             >
               {isPending ? (

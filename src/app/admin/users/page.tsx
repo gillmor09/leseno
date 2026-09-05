@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { UsersAdminForm } from "@/components/features/admin/users-admin-form";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import { getCurrentUser } from "@/lib/auth/session";
 import { loadUsersForAdmin } from "@/lib/users/repository";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 import type { UserAdminRow } from "@/lib/users/catalog";
@@ -20,6 +21,7 @@ export default async function UsersAdminPage() {
   let users: UserAdminRow[] = [];
   let canSave = false;
   let readOnlyNotice: string | null = null;
+  const currentUser = await getCurrentUser();
 
   try {
     users = await loadUsersForAdmin();
@@ -34,7 +36,9 @@ export default async function UsersAdminPage() {
         "Vorschau: `SUPABASE_SERVICE_ROLE_KEY` fehlt. Bitte `.env.local` / Coolify prüfen.";
     } else {
       const message =
-        error instanceof Error ? error.message : "User konnten nicht geladen werden.";
+        error instanceof Error
+          ? error.message
+          : "User konnten nicht geladen werden.";
       readOnlyNotice = `Vorschau: ${message}`;
     }
   }
@@ -52,13 +56,15 @@ export default async function UsersAdminPage() {
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
             Verwalte hier die registrierten E-Mail-Adressen und weise die
-            passende Rolle zu.
+            passende Rolle zu. User lassen sich inkl. Supabase-Auth-Account
+            löschen.
           </p>
           <div className="mt-10">
             <UsersAdminForm
               users={users}
               canSave={canSave}
               readOnlyNotice={readOnlyNotice}
+              currentUserId={currentUser?.id ?? null}
             />
           </div>
         </section>

@@ -12,3 +12,7 @@ export const userAdminRowSchema = z.object({
 export const userAdminFormSchema = z.object({
   users: z.array(userAdminRowSchema),
 });
+
+export const deleteUserAdminSchema = z.object({
+  userId: z.string().uuid({ message: "Ungültige User-ID." }),
+});

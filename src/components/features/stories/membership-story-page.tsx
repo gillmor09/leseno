@@ -5,9 +5,10 @@
 
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
-import { FreeStoryForm } from "@/components/features/stories/free-story-form";
+import { GeschichteComposer } from "@/components/features/stories/geschichte-composer";
 import { requireAnyMembershipPage } from "@/lib/auth/require-membership";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
+import { loadMyCredits } from "@/lib/users/billing";
 import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
 import { loadChildProfileOptionsForUser } from "@/lib/world/story-options";
@@ -27,29 +28,26 @@ export async function MembershipStoryPage() {
     ? await loadChildProfileOptionsForUser(true)
     : null;
 
+  let initialCredits = 0;
+  try {
+    initialCredits = await loadMyCredits();
+  } catch (error) {
+    console.error("[MembershipStoryPage] credits", error);
+  }
+
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
       <main className="flex-1">
         <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-            {packageLabel} für dich
-          </p>
-          <h1 className="mt-4 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl lg:text-5xl lg:leading-[1.1]">
-            Wähl dein Thema. Lies deine Geschichte.
-          </h1>
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            {allowMeineWelt
-              ? "Nimm ein Top-Thema oder schalte „Ganz persönlich“ ein. Dann stell Schulstufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."
-              : "Nimm ein Top-Thema und stell Schulstufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."}
-          </p>
-          <div className="mt-10">
-            <FreeStoryForm
-              lengthCatalog={lengthCatalog}
-              childProfiles={childProfiles}
-              enabledFeatures={enabledFeatures}
-            />
-          </div>
+          <GeschichteComposer
+            packageLabel={packageLabel}
+            initialCredits={initialCredits}
+            allowMeineWelt={allowMeineWelt}
+            lengthCatalog={lengthCatalog}
+            childProfiles={childProfiles}
+            enabledFeatures={enabledFeatures}
+          />
         </section>
       </main>
       <LandingFooter />

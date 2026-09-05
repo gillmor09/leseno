@@ -80,7 +80,11 @@ export async function updateUsersForAdmin(rows: UserAdminRow[]): Promise<void> {
     const { error: profileError } = await supabase
       .schema("leseno")
       .from("user_profiles")
-      .update({ role: row.role, email: row.email })
+      .update({
+        role: row.role,
+        email: row.email,
+        credits: row.credits,
+      })
       .eq("user_id", row.userId);
 
     // Profile row may be missing on older accounts — Auth update still counts.
@@ -91,5 +95,16 @@ export async function updateUsersForAdmin(rows: UserAdminRow[]): Promise<void> {
         profileError.message,
       );
     }
+  }
+}
+
+/**
+ * Deletes an Auth user (cascades to `leseno.user_profiles` and related rows).
+ */
+export async function deleteUserForAdmin(userId: string): Promise<void> {
+  const supabase = createServiceClient(null);
+  const { error } = await supabase.auth.admin.deleteUser(userId);
+  if (error) {
+    throw new Error(error.message || "User konnte nicht gelöscht werden.");
   }
 }

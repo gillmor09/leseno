@@ -55,7 +55,8 @@ export async function signInAction(input: unknown): Promise<ActionResult> {
 }
 
 /**
- * Creates a new Supabase Auth user and sends the verification email.
+ * Creates a new Auth user, grants Basis entitlements, and sends our register template via SMTP.
+ * Does not use Supabase built-in mail (avoids default templates when the Send Email hook is off).
  */
 export async function signUpAction(input: unknown): Promise<ActionResult> {
   const botError = await assertBotGuard(input, {
@@ -76,82 +77,135 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
     };
   }
 
-  const supabase = await createClient();
   const siteUrl = await getSiteUrl();
   const { email, password } = parsed.data;
+  const redirectTo = `${siteUrl}/auth/callback?next=/anmelden`;
+  const adminClient = createServiceClient(null);
 
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      emailRedirectTo: `${siteUrl}/auth/callback?next=/anmelden`,
-    },
-  });
+  const { data: linkData, error: linkError } =
+    await adminClient.auth.admin.generateLink({
+      type: "signup",
+      email,
+      password,
+      options: { redirectTo },
+    });
 
-  if (error) {
-    // Surface common Supabase error codes in German.
+  if (linkError || !linkData?.user?.id) {
+    const message = (linkError?.message ?? "").toLowerCase();
     if (
-      error.message?.toLowerCase().includes("already registered") ||
-      error.message?.toLowerCase().includes("user already exists") ||
-      error.status === 422
+      message.includes("already") ||
+      message.includes("registered") ||
+      message.includes("exists") ||
+      linkError?.status === 422
     ) {
+      // Anti-enumeration: same success copy as a fresh signup.
       return {
-        success: false,
-        error: "Diese E-Mail-Adresse ist bereits registriert. Bitte melde dich an oder setze dein Passwort zurück.",
+        success: true,
+        data: "Fast geschafft: Wenn diese E-Mail noch nicht registriert ist, bekommst du gleich eine Bestätigungs-E-Mail.",
       };
     }
-    if (error.message?.toLowerCase().includes("password")) {
-      return {
-        success: false,
-        error: "Das Passwort erfüllt nicht die Anforderungen (mindestens 8 Zeichen).",
-      };
-    }
-    if (error.message?.toLowerCase().includes("confirmation email")) {
+    if (message.includes("password")) {
       return {
         success: false,
         error:
-          "Das Konto konnte nicht bestätigt werden: Der Mailversand von Supabase ist fehlgeschlagen. Bitte SMTP in Coolify prüfen.",
+          "Das Passwort erfüllt nicht die Anforderungen (mindestens 8 Zeichen).",
       };
     }
-    // Log the raw error server-side for debugging, but don't expose it.
-    console.error("[signUpAction] Supabase error:", error.message, error.status);
-    return { success: false, error: "Registrierung fehlgeschlagen. Bitte versuche es erneut." };
+    console.error(
+      "[signUpAction] generateLink",
+      linkError?.message,
+      linkError?.status,
+    );
+    return {
+      success: false,
+      error: "Registrierung fehlgeschlagen. Bitte versuche es erneut.",
+    };
   }
 
-  // Supabase returns user=null when the email is already registered (anti-enumeration).
-  // We still show the same success message to avoid leaking account existence,
-  // but we only set the role when a fresh user was actually created.
-  if (data.user?.id && data.user.identities && data.user.identities.length > 0) {
-    // Fresh signup — default membership role unlocks `/geschichte`.
-    const adminClient = createServiceClient(null);
-    await adminClient.auth.admin.updateUserById(data.user.id, {
-      app_metadata: { role: "basis" },
-    });
+  const userId = linkData.user.id;
+  const confirmationUrl =
+    linkData.properties?.action_link?.trim() ||
+    "";
+  const emailToken =
+    linkData.properties?.email_otp?.trim() ||
+    linkData.properties?.hashed_token?.trim() ||
+    "";
 
-    try {
-      const { startPackageBooking } = await import("@/lib/users/billing");
-      await startPackageBooking({
-        userId: data.user.id,
-        packageId: "basis",
-        monthlyPrice: 0,
-        actualPrice: 0,
-        notes: "Registrierung",
-      });
-    } catch (bookingError) {
-      console.error("[signUpAction] basis booking", bookingError);
+  await adminClient.auth.admin.updateUserById(userId, {
+    app_metadata: { role: "basis" },
+  });
+
+  try {
+    const { startPackageBooking } = await import("@/lib/users/billing");
+    await startPackageBooking({
+      userId,
+      packageId: "basis",
+      monthlyPrice: 0,
+      actualPrice: 0,
+      notes: "Registrierung",
+    });
+  } catch (bookingError) {
+    console.error("[signUpAction] basis booking", bookingError);
+  }
+
+  try {
+    const { loadMembershipPackages } = await import(
+      "@/lib/users/package-repository"
+    );
+    const { addUserCredits } = await import("@/lib/stripe/billing-sync");
+    const packages = await loadMembershipPackages();
+    const basisCredits =
+      packages.find((pkg) => pkg.id === "basis")?.credits ?? 0;
+    if (basisCredits > 0) {
+      await addUserCredits(userId, basisCredits);
     }
-
-    const { logUserActivity } = await import("@/lib/users/activity");
-    await logUserActivity({
-      action: "auth.sign_up",
-      label: "Registrierung",
-      path: "/registrieren",
-      userId: data.user.id,
-      metadata: { email },
-    });
+  } catch (creditsError) {
+    console.error("[signUpAction] basis credits", creditsError);
   }
 
-  // Always return the same message to prevent email enumeration.
+  if (!confirmationUrl) {
+    console.error("[signUpAction] missing action_link");
+    return {
+      success: false,
+      error:
+        "Konto wurde angelegt, aber der Bestätigungslink fehlt. Bitte Support kontaktieren.",
+    };
+  }
+
+  try {
+    const { sendTemplatedAuthEmail } = await import(
+      "@/lib/auth/send-templated-email"
+    );
+    await sendTemplatedAuthEmail({
+      templateId: "register",
+      values: {
+        email,
+        confirmation_url: confirmationUrl,
+        token: emailToken,
+        site_url: siteUrl,
+        redirect_to: redirectTo,
+      },
+    });
+  } catch (emailError) {
+    console.error("[signUpAction] register email", emailError);
+    return {
+      success: false,
+      error:
+        emailError instanceof Error
+          ? emailError.message
+          : "Konto wurde angelegt, aber die Bestätigungs-E-Mail konnte nicht gesendet werden. Bitte SMTP und Template unter Admin → E-Mails prüfen.",
+    };
+  }
+
+  const { logUserActivity } = await import("@/lib/users/activity");
+  await logUserActivity({
+    action: "auth.sign_up",
+    label: "Registrierung",
+    path: "/registrieren",
+    userId,
+    metadata: { email },
+  });
+
   return {
     success: true,
     data: "Fast geschafft: Wenn diese E-Mail noch nicht registriert ist, bekommst du gleich eine Bestätigungs-E-Mail.",
@@ -159,7 +213,7 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
 }
 
 /**
- * Sends the Supabase password-reset email.
+ * Sends a password-reset mail using our forget template (SMTP), not Supabase built-in mail.
  */
 export async function requestPasswordResetAction(
   input: unknown,
@@ -184,17 +238,52 @@ export async function requestPasswordResetAction(
     };
   }
 
-  const supabase = await createClient();
   const siteUrl = await getSiteUrl();
-  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${siteUrl}/auth/callback?next=/passwort-zuruecksetzen`,
-  });
+  const redirectTo = `${siteUrl}/auth/callback?next=/passwort-zuruecksetzen`;
+  const email = parsed.data.email;
+  const adminClient = createServiceClient(null);
 
-  if (error) {
+  const { data: linkData, error: linkError } =
+    await adminClient.auth.admin.generateLink({
+      type: "recovery",
+      email,
+      options: { redirectTo },
+    });
+
+  // Anti-enumeration: unknown emails look like success.
+  if (linkError || !linkData?.properties?.action_link) {
+    if (linkError) {
+      console.warn("[requestPasswordResetAction]", linkError.message);
+    }
+    return {
+      success: true,
+      data: "Wenn die E-Mail bekannt ist, haben wir einen Link zum Zurücksetzen gesendet.",
+    };
+  }
+
+  try {
+    const { sendTemplatedAuthEmail } = await import(
+      "@/lib/auth/send-templated-email"
+    );
+    await sendTemplatedAuthEmail({
+      templateId: "forget",
+      values: {
+        email,
+        confirmation_url: linkData.properties.action_link,
+        token:
+          linkData.properties.email_otp?.trim() ||
+          linkData.properties.hashed_token?.trim() ||
+          "",
+        site_url: siteUrl,
+        redirect_to: redirectTo,
+      },
+    });
+  } catch (emailError) {
+    console.error("[requestPasswordResetAction] email", emailError);
     return {
       success: false,
       error:
-        "Die E-Mail zum Zurücksetzen konnte nicht gesendet werden.",
+        "Die E-Mail zum Zurücksetzen konnte nicht gesendet werden. Bitte SMTP und Template prüfen.",
     };
   }
 

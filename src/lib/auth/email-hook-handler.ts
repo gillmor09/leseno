@@ -6,15 +6,14 @@ import { NextResponse } from "next/server";
 import {
   buildAuthConfirmationUrl,
   emailActionTypesForTemplate,
-  renderAuthEmailTemplate,
   type AuthEmailTemplateId,
 } from "@/lib/auth/email-templates";
 import { loadAuthEmailTemplate } from "@/lib/auth/email-templates-repository";
 import {
   hasSmtpConfig,
-  sendSmtpHtmlEmail,
   verifyAuthEmailHookRequest,
 } from "@/lib/auth/email-hook-security";
+import { sendTemplatedAuthEmail } from "@/lib/auth/send-templated-email";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 
 type HookPayload = {
@@ -158,19 +157,17 @@ export async function handleAuthEmailHookPost(
     redirectTo,
   });
 
-  const values = {
-    email: to,
-    confirmation_url: confirmationUrl,
-    token,
-    site_url: siteUrl,
-    redirect_to: redirectTo,
-  };
-
-  const subject = renderAuthEmailTemplate(template.subject, values);
-  const html = renderAuthEmailTemplate(template.htmlBody, values);
-
   try {
-    await sendSmtpHtmlEmail({ to, subject, html });
+    await sendTemplatedAuthEmail({
+      templateId,
+      values: {
+        email: to,
+        confirmation_url: confirmationUrl,
+        token,
+        site_url: siteUrl,
+        redirect_to: redirectTo,
+      },
+    });
   } catch (error) {
     console.error(`[auth-email-hook/${templateId}] smtp`, error);
     return NextResponse.json(

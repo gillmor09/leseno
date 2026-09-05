@@ -8,12 +8,15 @@ import {
 import { getCurrentUser } from "@/lib/auth/session";
 import { toUserFacingMessage } from "@/lib/errors/user-facing";
 import { assertBotGuard } from "@/lib/security/bot-guard";
+import { storyCreditsForLength } from "@/lib/stories/credits-cost";
 import { buildPersonalStoryContext } from "@/lib/stories/personal";
 import {
   isTrialLengthStep,
   isTrialSchoolStage,
   TRIAL_MAX_STORIES_PER_IP_PER_DAY,
 } from "@/lib/stories/trial-limits";
+import { addUserCredits } from "@/lib/stripe/billing-sync";
+import { spendMyCredits } from "@/lib/users/billing";
 import { loadFeaturesForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
 import { storyGenerateSchema } from "@/lib/validations/story-generate";
@@ -22,14 +25,20 @@ import { loadChildProfile } from "@/lib/world/repository";
 const STORY_GENERATE_FALLBACK =
   "Die Geschichte konnte gerade nicht entstehen. Bitte versuche es gleich noch einmal.";
 
+export type StoryGenerateActionData = StoryGenerateResult & {
+  /** Remaining balance after a paid generation (omit in trial). */
+  creditsRemaining?: number;
+  /** Credits charged for this story (omit in trial). */
+  creditsCharged?: number;
+};
+
 /**
- * Starts the free-tier story pipeline: facts → story (+ optional images/layout).
- * In personal mode, seeds come from the selected Meine-Welt child profile (server-side).
- * Provider errors are logged server-side; the client only gets fixed German copy.
+ * Starts the story pipeline: facts → story (+ optional images/layout).
+ * Membership stories debit credits by length; trial (`/kostenlos`) is free.
  */
 export async function generateFreeStoryAction(
   input: unknown,
-): Promise<ActionResult<StoryGenerateResult>> {
+): Promise<ActionResult<StoryGenerateActionData>> {
   const botError = await assertBotGuard(input, {
     action: "story-generate",
     minFillMs: 2000,
@@ -75,6 +84,12 @@ export async function generateFreeStoryAction(
       };
     }
   }
+
+  const creditCost = parsed.data.trialMode
+    ? 0
+    : storyCreditsForLength(parsed.data.lengthStep);
+  let creditsRemaining: number | undefined;
+  let chargedUserId: string | null = null;
 
   try {
     let personal = null as ReturnType<typeof buildPersonalStoryContext> | null;
@@ -132,17 +147,53 @@ export async function generateFreeStoryAction(
       if (!featuresInclude(packageFeatures, "silbenmethode")) {
         syllableHelp = false;
       }
+
+      const user = await getCurrentUser();
+      if (!user) {
+        return {
+          success: false,
+          error: "Bitte melde dich an, um eine Geschichte zu erzeugen.",
+        };
+      }
+
+      try {
+        creditsRemaining = await spendMyCredits(creditCost);
+        chargedUserId = user.id;
+      } catch (creditError) {
+        return {
+          success: false,
+          error: toUserFacingMessage(
+            creditError,
+            "Du hast nicht genug Credits für diese Geschichtenlänge.",
+          ),
+        };
+      }
     }
 
-    const result = await generateStoryPipeline({
-      topic,
-      schoolStage,
-      lengthStep: parsed.data.lengthStep,
-      mood: parsed.data.mood,
-      personal,
-      syllableHelp,
-      includeImages,
-    });
+    let result: StoryGenerateResult;
+    try {
+      result = await generateStoryPipeline({
+        topic,
+        schoolStage,
+        lengthStep: parsed.data.lengthStep,
+        mood: parsed.data.mood,
+        personal,
+        syllableHelp,
+        includeImages,
+      });
+    } catch (pipelineError) {
+      if (chargedUserId && creditCost > 0) {
+        try {
+          await addUserCredits(chargedUserId, creditCost);
+        } catch (refundError) {
+          console.error(
+            "[generateFreeStoryAction] credit refund failed",
+            refundError,
+          );
+        }
+      }
+      throw pipelineError;
+    }
 
     const user = await getCurrentUser();
     if (user) {
@@ -158,11 +209,20 @@ export async function generateFreeStoryAction(
           schoolStage,
           includeImages,
           topic,
+          creditsCharged: creditCost > 0 ? creditCost : undefined,
         },
       });
     }
 
-    return { success: true, data: result };
+    return {
+      success: true,
+      data: {
+        ...result,
+        ...(creditCost > 0
+          ? { creditsCharged: creditCost, creditsRemaining }
+          : {}),
+      },
+    };
   } catch (error) {
     console.error("[generateFreeStoryAction]", error);
     return {

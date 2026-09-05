@@ -54,6 +54,42 @@ export async function getUserCredits(userId: string): Promise<number> {
   return typeof data === "number" ? data : 0;
 }
 
+/** Own credits via session RPC (`get_my_credits`). */
+export async function loadMyCredits(): Promise<number> {
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient(null);
+  const { data, error } = await supabase.rpc("get_my_credits");
+  if (error) {
+    throw new Error(error.message);
+  }
+  return typeof data === "number" ? data : 0;
+}
+
+/**
+ * Debits the signed-in user's credits. Returns the new balance.
+ * Throws with a German message when the balance is too low.
+ */
+export async function spendMyCredits(amount: number): Promise<number> {
+  if (!Number.isInteger(amount) || amount <= 0) {
+    throw new Error("Credit-Betrag ungültig.");
+  }
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabase = await createClient(null);
+  const { data, error } = await supabase.rpc("spend_my_credits", {
+    p_amount: amount,
+  });
+  if (error) {
+    const message = error.message ?? "";
+    if (/Nicht genug Credits/i.test(message)) {
+      throw new Error(
+        "Du hast nicht genug Credits für diese Geschichtenlänge. Bitte Credits nachladen oder eine kürzere Länge wählen.",
+      );
+    }
+    throw new Error(message || "Credits konnten nicht abgebucht werden.");
+  }
+  return typeof data === "number" ? data : 0;
+}
+
 /** Map of userId → credits for admin list. */
 export async function loadCreditsByUserIds(
   userIds: string[],
