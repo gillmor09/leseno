@@ -34,14 +34,15 @@ export function InviteFriendsCard({
 
   if (variant === "compact") {
     return (
-      <aside className="rounded-[1.5rem] bg-orange-50 px-5 py-4 ring-1 ring-orange-700/10 sm:flex sm:items-center sm:justify-between sm:gap-4">
+      <aside className="rounded-[1.5rem] bg-orange-50 px-5 py-4 ring-1 ring-orange-700/10">
         <p className="text-sm font-semibold leading-relaxed text-orange-950">
           {SHARE_AFTER_STORY_HINT}
         </p>
         <ShareInviteButton
           url={url}
           variant="ghost"
-          className="mt-3 shrink-0 sm:mt-0"
+          showChannels
+          className="mt-3"
         />
       </aside>
     );
@@ -62,8 +63,12 @@ export function InviteFriendsCard({
         <p className="mt-4 text-base leading-relaxed text-zinc-300">
           {SHARE_SECTION_BODY}
         </p>
-        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          <ShareInviteButton url={url} variant="primary" />
+        <p className="mt-3 text-sm text-zinc-400">
+          Bei Instagram: Text kopieren, App öffnen, in Story oder DM einfügen —
+          Instagram erlaubt keine Direkt-Links von Websites.
+        </p>
+        <div className="mt-8 flex flex-col items-center justify-center gap-3">
+          <ShareInviteButton url={url} variant="primary" showChannels />
           <a
             href="/registrieren"
             className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-bold text-zinc-950 transition-all duration-200 ease-in-out hover:bg-gray-100"

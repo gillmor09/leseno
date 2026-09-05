@@ -28,7 +28,8 @@ type PendingCookie = {
 
 /**
  * Completes email confirmation / recovery via `token_hash` (preferred) or PKCE `code`.
- * Session cookies are written onto the redirect response (required for App Router).
+ * After signup confirm: sign out again and pass `email` to `/anmelden` so the form
+ * shows the new address with an empty password (no previous-account autofill).
  */
 export async function GET(request: NextRequest) {
   const url = request.nextUrl;
@@ -75,12 +76,24 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  function redirectWithSession(destination: URL) {
+  function redirectWithCookies(destination: URL) {
     const response = NextResponse.redirect(destination);
     pendingCookies.forEach(({ name, value, options }) => {
       response.cookies.set(name, value, options);
     });
     return response;
+  }
+
+  async function finishSignupConfirm(confirmedEmail: string | null | undefined) {
+    // Drop the session from verifyOtp so /anmelden is a clean login (empty password).
+    await supabase.auth.signOut();
+    const destination = new URL("/anmelden", appOrigin);
+    destination.searchParams.set("bestaetigt", "1");
+    const email = confirmedEmail?.trim();
+    if (email) {
+      destination.searchParams.set("email", email);
+    }
+    return redirectWithCookies(destination);
   }
 
   if (tokenHash && typeRaw && OTP_TYPES.has(typeRaw)) {
@@ -91,16 +104,16 @@ export async function GET(request: NextRequest) {
 
     let lastError: string | null = null;
     for (const type of typesToTry) {
-      const { error } = await supabase.auth.verifyOtp({
+      const { data, error } = await supabase.auth.verifyOtp({
         type,
         token_hash: tokenHash,
       });
       if (!error) {
-        const destination = new URL(next, appOrigin);
         if (type === "signup" || type === "email") {
-          destination.searchParams.set("bestaetigt", "1");
+          return finishSignupConfirm(data.user?.email);
         }
-        return redirectWithSession(destination);
+        const destination = new URL(next, appOrigin);
+        return redirectWithCookies(destination);
       }
       lastError = error.message;
       console.error("[auth/callback] verifyOtp", { type, message: error.message });
@@ -120,14 +133,18 @@ export async function GET(request: NextRequest) {
   }
 
   if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
       console.error("[auth/callback] exchangeCodeForSession", error.message);
       return NextResponse.redirect(failUrl);
     }
+    // Signup-style redirects go to anmelden with a clean form.
+    if (next === "/anmelden" || next.startsWith("/anmelden?")) {
+      return finishSignupConfirm(data.user?.email);
+    }
     const destination = new URL(next, appOrigin);
     destination.searchParams.set("bestaetigt", "1");
-    return redirectWithSession(destination);
+    return redirectWithCookies(destination);
   }
 
   console.error("[auth/callback] missing token_hash/code", {

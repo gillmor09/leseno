@@ -7,12 +7,20 @@ export const metadata: Metadata = {
   description: "Mit E-Mail und Passwort bei Leseno anmelden.",
 };
 
+function safeEmailQuery(raw: string | undefined): string {
+  const email = raw?.trim() ?? "";
+  if (!email || email.length > 254) return "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "";
+  return email;
+}
+
 export default async function SignInPage({
   searchParams,
 }: {
   searchParams: Promise<{
     bestaetigt?: string;
     bestaetigung?: string;
+    email?: string;
     next?: string;
   }>;
 }) {
@@ -31,6 +39,7 @@ export default async function SignInPage({
       <SignInForm
         emailConfirmed={params.bestaetigt === "1"}
         confirmationFailed={params.bestaetigung === "fehlgeschlagen"}
+        initialEmail={safeEmailQuery(params.email)}
         nextPath={nextPath}
       />
     </AuthShell>

@@ -17,17 +17,24 @@ import { cn } from "@/lib/utils";
 export function SignInForm({
   emailConfirmed = false,
   confirmationFailed = false,
+  initialEmail = "",
   nextPath = "/geschichte",
 }: {
   emailConfirmed?: boolean;
   confirmationFailed?: boolean;
+  /** Prefill after email confirmation (new account); password stays empty. */
+  initialEmail?: string;
   nextPath?: string;
 }) {
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const botGuard = useBotGuardFields();
+  /** Remount inputs after confirm so browsers don’t keep the previous account’s autofill. */
+  const fieldKey = emailConfirmed
+    ? `confirmed:${initialEmail || "empty"}`
+    : "signin";
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,6 +63,7 @@ export function SignInForm({
   return (
     <form
       noValidate
+      autoComplete="off"
       onSubmit={handleSubmit}
       className="relative rounded-[2rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
     >
@@ -79,8 +87,10 @@ export function SignInForm({
         <label className="block">
           <span className={authLabelClassName}>E-Mail</span>
           <input
+            key={`${fieldKey}-email`}
             type="email"
-            autoComplete="email"
+            name="email"
+            autoComplete={emailConfirmed ? "username" : "email"}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className={authInputClassName}
@@ -90,8 +100,10 @@ export function SignInForm({
         <label className="block">
           <span className={authLabelClassName}>Passwort</span>
           <input
+            key={`${fieldKey}-password`}
             type="password"
-            autoComplete="current-password"
+            name="password"
+            autoComplete={emailConfirmed ? "new-password" : "current-password"}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             className={authInputClassName}
