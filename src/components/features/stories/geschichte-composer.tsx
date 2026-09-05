@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { CreditsCheckoutButton } from "@/components/features/pricing/pricing-checkout-buttons";
 import { FreeStoryForm } from "@/components/features/stories/free-story-form";
 import type { StoryLengthCatalog } from "@/lib/stories/length";
 import type { PackageFeatureId } from "@/lib/users/packages";
@@ -13,6 +14,7 @@ import type { ChildProfileOption } from "@/lib/world/catalog";
 export function GeschichteComposer({
   packageLabel,
   initialCredits,
+  creditsCheckoutEnabled,
   allowMeineWelt,
   lengthCatalog,
   childProfiles,
@@ -20,6 +22,7 @@ export function GeschichteComposer({
 }: {
   packageLabel: string;
   initialCredits: number;
+  creditsCheckoutEnabled: boolean;
   allowMeineWelt: boolean;
   lengthCatalog: StoryLengthCatalog;
   childProfiles: ChildProfileOption[] | null;
@@ -33,12 +36,18 @@ export function GeschichteComposer({
         <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
           {packageLabel} für dich
         </p>
-        <p
-          className="inline-flex items-center rounded-full bg-zinc-800 px-3 py-1 text-xs font-extrabold tracking-wide text-white tabular-nums"
-          title="Aktueller Credits-Stand"
-        >
-          {credits.toLocaleString("de-DE")} Credits
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p
+            className="inline-flex items-center rounded-full bg-zinc-800 px-3 py-1 text-xs font-extrabold tracking-wide text-white tabular-nums"
+            title="Aktueller Credits-Stand"
+          >
+            {credits.toLocaleString("de-DE")} Credits
+          </p>
+          <CreditsCheckoutButton
+            enabled={creditsCheckoutEnabled}
+            variant="inline"
+          />
+        </div>
       </div>
       <h1 className="mt-4 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl lg:text-5xl lg:leading-[1.1]">
         Wähl dein Thema. Lies deine Geschichte.

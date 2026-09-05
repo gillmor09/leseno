@@ -1,15 +1,15 @@
 import Image from "next/image";
+import type { ReactNode } from "react";
 import {
+  BookMarked,
   BookOpen,
   Check,
   BicepsFlexed,
   HelpCircle,
   ImageIcon,
-  Lightbulb,
   Smile,
   Sparkles,
   Target,
-  Users,
   Volume2,
   Zap,
 } from "lucide-react";
@@ -17,23 +17,37 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { StoryFactsList } from "@/components/features/stories/story-facts-list";
 
+/** Brand name in body copy: always lowercase + bold. */
+function withLesenoBrand(text: string): ReactNode {
+  const parts = text.split(/(Leseno|leseno)/g);
+  return parts.map((part, index) =>
+    part.toLowerCase() === "leseno" ? (
+      <strong key={index} className="font-extrabold">
+        leseno
+      </strong>
+    ) : (
+      part
+    ),
+  );
+}
+
 const steps = [
   {
     number: "01",
     title: "Wähl dein Thema",
-    text: "Dinos, Weltall, Fußball oder dein Hund — sag, worauf du Lust hast. Leseno macht daraus dein Abenteuer.",
+    text: "Dinos, Fußball, Weltall oder dein Hund — sag, worauf du Lust hast. Leseno macht daraus eine Geschichte nur für dich.",
     icon: Sparkles,
   },
   {
     number: "02",
-    title: "Triff deine Stufe",
-    text: "Wähl deine Schulstufe. Die Sätze wachsen mit dir — von kurzen Zeilen bis zu richtig starken Kapiteln.",
+    title: "Passende Schulstufe",
+    text: "Von Erstlesern bis Klasse 4: Die Sätze passen zu dem, was du schon gut lesen kannst — zum Üben und zum Mitfiebern.",
     icon: Target,
   },
   {
     number: "03",
-    title: "Dreh am Ton",
-    text: "Lustig, spannend oder motivierend: Du wählst die Art der Geschichte. Mitten drin wartet echtes Wissen zum Staunen.",
+    title: "Lesen und Staunen",
+    text: "Selbst lesen und Wissen mitnehmen. Mit den passenden Paketen kommen Silbenhilfe, Vorlesen oder Bilder dazu.",
     icon: BookOpen,
   },
 ] as const;
@@ -67,67 +81,67 @@ const moods = [
 
 const strengths = [
   {
-    title: "Wissen im Abenteuer",
-    text: "Echte Fakten stecken mitten in der Geschichte — nicht als Test danach. Lesen macht Spaß und klüger.",
-    icon: Lightbulb,
+    title: "Lesen üben mit Spaß",
+    text: "Keine trockenen Übungsblätter: Du liest echte Abenteuer — und trainierst dabei Wörter, Tempo und Verständnis.",
+    icon: BookOpen,
   },
   {
-    title: "Mit Bildern erleben",
-    text: "Deine Geschichte kommt mit eigenen Illustrationen. Text und Bilder gehören zusammen — du siehst, was du liest.",
-    icon: ImageIcon,
+    title: "Meine Bücherei (Plus)",
+    text: "Fertige Geschichten speichern, Favoriten setzen und später erneut lesen — alles an einem Ort.",
+    icon: BookMarked,
   },
   {
-    title: "Warum? — tiefer eintauchen",
-    text: "Neugierig? Tippe auf „Warum?“ und hol dir den Hintergrund. Mit „Ich will mehr wissen“ gehst du noch einen Schritt weiter — wann immer du Lust hast.",
-    icon: HelpCircle,
-  },
-  {
-    title: "Sprache, die passt",
-    text: "Schulstufe und Textlänge steuerst du selbst. So bleibt Lesen machbar — und trotzdem spannend.",
-    icon: Target,
-  },
-  {
-    title: "Silbenhilfe & Vorlesen",
-    text: "Schwierige Wörter in Silben teilen oder vorlesen lassen — mit Tempo und optionaler Wort-Markierung.",
+    title: "Vorlesen (Ultimate)",
+    text: "Müde Augen? Mit Ultimate lass die Geschichte vorlesen — mit Tempo und optionaler Wort-Markierung.",
     icon: Volume2,
   },
   {
-    title: "Eine Familie, ein Konto",
-    text: "Leg für jedes Kind ein eigenes Profil an — mit Lesewünschen, Erlebnissen und Freunden. Alles unter einem Konto.",
-    icon: Users,
+    title: "Silbenhilfe (Ultimate)",
+    text: "Schwierige Wörter in Silben teilen: ideal zum Lesen lernen und Üben in der Grundschule.",
+    icon: Target,
+  },
+  {
+    title: "Mit Bildern erleben (Pro)",
+    text: "Illustrationen zur Geschichte: Du siehst, was du liest — das hilft beim Verstehen und Bleiben-Wollen.",
+    icon: ImageIcon,
+  },
+  {
+    title: "Warum? (Pro)",
+    text: "Neugierig? Tippe auf „Warum?“ und hol dir den Hintergrund. Mit Ultimate geht’s noch tiefer.",
+    icon: HelpCircle,
   },
 ] as const;
 
 const parentPoints = [
-  "Mehrwert klar: Lesespaß, Bilder und echtes Wissen in einer Geschichte — ohne Quiz-Druck.",
-  "Tiefer eintauchen: Mit „Warum?“ und „Ich will mehr wissen“ folgt Neugier dem eigenen Tempo.",
-  "Altersgerecht: Sprache und Länge folgen der Schulstufe, nicht einem Einheitsmaß.",
-  "Lesepartner: Silbenhilfe und Vorlesen unterstützen, wenn’s mal hakt.",
-  "Familie unter einem Konto: Jedes Kind bekommt ein eigenes Profil mit Lesewünschen und Erlebnissen — ihr verwaltet alles zentral.",
-  "Persönlich: Mit „Meine Welt“ wird der Alltag jedes Kindes zur eigenen Geschichte.",
-  "Risikofrei starten: Erst ausprobieren, dann entscheiden.",
+  "Zielgruppe klar: Grundschulkinder, die gerne lesen und Lesen üben wollen.",
+  "Leseförderung ohne Druck: eigene Geschichten statt starrer Lesebücher — Motivation bleibt hoch.",
+  "Altersgerecht: Sprache und Länge folgen der Schulstufe (Erstlesen bis Klasse 4).",
+  "Pakete nach Bedarf: Plus für Credits, Bücherei & PDF, Pro für Familie & Bilder, Ultimate für Silbenhilfe & Vorlesen.",
+  "Mehrwert: echtes Wissen in der Geschichte — mit Pro „Warum?“ zum Nachforschen.",
+  "Meine Welt: ab Plus ein Kinderprofil, mit Pro beliebig viele unter einem Konto.",
+  "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden.",
 ] as const;
 
 const trySteps = [
   {
     number: "1",
     title: "Öffne und leg los",
-    text: "Kein Abo nötig. Tippe auf Start und wähl dein Thema.",
+    text: "Kein Abo nötig. Tippe auf Start, wähl ein Thema und deine Klasse.",
   },
   {
     number: "2",
-    title: "Geschichte mit Bildern",
-    text: "Schulstufe und Ton setzen — Leseno liefert Text und Illustrationen.",
+    title: "Kurze Probe-Geschichte",
+    text: "Im Testmodus: 1. und 2. Klasse, Textlänge bis mittel — ideal zum Schnuppern.",
   },
   {
     number: "3",
-    title: "Lies, staune, frag nach",
-    text: "Probiere Silbenhilfe, Vorlesen — und „Warum?“ bei den Fakten.",
+    title: "Dann mit Konto weiter",
+    text: "Mit Basis starten; mit Plus Credits, Meine Bücherei und PDF — Bilder, Silbenhilfe und Vorlesen in den höheren Paketen.",
   },
 ] as const;
 
 /**
- * Marketing home: child-forward active copy, clear parent value, try-it CTA.
+ * Marketing home: Grundschul-fokussierte Copy (lesen, üben, vorlesen lassen).
  * Visual language matches the rest of the landing chrome (Nunito, orange/yellow).
  */
 export function LandingPage() {
@@ -156,34 +170,33 @@ function HeroSection() {
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-2 lg:gap-14 lg:py-20">
         <div>
           <p className="inline-flex items-center gap-2 rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-            Für dich von 5 bis 10
+            Leseapp für die Grundschule
           </p>
           <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl lg:text-[3.25rem] lg:leading-[1.1]">
-            Lies mit. Staune mit. Will mehr.
+            Lesen üben. Wissen staunen. Geschichten lieben.
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
-            Bring dein Thema. Setz die Schulstufe. Dreh am Ton. Leseno macht
-            daraus deine Geschichte — mit eigenen Bildern und echtem Wissen
-            mitten drin. Du liest. Du staunst. Und wenn du willst, tauchst du
-            mit „Warum?“ noch tiefer ein.
+            {withLesenoBrand(
+              "Leseno macht für Grundschulkinder eigene Geschichten zum Lesen üben — altersgerecht, mit echtem Wissen im Abenteuer. Bücherei, Silbenhilfe, Vorlesen und Bilder schaltest du mit den passenden Paketen frei.",
+            )}
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a
               href="/registrieren"
               className="inline-flex items-center justify-center rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
             >
-              Jetzt mit Basis starten
+              Kostenlos mit Basis starten
             </a>
             <a
-              href="#probieren"
+              href="/kostenlos"
               className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-bold text-zinc-950 ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out hover:bg-gray-100"
             >
-              Probiere es aus
+              Ohne Konto ausprobieren
             </a>
           </div>
           <p className="mt-5 text-sm font-semibold text-zinc-500">
-            Geschichte mit Bildern · Wissen zum Mitnehmen · Warum? zum
-            Nachforschen
+            Lesen üben · Wissen · Bücherei · Pakete für Bilder, Silbenhilfe &amp;
+            Vorlesen
           </p>
         </div>
 
@@ -191,7 +204,7 @@ function HeroSection() {
           <div className="overflow-hidden rounded-[2rem] bg-white shadow-xl ring-1 ring-zinc-950/10">
             <Image
               src="/landing/hero-lesen.webp"
-              alt="Kind liest am Fenster, aus dem Buch steigt der leuchtende Leseno-Vogel"
+              alt="Grundschulkind liest am Fenster eine Leseno-Geschichte, aus dem Buch steigt der Leseno-Vogel"
               width={1536}
               height={1024}
               className="h-auto w-full"
@@ -210,15 +223,15 @@ function HeroSection() {
                 Vulkane
               </span>
               <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-bold text-zinc-600">
-                8 Jahre
+                2. Klasse
               </span>
               <span className="rounded-full bg-yellow-400 px-2.5 py-0.5 text-xs font-extrabold text-zinc-950">
                 Spannend
               </span>
             </div>
             <p className="mt-3 rounded-xl bg-orange-50 px-3 py-2 text-xs leading-relaxed font-semibold text-orange-900">
-              Mit Bildern & Staunen: Lava ist oft über 700 °C heiß — heißer als
-              ein Backofen. Frage „Warum?“, wenn du mehr willst.
+              Zum Lesen üben und Staunen: Lava ist oft über 700 °C heiß. Mit Pro
+              fragst du „Warum?“ — mit Ultimate lässt du vorlesen.
             </p>
           </div>
         </div>
@@ -235,11 +248,11 @@ function StepsSection() {
           So geht’s
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Drei Klicks. Dein Abenteuer startet.
+          Drei Schritte zum Lesen-Abenteuer.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Kein langes Formular. Du sagst, was du willst — Leseno macht daraus
-          eine Geschichte mit Bildern, die zu dir passt.
+          Thema wählen, Schulstufe setzen, Ton drehen — dann liest und übst du.
+          Extra-Hilfen wie Silben, Vorlesen oder Bilder kommen mit den Paketen.
         </p>
         <ol className="mt-10 grid gap-6 md:grid-cols-3">
           {steps.map((step) => {
@@ -261,7 +274,7 @@ function StepsSection() {
                   {step.title}
                 </h3>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-                  {step.text}
+                  {withLesenoBrand(step.text)}
                 </p>
               </li>
             );
@@ -280,12 +293,12 @@ function StrengthsSection() {
           Deine Superkräfte
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Mehr als nur eine Geschichte.
+          Alles, was Grundschulkinder zum Lesen brauchen.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Text, Bilder und Wissen gehören zusammen — plus die Chance, bei jedem
-          Fakt tiefer einzutauchen. Eltern sehen den Mehrwert. Kinder spüren den
-          Spaß.
+          Lesen üben und Wissen mitnehmen gehört dazu. Meine Bücherei,
+          Silbenhilfe, Vorlesen, Bilder und „Warum?“ findest du in den Paketen —
+          siehe Preise.
         </p>
         <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {strengths.map((item) => {
@@ -380,13 +393,12 @@ function FactsSection() {
             Unser Unterschied
           </p>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
-            Lies dich klüger — und frag nach, wenn du willst.
+            Lesen üben — und staunen, was du lernst.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-300">
-            Jede Leseno-Geschichte trägt echtes Wissen und Staunen mitten im
-            Abenteuer. Reicht dir das? Super. Willst du mehr? Tippe auf
-            „Warum?“ — und mit „Ich will mehr wissen“ gehst du noch tiefer ins
-            Thema, ganz nach Lust und Tempo.
+            Jede Geschichte trägt echtes Wissen mitten im Abenteuer. Du liest,
+            merkst dir Fakten und kannst mit Pro bei „Warum?“ tiefer nachfragen —
+            in deinem Tempo, ohne Test-Druck.
           </p>
         </div>
         <StoryFactsList
@@ -408,15 +420,15 @@ function TrySection() {
           <div className="grid lg:grid-cols-2">
             <div className="p-8 sm:p-10 lg:p-12">
               <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-                Probiere es aus
+                Kostenlos schnuppern
               </p>
               <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-                In wenigen Minuten deine erste Geschichte.
+                In wenigen Minuten deine erste Probe-Geschichte.
               </h2>
               <p className="mt-4 text-base leading-relaxed text-zinc-600">
-                Kein Risiko. Kein Abo. Du bekommst Text und Bilder, testest
-                Silbenhilfe und Vorlesen — und kannst bei den Fakten direkt
-                tiefer nachfragen.
+                {withLesenoBrand(
+                  "Kein Konto, kein Abo: Teste Leseno mit kurzen Geschichten für 1. und 2. Klasse — und sieh, ob Lesen-üben so Spaß macht.",
+                )}
               </p>
               <ol className="mt-8 space-y-4">
                 {trySteps.map((step) => (
@@ -429,7 +441,7 @@ function TrySection() {
                         {step.title}
                       </p>
                       <p className="mt-0.5 text-sm leading-relaxed text-zinc-600">
-                        {step.text}
+                        {withLesenoBrand(step.text)}
                       </p>
                     </div>
                   </li>
@@ -448,11 +460,11 @@ function TrySection() {
               </p>
               <ul className="mt-4 space-y-3">
                 {[
-                  "Geschichte mit eigenen Illustrationen",
-                  "Echtes Wissen zum Staunen im Text",
-                  "„Warum?“ und „Ich will mehr wissen“",
-                  "Silbenhilfe und Vorlesen",
-                  "Optional: Familie mit Meine Welt — mehrere Profile, ein Konto",
+                  "Thema und Schulstufe selbst wählen",
+                  "Kurze Geschichten zum Lesen üben",
+                  "Sofort loslegen — ohne Registrierung",
+                  "Danach: Konto mit Basis — Pakete nach Bedarf",
+                  "Plus mit Bücherei, Credits und PDF",
                 ].map((line) => (
                   <li
                     key={line}
@@ -466,8 +478,9 @@ function TrySection() {
                 ))}
               </ul>
               <p className="mt-8 text-sm leading-relaxed text-zinc-600">
-                Für Eltern: Ihr seht sofort, ob Leseno zu eurem Kind passt —
-                ohne Verpflichtung.
+                {withLesenoBrand(
+                  "Für Eltern: Ihr seht in Minuten, ob Leseno zu eurem Kind passt — ohne Verpflichtung.",
+                )}
               </p>
             </div>
           </div>
@@ -495,14 +508,12 @@ function ParentsSection() {
             Für Eltern
           </p>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            Lesefreude mit echtem Mehrwert.
+            Leseförderung, die Kinder freiwillig machen.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
-            Kinder wollen Abenteuer. Ihr wollt Fortschritt und Substanz. Leseno
-            verbindet beides: eigene Geschichten, passende Sprache, Wissen im
-            Text — plus Hilfen, wenn das Lesen noch Übung braucht. Und wenn mehr
-            als ein Kind liest: unter einem Konto legt ihr für jedes Kind ein
-            Profil mit eigenen Lesewünschen und Erfahrungen an.
+            {withLesenoBrand(
+              "Grundschulkinder wollen Abenteuer — ihr wollt Übung und Fortschritt. Leseno verbindet beides: eigene Geschichten zum Lesen üben und Wissen zum Mitnehmen. Mit Plus speichert ihr in der Bücherei, mit Pro mehrere Kinder-Profile, mit Ultimate Silbenhilfe und Vorlesen.",
+            )}
           </p>
           <ul className="mt-6 space-y-3">
             {parentPoints.map((point) => (
@@ -513,7 +524,7 @@ function ParentsSection() {
                 <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-zinc-950">
                   <Check className="size-3.5" aria-hidden />
                 </span>
-                {point}
+                {withLesenoBrand(point)}
               </li>
             ))}
           </ul>
@@ -534,8 +545,9 @@ function PricingSection() {
           Starte frei. Steig später auf.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Probier Leseno ohne Druck. Wenn ihr mehr Geschichten und mehr Alltag
-          mit Leseno wollt, wartet Plus auf euch.
+          {withLesenoBrand(
+            "Probier Leseno ohne Druck. Wenn euer Kind regelmäßig liest, bringt Plus Credits, Meine Bücherei, Meine Welt und PDF — Vorlesen und Silbenhilfe erst mit Ultimate.",
+          )}
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-2">
           <article className="rounded-[1.75rem] bg-white p-8 shadow-xl ring-1 ring-zinc-950/10">
@@ -550,7 +562,7 @@ function PricingSection() {
                   className="mt-0.5 size-4 shrink-0 text-orange-700"
                   aria-hidden
                 />
-                Deine ersten Geschichten mit Bildern
+                Erste Geschichten zum Lesen üben
               </li>
               <li className="flex gap-2">
                 <Check
@@ -564,7 +576,7 @@ function PricingSection() {
                   className="mt-0.5 size-4 shrink-0 text-orange-700"
                   aria-hidden
                 />
-                Wissen, „Warum?“ und Vorlesen testen
+                Ideal zum Einstieg in der Grundschule
               </li>
             </ul>
             <a
@@ -580,10 +592,12 @@ function PricingSection() {
               Plus
             </p>
             <p className="mt-2 text-3xl font-extrabold">
-              Für dich und deine Familie
+              Regelmäßig Lesen üben
             </p>
             <p className="mt-1 text-sm text-zinc-400">
-              Wenn Leseno zu eurem Alltag gehört
+              {withLesenoBrand(
+                "Credits, Bücherei, Meine Welt und PDF — wenn Leseno zum Alltag wird",
+              )}
             </p>
             <ul className="mt-6 space-y-3 text-sm text-zinc-200">
               <li className="flex gap-2">
@@ -591,21 +605,21 @@ function PricingSection() {
                   className="mt-0.5 size-4 shrink-0 text-yellow-400"
                   aria-hidden
                 />
-                Mehr Geschichten im Monat
+                Credits für viele weitere Geschichten
               </li>
               <li className="flex gap-2">
                 <Check
                   className="mt-0.5 size-4 shrink-0 text-yellow-400"
                   aria-hidden
                 />
-                Lieblingsthemen und Familien-Profile in Meine Welt
+                Meine Bücherei zum Speichern und Wiederlesen
               </li>
               <li className="flex gap-2">
                 <Check
                   className="mt-0.5 size-4 shrink-0 text-yellow-400"
                   aria-hidden
                 />
-                Einblick in den Lesefortschritt
+                Meine Welt für ein Kind · PDF-Export
               </li>
             </ul>
             <a
@@ -633,11 +647,12 @@ function ClosingSection() {
           className="mx-auto size-16"
         />
         <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Bereit? Deine Geschichte wartet.
+          Bereit zum Lesen üben?
         </h2>
         <p className="mt-4 text-base leading-relaxed text-zinc-600">
-          Sag, worum es gehen soll. Leseno legt los — mit Text und Bildern. Du
-          liest, staunst und kannst bei den Fakten tiefer nachfragen.
+          {withLesenoBrand(
+            "Sag, worum es gehen soll. Leseno legt los — du liest, übst und staunst unterwegs.",
+          )}
         </p>
       </div>
     </section>

@@ -7,6 +7,7 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { GeschichteComposer } from "@/components/features/stories/geschichte-composer";
 import { requireAnyMembershipPage } from "@/lib/auth/require-membership";
+import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
 import { loadMyCredits } from "@/lib/users/billing";
 import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
@@ -43,6 +44,7 @@ export async function MembershipStoryPage() {
           <GeschichteComposer
             packageLabel={packageLabel}
             initialCredits={initialCredits}
+            creditsCheckoutEnabled={hasStripeCheckoutConfig()}
             allowMeineWelt={allowMeineWelt}
             lengthCatalog={lengthCatalog}
             childProfiles={childProfiles}

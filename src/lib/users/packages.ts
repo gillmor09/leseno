@@ -16,6 +16,7 @@ export const PACKAGE_FEATURE_IDS = [
   "export",
   "meine_welt",
   "meine_welt_familie",
+  "buecherei",
   "warum",
   "hintergrund",
 ] as const;
@@ -30,6 +31,7 @@ export const PACKAGE_FEATURE_LABELS: Record<PackageFeatureId, string> = {
   export: "Export",
   meine_welt: "Meine Welt",
   meine_welt_familie: "Meine Welt - Familie",
+  buecherei: "Meine Bücherei",
   warum: "Warum",
   hintergrund: "Hintergrund",
 };
@@ -57,7 +59,7 @@ export const FALLBACK_MEMBERSHIP_PACKAGES: MembershipPackage[] = [
     label: "Plus",
     priceEur: 5,
     credits: 500,
-    features: ["export", "meine_welt"],
+    features: ["export", "meine_welt", "buecherei"],
     sortOrder: 1,
   },
   {
@@ -65,7 +67,13 @@ export const FALLBACK_MEMBERSHIP_PACKAGES: MembershipPackage[] = [
     label: "Pro",
     priceEur: 10,
     credits: 0,
-    features: ["meine_welt", "meine_welt_familie", "bilder", "warum"],
+    features: [
+      "meine_welt",
+      "meine_welt_familie",
+      "buecherei",
+      "bilder",
+      "warum",
+    ],
     sortOrder: 2,
   },
   {
@@ -76,6 +84,7 @@ export const FALLBACK_MEMBERSHIP_PACKAGES: MembershipPackage[] = [
     features: [
       "meine_welt",
       "meine_welt_familie",
+      "buecherei",
       "bilder",
       "warum",
       "export",

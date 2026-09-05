@@ -212,6 +212,38 @@ export async function generateFreeStoryAction(
           creditsCharged: creditCost > 0 ? creditCost : undefined,
         },
       });
+
+      if (
+        !parsed.data.trialMode &&
+        featuresInclude(packageFeatures, "buecherei")
+      ) {
+        try {
+          const { titleFromStoryHtml } = await import(
+            "@/lib/stories/title-from-html"
+          );
+          const { saveMyStory } = await import(
+            "@/lib/stories/library-repository"
+          );
+          await saveMyStory({
+            title: titleFromStoryHtml(result.story),
+            storyHtml: result.story,
+            facts: result.facts,
+            schoolStage,
+            childProfileId: parsed.data.personalMode
+              ? (parsed.data.profileId ?? null)
+              : null,
+            lengthStep: parsed.data.lengthStep,
+            mood: parsed.data.mood,
+            topic,
+            personalMode: parsed.data.personalMode,
+            syllableHelp,
+            includeImages,
+            creditsCharged: creditCost > 0 ? creditCost : null,
+          });
+        } catch (saveError) {
+          console.error("[generateFreeStoryAction] library save", saveError);
+        }
+      }
     }
 
     return {

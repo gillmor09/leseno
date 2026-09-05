@@ -4,12 +4,14 @@ import { AppHeader } from "@/components/features/landing/app-header";
 import { FreeStoryForm } from "@/components/features/stories/free-story-form";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
 import { TRIAL_MAX_STORIES_PER_IP_PER_DAY } from "@/lib/stories/trial-limits";
+import { buildPageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Kostenlos ausprobieren — Leseno",
+export const metadata: Metadata = buildPageMetadata({
+  title: "Kostenlos Lesen üben — Geschichten für die Grundschule",
   description:
-    "Probier Leseno ohne Konto: Thema wählen und Geschichte lesen — eingeschränkter Testmodus.",
-};
+    "Leseno kostenlos ausprobieren: eigene kurze Geschichten für Erstklässler und Zweitklässler — ohne Konto. Lesen üben in wenigen Minuten.",
+  path: "/kostenlos",
+});
 
 /**
  * Public try-out composer (landing „Jetzt probieren“).
@@ -27,12 +29,18 @@ export default async function KostenlosPage() {
             Kostenlos ausprobieren
           </p>
           <h1 className="mt-4 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl lg:text-5xl lg:leading-[1.1]">
-            Wähl dein Thema. Lies deine Geschichte.
+            Lesen üben — ohne Konto, ohne Abo.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Kein Konto nötig. Im Test: 1. und 2. Klasse, Textlänge bis mittel —
-            ohne Bilder, Vorlesen, PDF und Warum-/Mehr-wissen. Maximal{" "}
+            Probier Leseno mit einer kurzen Geschichte für die 1. oder 2.
+            Klasse. Ideal für Grundschulkinder, die gerne lesen oder Lesen üben
+            wollen. Im Testmodus: Textlänge bis mittel, ohne Bilder, Vorlesen,
+            PDF und Warum-Fragen. Maximal{" "}
             {TRIAL_MAX_STORIES_PER_IP_PER_DAY} Geschichten pro Tag.
+          </p>
+          <p className="mt-3 max-w-2xl text-sm font-semibold text-zinc-500">
+            Danach mit Konto: Basis starten — Extra-Funktionen (Bücherei,
+            Bilder, Silbenhilfe, Vorlesen) je nach Paket auf /preise.
           </p>
           <div className="mt-10">
             <FreeStoryForm lengthCatalog={lengthCatalog} trialMode />

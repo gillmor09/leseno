@@ -32,7 +32,7 @@ function goToSection(href: string) {
 
 /**
  * Shared chrome for marketing pages. Hash links stay on `/`; other routes go home first.
- * Signed-in users: story page (role) + Meine Welt + Abmelden (middle marketing nav hidden).
+ * Signed-in users: Bücherei + Geschichte + Meine Welt + Abmelden (middle marketing nav hidden).
  * Admins: cog with admin areas + temporary membership-role testing.
  */
 export function LandingHeader({
@@ -42,6 +42,7 @@ export function LandingHeader({
   isSignedIn = false,
   storyHref = null,
   showMeineWelt = true,
+  showMeineBuecherei = true,
 }: {
   isAdmin?: boolean;
   /** Admin temporarily using a membership role; cog stays for restore. */
@@ -52,6 +53,8 @@ export function LandingHeader({
   storyHref?: string | null;
   /** Package `meine_welt`: show Meine-Welt nav link. */
   showMeineWelt?: boolean;
+  /** Package `buecherei`: show Meine-Bücherei nav link. */
+  showMeineBuecherei?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -138,6 +141,7 @@ export function LandingHeader({
 
   const storyPath = storyHref ?? "/geschichte";
   const storyActive = pathname === storyPath;
+  const libraryActive = pathname === "/meine-buecherei";
   const worldActive = pathname === "/meine-welt";
   const registerActive = pathname === "/registrieren";
   const signInActive =
@@ -188,6 +192,17 @@ export function LandingHeader({
           <div className="flex items-center gap-2">
             {isSignedIn ? (
               <>
+                {showMeineBuecherei ? (
+                  <a
+                    href="/meine-buecherei"
+                    className={cn(
+                      headerBtnBase,
+                      libraryActive ? headerBtnActive : headerBtnIdle,
+                    )}
+                  >
+                    Meine Bücherei
+                  </a>
+                ) : null}
                 <a
                   href={storyPath}
                   className={cn(

@@ -85,9 +85,24 @@ export function MembershipCheckoutButton({
   );
 }
 
-export function CreditsCheckoutButton({ enabled }: { enabled: boolean }) {
+/**
+ * Credits top-up CTA. `inline` sits next to the balance badge on `/geschichte`.
+ */
+export function CreditsCheckoutButton({
+  enabled,
+  variant = "block",
+  label,
+}: {
+  enabled: boolean;
+  variant?: "block" | "inline";
+  /** Overrides default label (`Credits kaufen` / `Nachladen` for inline). */
+  label?: string;
+}) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const inline = variant === "inline";
+  const buttonLabel =
+    label ?? (inline ? "Nachladen" : enabled ? "Credits kaufen" : "Bald buchbar");
 
   function handleOpen() {
     if (!enabled) {
@@ -120,16 +135,19 @@ export function CreditsCheckoutButton({ enabled }: { enabled: boolean }) {
         disabled={pending}
         onClick={handleOpen}
         className={cn(
-          "mt-6 inline-flex items-center justify-center rounded-full bg-zinc-800 px-5 py-3 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-zinc-900",
+          "inline-flex items-center justify-center rounded-full font-bold transition-all duration-200 ease-in-out",
+          inline
+            ? "bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase hover:bg-yellow-300"
+            : "mt-6 bg-zinc-800 px-5 py-3 text-sm text-white hover:bg-zinc-900",
           pending && "cursor-wait opacity-70",
         )}
       >
-        {enabled ? "Credits kaufen" : "Bald buchbar"}
+        {pending && inline ? "…" : buttonLabel}
       </button>
       <WithdrawalConsentDialog
         open={dialogOpen}
         pending={pending}
-        title="Credits kaufen"
+        title="Credits nachladen"
         onClose={() => {
           if (!pending) setDialogOpen(false);
         }}

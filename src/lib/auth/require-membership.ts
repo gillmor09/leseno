@@ -13,11 +13,14 @@ import {
 /**
  * Requires a signed-in user with a membership role (or admin).
  * Returns the Auth role string for package feature resolution.
+ * @param nextPath Login redirect target (default: story composer).
  */
-export async function requireAnyMembershipPage(): Promise<{ role: string }> {
+export async function requireAnyMembershipPage(
+  nextPath: string = STORY_PATH,
+): Promise<{ role: string }> {
   const user = await getCurrentUser();
   if (!user) {
-    redirect(`/anmelden?next=${STORY_PATH}`);
+    redirect(`/anmelden?next=${encodeURIComponent(nextPath)}`);
   }
 
   const role =

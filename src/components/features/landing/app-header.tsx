@@ -10,7 +10,8 @@ import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
 
 /**
- * Server wrapper: admin cog for admins; Meine Welt / story page / Abmelden when signed in.
+ * Server wrapper: admin cog; Bücherei / Geschichte / Meine Welt / Abmelden when signed in.
+ * Nav links for Bücherei and Meine Welt follow package features.
  * While an admin tests a membership role, the cog stays for restore / role switch.
  */
 export async function AppHeader() {
@@ -27,7 +28,9 @@ export async function AppHeader() {
     adminImpersonating && role && isMembershipRoleId(role) ? role : null;
 
   const access = user ? await loadPackageAccessForCurrentUser() : null;
-  const showMeineWelt = featuresInclude(access?.features ?? [], "meine_welt");
+  const features = access?.features ?? [];
+  const showMeineWelt = featuresInclude(features, "meine_welt");
+  const showMeineBuecherei = featuresInclude(features, "buecherei");
 
   return (
     <LandingHeader
@@ -37,6 +40,7 @@ export async function AppHeader() {
       isSignedIn={Boolean(user)}
       storyHref={storyPathForRole(role)}
       showMeineWelt={showMeineWelt}
+      showMeineBuecherei={showMeineBuecherei}
     />
   );
 }

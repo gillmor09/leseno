@@ -3,73 +3,47 @@ import { Check } from "lucide-react";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import {
+  isFeaturedPackage,
+  PackageCompareTable,
+  packageCardClassName,
+  packageCardTone,
+} from "@/components/features/pricing/package-compare-table";
+import {
   CreditsCheckoutButton,
   ManageSubscriptionButton,
   MembershipCheckoutButton,
 } from "@/components/features/pricing/pricing-checkout-buttons";
+import { getCurrentUser } from "@/lib/auth/session";
 import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
+import { buildPageMetadata } from "@/lib/seo";
+import {
+  marketingBlurbForPackage,
+  marketingBulletsForPackage,
+  marketingTaglineForPackage,
+} from "@/lib/users/package-marketing";
+import { loadMembershipPackages } from "@/lib/users/package-repository";
+import type { PaidMembershipPackageId } from "@/lib/stripe/config";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = {
-  title: "Preise — Leseno",
+export const metadata: Metadata = buildPageMetadata({
+  title: "Preise: Plus, Pro & Ultimate im Vergleich",
   description:
-    "Plus, Pro und Ultimate: die Leseno-Pakete für mehr Geschichten, Familie und Lesefortschritt.",
-};
-
-const packages = [
-  {
-    id: "plus" as const,
-    name: "Plus",
-    tagline: "Mehr Lesen für den Alltag",
-    blurb:
-      "Ideal, wenn Leseno regelmäßig mit dabei sein soll — für ein Kind oder die ersten Familien-Profile.",
-    priceEuro: 5,
-    featured: false,
-    tone: "light" as const,
-    features: [
-      "inkl. 500 Credits (für bis zu 50 Geschichten)",
-      "Auswahl nach Thema, Art der Geschichte und Länge der Geschichte",
-      "Meine Welt für eine Person",
-      "Export als PDF zum Offline-Lesen",
-    ],
-  },
-  {
-    id: "pro" as const,
-    name: "Pro",
-    tagline: "Für die ganze Lesefamilie",
-    blurb:
-      "Mehr Raum für mehrere Kinder, stärkere Begleitung und mehr Geschichten — wenn Leseno zum festen Ritual wird.",
-    priceEuro: 10,
-    featured: true,
-    tone: "dark" as const,
-    features: [
-      "Meine Welt für beliebig viele Personen",
-      "Bilder in den Geschichten",
-      "Warum-Fragen zum Eintauchen in Themen",
-    ],
-  },
-  {
-    id: "ultimate" as const,
-    name: "Ultimate",
-    tagline: "Maximum Lesespaß & Wissen",
-    blurb:
-      "Das volle Paket: maximale Freiheit, maximale Begleitung — für Familien, die Leseno intensiv nutzen.",
-    priceEuro: 15,
-    featured: false,
-    tone: "light" as const,
-    features: [
-      "Silbenmethode für Erstleser",
-      "Vorlesefunktion mit Markierung",
-      "Noch tieferes Eintauchen durch Hintergrundwissen",
-    ],
-  },
-];
+    "Leseno-Pakete für Grundschulkinder im Vergleich: Credits, Meine Bücherei, Meine Welt, Bilder, Warum, Silbenhilfe und Vorlesen. Monatlich kündbar — oder kostenlos starten.",
+  path: "/preise",
+});
 
 /**
- * Marketing prices + Stripe Checkout (card / PayPal when configured).
+ * Marketing prices from `membership_packages` + Stripe Checkout.
  */
-export default function PreisePage() {
+export default async function PreisePage() {
   const checkoutEnabled = hasStripeCheckoutConfig();
+  const user = await getCurrentUser();
+  const isSignedIn = Boolean(user);
+  const allPackages = await loadMembershipPackages();
+  const paidPackages = allPackages.filter(
+    (pkg): pkg is typeof pkg & { id: PaidMembershipPackageId } =>
+      pkg.id === "plus" || pkg.id === "pro" || pkg.id === "ultimate",
+  );
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -80,28 +54,23 @@ export default function PreisePage() {
             Preise
           </p>
           <h1 className="mt-4 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl lg:text-5xl lg:leading-[1.1]">
-            Wähl das Paket, das zu euch passt.
+            Pakete für Grundschulkinder, die gerne lesen.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Von Plus über Pro bis Ultimate: mehr Geschichten, mehr Familie, mehr
-            Begleitung — unter einem Konto. Monatlich kündbar. Zahlung per Karte
-            oder PayPal.
+            Plus für Credits, Bücherei und PDF, Pro für Familie und Bilder,
+            Ultimate für Silbenhilfe und Vorlesen. Monatlich kündbar. Zahlung
+            per Karte oder PayPal.
           </p>
 
           <div className="mt-10 grid gap-6 lg:grid-cols-3">
-            {packages.map((pkg) => {
-              const dark = pkg.tone === "dark";
+            {paidPackages.map((pkg) => {
+              const dark = packageCardTone(pkg.id) === "dark";
+              const featured = isFeaturedPackage(pkg.id);
+              const bullets = marketingBulletsForPackage(pkg);
               return (
                 <article
                   key={pkg.id}
-                  className={cn(
-                    "flex flex-col rounded-[1.75rem] p-8 shadow-xl",
-                    dark
-                      ? "bg-zinc-800 text-white"
-                      : "bg-white text-zinc-950 ring-1 ring-zinc-950/10",
-                    pkg.featured &&
-                      "lg:-translate-y-1 lg:ring-2 lg:ring-yellow-400",
-                  )}
+                  className={packageCardClassName({ dark, featured })}
                 >
                   <p
                     className={cn(
@@ -109,10 +78,10 @@ export default function PreisePage() {
                       dark ? "text-yellow-400" : "text-orange-700",
                     )}
                   >
-                    {pkg.name}
+                    {pkg.label}
                   </p>
                   <h2 className="mt-2 text-2xl font-extrabold tracking-tight">
-                    {pkg.tagline}
+                    {marketingTaglineForPackage(pkg)}
                   </h2>
                   <p
                     className={cn(
@@ -120,10 +89,10 @@ export default function PreisePage() {
                       dark ? "text-zinc-300" : "text-zinc-600",
                     )}
                   >
-                    {pkg.blurb}
+                    {marketingBlurbForPackage(pkg)}
                   </p>
                   <ul className="mt-6 flex-1 space-y-3">
-                    {pkg.features.map((feature) => (
+                    {bullets.map((feature) => (
                       <li
                         key={feature}
                         className={cn(
@@ -145,7 +114,7 @@ export default function PreisePage() {
                   <div className="mt-8">
                     <p className="flex items-baseline gap-1">
                       <span className="text-3xl font-extrabold tracking-tight">
-                        {pkg.priceEuro}&nbsp;€
+                        {pkg.priceEur}&nbsp;€
                       </span>
                       <span
                         className={cn(
@@ -167,17 +136,20 @@ export default function PreisePage() {
             })}
           </div>
 
+          <PackageCompareTable packages={allPackages} />
+
           <article className="mt-6 rounded-[1.75rem] bg-white p-8 shadow-xl ring-1 ring-zinc-950/10 sm:p-10">
             <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
               Credits
             </p>
             <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-zinc-950">
-              Geschichten flexibel hinzubuchen
+              Extra-Geschichten flexibel nachladen
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-600 sm:text-base">
-              Wenn das Monatskontingent mal nicht reicht: Credits nachladen und
-              genau so viele Geschichten erzeugen, wie ihr gerade braucht —
-              ohne Paketwechsel, ohne Wartezeit bis zum nächsten Monat.
+              Wenn das Kontingent nicht reicht: Credits nachladen und genau so
+              viele Geschichten erzeugen, wie ihr braucht — ohne Paketwechsel.
+              Pro und Ultimate bringen von Haus aus oft keine Credits mit;
+              dann reicht ein Nachkauf.
             </p>
             <div className="mt-6 flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <p className="flex items-baseline gap-1">
@@ -189,13 +161,13 @@ export default function PreisePage() {
                 </span>
               </p>
             </div>
-            <CreditsCheckoutButton enabled={checkoutEnabled} />
+            {isSignedIn ? (
+              <CreditsCheckoutButton enabled={checkoutEnabled} />
+            ) : null}
             <p className="mt-4 max-w-3xl text-sm leading-relaxed text-zinc-600">
-              *1 sehr kurze Geschichte kostet 10 Credits, kurz 20 Credits,
-              mittel 30 Credits, lang 40 Credits und sehr lang 50 Credits.
-            </p>
-            <p className="mt-2 max-w-3xl text-sm font-extrabold leading-relaxed text-zinc-950">
-              So kannst du bis zu 30 Geschichten zusätzlich lesen!
+              *Sehr kurz 10, kurz 20, mittel 30, lang 40, sehr lang 50 Credits
+              pro Geschichte. 300 Credits reichen z. B. für bis zu 30 sehr
+              kurze oder 10 mittlere Geschichten.
             </p>
           </article>
 
