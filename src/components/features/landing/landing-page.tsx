@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
 import { StoryFactsList } from "@/components/features/stories/story-facts-list";
 
 /** Brand name in body copy: always lowercase + bold. */
@@ -120,6 +121,7 @@ const parentPoints = [
   "Mehrwert: echtes Wissen in der Geschichte — mit Pro „Warum?“ zum Nachforschen.",
   "Meine Welt: ab Plus ein Kinderprofil, mit Pro beliebig viele unter einem Konto.",
   "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden.",
+  "Weiterempfehlen leicht: Link teilen — Freundinnen starten kostenlos mit Basis.",
 ] as const;
 
 const trySteps = [
@@ -157,6 +159,7 @@ export function LandingPage() {
         <TrySection />
         <ParentsSection />
         <PricingSection />
+        <InviteFriendsCard />
         <ClosingSection />
       </main>
       <LandingFooter />
@@ -177,7 +180,7 @@ function HeroSection() {
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
             {withLesenoBrand(
-              "Leseno macht für Grundschulkinder eigene Geschichten zum Lesen üben — altersgerecht, mit echtem Wissen im Abenteuer. Bücherei, Silbenhilfe, Vorlesen und Bilder schaltest du mit den passenden Paketen frei.",
+              "leseno macht für Grundschulkinder eigene Geschichten zum Lesen üben — altersgerecht, mit echtem Wissen im Abenteuer. Kostenlos mit Basis starten; Bücherei, Silbenhilfe, Vorlesen und Bilder freischalten, wenn ihr wollt.",
             )}
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -651,9 +654,23 @@ function ClosingSection() {
         </h2>
         <p className="mt-4 text-base leading-relaxed text-zinc-600">
           {withLesenoBrand(
-            "Sag, worum es gehen soll. Leseno legt los — du liest, übst und staunst unterwegs.",
+            "Sag, worum es gehen soll. leseno legt los — dein Kind liest, übt und staunt unterwegs. Teilen geht in einem Klick.",
           )}
         </p>
+        <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <a
+            href="/registrieren"
+            className="inline-flex items-center justify-center rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
+          >
+            Kostenlos mit Basis starten
+          </a>
+          <a
+            href="/kostenlos"
+            className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-bold text-zinc-950 ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out hover:bg-gray-100"
+          >
+            Ohne Konto ausprobieren
+          </a>
+        </div>
       </div>
     </section>
   );

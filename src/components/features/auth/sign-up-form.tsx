@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { signUpAction } from "@/app/actions/auth";
 import {
@@ -12,16 +12,25 @@ import {
   BotGuardFields,
   useBotGuardFields,
 } from "@/components/features/security/bot-guard-fields";
+import {
+  clearStoredReferralCode,
+  readStoredReferralCode,
+} from "@/lib/marketing/referral";
 import { cn } from "@/lib/utils";
 
 export function SignUpForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [referralCode, setReferralCode] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const botGuard = useBotGuardFields();
+
+  useEffect(() => {
+    setReferralCode(readStoredReferralCode());
+  }, []);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,6 +42,7 @@ export function SignUpForm() {
         email,
         password,
         confirmPassword,
+        ...(referralCode ? { referralCode } : {}),
         ...botGuard.getBotGuardPayload(),
       });
 
@@ -42,6 +52,7 @@ export function SignUpForm() {
         return;
       }
 
+      clearStoredReferralCode();
       setMessage(
         typeof result.data === "string"
           ? result.data

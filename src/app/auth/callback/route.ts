@@ -15,13 +15,14 @@ function safeNextPath(next: string | null): string {
 /**
  * Exchanges the Supabase auth `code` for a session cookie, then sends
  * the user to the intended page (usually `/anmelden`).
- * Never keeps the browser on localhost after email confirmation.
+ * Never keeps the browser on localhost or :3000 after email confirmation.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const next = safeNextPath(url.searchParams.get("next"));
   const publicOrigin = getAuthEmailSiteUrl();
+  // Prefer public origin whenever the request host is local / :3000.
   const appOrigin = rewriteLocalOriginToPublicSite(url.origin, publicOrigin);
 
   if (code) {

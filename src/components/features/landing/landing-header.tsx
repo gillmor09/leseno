@@ -22,6 +22,7 @@ const navItems = [
   { hash: "#probieren", label: "Ausprobieren" },
   { hash: "#eltern", label: "Für Eltern" },
   { hash: "#preise", label: "Preise" },
+  { hash: "#empfehlen", label: "Empfehlen" },
 ] as const;
 
 function goToSection(href: string) {

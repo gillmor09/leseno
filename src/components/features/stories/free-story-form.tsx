@@ -69,6 +69,7 @@ export function FreeStoryForm({
   enabledFeatures = [],
   initialCredits = 0,
   onCreditsChange,
+  inviteUserId = null,
 }: {
   lengthCatalog: StoryLengthCatalog;
   /**
@@ -84,6 +85,8 @@ export function FreeStoryForm({
   initialCredits?: number;
   /** Called after a successful paid story generation with the new balance. */
   onCreditsChange?: (credits: number) => void;
+  /** Personal invite `?ref=` after a story (membership). */
+  inviteUserId?: string | null;
 }) {
   const canFeature = (feature: PackageFeatureId) =>
     !trialMode && featuresInclude(enabledFeatures, feature);
@@ -642,6 +645,7 @@ export function FreeStoryForm({
           allowPdfExport={allowPdfExport}
           allowFactWhy={allowFactWhy}
           allowFactWhyMore={allowFactWhyMore}
+          inviteUserId={inviteUserId}
         />
       ) : null}
 

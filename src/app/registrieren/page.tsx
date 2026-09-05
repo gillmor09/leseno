@@ -4,7 +4,8 @@ import { SignUpForm } from "@/components/features/auth/sign-up-form";
 
 export const metadata: Metadata = {
   title: "Registrieren — Leseno",
-  description: "Konto anlegen und mit Basis starten.",
+  description:
+    "Konto anlegen und mit Basis kostenlos starten — eigene Geschichten zum Lesen üben für Grundschulkinder.",
 };
 
 /**
@@ -15,7 +16,7 @@ export default function SignUpPage() {
     <AuthShell
       eyebrow="Basis"
       title="Registrieren"
-      description="Leg dein Konto an und starte mit Basis. Danach bestätigst du deine E-Mail."
+      description="Leg dein Konto an und starte mit Basis. Danach bestätigst du deine E-Mail. Wenn dich jemand eingeladen hat, bleibt der Empfehlungs-Link gespeichert."
     >
       <SignUpForm />
     </AuthShell>

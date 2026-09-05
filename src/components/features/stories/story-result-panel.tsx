@@ -20,6 +20,7 @@ import {
 import { StoryFactsList } from "@/components/features/stories/story-facts-list";
 import { StoryHtmlBody } from "@/components/features/stories/story-html-body";
 import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
+import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
 import {
   exportFontSizeForSchoolStage,
   buildStoryExportDocument,
@@ -48,6 +49,7 @@ export function StoryResultPanel({
   allowFactWhy = false,
   allowFactWhyMore = false,
   eyebrow = "Deine Geschichte",
+  inviteUserId = null,
   onClose,
 }: {
   storyHtml: string;
@@ -59,6 +61,8 @@ export function StoryResultPanel({
   allowFactWhy?: boolean;
   allowFactWhyMore?: boolean;
   eyebrow?: string;
+  /** When set, invite link includes a personal `?ref=` code. */
+  inviteUserId?: string | null;
   /** When set, shows a close control (library expand). */
   onClose?: () => void;
 }) {
@@ -512,6 +516,10 @@ export function StoryResultPanel({
           allowFactWhy={allowFactWhy}
           allowFactWhyMore={allowFactWhyMore}
         />
+      ) : null}
+
+      {inviteUserId == null ? (
+        <InviteFriendsCard variant="compact" />
       ) : null}
 
       {isTtsLoading ? (

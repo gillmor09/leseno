@@ -11,7 +11,16 @@ export function getMetadataBaseUrl(): URL {
   const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (configured) {
     try {
-      return new URL(configured.replace(/\/$/, ""));
+      const url = new URL(configured.replace(/\/$/, ""));
+      if (
+        url.hostname === "localhost" ||
+        url.hostname === "127.0.0.1" ||
+        url.port === "3000" ||
+        url.port === "3001"
+      ) {
+        return new URL("https://leseno.de");
+      }
+      return url;
     } catch {
       // fall through
     }
@@ -83,7 +92,7 @@ export function homeJsonLd() {
     operatingSystem: "Web",
     inLanguage: "de-DE",
     description:
-      "Leseapp für Grundschulkinder: eigene Geschichten zum Lesen üben und Wissen zum Staunen. Extra-Funktionen je nach Paket.",
+      "Eigene Geschichten für Grundschulkinder: Lesen üben, Wissen staunen — altersgerecht. Kostenlos mit Basis starten.",
     offers: {
       "@type": "Offer",
       price: "0",

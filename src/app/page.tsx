@@ -5,7 +5,7 @@ import { buildPageMetadata, homeJsonLd } from "@/lib/seo";
 export const metadata: Metadata = buildPageMetadata({
   title: "Lesen üben mit eigenen Geschichten für Grundschulkinder",
   description:
-    "Leseno hilft Grundschulkindern beim Lesen: eigene Geschichten wählen, lesen üben und Wissen staunen. Silbenhilfe, Vorlesen und Bilder in den passenden Paketen. Kostenlos starten.",
+    "Eigene Geschichten für Grundschulkinder: Lesen üben, Wissen staunen — altersgerecht. Silbenhilfe, Vorlesen und Bilder in den Paketen. Kostenlos mit Basis starten.",
   path: "/",
 });
 

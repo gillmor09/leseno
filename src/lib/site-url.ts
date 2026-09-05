@@ -3,12 +3,37 @@ import { headers } from "next/headers";
 /** Canonical production origin for auth emails when env is unset or local. */
 export const DEFAULT_PUBLIC_SITE_URL = "https://leseno.de";
 
+/** Next.js / Coolify app ports that must never appear on public auth URLs. */
+const APP_DEV_PORTS = new Set(["3000", "3001", "8080"]);
+
 function isLocalHostname(hostname: string): boolean {
   return (
     hostname === "localhost" ||
     hostname === "127.0.0.1" ||
     hostname === "[::1]"
   );
+}
+
+/**
+ * Strips localhost and internal app ports so public links stay on :443/:80.
+ */
+function normalizePublicOrigin(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim().replace(/\/$/, ""));
+    if (isLocalHostname(url.hostname)) {
+      return DEFAULT_PUBLIC_SITE_URL;
+    }
+    if (APP_DEV_PORTS.has(url.port)) {
+      url.port = "";
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function originNeedsPublicRewrite(url: URL): boolean {
+  return isLocalHostname(url.hostname) || APP_DEV_PORTS.has(url.port);
 }
 
 /**
@@ -24,29 +49,27 @@ export async function getSiteUrl() {
     headerStore.get("x-forwarded-proto") ?? (isLocal ? "http" : "https");
 
   if (host) {
-    return `${proto}://${host}`.replace(/\/$/, "");
+    const fromRequest = normalizePublicOrigin(`${proto}://${host}`);
+    if (fromRequest && !isLocal) {
+      return fromRequest;
+    }
+    if (isLocal) {
+      return `${proto}://${host}`.replace(/\/$/, "");
+    }
+    return fromRequest ?? getAuthEmailSiteUrl();
   }
 
   return getAuthEmailSiteUrl();
 }
 
 /**
- * Origin for auth emails (signup / recovery): never localhost.
+ * Origin for auth emails (signup / recovery): never localhost, never :3000.
  * Prefer `NEXT_PUBLIC_SITE_URL` when it is a public host; else production.
  */
 export function getAuthEmailSiteUrl(): string {
   const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (configured) {
-    const normalized = configured.replace(/\/$/, "");
-    try {
-      const { hostname } = new URL(normalized);
-      if (isLocalHostname(hostname)) {
-        return DEFAULT_PUBLIC_SITE_URL;
-      }
-      return normalized;
-    } catch {
-      return DEFAULT_PUBLIC_SITE_URL;
-    }
+    return normalizePublicOrigin(configured) ?? DEFAULT_PUBLIC_SITE_URL;
   }
   return DEFAULT_PUBLIC_SITE_URL;
 }
@@ -73,7 +96,7 @@ export function forcePublicSiteOrigin(
 }
 
 /**
- * Rewrites localhost/127.0.0.1 origins in a URL to the public site (keeps path/query).
+ * Rewrites localhost / 127.0.0.1 / app-dev ports to the public site.
  */
 export function rewriteLocalOriginToPublicSite(
   url: string,
@@ -83,7 +106,7 @@ export function rewriteLocalOriginToPublicSite(
   if (!trimmed) return trimmed;
   try {
     const parsed = new URL(trimmed);
-    if (!isLocalHostname(parsed.hostname)) return trimmed;
+    if (!originNeedsPublicRewrite(parsed)) return trimmed;
     return forcePublicSiteOrigin(trimmed, publicSiteUrl);
   } catch {
     return trimmed;
@@ -92,7 +115,7 @@ export function rewriteLocalOriginToPublicSite(
 
 /**
  * Ensures Supabase `action_link` / verify URLs redirect back to the public site.
- * Always rewrites `redirect_to` (GoTrue often embeds SITE_URL=localhost).
+ * Always rewrites `redirect_to` (GoTrue often embeds SITE_URL=localhost/:3000).
  */
 export function ensureAuthLinkUsesPublicSite(
   actionLink: string,
@@ -102,7 +125,7 @@ export function ensureAuthLinkUsesPublicSite(
   if (!trimmed) return trimmed;
   try {
     const url = new URL(trimmed);
-    if (isLocalHostname(url.hostname)) {
+    if (originNeedsPublicRewrite(url)) {
       const pub = new URL(publicSiteUrl);
       url.protocol = pub.protocol;
       url.host = pub.host;

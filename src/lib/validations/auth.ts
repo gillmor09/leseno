@@ -13,6 +13,16 @@ export const signUpSchema = signInSchema
     confirmPassword: z.string().min(8, {
       message: "Bitte das Passwort wiederholen.",
     }),
+    /** Soft invite attribution from `?ref=` / localStorage (optional). */
+    referralCode: z
+      .string()
+      .trim()
+      .max(64)
+      .regex(/^[a-zA-Z0-9_-]*$/, {
+        message: "Ungültiger Empfehlungs-Code.",
+      })
+      .optional()
+      .transform((value) => (value ? value.toLowerCase() : undefined)),
   })
   .refine((value) => value.password === value.confirmPassword, {
     message: "Die Passwörter stimmen nicht überein.",

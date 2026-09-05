@@ -5,6 +5,7 @@
  */
 
 import { useState } from "react";
+import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
 import { CreditsCheckoutButton } from "@/components/features/pricing/pricing-checkout-buttons";
 import { FreeStoryForm } from "@/components/features/stories/free-story-form";
 import type { StoryLengthCatalog } from "@/lib/stories/length";
@@ -19,6 +20,7 @@ export function GeschichteComposer({
   lengthCatalog,
   childProfiles,
   enabledFeatures,
+  inviteUserId = null,
 }: {
   packageLabel: string;
   initialCredits: number;
@@ -27,6 +29,7 @@ export function GeschichteComposer({
   lengthCatalog: StoryLengthCatalog;
   childProfiles: ChildProfileOption[] | null;
   enabledFeatures: readonly PackageFeatureId[];
+  inviteUserId?: string | null;
 }) {
   const [credits, setCredits] = useState(initialCredits);
 
@@ -57,6 +60,11 @@ export function GeschichteComposer({
           ? "Nimm ein Top-Thema oder schalte „Ganz persönlich“ ein. Dann stell Schulstufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."
           : "Nimm ein Top-Thema und stell Schulstufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."}
       </p>
+      {inviteUserId ? (
+        <div className="mt-6">
+          <InviteFriendsCard variant="compact" userId={inviteUserId} />
+        </div>
+      ) : null}
       <div className="mt-10">
         <FreeStoryForm
           lengthCatalog={lengthCatalog}
@@ -64,6 +72,7 @@ export function GeschichteComposer({
           enabledFeatures={enabledFeatures}
           initialCredits={credits}
           onCreditsChange={setCredits}
+          inviteUserId={inviteUserId}
         />
       </div>
     </>

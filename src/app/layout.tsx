@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Nunito, Geist_Mono } from "next/font/google";
 import { GoogleAnalytics } from "@/components/analytics/google-analytics";
+import { CaptureReferral } from "@/components/features/marketing/capture-referral";
 import { AppToaster } from "@/components/ui/app-toaster";
 import { getMetadataBaseUrl, SITE_NAME } from "@/lib/seo";
 import "./globals.css";
@@ -16,9 +18,9 @@ const geistMono = Geist_Mono({
 });
 
 const defaultTitle =
-  "Leseno — Lesen üben mit eigenen Geschichten für Grundschulkinder";
+  "leseno — Lesen üben mit eigenen Geschichten für Grundschulkinder";
 const defaultDescription =
-  "Leseno ist die Leseapp für Grundschulkinder: eigene Geschichten zum Lesen üben und Wissen zum Staunen — altersgerecht für Klasse 1 bis 4. Extra-Hilfen je nach Paket.";
+  "Eigene Geschichten für Grundschulkinder: Lesen üben, Wissen staunen — altersgerecht für Klasse 1 bis 4. Kostenlos mit Basis starten.";
 
 export const metadata: Metadata = {
   metadataBase: getMetadataBaseUrl(),
@@ -79,6 +81,9 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col font-sans">
         <GoogleAnalytics />
+        <Suspense fallback={null}>
+          <CaptureReferral />
+        </Suspense>
         {children}
         <AppToaster />
       </body>

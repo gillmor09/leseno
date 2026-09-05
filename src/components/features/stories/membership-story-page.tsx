@@ -6,6 +6,7 @@
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { GeschichteComposer } from "@/components/features/stories/geschichte-composer";
+import { getCurrentUser } from "@/lib/auth/session";
 import { requireAnyMembershipPage } from "@/lib/auth/require-membership";
 import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
@@ -20,6 +21,7 @@ import { loadChildProfileOptionsForUser } from "@/lib/world/story-options";
 export async function MembershipStoryPage() {
   await requireAnyMembershipPage();
 
+  const user = await getCurrentUser();
   const lengthCatalog = await loadStoryLengthCatalog();
   const access = await loadPackageAccessForCurrentUser();
   const packageLabel = access?.label ?? "Basis";
@@ -49,6 +51,7 @@ export async function MembershipStoryPage() {
             lengthCatalog={lengthCatalog}
             childProfiles={childProfiles}
             enabledFeatures={enabledFeatures}
+            inviteUserId={user?.id ?? null}
           />
         </section>
       </main>

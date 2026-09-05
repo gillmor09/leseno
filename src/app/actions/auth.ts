@@ -107,7 +107,7 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
   }
 
   const siteUrl = getAuthEmailSiteUrl();
-  const { email, password } = parsed.data;
+  const { email, password, referralCode } = parsed.data;
   const redirectTo = `${siteUrl}/auth/callback?next=/anmelden`;
   const adminClient = createServiceClient(null);
 
@@ -231,7 +231,10 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
     label: "Registrierung",
     path: "/registrieren",
     userId,
-    metadata: { email },
+    metadata: {
+      email,
+      ...(referralCode ? { referralCode } : {}),
+    },
   });
 
   return {
