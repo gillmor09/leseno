@@ -188,12 +188,11 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
     });
   } catch (emailError) {
     console.error("[signUpAction] register email", emailError);
+    const detail =
+      emailError instanceof Error ? emailError.message : String(emailError);
     return {
       success: false,
-      error:
-        emailError instanceof Error
-          ? emailError.message
-          : "Konto wurde angelegt, aber die Bestätigungs-E-Mail konnte nicht gesendet werden. Bitte SMTP und Template unter Admin → E-Mails prüfen.",
+      error: `Konto wurde angelegt, aber die Bestätigungs-E-Mail konnte nicht gesendet werden (${detail}). Bitte SMTP_* in Coolify und Template unter Admin → E-Mails prüfen.`,
     };
   }
 

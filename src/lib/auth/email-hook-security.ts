@@ -18,13 +18,16 @@ export function hasSmtpConfig(): boolean {
 }
 
 /**
- * Builds `From` as `"leseno" <addr@…>` (display name fixed for brand).
- * Accepts a bare address or an existing `Name <addr>` in `SMTP_FROM`.
+ * Parses `SMTP_FROM` into address + brand display name `leseno`.
+ * Accepts a bare address or an existing `Name <addr>` value.
  */
-export function formatSmtpFromAddress(fromEnv: string): string {
+export function parseSmtpFrom(fromEnv: string): {
+  name: string;
+  address: string;
+} {
   const match = fromEnv.match(/<([^>]+)>/);
-  const email = (match?.[1] ?? fromEnv).trim();
-  return `"leseno" <${email}>`;
+  const address = (match?.[1] ?? fromEnv).trim();
+  return { name: "leseno", address };
 }
 
 /**
@@ -54,12 +57,25 @@ export async function sendSmtpHtmlEmail(input: {
     auth: { user, pass },
   });
 
-  await transporter.sendMail({
-    from: formatSmtpFromAddress(fromRaw),
-    to: input.to,
-    subject: input.subject,
-    html: input.html,
-  });
+  const from = parseSmtpFrom(fromRaw);
+
+  try {
+    await transporter.sendMail({
+      from,
+      to: input.to,
+      subject: input.subject,
+      html: input.html,
+    });
+  } catch (error) {
+    console.error("[sendSmtpHtmlEmail]", {
+      host,
+      port,
+      from,
+      to: input.to,
+      error: error instanceof Error ? error.message : error,
+    });
+    throw error;
+  }
 }
 
 /**

@@ -126,9 +126,9 @@ export function UsersAdminForm({
                 return (
                   <div
                     key={user.userId}
-                    className="grid gap-4 px-6 py-5 sm:grid-cols-[minmax(0,1.4fr)_8rem_12rem_auto] sm:items-end"
+                    className="flex flex-col gap-4 px-6 py-5 lg:flex-row lg:items-end"
                   >
-                    <div className="grid gap-2">
+                    <div className="min-w-0 flex-1 space-y-2">
                       <label className="block">
                         <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
                           E-Mail
@@ -150,7 +150,7 @@ export function UsersAdminForm({
                       </p>
                     </div>
 
-                    <label className="block">
+                    <label className="block w-full shrink-0 lg:w-28">
                       <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
                         Credits
                       </span>
@@ -170,11 +170,11 @@ export function UsersAdminForm({
                                 : 0,
                           });
                         }}
-                        className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-extrabold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60"
+                        className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-extrabold tabular-nums text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60"
                       />
                     </label>
 
-                    <label className="block">
+                    <label className="block w-full shrink-0 lg:w-44">
                       <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
                         Rolle
                       </span>
@@ -205,7 +205,7 @@ export function UsersAdminForm({
                           : "User löschen"
                       }
                       onClick={() => setDeleteTarget(user)}
-                      className="inline-flex size-11 items-center justify-center rounded-full bg-white text-orange-800 ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out hover:bg-orange-50 disabled:opacity-40"
+                      className="inline-flex size-11 shrink-0 items-center justify-center self-end rounded-full bg-white text-orange-800 ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out hover:bg-orange-50 disabled:opacity-40"
                     >
                       <Trash2 className="size-4" aria-hidden />
                       <span className="sr-only">
