@@ -2,7 +2,10 @@
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient } from "@/lib/supabase/server";
-import { getSiteUrl } from "@/lib/site-url";
+import {
+  ensureAuthLinkUsesPublicSite,
+  getAuthEmailSiteUrl,
+} from "@/lib/site-url";
 import { assertBotGuard } from "@/lib/security/bot-guard";
 import type { ActionResult } from "@/lib/types/actions";
 import {
@@ -77,7 +80,7 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
     };
   }
 
-  const siteUrl = await getSiteUrl();
+  const siteUrl = getAuthEmailSiteUrl();
   const { email, password } = parsed.data;
   const redirectTo = `${siteUrl}/auth/callback?next=/anmelden`;
   const adminClient = createServiceClient(null);
@@ -123,13 +126,10 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
   }
 
   const userId = linkData.user.id;
-  const confirmationUrl =
-    linkData.properties?.action_link?.trim() ||
-    "";
-  const emailToken =
-    linkData.properties?.email_otp?.trim() ||
-    linkData.properties?.hashed_token?.trim() ||
-    "";
+  const confirmationUrl = ensureAuthLinkUsesPublicSite(
+    linkData.properties?.action_link?.trim() || "",
+    siteUrl,
+  );
 
   await adminClient.auth.admin.updateUserById(userId, {
     app_metadata: { role: "basis" },
@@ -181,7 +181,7 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
       values: {
         email,
         confirmation_url: confirmationUrl,
-        token: emailToken,
+        token: "",
         site_url: siteUrl,
         redirect_to: redirectTo,
       },
@@ -238,7 +238,7 @@ export async function requestPasswordResetAction(
     };
   }
 
-  const siteUrl = await getSiteUrl();
+  const siteUrl = getAuthEmailSiteUrl();
   const redirectTo = `${siteUrl}/auth/callback?next=/passwort-zuruecksetzen`;
   const email = parsed.data.email;
   const adminClient = createServiceClient(null);
@@ -269,11 +269,11 @@ export async function requestPasswordResetAction(
       templateId: "forget",
       values: {
         email,
-        confirmation_url: linkData.properties.action_link,
-        token:
-          linkData.properties.email_otp?.trim() ||
-          linkData.properties.hashed_token?.trim() ||
-          "",
+        confirmation_url: ensureAuthLinkUsesPublicSite(
+          linkData.properties.action_link,
+          siteUrl,
+        ),
+        token: "",
         site_url: siteUrl,
         redirect_to: redirectTo,
       },

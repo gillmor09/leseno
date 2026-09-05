@@ -18,6 +18,16 @@ export function hasSmtpConfig(): boolean {
 }
 
 /**
+ * Builds `From` as `"leseno" <addr@…>` (display name fixed for brand).
+ * Accepts a bare address or an existing `Name <addr>` in `SMTP_FROM`.
+ */
+export function formatSmtpFromAddress(fromEnv: string): string {
+  const match = fromEnv.match(/<([^>]+)>/);
+  const email = (match?.[1] ?? fromEnv).trim();
+  return `"leseno" <${email}>`;
+}
+
+/**
  * Sends one HTML email via SMTP (`SMTP_*` env).
  */
 export async function sendSmtpHtmlEmail(input: {
@@ -26,12 +36,12 @@ export async function sendSmtpHtmlEmail(input: {
   html: string;
 }): Promise<void> {
   const host = process.env.SMTP_HOST?.trim();
-  const from = process.env.SMTP_FROM?.trim();
+  const fromRaw = process.env.SMTP_FROM?.trim();
   const user = process.env.SMTP_USER?.trim();
   const pass = process.env.SMTP_PASS?.trim();
   const port = Number(process.env.SMTP_PORT?.trim() || "587");
 
-  if (!host || !from || !user || !pass) {
+  if (!host || !fromRaw || !user || !pass) {
     throw new Error(
       "SMTP ist nicht konfiguriert (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM).",
     );
@@ -45,7 +55,7 @@ export async function sendSmtpHtmlEmail(input: {
   });
 
   await transporter.sendMail({
-    from,
+    from: formatSmtpFromAddress(fromRaw),
     to: input.to,
     subject: input.subject,
     html: input.html,

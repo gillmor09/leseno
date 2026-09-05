@@ -213,11 +213,19 @@ export function AuthEmailAdminForm({
                   onChange={(html) => patch(template.id, "htmlBody", html)}
                 />
                 <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-                  Platzhalter unverändert lassen, z.&nbsp;B.{" "}
+                  Platzhalter:{" "}
                   <code className="rounded bg-gray-100 px-1 py-0.5">
                     {"{{confirmation_url}}"}
                   </code>
-                  .
+                  {" · "}
+                  <code className="rounded bg-gray-100 px-1 py-0.5">
+                    {"{{site_url}}"}
+                  </code>
+                  {" · "}
+                  <code className="rounded bg-gray-100 px-1 py-0.5">
+                    {"{{email}}"}
+                  </code>
+                  . Absender-Name ist immer „leseno“.
                 </p>
               </div>
             </div>

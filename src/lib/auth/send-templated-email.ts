@@ -12,7 +12,7 @@ import {
   hasSmtpConfig,
   sendSmtpHtmlEmail,
 } from "@/lib/auth/email-hook-security";
-import { getSiteUrl } from "@/lib/site-url";
+import { getAuthEmailSiteUrl } from "@/lib/site-url";
 
 export type AuthEmailTemplateValues = {
   email: string;
@@ -43,10 +43,7 @@ export async function sendTemplatedAuthEmail(input: {
   }
 
   const siteUrl =
-    input.values.site_url?.trim() ||
-    (await getSiteUrl().catch(() => "")) ||
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    "";
+    input.values.site_url?.trim() || getAuthEmailSiteUrl();
 
   const values = {
     email: input.values.email,

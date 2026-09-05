@@ -33,7 +33,7 @@ export const FALLBACK_AUTH_EMAIL_TEMPLATES: AuthEmailTemplate[] = [
       "Bestätigung nach der Anmeldung (Supabase email_action_type: signup).",
     subject: "Willkommen bei Leseno — bitte bestätige deine E-Mail",
     htmlBody:
-      "<p>Hallo {{email}},</p><p><a href=\"{{confirmation_url}}\">E-Mail bestätigen</a></p><p>Code: {{token}}</p>",
+      "<p>Hallo {{email}},</p><p><a href=\"{{confirmation_url}}\">E-Mail bestätigen</a></p>",
     enabled: true,
     updatedAt: null,
   },
@@ -44,7 +44,7 @@ export const FALLBACK_AUTH_EMAIL_TEMPLATES: AuthEmailTemplate[] = [
       "Link zum Zurücksetzen des Passworts (Supabase email_action_type: recovery).",
     subject: "Leseno — Passwort zurücksetzen",
     htmlBody:
-      "<p>Hallo {{email}},</p><p><a href=\"{{confirmation_url}}\">Neues Passwort wählen</a></p><p>Code: {{token}}</p>",
+      "<p>Hallo {{email}},</p><p><a href=\"{{confirmation_url}}\">Neues Passwort wählen</a></p>",
     enabled: true,
     updatedAt: null,
   },

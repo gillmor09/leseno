@@ -4,7 +4,7 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { FALLBACK_AUTH_EMAIL_TEMPLATES } from "@/lib/auth/email-templates";
 import { listAuthEmailTemplates } from "@/lib/auth/email-templates-repository";
-import { getSiteUrl } from "@/lib/site-url";
+import { getAuthEmailSiteUrl } from "@/lib/site-url";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
@@ -22,7 +22,7 @@ export default async function AuthEmailsAdminPage() {
   let readOnlyNotice =
     "Vorschau: Templates konnten nicht geladen werden. Bitte Migration `20260904192000_auth_email_templates.sql` ausführen.";
 
-  const siteUrl = (await getSiteUrl()).replace(/\/$/, "");
+  const siteUrl = getAuthEmailSiteUrl();
   const registerHookUrl = `${siteUrl}/hooks/auth/register`;
   const forgetHookUrl = `${siteUrl}/hooks/auth/forget`;
   const sendEmailHookUrl = `${siteUrl}/hooks/auth/send-email`;
