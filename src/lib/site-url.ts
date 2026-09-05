@@ -63,13 +63,25 @@ export async function getSiteUrl() {
 }
 
 /**
- * Origin for auth emails (signup / recovery): never localhost, never :3000.
- * Prefer `NEXT_PUBLIC_SITE_URL` when it is a public host; else production.
+ * Origin for auth emails (signup / recovery): always the public site.
+ * Ignores localhost and any :3000 / Coolify container ports.
  */
 export function getAuthEmailSiteUrl(): string {
   const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (configured) {
-    return normalizePublicOrigin(configured) ?? DEFAULT_PUBLIC_SITE_URL;
+    const normalized = normalizePublicOrigin(configured);
+    if (normalized) {
+      try {
+        const host = new URL(normalized).hostname;
+        // Production domain: never allow a non-default port.
+        if (host === "leseno.de" || host === "www.leseno.de") {
+          return DEFAULT_PUBLIC_SITE_URL;
+        }
+        return normalized;
+      } catch {
+        return DEFAULT_PUBLIC_SITE_URL;
+      }
+    }
   }
   return DEFAULT_PUBLIC_SITE_URL;
 }

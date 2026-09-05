@@ -7,8 +7,26 @@ import { getSupabasePublicConfig } from "@/lib/supabase/config";
  * Supabase SSR proxy — refreshes the session cookie on every request
  * so Server Components always receive a valid (or cleanly absent) session.
  * Without this, stale refresh tokens cause noisy `refresh_token_not_found` errors.
+ *
+ * Also redirects accidental `leseno.de:3000` hits (GoTrue SITE_URL / container port)
+ * to the canonical https origin.
  */
 export async function proxy(request: NextRequest) {
+  const forwardedHost =
+    request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "";
+  const hostOnly = forwardedHost.split(",")[0]?.trim() ?? "";
+  if (/:(3000|3001|8080)$/.test(hostOnly)) {
+    const hostname = hostOnly.replace(/:\d+$/, "");
+    if (
+      hostname &&
+      hostname !== "localhost" &&
+      !hostname.startsWith("127.")
+    ) {
+      const target = new URL(request.nextUrl.pathname + request.nextUrl.search, `https://${hostname}`);
+      return NextResponse.redirect(target, 308);
+    }
+  }
+
   const response = NextResponse.next({ request });
 
   try {
