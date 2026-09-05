@@ -1,3 +1,4 @@
+import Link from "next/link";
 import Image from "next/image";
 
 export function LandingFooter() {
@@ -21,10 +22,14 @@ export function LandingFooter() {
             </p>
           </div>
         </div>
-        <p className="max-w-md text-sm leading-relaxed text-zinc-400">
-          Für dich von 5 bis 10 — und für die Erwachsenen, die dich beim Lesen
-          begleiten. Geschichten mit Wissen und Staunen, ohne albernen Kram.
-        </p>
+        <nav aria-label="Rechtliches">
+          <Link
+            href="/impressum"
+            className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
+          >
+            Impressum
+          </Link>
+        </nav>
       </div>
     </footer>
   );

@@ -69,6 +69,7 @@ Werte nicht committen. In Coolify bei der **Leseno-App** und in `.env.local`:
 - [ ] `NEXT_PUBLIC_SUPABASE_ANON_KEY` = anon / publishable key aus dem Supabase-Stack
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` nur serverseitig
 - [ ] Stripe: siehe [docs/stripe.md](stripe.md) (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*`)
+- [ ] Optional Analytics: `NEXT_PUBLIC_GA_MEASUREMENT_ID=G-…` (Google Analytics 4)
 - [ ] Nach Key-Rotation App neu deployen
 
 ---
