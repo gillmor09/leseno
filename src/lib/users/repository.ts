@@ -6,6 +6,7 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import type { UserAdminRow, UserRoleId } from "@/lib/users/catalog";
 import { USER_ROLE_OPTIONS } from "@/lib/users/catalog";
+import { loadCreditsByUserIds } from "@/lib/users/billing";
 
 const ALLOWED_ROLES = new Set<UserRoleId>(
   USER_ROLE_OPTIONS.map((role) => role.id),
@@ -22,21 +23,28 @@ export async function loadUsersForAdmin(): Promise<UserAdminRow[]> {
     throw new Error(error.message);
   }
 
-  return (data.users ?? [])
-    .filter((user) => Boolean(user.email))
-    .map((user) => {
-      const rawRole = user.app_metadata?.role;
-      const role = ALLOWED_ROLES.has(rawRole as UserRoleId)
-        ? (rawRole as UserRoleId)
-        : "basis";
+  const users = (data.users ?? []).filter((user) => Boolean(user.email));
+  let creditsByUser = new Map<string, number>();
+  try {
+    creditsByUser = await loadCreditsByUserIds(users.map((user) => user.id));
+  } catch (creditsError) {
+    console.warn("[loadUsersForAdmin] credits", creditsError);
+  }
 
-      return {
-        userId: user.id,
-        email: user.email ?? "",
-        role,
-        createdAt: user.created_at,
-      };
-    });
+  return users.map((user) => {
+    const rawRole = user.app_metadata?.role;
+    const role = ALLOWED_ROLES.has(rawRole as UserRoleId)
+      ? (rawRole as UserRoleId)
+      : "basis";
+
+    return {
+      userId: user.id,
+      email: user.email ?? "",
+      role,
+      credits: creditsByUser.get(user.id) ?? 0,
+      createdAt: user.created_at,
+    };
+  });
 }
 
 export async function updateUsersForAdmin(rows: UserAdminRow[]): Promise<void> {

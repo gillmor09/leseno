@@ -85,6 +85,25 @@ export async function generateFreeStoryAction(
       syllableHelp,
       includeImages,
     });
+
+    const user = await getCurrentUser();
+    if (user) {
+      const { logUserActivity } = await import("@/lib/users/activity");
+      await logUserActivity({
+        action: "story.generate",
+        label: "Geschichte erzeugen",
+        userId: user.id,
+        metadata: {
+          personalMode: parsed.data.personalMode,
+          lengthStep: parsed.data.lengthStep,
+          mood: parsed.data.mood,
+          schoolStage,
+          includeImages,
+          topic,
+        },
+      });
+    }
+
     return { success: true, data: result };
   } catch (error) {
     console.error("[generateFreeStoryAction]", error);

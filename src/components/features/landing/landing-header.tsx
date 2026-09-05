@@ -118,32 +118,13 @@ export function LandingHeader({
   }
 
   const adminItems = [
-    {
-      href: "/admin/users",
-      label: "User",
-      description: "E-Mail-Adressen und Rollen der registrierten User verwalten.",
-    },
-    {
-      href: "/admin/textlaenge",
-      label: "Textlängen",
-      description: "Wortspannen für die fünf Längenstufen pflegen.",
-    },
-    {
-      href: "/admin/ki-modelle",
-      label: "KI-Modelle",
-      description: "Verfügbare Modelle, Provider und Fähigkeiten verwalten.",
-    },
-    {
-      href: "/admin/prompts",
-      label: "Prompts",
-      description: "Prompt-Stufen, Platzhalter und Modellzuordnung steuern.",
-    },
-    {
-      href: "/admin/emails",
-      label: "Auth-E-Mails",
-      description:
-        "Templates für Registrierung und Passwort vergessen (Supabase-Hooks).",
-    },
+    { href: "/admin/users", label: "User" },
+    { href: "/admin/aktivitaeten", label: "Aktivitäten" },
+    { href: "/admin/pakete", label: "Pakete" },
+    { href: "/admin/textlaenge", label: "Textlängen" },
+    { href: "/admin/ki-modelle", label: "KI-Modelle" },
+    { href: "/admin/prompts", label: "Prompts" },
+    { href: "/admin/emails", label: "Auth-E-Mails" },
   ] as const;
 
   const headerBtnBase =
@@ -399,9 +380,6 @@ export function LandingHeader({
                   >
                     <p className="text-base font-extrabold text-zinc-950">
                       {item.label}
-                    </p>
-                    <p className="mt-1 text-sm leading-relaxed text-zinc-600">
-                      {item.description}
                     </p>
                   </a>
                 ))}

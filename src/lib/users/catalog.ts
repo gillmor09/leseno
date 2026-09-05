@@ -26,6 +26,7 @@ export type UserAdminRow = {
   userId: string;
   email: string;
   role: UserRoleId;
+  credits: number;
   createdAt: string;
 };
 

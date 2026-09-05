@@ -92,7 +92,7 @@ export function UsersAdminForm({
             {users.map((user) => (
               <div
                 key={user.userId}
-                className="grid gap-4 px-6 py-5 sm:grid-cols-[minmax(0,1.5fr)_15rem]"
+                className="grid gap-4 px-6 py-5 sm:grid-cols-[minmax(0,1.4fr)_8rem_12rem]"
               >
                 <div className="grid gap-2">
                   <label className="block">
@@ -111,6 +111,15 @@ export function UsersAdminForm({
                   </label>
                   <p className="text-xs text-zinc-500">
                     Angelegt am {formatCreatedAt(user.createdAt)}
+                  </p>
+                </div>
+
+                <div>
+                  <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                    Credits
+                  </span>
+                  <p className="mt-1 rounded-2xl bg-gray-100 px-3 py-2 text-sm font-extrabold text-zinc-950 ring-1 ring-zinc-950/10">
+                    {user.credits}
                   </p>
                 </div>
 

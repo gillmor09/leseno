@@ -2,6 +2,12 @@ import type { Metadata } from "next";
 import { Check } from "lucide-react";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import {
+  CreditsCheckoutButton,
+  ManageSubscriptionButton,
+  MembershipCheckoutButton,
+} from "@/components/features/pricing/pricing-checkout-buttons";
+import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -12,25 +18,27 @@ export const metadata: Metadata = {
 
 const packages = [
   {
-    id: "plus",
+    id: "plus" as const,
     name: "Plus",
     tagline: "Mehr Lesen für den Alltag",
-    blurb: "Ideal, wenn Leseno regelmäßig mit dabei sein soll — für ein Kind oder die ersten Familien-Profile.",
+    blurb:
+      "Ideal, wenn Leseno regelmäßig mit dabei sein soll — für ein Kind oder die ersten Familien-Profile.",
     priceEuro: 5,
     featured: false,
     tone: "light" as const,
     features: [
-      "10 Geschichten frei",
+      "inkl. 500 Credits (für bis zu 50 Geschichten)",
       "Auswahl nach Thema, Art der Geschichte und Länge der Geschichte",
       "Meine Welt für eine Person",
       "Export als PDF zum Offline-Lesen",
     ],
   },
   {
-    id: "pro",
+    id: "pro" as const,
     name: "Pro",
     tagline: "Für die ganze Lesefamilie",
-    blurb: "Mehr Raum für mehrere Kinder, stärkere Begleitung und mehr Geschichten — wenn Leseno zum festen Ritual wird.",
+    blurb:
+      "Mehr Raum für mehrere Kinder, stärkere Begleitung und mehr Geschichten — wenn Leseno zum festen Ritual wird.",
     priceEuro: 10,
     featured: true,
     tone: "dark" as const,
@@ -41,10 +49,11 @@ const packages = [
     ],
   },
   {
-    id: "ultimate",
+    id: "ultimate" as const,
     name: "Ultimate",
     tagline: "Maximum Lesespaß & Wissen",
-    blurb: "Das volle Paket: maximale Freiheit, maximale Begleitung — für Familien, die Leseno intensiv nutzen.",
+    blurb:
+      "Das volle Paket: maximale Freiheit, maximale Begleitung — für Familien, die Leseno intensiv nutzen.",
     priceEuro: 15,
     featured: false,
     tone: "light" as const,
@@ -54,12 +63,14 @@ const packages = [
       "Noch tieferes Eintauchen durch Hintergrundwissen",
     ],
   },
-] as const;
+];
 
 /**
- * Marketing prices overview: Plus / Pro / Ultimate (prepared for later checkout).
+ * Marketing prices + Stripe Checkout (card / PayPal when configured).
  */
 export default function PreisePage() {
+  const checkoutEnabled = hasStripeCheckoutConfig();
+
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
@@ -73,8 +84,8 @@ export default function PreisePage() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             Von Plus über Pro bis Ultimate: mehr Geschichten, mehr Familie, mehr
-            Begleitung — unter einem Konto. Monatlich kündbar. Buchung folgt in
-            Kürze.
+            Begleitung — unter einem Konto. Monatlich kündbar. Zahlung per Karte
+            oder PayPal.
           </p>
 
           <div className="mt-10 grid gap-6 lg:grid-cols-3">
@@ -88,7 +99,8 @@ export default function PreisePage() {
                     dark
                       ? "bg-zinc-800 text-white"
                       : "bg-white text-zinc-950 ring-1 ring-zinc-950/10",
-                    pkg.featured && "lg:-translate-y-1 lg:ring-2 lg:ring-yellow-400",
+                    pkg.featured &&
+                      "lg:-translate-y-1 lg:ring-2 lg:ring-yellow-400",
                   )}
                 >
                   <p
@@ -144,16 +156,11 @@ export default function PreisePage() {
                         / Monat
                       </span>
                     </p>
-                    <p
-                      className={cn(
-                        "mt-4 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-bold",
-                        dark
-                          ? "bg-yellow-400 text-zinc-950"
-                          : "bg-zinc-800 text-white",
-                      )}
-                    >
-                      Bald buchbar
-                    </p>
+                    <MembershipCheckoutButton
+                      packageId={pkg.id}
+                      dark={dark}
+                      enabled={checkoutEnabled}
+                    />
                   </div>
                 </article>
               );
@@ -182,9 +189,7 @@ export default function PreisePage() {
                 </span>
               </p>
             </div>
-            <p className="mt-6 inline-flex items-center justify-center rounded-full bg-zinc-800 px-5 py-3 text-sm font-bold text-white">
-              Bald buchbar
-            </p>
+            <CreditsCheckoutButton enabled={checkoutEnabled} />
             <p className="mt-4 max-w-3xl text-sm leading-relaxed text-zinc-600">
               *1 sehr kurze Geschichte kostet 10 Credits, kurz 20 Credits,
               mittel 30 Credits, lang 40 Credits und sehr lang 50 Credits.
@@ -194,23 +199,26 @@ export default function PreisePage() {
             </p>
           </article>
 
-          <p className="mt-10 text-center text-sm font-semibold text-zinc-500">
-            Noch unsicher?{" "}
-            <a
-              href="/kostenlos"
-              className="text-orange-700 underline-offset-2 hover:underline"
-            >
-              Kostenlos ausprobieren
-            </a>{" "}
-            oder mit{" "}
-            <a
-              href="/registrieren"
-              className="text-orange-700 underline-offset-2 hover:underline"
-            >
-              Basis starten
-            </a>
-            .
-          </p>
+          <div className="mt-8 flex flex-col items-center gap-3 text-center">
+            <ManageSubscriptionButton enabled={checkoutEnabled} />
+            <p className="text-sm font-semibold text-zinc-500">
+              Noch unsicher?{" "}
+              <a
+                href="/kostenlos"
+                className="text-orange-700 underline-offset-2 hover:underline"
+              >
+                Kostenlos ausprobieren
+              </a>{" "}
+              oder mit{" "}
+              <a
+                href="/registrieren"
+                className="text-orange-700 underline-offset-2 hover:underline"
+              >
+                Basis starten
+              </a>
+              .
+            </p>
+          </div>
         </section>
       </main>
       <LandingFooter />

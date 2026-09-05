@@ -36,11 +36,20 @@ export async function signInAction(input: unknown): Promise<ActionResult> {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
     return { success: false, error: "Anmeldung fehlgeschlagen. Bitte prüfe E-Mail und Passwort." };
   }
+
+  const { logUserActivity } = await import("@/lib/users/activity");
+  await logUserActivity({
+    action: "auth.sign_in",
+    label: "Anmeldung",
+    path: "/anmelden",
+    userId: data.user?.id ?? null,
+    metadata: { email: parsed.data.email },
+  });
 
   return { success: true };
 }
@@ -117,6 +126,28 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
     const adminClient = createServiceClient(null);
     await adminClient.auth.admin.updateUserById(data.user.id, {
       app_metadata: { role: "basis" },
+    });
+
+    try {
+      const { startPackageBooking } = await import("@/lib/users/billing");
+      await startPackageBooking({
+        userId: data.user.id,
+        packageId: "basis",
+        monthlyPrice: 0,
+        actualPrice: 0,
+        notes: "Registrierung",
+      });
+    } catch (bookingError) {
+      console.error("[signUpAction] basis booking", bookingError);
+    }
+
+    const { logUserActivity } = await import("@/lib/users/activity");
+    await logUserActivity({
+      action: "auth.sign_up",
+      label: "Registrierung",
+      path: "/registrieren",
+      userId: data.user.id,
+      metadata: { email },
     });
   }
 
@@ -279,10 +310,23 @@ export async function requestEmailReminderAction(
  */
 export async function signOutAction(): Promise<ActionResult> {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   const { error } = await supabase.auth.signOut();
 
   if (error) {
     return { success: false, error: "Abmelden hat nicht geklappt." };
+  }
+
+  if (user?.id) {
+    const { logUserActivity } = await import("@/lib/users/activity");
+    await logUserActivity({
+      action: "auth.sign_out",
+      label: "Abmeldung",
+      userId: user.id,
+    });
   }
 
   return { success: true };

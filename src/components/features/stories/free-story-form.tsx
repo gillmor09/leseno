@@ -28,6 +28,7 @@ import {
   BotGuardFields,
   useBotGuardFields,
 } from "@/components/features/security/bot-guard-fields";
+import { trackUserActivity } from "@/lib/users/track-client";
 import { cn } from "@/lib/utils";
 import { StoryHtmlBody } from "@/components/features/stories/story-html-body";
 import { StoryLengthSlider } from "@/components/features/stories/story-length-slider";
@@ -445,6 +446,19 @@ export function FreeStoryForm({
         : "Ich hole spannendes Wissen für dich …",
     );
 
+    trackUserActivity({
+      action: "story.generate_click",
+      label: "Klick: Geschichte erzeugen",
+      metadata: {
+        personalMode,
+        topic: personalMode ? null : topic,
+        profileId: activeProfileId,
+        lengthStep,
+        mood,
+        schoolStage,
+      },
+    });
+
     startTransition(async () => {
       stopTtsPlayback();
       const result = await generateFreeStoryAction({
@@ -548,6 +562,11 @@ export function FreeStoryForm({
       setSelectedProfileId(null);
       setLengthMoodOpen(false);
       if (!topic) setTopic(STORY_TOP_TOPICS[0]);
+      trackUserActivity({
+        action: "story.profile_select",
+        label: "Leser: Freies lesen",
+        metadata: { profileId: null },
+      });
       return;
     }
     const next = childProfiles?.find((profile) => profile.id === profileId);
@@ -565,6 +584,11 @@ export function FreeStoryForm({
     setLengthStep(next.lengthStep);
     setMood(next.mood);
     setLengthMoodOpen(false);
+    trackUserActivity({
+      action: "story.profile_select",
+      label: "Leser ausgewählt",
+      metadata: { profileId, displayName: next.displayName },
+    });
   }
 
   return (
@@ -726,7 +750,14 @@ export function FreeStoryForm({
                       key={item}
                       type="button"
                       disabled={isPending}
-                      onClick={() => setTopic(item)}
+                      onClick={() => {
+                        setTopic(item);
+                        trackUserActivity({
+                          action: "story.topic_select",
+                          label: "Thema gewählt",
+                          metadata: { topic: item },
+                        });
+                      }}
                       className={cn(
                         "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
                         topic === item

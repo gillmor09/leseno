@@ -61,6 +61,10 @@ type MyWorldProfileEditorProps = {
   onSaved: (profile: ChildProfile) => void;
   onDeleted?: (profileId: string) => void;
   canDelete?: boolean;
+  /** Another profile already marked as default (name for confirm copy). */
+  otherDefaultName?: string | null;
+  /** Clears default on other local profiles after the user confirms the switch. */
+  onClaimDefault?: () => void;
 };
 
 /**
@@ -72,6 +76,8 @@ export function MyWorldProfileEditor({
   onSaved,
   onDeleted,
   canDelete = false,
+  otherDefaultName = null,
+  onClaimDefault,
 }: MyWorldProfileEditorProps) {
   const [fields, setFields] = useState(initialFields);
   const [drafts, setDrafts] = useState<Record<ListKey, string>>({
@@ -83,6 +89,7 @@ export function MyWorldProfileEditor({
   const [pending, setPending] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
+  const [defaultConfirmOpen, setDefaultConfirmOpen] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -151,6 +158,24 @@ export function MyWorldProfileEditor({
     });
   }
 
+  function handleDefaultToggle() {
+    if (fields.isDefault) {
+      setFields((current) => ({ ...current, isDefault: false }));
+      return;
+    }
+    if (otherDefaultName) {
+      setDefaultConfirmOpen(true);
+      return;
+    }
+    setFields((current) => ({ ...current, isDefault: true }));
+  }
+
+  function handleDefaultConfirm() {
+    onClaimDefault?.();
+    setFields((current) => ({ ...current, isDefault: true }));
+    setDefaultConfirmOpen(false);
+  }
+
   async function handleDeleteConfirm() {
     if (!profileId || !onDeleted) return;
     setDeletePending(true);
@@ -206,12 +231,7 @@ export function MyWorldProfileEditor({
               type="button"
               role="switch"
               aria-checked={fields.isDefault}
-              onClick={() =>
-                setFields((current) => ({
-                  ...current,
-                  isDefault: !current.isDefault,
-                }))
-              }
+              onClick={handleDefaultToggle}
               className={cn(
                 "relative h-8 w-14 shrink-0 rounded-full transition-all duration-200 ease-in-out",
                 fields.isDefault ? "bg-yellow-400" : "bg-zinc-300",
@@ -529,6 +549,15 @@ export function MyWorldProfileEditor({
         onConfirm={() => {
           void handleDeleteConfirm();
         }}
+      />
+
+      <ConfirmDeleteDialog
+        open={defaultConfirmOpen}
+        title="Standardprofil wechseln?"
+        description={`„${otherDefaultName ?? "Ein anderes Profil"}“ ist derzeit das Standardprofil. Wenn du bestätigst, wird dort Standard entfernt und dieses Profil wird Standard (nach dem Speichern).`}
+        confirmLabel="Als Standard setzen"
+        onCancel={() => setDefaultConfirmOpen(false)}
+        onConfirm={handleDefaultConfirm}
       />
     </>
   );

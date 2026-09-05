@@ -33,6 +33,34 @@ export function MyWorldManager({
     [activeTab, profiles],
   );
 
+  /** First child defaults to Standard; further children start with toggle off. */
+  const newProfileFields = useMemo(
+    () => ({
+      ...EMPTY_CHILD_PROFILE_FIELDS,
+      isDefault: profiles.length === 0,
+    }),
+    [profiles.length],
+  );
+
+  const otherDefaultName = useMemo(() => {
+    const other = profiles.find(
+      (profile) =>
+        profile.isDefault &&
+        (activeTab === "new" || profile.id !== activeTab),
+    );
+    if (!other) return null;
+    return other.displayName.trim() || "Ohne Namen";
+  }, [activeTab, profiles]);
+
+  function claimDefault() {
+    setProfiles((current) =>
+      current.map((profile) => ({
+        ...profile,
+        isDefault: activeTab !== "new" && profile.id === activeTab,
+      })),
+    );
+  }
+
   const showTabs = profiles.length > 1 || activeTab === "new";
 
   function handleSaved(saved: ChildProfile) {
@@ -137,9 +165,11 @@ export function MyWorldManager({
 
       {activeTab === "new" ? (
         <MyWorldProfileEditor
-          key="new"
+          key={`new-${profiles.length}`}
           profileId={null}
-          initialFields={EMPTY_CHILD_PROFILE_FIELDS}
+          initialFields={newProfileFields}
+          otherDefaultName={otherDefaultName}
+          onClaimDefault={claimDefault}
           onSaved={handleSaved}
           canDelete={false}
         />
@@ -162,15 +192,19 @@ export function MyWorldManager({
             readableAloud: activeProfile.readableAloud,
             isDefault: activeProfile.isDefault,
           }}
+          otherDefaultName={otherDefaultName}
+          onClaimDefault={claimDefault}
           onSaved={handleSaved}
           onDeleted={handleDeleted}
           canDelete
         />
       ) : (
         <MyWorldProfileEditor
-          key="fallback-new"
+          key={`fallback-new-${profiles.length}`}
           profileId={null}
-          initialFields={EMPTY_CHILD_PROFILE_FIELDS}
+          initialFields={newProfileFields}
+          otherDefaultName={otherDefaultName}
+          onClaimDefault={claimDefault}
           onSaved={handleSaved}
           canDelete={false}
         />

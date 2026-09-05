@@ -68,6 +68,7 @@ Werte nicht committen. In Coolify bei der **Leseno-App** und in `.env.local`:
 - [ ] `NEXT_PUBLIC_SUPABASE_URL=https://supabase-api.leseno.de` (genau diese öffentliche URL)
 - [ ] `NEXT_PUBLIC_SUPABASE_ANON_KEY` = anon / publishable key aus dem Supabase-Stack
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` nur serverseitig
+- [ ] Stripe: siehe [docs/stripe.md](stripe.md) (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_*`)
 - [ ] Nach Key-Rotation App neu deployen
 
 ---
