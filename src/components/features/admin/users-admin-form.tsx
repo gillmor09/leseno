@@ -11,16 +11,6 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { USER_ROLE_OPTIONS, type UserAdminRow } from "@/lib/users/catalog";
 import { cn } from "@/lib/utils";
 
-function formatCreatedAt(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : new Intl.DateTimeFormat("de-DE", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(date);
-}
-
 export function UsersAdminForm({
   users: initialUsers,
   canSave = true,
@@ -128,27 +118,22 @@ export function UsersAdminForm({
                     key={user.userId}
                     className="flex flex-col gap-4 px-6 py-5 lg:flex-row lg:items-end"
                   >
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <label className="block">
-                        <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                          E-Mail
-                        </span>
-                        <input
-                          type="email"
-                          value={user.email}
-                          disabled={!canSave}
-                          onChange={(event) =>
-                            patchUser(user.userId, {
-                              email: event.target.value,
-                            })
-                          }
-                          className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60"
-                        />
-                      </label>
-                      <p className="text-xs text-zinc-500">
-                        Angelegt am {formatCreatedAt(user.createdAt)}
-                      </p>
-                    </div>
+                    <label className="block min-w-0 flex-1">
+                      <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                        E-Mail
+                      </span>
+                      <input
+                        type="email"
+                        value={user.email}
+                        disabled={!canSave}
+                        onChange={(event) =>
+                          patchUser(user.userId, {
+                            email: event.target.value,
+                          })
+                        }
+                        className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60"
+                      />
+                    </label>
 
                     <label className="block w-full shrink-0 lg:w-28">
                       <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">

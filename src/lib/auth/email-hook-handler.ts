@@ -16,8 +16,8 @@ import {
 import { sendTemplatedAuthEmail } from "@/lib/auth/send-templated-email";
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import {
+  forcePublicSiteOrigin,
   getAuthEmailSiteUrl,
-  rewriteLocalOriginToPublicSite,
 } from "@/lib/site-url";
 
 type HookPayload = {
@@ -148,17 +148,13 @@ export async function handleAuthEmailHookPost(
   const { url: supabaseUrl } = getSupabasePublicConfig();
   const tokenHash = payload.email_data?.token_hash?.trim() ?? "";
   const publicSite = getAuthEmailSiteUrl();
-  const redirectTo = rewriteLocalOriginToPublicSite(
-    payload.email_data?.redirect_to?.trim() ?? "",
-    publicSite,
-  );
+  const redirectRaw = payload.email_data?.redirect_to?.trim() ?? "";
+  const redirectTo =
+    forcePublicSiteOrigin(redirectRaw, publicSite) ||
+    `${publicSite}/auth/callback?next=/anmelden`;
   /** Short OTP unused in mail body (kept empty for template placeholders). */
   const token = "";
-  const siteUrl =
-    rewriteLocalOriginToPublicSite(
-      payload.email_data?.site_url?.trim() || publicSite,
-      publicSite,
-    ) || publicSite;
+  const siteUrl = publicSite;
 
   const confirmationUrl = buildAuthConfirmationUrl({
     supabaseUrl,

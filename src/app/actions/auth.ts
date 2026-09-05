@@ -2,10 +2,12 @@
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { createClient } from "@/lib/supabase/server";
+import { buildAuthConfirmationUrl } from "@/lib/auth/email-templates";
 import {
   ensureAuthLinkUsesPublicSite,
   getAuthEmailSiteUrl,
 } from "@/lib/site-url";
+import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { assertBotGuard } from "@/lib/security/bot-guard";
 import type { ActionResult } from "@/lib/types/actions";
 import {
@@ -15,6 +17,30 @@ import {
   signInSchema,
   signUpSchema,
 } from "@/lib/validations/auth";
+
+/**
+ * Prefer a verify URL we control (`redirect_to` = public site) over GoTrue's
+ * `action_link`, which often embeds SITE_URL=localhost.
+ */
+function confirmationUrlFromGenerateLink(input: {
+  actionLink: string | undefined;
+  hashedToken: string | undefined;
+  emailActionType: string;
+  redirectTo: string;
+  siteUrl: string;
+}): string {
+  const tokenHash = input.hashedToken?.trim() ?? "";
+  if (tokenHash) {
+    const { url: supabaseUrl } = getSupabasePublicConfig();
+    return buildAuthConfirmationUrl({
+      supabaseUrl,
+      tokenHash,
+      emailActionType: input.emailActionType,
+      redirectTo: input.redirectTo,
+    });
+  }
+  return ensureAuthLinkUsesPublicSite(input.actionLink?.trim() || "", input.siteUrl);
+}
 
 /**
  * Starts an email/password session using Supabase Auth.
@@ -126,10 +152,13 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
   }
 
   const userId = linkData.user.id;
-  const confirmationUrl = ensureAuthLinkUsesPublicSite(
-    linkData.properties?.action_link?.trim() || "",
+  const confirmationUrl = confirmationUrlFromGenerateLink({
+    actionLink: linkData.properties?.action_link,
+    hashedToken: linkData.properties?.hashed_token,
+    emailActionType: "signup",
+    redirectTo,
     siteUrl,
-  );
+  });
 
   await adminClient.auth.admin.updateUserById(userId, {
     app_metadata: { role: "basis" },
@@ -268,10 +297,13 @@ export async function requestPasswordResetAction(
       templateId: "forget",
       values: {
         email,
-        confirmation_url: ensureAuthLinkUsesPublicSite(
-          linkData.properties.action_link,
+        confirmation_url: confirmationUrlFromGenerateLink({
+          actionLink: linkData.properties.action_link,
+          hashedToken: linkData.properties.hashed_token,
+          emailActionType: "recovery",
+          redirectTo,
           siteUrl,
-        ),
+        }),
         token: "",
         site_url: siteUrl,
         redirect_to: redirectTo,
