@@ -1,5 +1,5 @@
 import Image from "next/image";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import {
   BookMarked,
   BookOpen,
@@ -146,11 +146,14 @@ const trySteps = [
 
 /**
  * Marketing home: joy of reading + curiosity — not a school/learning-app pitch.
+ * Header is Suspense-wrapped so auth does not block streaming the LCP hero.
  */
 export function LandingPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
-      <AppHeader />
+      <Suspense fallback={<LandingHeaderFallback />}>
+        <AppHeader />
+      </Suspense>
       <main id="main">
         <HeroSection />
         <StepsSection />
@@ -165,6 +168,23 @@ export function LandingPage() {
       </main>
       <LandingFooter />
     </div>
+  );
+}
+
+/** Same height as sticky header — avoids CLS while auth resolves. */
+function LandingHeaderFallback() {
+  return (
+    <header className="sticky top-0 z-50 border-b border-zinc-950/10 bg-white/95 backdrop-blur-md">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+        <div className="flex items-center gap-2.5">
+          <span className="size-9 rounded-full bg-gray-100 sm:size-10" aria-hidden />
+          <span className="text-xl font-extrabold tracking-tight text-zinc-950">
+            leseno
+          </span>
+        </div>
+        <span className="h-9 w-28 rounded-full bg-gray-100" aria-hidden />
+      </div>
+    </header>
   );
 }
 
@@ -270,7 +290,7 @@ function StepsSection() {
                   <span className="flex size-11 items-center justify-center rounded-2xl bg-orange-700 text-white">
                     <Icon className="size-5" aria-hidden />
                   </span>
-                  <span className="text-sm font-extrabold text-zinc-500">
+                  <span className="text-sm font-extrabold text-zinc-700">
                     {step.number}
                   </span>
                 </div>
@@ -355,10 +375,12 @@ function MoodsSection() {
                 <Image
                   src={mood.image}
                   alt={mood.imageAlt}
-                  width={900}
-                  height={900}
+                  width={720}
+                  height={720}
                   className="aspect-square h-auto w-full object-cover"
-                  sizes="(max-width: 768px) 100vw, 33vw"
+                  // ~360px in 3-col max-w-6xl; avoid `33vw` (viewport) → wrongly picks 640w
+                  sizes="(max-width: 767px) calc(100vw - 2rem), 360px"
+                  quality={70}
                   loading="lazy"
                 />
                 <div className="bg-white p-6">

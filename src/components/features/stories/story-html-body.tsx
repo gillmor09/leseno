@@ -1,11 +1,12 @@
 /**
  * Renders story body HTML (already sanitized on the server) or plain text.
- * Illustration float/spacing lives in `globals.css` (`.story-html img.story-illustration*`).
+ * Illustration / Silben / TTS styles: `./story-html.css` (not in global LCP CSS).
  * TTS highlight wraps words under `[data-tts-root]` (see `tts-dom-highlight.ts`).
  */
 
 "use client";
 
+import "@/components/features/stories/story-html.css";
 import { cn } from "@/lib/utils";
 import { looksLikeHtml } from "@/lib/stories/looks-like-html";
 

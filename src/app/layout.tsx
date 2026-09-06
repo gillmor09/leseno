@@ -1,23 +1,27 @@
 import type { Metadata } from "next";
-import { Suspense } from "react";
-import { Nunito, Geist_Mono } from "next/font/google";
+import dynamic from "next/dynamic";
+import { Nunito } from "next/font/google";
 import { GoogleAnalytics } from "@/components/analytics/google-analytics";
 import { CaptureReferral } from "@/components/features/marketing/capture-referral";
-import { AppToaster } from "@/components/ui/app-toaster";
 import { getMetadataBaseUrl, SITE_NAME } from "@/lib/seo";
 import "./globals.css";
 
 const nunito = Nunito({
   variable: "--font-nunito",
   subsets: ["latin"],
+  // Only weights used in UI (regular / semibold / bold / extrabold).
+  weight: ["400", "600", "700", "800"],
   display: "swap",
+  preload: true,
+  adjustFontFallback: true,
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  display: "swap",
-});
+/** Toaster only on the client; keeps sonner out of the server RSC payload. */
+const AppToaster = dynamic(
+  () =>
+    import("@/components/ui/app-toaster").then((mod) => mod.AppToaster),
+  { ssr: false },
+);
 
 const defaultTitle =
   "leseno — Eigene Geschichten aus Spaß und Neugier";
@@ -79,20 +83,16 @@ export default function RootLayout({
   return (
     <html
       lang="de"
-      className={`${nunito.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${nunito.variable} h-full antialiased`}
     >
-      <head>
-        <GoogleAnalytics />
-      </head>
       <body className="flex min-h-full flex-col font-sans">
         <a href="#main" className="skip-link">
           Zum Inhalt springen
         </a>
-        <Suspense fallback={null}>
-          <CaptureReferral />
-        </Suspense>
+        <CaptureReferral />
         {children}
         <AppToaster />
+        <GoogleAnalytics />
       </body>
     </html>
   );

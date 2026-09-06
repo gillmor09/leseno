@@ -7,7 +7,6 @@
 
 import { useState } from "react";
 import { Check, Link2, MessageCircle, Share2 } from "lucide-react";
-import { toast } from "sonner";
 import {
   SHARE_BUTTON_INSTAGRAM,
   SHARE_BUTTON_LABEL,
@@ -20,6 +19,12 @@ import {
   SHARE_PAGE_TITLE,
 } from "@/lib/marketing/share-copy";
 import { cn } from "@/lib/utils";
+
+async function notify(kind: "success" | "error", message: string) {
+  const { toast } = await import("sonner");
+  if (kind === "success") toast.success(message);
+  else toast.error(message);
+}
 
 /** Lucide dropped brand icons — tiny Instagram glyph for the share button. */
 function InstagramGlyph({ className }: { className?: string }) {
@@ -77,10 +82,10 @@ export function ShareInviteButton({
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      toast.success(successMessage);
+      await notify("success", successMessage);
       window.setTimeout(() => setCopied(false), 2200);
     } catch {
-      toast.error("Konnte nicht in die Zwischenablage kopieren.");
+      await notify("error", "Konnte nicht in die Zwischenablage kopieren.");
     }
   }
 

@@ -10,7 +10,8 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  /* Geist Mono only loaded under /admin; fallback keeps font-mono usable elsewhere. */
+  --font-mono: var(--font-geist-mono, ui-monospace), monospace;
 }
 
 html {
@@ -84,75 +85,4 @@ select:focus-visible {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/**
- * Story illustrations: float wrap with 1rem gaps.
- * Image must be the first child of its wrapping <p> so text starts at the same top edge.
- */
-.story-html::after {
-  content: "";
-  display: table;
-  clear: both;
-}
-
-.story-html img.story-illustration {
-  display: block;
-  width: 256px;
-  max-width: min(256px, 100%);
-  height: auto;
-  border-radius: 1rem;
-  box-shadow:
-    0 4px 6px -1px rgb(0 0 0 / 0.1),
-    0 2px 4px -2px rgb(0 0 0 / 0.1);
-  margin-top: 1rem !important;
-  margin-bottom: 1rem !important;
-  vertical-align: top;
-}
-
-.story-html img.story-illustration--left {
-  float: left !important;
-  margin-right: 1rem !important;
-  margin-left: 0 !important;
-}
-
-.story-html img.story-illustration--right {
-  float: right !important;
-  margin-left: 1rem !important;
-  margin-right: 0 !important;
-}
-
-/* Same top edge for image + wrapping text: img is first child of the paragraph. */
-.story-html p:has(> img.story-illustration:first-child) {
-  margin-top: 0 !important;
-}
-
-/* Keep exactly 1rem to the content above (cancel previous paragraph bottom margin). */
-.story-html p:has(+ p > img.story-illustration:first-child) {
-  margin-bottom: 0 !important;
-}
-
-/**
- * Silbenhilfe (Erstlese-Zweifarbdruck): alternating syllable colors.
- * Markup: <span class="silbe silbe--a">…</span><span class="silbe silbe--b">…</span>
- */
-.story-html span.silbe--a {
-  color: #1d4ed8;
-}
-
-.story-html span.silbe--b {
-  color: #dc2626;
-}
-
-/**
- * TTS follow-along: current spoken word (Whisper timings).
- * Background sits on the word wrapper; silbe colors stay on inner spans.
- */
-.story-html .tts-word--active,
-[data-tts-root] .tts-word--active {
-  font-weight: 800;
-  background-color: color-mix(in oklab, #f97316 28%, transparent);
-  border-radius: 0.2em;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
 }

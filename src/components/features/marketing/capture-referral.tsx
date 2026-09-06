@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * Captures `?ref=` on first paint and stores it for signup attribution.
+ * Captures `?ref=` once on the client without `useSearchParams`
+ * (avoids an extra App Router client subscription on every page).
  */
 
 import { useEffect } from "react";
-import { useSearchParams } from "next/navigation";
 import {
   normalizeReferralCode,
   persistReferralCode,
@@ -13,16 +13,17 @@ import {
 } from "@/lib/marketing/referral";
 
 export function CaptureReferral() {
-  const searchParams = useSearchParams();
-
   useEffect(() => {
-    const code = normalizeReferralCode(
-      searchParams.get(REFERRAL_QUERY_PARAM),
-    );
-    if (code) {
-      persistReferralCode(code);
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const code = normalizeReferralCode(params.get(REFERRAL_QUERY_PARAM));
+      if (code) {
+        persistReferralCode(code);
+      }
+    } catch {
+      /* ignore */
     }
-  }, [searchParams]);
+  }, []);
 
   return null;
 }
