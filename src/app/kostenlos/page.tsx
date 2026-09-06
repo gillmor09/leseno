@@ -3,6 +3,7 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { FreeStoryForm } from "@/components/features/stories/free-story-form";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
+import { loadReadingTypographyDefaults } from "@/lib/stories/reading-typography-repository";
 import { TRIAL_MAX_STORIES_PER_IP_PER_DAY } from "@/lib/stories/trial-limits";
 import { buildPageMetadata } from "@/lib/seo";
 
@@ -18,7 +19,10 @@ export const metadata: Metadata = buildPageMetadata({
  * Limited grades/length, no images/TTS/PDF/fact-why, max 3 stories per IP/day.
  */
 export default async function KostenlosPage() {
-  const lengthCatalog = await loadStoryLengthCatalog();
+  const [lengthCatalog, typographyDefaults] = await Promise.all([
+    loadStoryLengthCatalog(),
+    loadReadingTypographyDefaults(),
+  ]);
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -42,7 +46,11 @@ export default async function KostenlosPage() {
             Bilder, Silbenhilfe, Vorlesen) je nach Paket auf /preise.
           </p>
           <div className="mt-10">
-            <FreeStoryForm lengthCatalog={lengthCatalog} trialMode />
+            <FreeStoryForm
+              lengthCatalog={lengthCatalog}
+              typographyDefaults={typographyDefaults}
+              trialMode
+            />
           </div>
         </section>
       </main>

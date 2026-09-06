@@ -9,6 +9,11 @@ import {
 } from "@/lib/stories/length";
 import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
 import { STORY_MOODS, STORY_SCHOOL_STAGES } from "@/lib/stories/options";
+import {
+  hasCustomReadingModePrefs,
+  normalizeReadingModePrefs,
+  type ReadingModePrefs,
+} from "@/lib/stories/reading-mode-prefs";
 import type {
   ChildProfile,
   ChildProfileFields,
@@ -69,6 +74,9 @@ function mapRow(row: Record<string, unknown>): ChildProfile {
     wordHighlight: asBool(row.word_highlight, false),
     readableAloud: asBool(row.readable_aloud, true),
     isDefault: asBool(row.is_default, false),
+    readingModePrefs: hasCustomReadingModePrefs(row.reading_mode_prefs)
+      ? normalizeReadingModePrefs(row.reading_mode_prefs)
+      : null,
     sortOrder:
       typeof row.sort_order === "number"
         ? row.sort_order
@@ -145,6 +153,25 @@ export async function deleteChildProfile(profileId: string): Promise<void> {
   const supabase = await createClient(null);
   const { error } = await supabase.rpc("delete_my_child_profile", {
     p_id: profileId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/**
+ * Persists Lesemodus typography prefs on an owned child profile.
+ * Pass `prefs: null` to clear the override (follow admin stage Standard).
+ */
+export async function saveChildReadingModePrefs(input: {
+  profileId: string;
+  prefs: ReadingModePrefs | null;
+}): Promise<void> {
+  const supabase = await createClient(null);
+  const { error } = await supabase.rpc("save_my_child_reading_mode_prefs", {
+    p_id: input.profileId,
+    p_prefs: input.prefs ? normalizeReadingModePrefs(input.prefs) : {},
   });
 
   if (error) {

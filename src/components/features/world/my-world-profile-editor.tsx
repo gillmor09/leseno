@@ -10,9 +10,21 @@ import { toast } from "sonner";
 import {
   deleteChildProfileAction,
   saveChildProfileAction,
+  saveChildReadingModePrefsAction,
 } from "@/app/actions/user-world";
+import { ReadingModePrefsControls } from "@/components/features/stories/reading-mode-prefs-controls";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import type { ChildProfile, ChildProfileFields } from "@/lib/world/catalog";
+import {
+  normalizeReadingModePrefs,
+  saveReadingModePrefs,
+  clearReadingModePrefs,
+  type ReadingModePrefs,
+} from "@/lib/stories/reading-mode-prefs";
+import {
+  typographyDefaultsForStage,
+  type ReadingTypographyDefaultsCatalog,
+} from "@/lib/stories/reading-typography-defaults";
 import {
   featuresInclude,
   type PackageFeatureId,
@@ -62,6 +74,9 @@ const LIST_COPY: Record<
 type MyWorldProfileEditorProps = {
   profileId: string | null;
   initialFields: ChildProfileFields;
+  /** Custom Lesemodus prefs; null = follow admin stage Standard. */
+  initialReadingModePrefs?: ReadingModePrefs | null;
+  typographyDefaults: ReadingTypographyDefaultsCatalog;
   onSaved: (profile: ChildProfile) => void;
   onDeleted?: (profileId: string) => void;
   canDelete?: boolean;
@@ -79,6 +94,8 @@ type MyWorldProfileEditorProps = {
 export function MyWorldProfileEditor({
   profileId,
   initialFields,
+  initialReadingModePrefs = null,
+  typographyDefaults,
   onSaved,
   onDeleted,
   canDelete = false,
@@ -86,7 +103,20 @@ export function MyWorldProfileEditor({
   onClaimDefault,
   enabledFeatures = [],
 }: MyWorldProfileEditorProps) {
+  const stageDefaultsFor = (stage: StorySchoolStageId) =>
+    normalizeReadingModePrefs(
+      typographyDefaultsForStage(typographyDefaults, stage),
+    );
+
   const [fields, setFields] = useState(initialFields);
+  const [followsStandard, setFollowsStandard] = useState(
+    () => initialReadingModePrefs == null,
+  );
+  const [readingPrefs, setReadingPrefs] = useState(() =>
+    normalizeReadingModePrefs(
+      initialReadingModePrefs ?? stageDefaultsFor(initialFields.schoolStage),
+    ),
+  );
   const [drafts, setDrafts] = useState<Record<ListKey, string>>({
     friends: "",
     interests: "",
@@ -98,9 +128,17 @@ export function MyWorldProfileEditor({
   const [deletePending, setDeletePending] = useState(false);
   const [defaultConfirmOpen, setDefaultConfirmOpen] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const allowLesemodus = featuresInclude(enabledFeatures, "lesemodus");
 
   useEffect(() => {
     setFields(initialFields);
+    const follows = initialReadingModePrefs == null;
+    setFollowsStandard(follows);
+    setReadingPrefs(
+      normalizeReadingModePrefs(
+        initialReadingModePrefs ?? stageDefaultsFor(initialFields.schoolStage),
+      ),
+    );
     setDrafts({ friends: "", interests: "", experiences: "", fears: "" });
     setFieldError(null);
     // Remount via key when switching profiles; avoid resetting while typing.
@@ -128,6 +166,16 @@ export function MyWorldProfileEditor({
     }));
   }
 
+  function handleReadingPrefsChange(next: ReadingModePrefs) {
+    setFollowsStandard(false);
+    setReadingPrefs(normalizeReadingModePrefs(next));
+  }
+
+  function handleResetReadingStandard() {
+    setFollowsStandard(true);
+    setReadingPrefs(stageDefaultsFor(fields.schoolStage));
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFieldError(null);
@@ -137,17 +185,45 @@ export function MyWorldProfileEditor({
       id: profileId,
       ...fields,
     });
-    setPending(false);
 
     if (!result.success || !result.data) {
+      setPending(false);
       setFieldError(result.error ?? "Speichern hat nicht geklappt.");
       toast.error(result.error ?? "Speichern hat nicht geklappt.");
       return;
     }
 
+    const savedId = result.data.id;
+    const prefsToSave = followsStandard
+      ? null
+      : normalizeReadingModePrefs(readingPrefs);
+
+    if (allowLesemodus) {
+      const prefsResult = await saveChildReadingModePrefsAction({
+        profileId: savedId,
+        prefs: prefsToSave,
+      });
+      if (!prefsResult.success) {
+        setPending(false);
+        setFieldError(
+          prefsResult.error ?? "Lesemodus-Darstellung speichern fehlgeschlagen.",
+        );
+        toast.error(
+          prefsResult.error ?? "Lesemodus-Darstellung speichern fehlgeschlagen.",
+        );
+        return;
+      }
+      if (prefsToSave) {
+        saveReadingModePrefs(prefsToSave, savedId);
+      } else {
+        clearReadingModePrefs(savedId);
+      }
+    }
+
+    setPending(false);
     toast.success("Profil gespeichert.");
     onSaved({
-      id: result.data.id,
+      id: savedId,
       displayName: fields.displayName.trim(),
       schoolStage: fields.schoolStage,
       lengthStep: fields.lengthStep,
@@ -161,6 +237,7 @@ export function MyWorldProfileEditor({
       wordHighlight: fields.wordHighlight,
       readableAloud: fields.readableAloud,
       isDefault: fields.isDefault,
+      readingModePrefs: prefsToSave,
       sortOrder: 0,
     });
   }
@@ -274,10 +351,16 @@ export function MyWorldProfileEditor({
                   key={stage.id}
                   type="button"
                   onClick={() =>
-                    setFields((current) => ({
-                      ...current,
-                      schoolStage: stage.id as StorySchoolStageId,
-                    }))
+                    setFields((current) => {
+                      const nextStage = stage.id as StorySchoolStageId;
+                      if (followsStandard) {
+                        setReadingPrefs(stageDefaultsFor(nextStage));
+                      }
+                      return {
+                        ...current,
+                        schoolStage: nextStage,
+                      };
+                    })
                   }
                   className={cn(
                     "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
@@ -445,7 +528,8 @@ export function MyWorldProfileEditor({
             Extras
           </p>
           <p className="mt-1 text-sm text-zinc-600">
-            Diese Einstellungen gelten für Geschichten mit diesem Profil.
+            Diese Einstellungen gelten für Geschichten mit diesem Profil — auch
+            beim Lesen in der Bücherei.
           </p>
           <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {(
@@ -534,6 +618,37 @@ export function MyWorldProfileEditor({
             </p>
           ) : null}
         </section>
+
+        {allowLesemodus ? (
+          <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
+            <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+              Lesemodus
+            </p>
+            <p className="mt-1 text-sm text-zinc-600">
+              Anpassung für den Vollbild-Lesemodus. Ohne eigene Werte gilt der
+              Admin-Standard der gewählten Schulstufe.
+            </p>
+            <ReadingModePrefsControls
+              prefs={readingPrefs}
+              onChange={handleReadingPrefsChange}
+            />
+            <button
+              type="button"
+              disabled={followsStandard}
+              onClick={handleResetReadingStandard}
+              className={cn(
+                "mt-5 w-full rounded-full px-4 py-2.5 text-sm font-bold transition-all duration-200 ease-in-out",
+                followsStandard
+                  ? "cursor-default bg-gray-50 text-zinc-400"
+                  : "bg-gray-100 text-zinc-950 ring-1 ring-zinc-950/10 hover:bg-gray-200",
+              )}
+            >
+              {followsStandard
+                ? "Aktuell: Standard (Schulstufe)"
+                : "Auf Standard zurücksetzen"}
+            </button>
+          </section>
+        ) : null}
 
         {fieldError ? (
           <p className="text-sm font-semibold text-orange-800">{fieldError}</p>

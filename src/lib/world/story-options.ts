@@ -32,6 +32,7 @@ export async function loadChildProfileOptionsForUser(
         wordHighlight: profile.wordHighlight,
         readableAloud: profile.readableAloud,
         isDefault: profile.isDefault,
+        readingModePrefs: profile.readingModePrefs,
       };
     });
   } catch (error) {

@@ -11,6 +11,7 @@ import {
   EMPTY_CHILD_PROFILE_FIELDS,
   type ChildProfile,
 } from "@/lib/world/catalog";
+import type { ReadingTypographyDefaultsCatalog } from "@/lib/stories/reading-typography-defaults";
 import type { PackageFeatureId } from "@/lib/users/packages";
 import { cn } from "@/lib/utils";
 
@@ -20,12 +21,14 @@ export function MyWorldManager({
   initialProfiles,
   allowFamily = true,
   enabledFeatures = [],
+  typographyDefaults,
 }: {
   initialProfiles: ChildProfile[];
   /** Package `meine_welt_familie`: allow a second+ child profile. */
   allowFamily?: boolean;
   /** Package features that unlock profile reading extras. */
   enabledFeatures?: readonly PackageFeatureId[];
+  typographyDefaults: ReadingTypographyDefaultsCatalog;
 }) {
   const [profiles, setProfiles] = useState(initialProfiles);
   const [activeTab, setActiveTab] = useState<TabId>(
@@ -87,7 +90,11 @@ export function MyWorldManager({
       if (exists) {
         return withClearedDefault.map((profile) =>
           profile.id === saved.id
-            ? { ...profile, ...saved, sortOrder: profile.sortOrder }
+            ? {
+                ...profile,
+                ...saved,
+                sortOrder: profile.sortOrder,
+              }
             : profile,
         );
       }
@@ -181,6 +188,8 @@ export function MyWorldManager({
           key={`new-${profiles.length}`}
           profileId={null}
           initialFields={newProfileFields}
+          initialReadingModePrefs={null}
+          typographyDefaults={typographyDefaults}
           otherDefaultName={otherDefaultName}
           onClaimDefault={claimDefault}
           onSaved={handleSaved}
@@ -206,6 +215,8 @@ export function MyWorldManager({
             readableAloud: activeProfile.readableAloud,
             isDefault: activeProfile.isDefault,
           }}
+          initialReadingModePrefs={activeProfile.readingModePrefs}
+          typographyDefaults={typographyDefaults}
           otherDefaultName={otherDefaultName}
           onClaimDefault={claimDefault}
           onSaved={handleSaved}
@@ -218,6 +229,8 @@ export function MyWorldManager({
           key={`fallback-new-${profiles.length}`}
           profileId={null}
           initialFields={newProfileFields}
+          initialReadingModePrefs={null}
+          typographyDefaults={typographyDefaults}
           otherDefaultName={otherDefaultName}
           onClaimDefault={claimDefault}
           onSaved={handleSaved}

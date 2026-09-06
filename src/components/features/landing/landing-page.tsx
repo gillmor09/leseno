@@ -7,6 +7,7 @@ import {
   BicepsFlexed,
   HelpCircle,
   ImageIcon,
+  Maximize2,
   Smile,
   Sparkles,
   Target,
@@ -87,6 +88,11 @@ const strengths = [
     icon: BookOpen,
   },
   {
+    title: "Lesemodus (Basis)",
+    text: "Geschichte und Warum-Fragen im Vollbild — Schriftgröße, Zeilen- und Zeichenabstand nach Bedarf.",
+    icon: Maximize2,
+  },
+  {
     title: "Meine Bücherei (Plus)",
     text: "Fertige Geschichten speichern, Favoriten setzen und später erneut lesen — alles an einem Ort.",
     icon: BookMarked,
@@ -118,7 +124,7 @@ const parentPoints = [
   "Kein Schulgefühl: eigene Abenteuer statt starrer Lesebücher oder Übungsblätter.",
   "Passend zum Kind: Sprache und Länge fühlen sich gut an — ohne Test- oder Notenstimmung.",
   "Neugier inklusive: echtes Wissen steckt mitten im Abenteuer; mit Pro gibt’s „Warum?“ zum Nachforschen.",
-  "Pakete nach Bedarf: Plus für Credits, Bücherei & PDF, Pro für Familie & Bilder, Ultimate für Silbenhilfe & Vorlesen.",
+  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits, Bücherei & PDF, Pro für Familie & Bilder, Ultimate für Silbenhilfe & Vorlesen.",
   "Meine Welt: ab Plus ein Kinderprofil, mit Pro beliebig viele unter einem Konto.",
   "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden.",
   "Weiterempfehlen leicht: Link teilen — Freundinnen starten kostenlos mit Basis.",
@@ -296,8 +302,9 @@ function StrengthsSection() {
           Alles, was Neugier und Leselust brauchen.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Geschichten, die pullen — und Aha-Momente unterwegs. Meine Bücherei,
-          Silbenhilfe, Vorlesen, Bilder und „Warum?“ findest du in den Paketen.
+          Geschichten, die pullen — und Aha-Momente unterwegs. Lesemodus, Meine
+          Bücherei, Silbenhilfe, Vorlesen, Bilder und „Warum?“ findest du in den
+          Paketen.
         </p>
         <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {strengths.map((item) => {
@@ -562,6 +569,13 @@ function PricingSection() {
                   aria-hidden
                 />
                 Erste eigene Geschichten
+              </li>
+              <li className="flex gap-2">
+                <Check
+                  className="mt-0.5 size-4 shrink-0 text-orange-700"
+                  aria-hidden
+                />
+                Lesemodus: Vollbild mit Schrift &amp; Abständen
               </li>
               <li className="flex gap-2">
                 <Check

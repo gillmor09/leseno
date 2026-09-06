@@ -17,6 +17,8 @@ import type {
   UserStoryDetail,
   UserStorySummary,
 } from "@/lib/stories/library-repository";
+import type { ReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
+import type { ReadingTypographyDefaultsCatalog } from "@/lib/stories/reading-typography-defaults";
 import { STORY_SCHOOL_STAGES } from "@/lib/stories/options";
 import {
   featuresInclude,
@@ -27,17 +29,28 @@ import { cn } from "@/lib/utils";
 
 type ProfileFilter = "all" | "free" | string;
 
+type LibraryProfileOption = {
+  id: string;
+  displayName: string;
+  readingModePrefs: ReadingModePrefs | null;
+  readableAloud: boolean;
+  wordHighlight: boolean;
+};
+
 export function StoryLibraryBrowser({
   initialStories,
   profileOptions,
   enabledFeatures,
+  typographyDefaults,
 }: {
   initialStories: UserStorySummary[];
-  /** Child profiles for filter chips (empty = no profile filter UI). */
-  profileOptions: { id: string; displayName: string }[];
+  /** Child profiles for filter chips + Lesemodus prefs. */
+  profileOptions: LibraryProfileOption[];
   enabledFeatures: readonly PackageFeatureId[];
+  typographyDefaults: ReadingTypographyDefaultsCatalog;
 }) {
   const [stories, setStories] = useState(initialStories);
+  const [profiles, setProfiles] = useState(profileOptions);
   const [filter, setFilter] = useState<ProfileFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedStory, setExpandedStory] = useState<UserStoryDetail | null>(
@@ -55,6 +68,7 @@ export function StoryLibraryBrowser({
   const allowPdf = featuresInclude(enabledFeatures, "export");
   const allowFactWhy = featuresInclude(enabledFeatures, "warum");
   const allowFactWhyMore = featuresInclude(enabledFeatures, "hintergrund");
+  const allowReadingMode = featuresInclude(enabledFeatures, "lesemodus");
 
   const filtered = useMemo(() => {
     if (filter === "all") return stories;
@@ -141,7 +155,7 @@ export function StoryLibraryBrowser({
     });
   }
 
-  const showProfileFilters = profileOptions.length > 0;
+  const showProfileFilters = profiles.length > 0;
 
   return (
     <div className="mt-10 space-y-4">
@@ -157,7 +171,7 @@ export function StoryLibraryBrowser({
             label="Freies lesen"
             onClick={() => setFilter("free")}
           />
-          {profileOptions.map((profile) => (
+          {profiles.map((profile) => (
             <FilterChip
               key={profile.id}
               active={filter === profile.id}
@@ -186,6 +200,9 @@ export function StoryLibraryBrowser({
               STORY_SCHOOL_STAGES.find(
                 (stage) => stage.id === story.schoolStage,
               )?.label ?? story.schoolStage;
+            const storyProfile = story.childProfileId
+              ? (profiles.find((p) => p.id === story.childProfileId) ?? null)
+              : null;
             const meta = [
               story.profileDisplayName
                 ? story.profileDisplayName
@@ -296,14 +313,33 @@ export function StoryLibraryBrowser({
                     facts={expandedStory.facts}
                     schoolStage={expandedStory.schoolStage}
                     readableAloud={
-                      allowVorlesen && FREE_READING_EXTRAS.readableAloud
+                      allowVorlesen &&
+                      (storyProfile?.readableAloud ??
+                        FREE_READING_EXTRAS.readableAloud)
                     }
                     wordHighlight={
-                      allowMarkierung && FREE_READING_EXTRAS.wordHighlight
+                      allowMarkierung &&
+                      (storyProfile?.wordHighlight ??
+                        FREE_READING_EXTRAS.wordHighlight)
                     }
                     allowPdfExport={allowPdf}
                     allowFactWhy={allowFactWhy}
                     allowFactWhyMore={allowFactWhyMore}
+                    allowReadingMode={allowReadingMode}
+                    readingProfileId={story.childProfileId}
+                    readingModePrefs={storyProfile?.readingModePrefs ?? null}
+                    typographyDefaults={typographyDefaults}
+                    onReadingModePrefsChange={(prefs) => {
+                      if (!story.childProfileId) return;
+                      const profileId = story.childProfileId;
+                      setProfiles((current) =>
+                        current.map((profile) =>
+                          profile.id === profileId
+                            ? { ...profile, readingModePrefs: prefs }
+                            : profile,
+                        ),
+                      );
+                    }}
                     eyebrow="Aus der Bücherei"
                     onClose={() => {
                       setExpandedId(null);

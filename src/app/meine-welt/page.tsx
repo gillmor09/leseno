@@ -8,6 +8,7 @@ import { STORY_PATH } from "@/lib/users/catalog";
 import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
 import { listMyChildProfiles } from "@/lib/world/repository";
+import { loadReadingTypographyDefaults } from "@/lib/stories/reading-typography-repository";
 
 export const metadata: Metadata = {
   title: "Meine Welt — Leseno",
@@ -32,6 +33,7 @@ export default async function MeineWeltPage() {
   }
 
   const allowFamily = featuresInclude(features, "meine_welt_familie");
+  const typographyDefaults = await loadReadingTypographyDefaults();
 
   let profiles: Awaited<ReturnType<typeof listMyChildProfiles>> = [];
   let loadError: string | null = null;
@@ -82,6 +84,7 @@ export default async function MeineWeltPage() {
                 initialProfiles={profiles}
                 allowFamily={allowFamily}
                 enabledFeatures={features}
+                typographyDefaults={typographyDefaults}
               />
             </div>
           )}

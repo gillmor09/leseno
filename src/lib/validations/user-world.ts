@@ -61,5 +61,19 @@ export const deleteChildProfileSchema = z.object({
   id: z.string().uuid({ message: "Ungültige Profil-ID." }),
 });
 
+export const saveChildReadingModePrefsSchema = z.object({
+  profileId: z.string().uuid({ message: "Ungültige Profil-ID." }),
+  /** null clears the override (admin stage Standard). */
+  prefs: z
+    .object({
+      fontScale: z.number().positive(),
+      lineHeight: z.number().positive(),
+      letterSpacingEm: z.number().min(0).max(0.2),
+      fontWeight: z.number().int().min(100).max(900),
+      contentMaxWidthRem: z.number().positive().max(80),
+    })
+    .nullable(),
+});
+
 /** @deprecated Use childProfileFieldsSchema */
 export const userWorldSchema = childProfileFieldsSchema;

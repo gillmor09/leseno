@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileDown, Loader2, Pause, Play, X } from "lucide-react";
+import { FileDown, Loader2, Maximize2, Pause, Play, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   synthesizeStorySpeechAction,
@@ -20,6 +20,7 @@ import {
 import { StoryFactsList } from "@/components/features/stories/story-facts-list";
 import { StoryHtmlBody } from "@/components/features/stories/story-html-body";
 import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
+import { StoryReadingMode } from "@/components/features/stories/story-reading-mode";
 import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
 import {
   exportFontSizeForSchoolStage,
@@ -27,7 +28,13 @@ import {
   buildStoryPdfBlob,
 } from "@/lib/stories/export-story-document";
 import { plainTextFromStoryHtml } from "@/lib/stories/plain-text-from-html";
+import type { ReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
+import { normalizeReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
 import type { StorySchoolStageId } from "@/lib/stories/options";
+import {
+  typographyDefaultsForStage,
+  type ReadingTypographyDefaultsCatalog,
+} from "@/lib/stories/reading-typography-defaults";
 import {
   clearActiveTtsWord,
   createTtsMediaClock,
@@ -39,6 +46,10 @@ import {
   type TtsMediaClock,
 } from "@/lib/stories/tts-dom-highlight";
 
+const CARD_STORY_CLASS =
+  "[&_h1]:mb-[0.75em] [&_h1]:text-[1.35em] [&_h1]:font-extrabold " +
+  "[&_h2]:font-extrabold [&_p]:mb-[0.85em]";
+
 export function StoryResultPanel({
   storyHtml,
   facts,
@@ -48,6 +59,11 @@ export function StoryResultPanel({
   allowPdfExport = false,
   allowFactWhy = false,
   allowFactWhyMore = false,
+  allowReadingMode = false,
+  readingProfileId = null,
+  readingModePrefs = null,
+  onReadingModePrefsChange,
+  typographyDefaults,
   eyebrow = "Deine Geschichte",
   inviteUserId = null,
   onClose,
@@ -60,6 +76,15 @@ export function StoryResultPanel({
   allowPdfExport?: boolean;
   allowFactWhy?: boolean;
   allowFactWhyMore?: boolean;
+  /** Package `lesemodus`: fullscreen reading with typography controls. */
+  allowReadingMode?: boolean;
+  /** Child profile that owns Lesemodus prefs (null = local only). */
+  readingProfileId?: string | null;
+  /** Profile Lesemodus override; null = stage Standard. */
+  readingModePrefs?: ReadingModePrefs | null;
+  onReadingModePrefsChange?: (prefs: ReadingModePrefs | null) => void;
+  /** Admin typography defaults per school stage (card + Lesemodus Standard). */
+  typographyDefaults: ReadingTypographyDefaultsCatalog;
   eyebrow?: string;
   /** When set, invite link includes a personal `?ref=` code. */
   inviteUserId?: string | null;
@@ -67,6 +92,7 @@ export function StoryResultPanel({
   onClose?: () => void;
 }) {
   const botGuard = useBotGuardFields();
+  const [readingModeOpen, setReadingModeOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
@@ -384,7 +410,15 @@ export function StoryResultPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only
   }, []);
 
-  const storyTextClass = storyBodyClassName(schoolStage);
+  const stageDefaults = normalizeReadingModePrefs(
+    typographyDefaultsForStage(typographyDefaults, schoolStage),
+  );
+  const cardStyle = {
+    fontSize: `${stageDefaults.fontScale}rem`,
+    lineHeight: stageDefaults.lineHeight,
+    letterSpacing: `${stageDefaults.letterSpacingEm}em`,
+    fontWeight: stageDefaults.fontWeight,
+  };
 
   return (
     <div className="relative grid gap-6">
@@ -395,7 +429,8 @@ export function StoryResultPanel({
       />
       <section
         aria-label={eyebrow}
-        className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
+        className="rounded-[1.75rem] bg-white p-6 text-zinc-800 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
+        style={cardStyle}
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
@@ -403,6 +438,18 @@ export function StoryResultPanel({
           </p>
           <div className="flex flex-col items-end gap-3 self-end sm:self-auto">
             <div className="flex items-center gap-2">
+              {allowReadingMode ? (
+                <button
+                  type="button"
+                  onClick={() => setReadingModeOpen(true)}
+                  disabled={!storyHtml}
+                  className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-white transition-all duration-200 ease-in-out hover:bg-zinc-900 disabled:opacity-70"
+                  aria-label="Lesemodus öffnen"
+                  title="Lesemodus"
+                >
+                  <Maximize2 className="size-5" aria-hidden />
+                </button>
+              ) : null}
               {readableAloud ? (
                 <>
                   <label
@@ -504,7 +551,8 @@ export function StoryResultPanel({
           <StoryHtmlBody
             key={storyHtml}
             content={storyHtml}
-            className={storyTextClass}
+            inheritTypography
+            className={CARD_STORY_CLASS}
           />
         </div>
       </section>
@@ -520,6 +568,22 @@ export function StoryResultPanel({
 
       {inviteUserId == null ? (
         <InviteFriendsCard variant="compact" />
+      ) : null}
+
+      {allowReadingMode ? (
+        <StoryReadingMode
+          open={readingModeOpen}
+          onClose={() => setReadingModeOpen(false)}
+          storyHtml={storyHtml}
+          facts={facts}
+          schoolStage={schoolStage}
+          allowFactWhy={allowFactWhy}
+          allowFactWhyMore={allowFactWhyMore}
+          profileId={readingProfileId}
+          customPrefs={readingModePrefs}
+          stageDefaults={stageDefaults}
+          onPrefsChange={onReadingModePrefsChange}
+        />
       ) : null}
 
       {isTtsLoading ? (
@@ -579,17 +643,4 @@ function TtsWaitOverlay({ wordHighlight }: { wordHighlight: boolean }) {
     </div>,
     document.body,
   );
-}
-
-function storyBodyClassName(stage: StorySchoolStageId): string {
-  if (stage === "vorschule") {
-    return "text-2xl leading-[1.9] tracking-wide sm:text-3xl [&_h1]:leading-snug [&_h1]:tracking-wide";
-  }
-  if (stage === "klasse_1") {
-    return "text-xl leading-[1.85] tracking-wide sm:text-2xl [&_h1]:leading-snug [&_h1]:tracking-wide";
-  }
-  if (stage === "klasse_2") {
-    return "text-xl sm:text-2xl";
-  }
-  return "text-lg sm:text-xl";
 }

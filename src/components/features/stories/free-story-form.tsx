@@ -27,6 +27,7 @@ import { trackUserActivity } from "@/lib/users/track-client";
 import { cn } from "@/lib/utils";
 import { StoryLengthSlider } from "@/components/features/stories/story-length-slider";
 import type { StoryLengthCatalog, StoryLengthStepId } from "@/lib/stories/length";
+import type { ReadingTypographyDefaultsCatalog } from "@/lib/stories/reading-typography-defaults";
 import { StoryResultPanel } from "@/components/features/stories/story-result-panel";
 import { ChildProfilePickerCard } from "@/components/features/stories/child-profile-picker-card";
 import type { ChildProfileOption } from "@/lib/world/catalog";
@@ -64,6 +65,7 @@ const moodIcons = {
  */
 export function FreeStoryForm({
   lengthCatalog,
+  typographyDefaults,
   childProfiles = null,
   trialMode = false,
   enabledFeatures = [],
@@ -72,6 +74,7 @@ export function FreeStoryForm({
   inviteUserId = null,
 }: {
   lengthCatalog: StoryLengthCatalog;
+  typographyDefaults: ReadingTypographyDefaultsCatalog;
   /**
    * Signed-in child profiles for the picker card (null = guest / hide card).
    * Selecting a ready profile starts a personal story from that world.
@@ -133,11 +136,16 @@ export function FreeStoryForm({
   const [lengthMoodOpen, setLengthMoodOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const botGuard = useBotGuardFields();
+  const [profiles, setProfiles] = useState(childProfiles);
+
+  useEffect(() => {
+    setProfiles(childProfiles);
+  }, [childProfiles]);
 
   const selectedProfile =
     selectedProfileId == null
       ? null
-      : (childProfiles?.find((profile) => profile.id === selectedProfileId) ??
+      : (profiles?.find((profile) => profile.id === selectedProfileId) ??
         null);
   const activeProfileId = selectedProfile?.id ?? null;
   /** Profile selection drives personal stories (no separate toggle). */
@@ -157,6 +165,7 @@ export function FreeStoryForm({
   const allowPdfExport = canFeature("export");
   const allowFactWhy = canFeature("warum");
   const allowFactWhyMore = canFeature("hintergrund");
+  const allowReadingMode = canFeature("lesemodus");
   const storyCreditCost = trialMode
     ? 0
     : storyCreditsForLength(lengthStep);
@@ -299,7 +308,7 @@ export function FreeStoryForm({
       });
       return;
     }
-    const next = childProfiles?.find((profile) => profile.id === profileId);
+    const next = profiles?.find((profile) => profile.id === profileId);
     if (!next) return;
     if (!next.personalReady) {
       setProfileGapDialog({
@@ -325,7 +334,7 @@ export function FreeStoryForm({
     <div className="grid items-start gap-8">
       {childProfiles !== null && !trialMode && !selectionCollapsed ? (
         <ChildProfilePickerCard
-          profiles={childProfiles}
+          profiles={profiles ?? []}
           selectedId={selectedProfileId}
           onSelect={handleProfileSelect}
           disabled={isPending}
@@ -645,6 +654,22 @@ export function FreeStoryForm({
           allowPdfExport={allowPdfExport}
           allowFactWhy={allowFactWhy}
           allowFactWhyMore={allowFactWhyMore}
+          allowReadingMode={allowReadingMode}
+          readingProfileId={activeProfileId}
+          readingModePrefs={selectedProfile?.readingModePrefs ?? null}
+          typographyDefaults={typographyDefaults}
+          onReadingModePrefsChange={(prefs) => {
+            if (!activeProfileId) return;
+            setProfiles((current) =>
+              current
+                ? current.map((profile) =>
+                    profile.id === activeProfileId
+                      ? { ...profile, readingModePrefs: prefs }
+                      : profile,
+                  )
+                : current,
+            );
+          }}
           inviteUserId={inviteUserId}
         />
       ) : null}

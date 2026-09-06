@@ -10,6 +10,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { requireAnyMembershipPage } from "@/lib/auth/require-membership";
 import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
+import { loadReadingTypographyDefaults } from "@/lib/stories/reading-typography-repository";
 import { loadMyCredits } from "@/lib/users/billing";
 import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
@@ -22,7 +23,10 @@ export async function MembershipStoryPage() {
   await requireAnyMembershipPage();
 
   const user = await getCurrentUser();
-  const lengthCatalog = await loadStoryLengthCatalog();
+  const [lengthCatalog, typographyDefaults] = await Promise.all([
+    loadStoryLengthCatalog(),
+    loadReadingTypographyDefaults(),
+  ]);
   const access = await loadPackageAccessForCurrentUser();
   const packageLabel = access?.label ?? "Basis";
   const enabledFeatures = access?.features ?? [];
@@ -49,6 +53,7 @@ export async function MembershipStoryPage() {
             creditsCheckoutEnabled={hasStripeCheckoutConfig()}
             allowMeineWelt={allowMeineWelt}
             lengthCatalog={lengthCatalog}
+            typographyDefaults={typographyDefaults}
             childProfiles={childProfiles}
             enabledFeatures={enabledFeatures}
             inviteUserId={user?.id ?? null}

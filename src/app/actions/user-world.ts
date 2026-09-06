@@ -4,14 +4,17 @@ import { revalidatePath } from "next/cache";
 import type { ActionResult } from "@/lib/types/actions";
 import { loadFeaturesForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
+import { normalizeReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
 import {
   deleteChildProfile,
   listMyChildProfiles,
   saveChildProfile,
+  saveChildReadingModePrefs,
 } from "@/lib/world/repository";
 import {
   deleteChildProfileSchema,
   saveChildProfileSchema,
+  saveChildReadingModePrefsSchema,
 } from "@/lib/validations/user-world";
 
 function revalidateWorldPaths() {
@@ -88,6 +91,56 @@ export async function saveChildProfileAction(
         error instanceof Error
           ? error.message
           : "Speichern hat nicht geklappt.",
+    };
+  }
+}
+
+/**
+ * Saves Lesemodus typography prefs onto a child profile (immediate, no full form).
+ * Requires `meine_welt` + `lesemodus`.
+ */
+export async function saveChildReadingModePrefsAction(
+  input: unknown,
+): Promise<ActionResult> {
+  const parsed = saveChildReadingModePrefsSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Darstellung ungültig.",
+    };
+  }
+
+  try {
+    const features = await loadFeaturesForCurrentUser();
+    if (!featuresInclude(features, "meine_welt")) {
+      return {
+        success: false,
+        error: "Meine Welt gehört nicht zu deinem Paket.",
+      };
+    }
+    if (!featuresInclude(features, "lesemodus")) {
+      return {
+        success: false,
+        error: "Lesemodus gehört nicht zu deinem Paket.",
+      };
+    }
+
+    await saveChildReadingModePrefs({
+      profileId: parsed.data.profileId,
+      prefs: parsed.data.prefs
+        ? normalizeReadingModePrefs(parsed.data.prefs)
+        : null,
+    });
+    // Soft cache only — avoid bouncing story/world pages on every typography nudge.
+    return { success: true };
+  } catch (error) {
+    console.error("[saveChildReadingModePrefsAction]", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Darstellung speichern fehlgeschlagen.",
     };
   }
 }

@@ -5,6 +5,8 @@ import { AppHeader } from "@/components/features/landing/app-header";
 import { StoryLibraryBrowser } from "@/components/features/stories/story-library-browser";
 import { requireAnyMembershipPage } from "@/lib/auth/require-membership";
 import { listMyStories } from "@/lib/stories/library-repository";
+import type { ReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
+import { loadReadingTypographyDefaults } from "@/lib/stories/reading-typography-repository";
 import { STORY_PATH } from "@/lib/users/catalog";
 import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
@@ -30,6 +32,7 @@ export default async function MeineBuechereiPage() {
   }
 
   const allowMeineWelt = featuresInclude(features, "meine_welt");
+  const typographyDefaults = await loadReadingTypographyDefaults();
 
   let stories: Awaited<ReturnType<typeof listMyStories>> = [];
   let loadError: string | null = null;
@@ -42,13 +45,22 @@ export default async function MeineBuechereiPage() {
     loadError = `Die Bücherei konnte nicht geladen werden: ${detail}`;
   }
 
-  let profileOptions: { id: string; displayName: string }[] = [];
+  let profileOptions: {
+    id: string;
+    displayName: string;
+    readingModePrefs: ReadingModePrefs | null;
+    readableAloud: boolean;
+    wordHighlight: boolean;
+  }[] = [];
   if (allowMeineWelt) {
     try {
       const profiles = await listMyChildProfiles();
       profileOptions = profiles.map((profile) => ({
         id: profile.id,
         displayName: profile.displayName,
+        readingModePrefs: profile.readingModePrefs,
+        readableAloud: profile.readableAloud,
+        wordHighlight: profile.wordHighlight,
       }));
     } catch {
       profileOptions = [];
@@ -81,6 +93,7 @@ export default async function MeineBuechereiPage() {
               initialStories={stories}
               profileOptions={profileOptions}
               enabledFeatures={features}
+              typographyDefaults={typographyDefaults}
             />
           )}
         </section>

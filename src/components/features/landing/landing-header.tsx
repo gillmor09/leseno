@@ -130,6 +130,7 @@ export function LandingHeader({
     { href: "/admin/kontakt", label: "Kontaktanfragen" },
     { href: "/admin/pakete", label: "Pakete" },
     { href: "/admin/textlaenge", label: "Textlängen" },
+    { href: "/admin/schrifteinstellung", label: "Schrifteinstellung" },
     { href: "/admin/ki-modelle", label: "KI-Modelle" },
     { href: "/admin/prompts", label: "Prompts" },
     { href: "/admin/emails", label: "Auth-E-Mails" },

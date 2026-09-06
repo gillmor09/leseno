@@ -9,6 +9,7 @@ import { InviteFriendsCard } from "@/components/features/marketing/invite-friend
 import { CreditsCheckoutButton } from "@/components/features/pricing/pricing-checkout-buttons";
 import { FreeStoryForm } from "@/components/features/stories/free-story-form";
 import type { StoryLengthCatalog } from "@/lib/stories/length";
+import type { ReadingTypographyDefaultsCatalog } from "@/lib/stories/reading-typography-defaults";
 import type { PackageFeatureId } from "@/lib/users/packages";
 import type { ChildProfileOption } from "@/lib/world/catalog";
 
@@ -18,6 +19,7 @@ export function GeschichteComposer({
   creditsCheckoutEnabled,
   allowMeineWelt,
   lengthCatalog,
+  typographyDefaults,
   childProfiles,
   enabledFeatures,
   inviteUserId = null,
@@ -27,6 +29,7 @@ export function GeschichteComposer({
   creditsCheckoutEnabled: boolean;
   allowMeineWelt: boolean;
   lengthCatalog: StoryLengthCatalog;
+  typographyDefaults: ReadingTypographyDefaultsCatalog;
   childProfiles: ChildProfileOption[] | null;
   enabledFeatures: readonly PackageFeatureId[];
   inviteUserId?: string | null;
@@ -68,6 +71,7 @@ export function GeschichteComposer({
       <div className="mt-10">
         <FreeStoryForm
           lengthCatalog={lengthCatalog}
+          typographyDefaults={typographyDefaults}
           childProfiles={childProfiles}
           enabledFeatures={enabledFeatures}
           initialCredits={credits}

@@ -12,6 +12,7 @@ import {
 
 /** Feature rows for the comparison matrix (order = scan order for parents). */
 export const PACKAGE_COMPARE_FEATURE_IDS: PackageFeatureId[] = [
+  "lesemodus",
   "meine_welt",
   "meine_welt_familie",
   "buecherei",
@@ -27,6 +28,7 @@ export const PACKAGE_COMPARE_FEATURE_IDS: PackageFeatureId[] = [
 export const PACKAGE_COMPARE_FEATURE_HINTS: Partial<
   Record<PackageFeatureId, string>
 > = {
+  lesemodus: "Vollbild mit Schrift & Abständen",
   meine_welt: "Persönliches Kinderprofil",
   meine_welt_familie: "Mehrere Kinder-Profile",
   buecherei: "Geschichten speichern & erneut lesen",
@@ -60,6 +62,9 @@ export function marketingBulletsForPackage(pkg: MembershipPackage): string[] {
     const bullets: string[] = [
       "Alles aus Pro (Familie, Bücherei, Bilder, Warum)",
     ];
+    if (packageHasFeature(pkg, "lesemodus")) {
+      bullets.push("Lesemodus: Vollbild mit Schrift & Abständen");
+    }
     if (pkg.credits > 0) {
       const sehrKurz = Math.floor(pkg.credits / 10);
       const mittel = Math.floor(pkg.credits / 30);
@@ -93,6 +98,10 @@ export function marketingBulletsForPackage(pkg: MembershipPackage): string[] {
   }
 
   const bullets: string[] = [];
+
+  if (packageHasFeature(pkg, "lesemodus")) {
+    bullets.push("Lesemodus: Vollbild mit Schrift & Abständen");
+  }
 
   if (pkg.credits > 0) {
     const sehrKurz = Math.floor(pkg.credits / 10);
@@ -148,7 +157,7 @@ export function marketingTaglineForPackage(pkg: MembershipPackage): string {
 
 export function marketingBlurbForPackage(pkg: MembershipPackage): string {
   if (pkg.id === "basis") {
-    return "Konto anlegen und Geschichten erzeugen — Extra-Funktionen schaltest du mit Plus, Pro oder Ultimate frei.";
+    return "Konto anlegen, Geschichten erzeugen und im Lesemodus fullscreen lesen — weitere Extras mit Plus, Pro oder Ultimate.";
   }
   return PAID_BLURBS[pkg.id];
 }

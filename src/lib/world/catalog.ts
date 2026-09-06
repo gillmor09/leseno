@@ -4,8 +4,11 @@
  * `fears` = "Davor habe ich Angst".
  * Extras: Bilder, Silbenhilfe, Wort-Markierung, Vorlesbar (`readableAloud`).
  * Story defaults: schoolStage, lengthStep, mood.
+ * Lesemodus: `readingModePrefs` (typography + column width).
  */
 
+import type { ReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
+import { READING_MODE_DEFAULTS } from "@/lib/stories/reading-mode-prefs";
 import type { StoryLengthStepId } from "@/lib/stories/length";
 import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
 
@@ -26,11 +29,16 @@ export type ChildProfile = {
   readableAloud: boolean;
   /** Story composer starts with this profile (at most one per user). */
   isDefault: boolean;
+  /** Lesemodus override; null = follow admin stage Standard. */
+  readingModePrefs: ReadingModePrefs | null;
   sortOrder: number;
 };
 
 /** Profile fields without id (create draft / form body). */
-export type ChildProfileFields = Omit<ChildProfile, "id" | "sortOrder">;
+export type ChildProfileFields = Omit<
+  ChildProfile,
+  "id" | "sortOrder" | "readingModePrefs"
+>;
 
 /** Lightweight row for story-page tabs + extras applied on select. */
 export type ChildProfileOption = {
@@ -48,6 +56,8 @@ export type ChildProfileOption = {
   wordHighlight: boolean;
   readableAloud: boolean;
   isDefault: boolean;
+  /** null = follow admin stage Standard in Lesemodus. */
+  readingModePrefs: ReadingModePrefs | null;
 };
 
 /** Defaults for Freies lesen (no profile). */
@@ -74,6 +84,9 @@ export const EMPTY_CHILD_PROFILE_FIELDS: ChildProfileFields = {
   /** New profiles are the default until the user turns it off. */
   isDefault: true,
 };
+
+/** @deprecated Prefer READING_MODE_DEFAULTS from reading-mode-prefs. */
+export const DEFAULT_READING_MODE_PREFS = READING_MODE_DEFAULTS;
 
 /** Alias used by personal-story helpers (same shape as form fields). */
 export type UserWorldProfile = ChildProfileFields;
