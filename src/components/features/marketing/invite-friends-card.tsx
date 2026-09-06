@@ -1,9 +1,9 @@
 /**
  * Invite / Empfehlung card for landing, story result, and membership pages.
- * Server component — only the share button is a client island.
+ * Server component — share button is a deferred client island.
  */
 
-import { ShareInviteButton } from "@/components/features/marketing/share-invite-button";
+import { LazyShareInviteButton } from "@/components/features/marketing/lazy-share-invite-button";
 import {
   buildInviteUrl,
   referralCodeFromUserId,
@@ -37,7 +37,7 @@ export function InviteFriendsCard({
         <p className="text-sm font-semibold leading-relaxed text-orange-950">
           {SHARE_AFTER_STORY_HINT}
         </p>
-        <ShareInviteButton
+        <LazyShareInviteButton
           url={url}
           variant="ghost"
           showChannels
@@ -67,7 +67,7 @@ export function InviteFriendsCard({
           Instagram erlaubt keine Direkt-Links von Websites.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3">
-          <ShareInviteButton url={url} variant="primary" showChannels />
+          <LazyShareInviteButton url={url} variant="primary" showChannels />
           <a
             href="/registrieren"
             className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-bold text-zinc-950 transition-all duration-200 ease-in-out hover:bg-gray-100"

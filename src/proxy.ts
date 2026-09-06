@@ -27,7 +27,11 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  const response = NextResponse.next({ request });
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", request.nextUrl.pathname);
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
 
   try {
     const { url, anonKey } = getSupabasePublicConfig();
