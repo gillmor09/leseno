@@ -65,7 +65,7 @@ const LIST_COPY: Record<
   },
   fears: {
     title: "Davor habe ich Angst",
-    hint: "Was macht deinem Kind Sorgen? z. B. Dunkelheit, Gewitter, Alleinsein …",
+    hint: "Was macht deinem Kind Sorgen? Standard: kommt nicht in Geschichten vor. Optional unten „Sanft einbauen“ für spannende/motivierende Geschichten.",
     placeholder: "z. B. Gewitter",
     addLabel: "Angst hinzufügen",
   },
@@ -232,6 +232,7 @@ export function MyWorldProfileEditor({
       interests: fields.interests,
       experiences: fields.experiences,
       fears: fields.fears,
+      fearsGentle: fields.fearsGentle,
       includeImages: fields.includeImages,
       syllableHelp: fields.syllableHelp,
       wordHighlight: fields.wordHighlight,
@@ -519,6 +520,44 @@ export function MyWorldProfileEditor({
                   {copy.addLabel}
                 </button>
               </div>
+
+              {key === "fears" ? (
+                <div className="mt-5 flex items-center justify-between gap-3 rounded-xl bg-gray-100 px-3 py-3 ring-1 ring-zinc-950/10">
+                  <div className="min-w-0">
+                    <p className="text-xs font-extrabold text-zinc-950">
+                      Sanft einbauen
+                    </p>
+                    <p className="text-[0.65rem] leading-snug text-zinc-600">
+                      Nur bei spannenden und motivierenden Geschichten: eine
+                      Angst zufällig und ganz leicht einweben — sonst weiter
+                      meiden.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={fields.fearsGentle}
+                    onClick={() =>
+                      setFields((current) => ({
+                        ...current,
+                        fearsGentle: !current.fearsGentle,
+                      }))
+                    }
+                    className={cn(
+                      "relative h-6 w-10 shrink-0 rounded-full transition-all duration-200 ease-in-out",
+                      fields.fearsGentle ? "bg-yellow-400" : "bg-zinc-300",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-all duration-200 ease-in-out",
+                        fields.fearsGentle && "translate-x-4",
+                      )}
+                    />
+                    <span className="sr-only">Sanft einbauen</span>
+                  </button>
+                </div>
+              ) : null}
             </section>
           );
         })}

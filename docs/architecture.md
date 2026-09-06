@@ -31,7 +31,7 @@ Personal mode: topic/cast resolved **server-side** from the selected `child_prof
 - `/admin/*`: `src/app/admin/layout.tsx` + `denyUnlessAdmin()` on write actions  
 - Prompt/model catalogs: **service role only** (not anon) — see migration `20260904120000_restrict_prompt_catalog_rpc.sql`
 - Auth emails: templates in `leseno.auth_email_templates`; hooks at `/hooks/auth/send-email` (unified), `/hooks/auth/register` (signup), `/hooks/auth/forget` (recovery). Env: `AUTH_EMAIL_HOOK_SECRET`, `SMTP_*`.
-- Billing / usage: `user_profiles.credits`; `membership_packages` (Admin `/admin/pakete`); `user_package_bookings`; `user_activities`. **Stripe Checkout** (card + PayPal): `/preise` → Checkout; webhook `/api/stripe/webhook` syncs role + credits — see [docs/stripe.md](stripe.md).
+- Billing / usage: `user_profiles.credits`; `membership_packages` (Admin `/admin/pakete`); `user_package_bookings`; `credit_grants` (monthly invoice grants); `user_activities`. **Stripe Checkout** (card + PayPal): `/preise` → Checkout; webhook `/api/stripe/webhook` syncs role + monthly credits on anniversary — see [docs/stripe.md](stripe.md) and [docs/billing.md](billing.md).
 
 ## Meine Welt
 

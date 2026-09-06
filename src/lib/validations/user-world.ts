@@ -46,6 +46,7 @@ export const childProfileFieldsSchema = z.object({
   fears: z
     .array(listItemSchema)
     .max(50, "Maximal 50 Einträge unter „Davor habe ich Angst“."),
+  fearsGentle: z.boolean().default(false),
   includeImages: z.boolean(),
   syllableHelp: z.boolean(),
   wordHighlight: z.boolean(),

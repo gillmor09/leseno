@@ -52,6 +52,32 @@ export type StoryGenerateInput = {
   includeImages?: boolean;
 };
 
+/** Continuation of an existing story (skips facts research). */
+export type StoryContinueInput = {
+  previousStoryHtml: string;
+  topic: string;
+  schoolStage: StorySchoolStageId;
+  lengthStep: StoryLengthStepId;
+  mood: StoryMoodId;
+  personal?: PersonalStoryContext | null;
+  syllableHelp?: boolean;
+  includeImages?: boolean;
+};
+
+/** One Advent calendar day (1–24), chained via previous day HTML. */
+export type StoryAdventDayInput = {
+  adventDay: number;
+  adventYear: number;
+  previousStoryHtml: string;
+  topic: string;
+  schoolStage: StorySchoolStageId;
+  lengthStep: StoryLengthStepId;
+  mood: StoryMoodId;
+  personal?: PersonalStoryContext | null;
+  syllableHelp?: boolean;
+  includeImages?: boolean;
+};
+
 export type StoryGenerateResult = {
   story: string;
   facts: string[];
@@ -294,7 +320,7 @@ function buildFactsBlock(facts: string[]): string {
 
 function resolveLengthContext(
   catalog: StoryLengthCatalog,
-  input: StoryGenerateInput,
+  input: Pick<StoryGenerateInput, "schoolStage" | "lengthStep">,
 ) {
   const limit = findLengthLimit(
     catalog,
@@ -568,6 +594,353 @@ export async function generateStoryPipeline(
     factCount,
     wordRange,
     factsModelId: factsModel.id,
+    storyModelId: storyModel.id,
+    imagesModelId: imagesModel.id,
+    layoutModelId: layoutModel.id,
+    imageCount: illustrations.length,
+  };
+}
+
+/**
+ * Writes a continuation from selection fields + full previous story HTML.
+ * Uses prompt `story-continue`; skips facts research.
+ */
+export async function generateContinuationPipeline(
+  input: StoryContinueInput,
+): Promise<StoryGenerateResult> {
+  const previousHtml = input.previousStoryHtml.trim();
+  if (!previousHtml) {
+    throw new UserFacingError("Die Vorgeschichte fehlt.");
+  }
+
+  const [lengthCatalog, promptCatalog] = await Promise.all([
+    loadStoryLengthCatalog(),
+    loadPromptCatalogSafe(),
+  ]);
+
+  const includeImages = input.includeImages === true;
+  const { factCount, wordRange, imageCount } = resolveLengthContext(
+    lengthCatalog,
+    input,
+  );
+
+  const storyTemplate = requireTemplate(promptCatalog, "story-continue");
+  const storyModel = resolveModel(
+    promptCatalog,
+    storyTemplate.modelId,
+    storyTemplate.label,
+  );
+
+  const sharedValues = {
+    topic: input.topic,
+    school_stage: labelForSchoolStage(input.schoolStage),
+    story_mood: moodPromptValue(input.mood),
+    length_step: labelForLengthStep(input.lengthStep),
+    fact_count: factCount,
+    target_word_count: wordRange,
+    previous_story_html: previousHtml,
+    personal_block: input.personal
+      ? buildPersonalPromptBlock(input.personal)
+      : "",
+    protagonist_name: input.personal?.protagonistName ?? "",
+    friends_list: input.personal?.friendNames.join(", ") ?? "",
+    syllable_help_block: buildSyllableHelpPromptBlock(
+      Boolean(input.syllableHelp),
+    ),
+  };
+
+  if (!includeImages) {
+    const storyHtmlRaw = stripCodeFence(
+      await generateText({
+        model: storyModel,
+        systemInstruction: fillPromptTemplate(
+          storyTemplate.systemTemplate,
+          sharedValues,
+        ),
+        userText: fillPromptTemplate(storyTemplate.userTemplate, sharedValues),
+        preferJson: false,
+      }),
+    );
+
+    if (!storyHtmlRaw.trim()) {
+      throw new UserFacingError("Die Fortsetzung kam leer zurück.");
+    }
+
+    const withSyllables = input.syllableHelp
+      ? applySyllableHelpMarkup(storyHtmlRaw)
+      : storyHtmlRaw;
+    const story = sanitizeStoryHtml(withSyllables);
+    if (!story.trim()) {
+      throw new UserFacingError("Die Fortsetzung kam leer zurück.");
+    }
+
+    return {
+      story,
+      facts: [],
+      factCount: 0,
+      wordRange,
+      factsModelId: "",
+      storyModelId: storyModel.id,
+      imagesModelId: "",
+      layoutModelId: "",
+      imageCount: 0,
+    };
+  }
+
+  const layoutTemplate = requireTemplate(promptCatalog, "story-layout");
+  const imagesModel = resolveImagesModel(promptCatalog);
+  const layoutModel = resolveModel(
+    promptCatalog,
+    layoutTemplate.modelId,
+    layoutTemplate.label,
+  );
+
+  const fluxPlans = buildFluxIllustrationPlans({
+    topic: input.topic,
+    schoolStageLabel: sharedValues.school_stage,
+    moodId: input.mood,
+    moodLabel: labelForMood(input.mood),
+    facts: [],
+    imageCount,
+    protagonistName: input.personal?.protagonistName,
+    friendNames: input.personal?.friendNames,
+  });
+
+  const fluxModelSlug =
+    imagesModel.provider.trim().toLowerCase() === "ionos-image"
+      ? imagesModel.modelSlug
+      : getIonosImageModelSlug();
+
+  const [storyHtmlRaw, illustrations] = await Promise.all([
+    generateText({
+      model: storyModel,
+      systemInstruction: fillPromptTemplate(
+        storyTemplate.systemTemplate,
+        sharedValues,
+      ),
+      userText: fillPromptTemplate(storyTemplate.userTemplate, sharedValues),
+      preferJson: false,
+    }).then((text) => stripCodeFence(text)),
+    generateIllustrationPixels(fluxPlans, fluxModelSlug),
+  ]);
+
+  if (!storyHtmlRaw.trim()) {
+    throw new UserFacingError("Die Fortsetzung kam leer zurück.");
+  }
+  if (illustrations.length === 0) {
+    throw new UserFacingError(
+      "Es konnten keine Illustrationen erzeugt werden.",
+    );
+  }
+
+  const layoutValues = {
+    ...sharedValues,
+    story_html: storyHtmlRaw,
+    images_manifest: buildImagesManifest(illustrations),
+  };
+
+  const layoutRaw = await generateText({
+    model: layoutModel,
+    systemInstruction: fillPromptTemplate(
+      layoutTemplate.systemTemplate,
+      layoutValues,
+    ),
+    userText: fillPromptTemplate(layoutTemplate.userTemplate, layoutValues),
+    preferJson: false,
+  });
+
+  const withImages = resolveIllustrationPlaceholders(layoutRaw, illustrations);
+  const withSyllables = input.syllableHelp
+    ? applySyllableHelpMarkup(withImages)
+    : withImages;
+  const story = sanitizeStoryHtml(withSyllables);
+  if (!story.trim()) {
+    throw new UserFacingError("Die Fortsetzung kam leer zurück.");
+  }
+
+  return {
+    story,
+    facts: [],
+    factCount: 0,
+    wordRange,
+    factsModelId: "",
+    storyModelId: storyModel.id,
+    imagesModelId: imagesModel.id,
+    layoutModelId: layoutModel.id,
+    imageCount: illustrations.length,
+  };
+}
+
+/**
+ * Writes one Advent calendar chapter (prompt `story-advent-day`).
+ * Day 1 uses empty previous HTML; later days receive the prior day in full.
+ */
+export async function generateAdventDayPipeline(
+  input: StoryAdventDayInput,
+): Promise<StoryGenerateResult> {
+  if (input.adventDay < 1 || input.adventDay > 24) {
+    throw new UserFacingError("Ungültiger Adventstag.");
+  }
+
+  const [lengthCatalog, promptCatalog] = await Promise.all([
+    loadStoryLengthCatalog(),
+    loadPromptCatalogSafe(),
+  ]);
+
+  const includeImages = input.includeImages === true;
+  const { factCount, wordRange, imageCount } = resolveLengthContext(
+    lengthCatalog,
+    input,
+  );
+
+  const storyTemplate = requireTemplate(promptCatalog, "story-advent-day");
+  const storyModel = resolveModel(
+    promptCatalog,
+    storyTemplate.modelId,
+    storyTemplate.label,
+  );
+
+  const previousHtml =
+    input.adventDay === 1
+      ? "(Noch keine Vorgeschichte — das ist der 1. Adventstag. Beginne die Rahmenhandlung.)"
+      : input.previousStoryHtml.trim() ||
+        "(Vorgeschichte fehlt — knüpfe trotzdem an ein Adventskalenderbuch an.)";
+
+  const sharedValues = {
+    advent_day: String(input.adventDay),
+    advent_year: String(input.adventYear),
+    topic: input.topic,
+    school_stage: labelForSchoolStage(input.schoolStage),
+    story_mood: moodPromptValue(input.mood),
+    length_step: labelForLengthStep(input.lengthStep),
+    fact_count: factCount,
+    target_word_count: wordRange,
+    previous_story_html: previousHtml,
+    personal_block: input.personal
+      ? buildPersonalPromptBlock(input.personal)
+      : "",
+    protagonist_name: input.personal?.protagonistName ?? "",
+    friends_list: input.personal?.friendNames.join(", ") ?? "",
+    syllable_help_block: buildSyllableHelpPromptBlock(
+      Boolean(input.syllableHelp),
+    ),
+  };
+
+  if (!includeImages) {
+    const storyHtmlRaw = stripCodeFence(
+      await generateText({
+        model: storyModel,
+        systemInstruction: fillPromptTemplate(
+          storyTemplate.systemTemplate,
+          sharedValues,
+        ),
+        userText: fillPromptTemplate(storyTemplate.userTemplate, sharedValues),
+        preferJson: false,
+      }),
+    );
+
+    if (!storyHtmlRaw.trim()) {
+      throw new UserFacingError("Der Adventstag kam leer zurück.");
+    }
+
+    const withSyllables = input.syllableHelp
+      ? applySyllableHelpMarkup(storyHtmlRaw)
+      : storyHtmlRaw;
+    const story = sanitizeStoryHtml(withSyllables);
+    if (!story.trim()) {
+      throw new UserFacingError("Der Adventstag kam leer zurück.");
+    }
+
+    return {
+      story,
+      facts: [],
+      factCount: 0,
+      wordRange,
+      factsModelId: "",
+      storyModelId: storyModel.id,
+      imagesModelId: "",
+      layoutModelId: "",
+      imageCount: 0,
+    };
+  }
+
+  const layoutTemplate = requireTemplate(promptCatalog, "story-layout");
+  const imagesModel = resolveImagesModel(promptCatalog);
+  const layoutModel = resolveModel(
+    promptCatalog,
+    layoutTemplate.modelId,
+    layoutTemplate.label,
+  );
+
+  const fluxPlans = buildFluxIllustrationPlans({
+    topic: input.topic,
+    schoolStageLabel: sharedValues.school_stage,
+    moodId: input.mood,
+    moodLabel: labelForMood(input.mood),
+    facts: [],
+    imageCount,
+    protagonistName: input.personal?.protagonistName,
+    friendNames: input.personal?.friendNames,
+  });
+
+  const fluxModelSlug =
+    imagesModel.provider.trim().toLowerCase() === "ionos-image"
+      ? imagesModel.modelSlug
+      : getIonosImageModelSlug();
+
+  const [storyHtmlRaw, illustrations] = await Promise.all([
+    generateText({
+      model: storyModel,
+      systemInstruction: fillPromptTemplate(
+        storyTemplate.systemTemplate,
+        sharedValues,
+      ),
+      userText: fillPromptTemplate(storyTemplate.userTemplate, sharedValues),
+      preferJson: false,
+    }).then((text) => stripCodeFence(text)),
+    generateIllustrationPixels(fluxPlans, fluxModelSlug),
+  ]);
+
+  if (!storyHtmlRaw.trim()) {
+    throw new UserFacingError("Der Adventstag kam leer zurück.");
+  }
+  if (illustrations.length === 0) {
+    throw new UserFacingError(
+      "Es konnten keine Illustrationen erzeugt werden.",
+    );
+  }
+
+  const layoutValues = {
+    ...sharedValues,
+    story_html: storyHtmlRaw,
+    images_manifest: buildImagesManifest(illustrations),
+  };
+
+  const layoutRaw = await generateText({
+    model: layoutModel,
+    systemInstruction: fillPromptTemplate(
+      layoutTemplate.systemTemplate,
+      layoutValues,
+    ),
+    userText: fillPromptTemplate(layoutTemplate.userTemplate, layoutValues),
+    preferJson: false,
+  });
+
+  const withImages = resolveIllustrationPlaceholders(layoutRaw, illustrations);
+  const withSyllables = input.syllableHelp
+    ? applySyllableHelpMarkup(withImages)
+    : withImages;
+  const story = sanitizeStoryHtml(withSyllables);
+  if (!story.trim()) {
+    throw new UserFacingError("Der Adventstag kam leer zurück.");
+  }
+
+  return {
+    story,
+    facts: [],
+    factCount: 0,
+    wordRange,
+    factsModelId: "",
     storyModelId: storyModel.id,
     imagesModelId: imagesModel.id,
     layoutModelId: layoutModel.id,

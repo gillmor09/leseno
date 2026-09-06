@@ -20,6 +20,8 @@ export const PACKAGE_FEATURE_IDS = [
   "lesemodus",
   "warum",
   "hintergrund",
+  "fortsetzen",
+  "adventskalender",
 ] as const;
 
 export type PackageFeatureId = (typeof PACKAGE_FEATURE_IDS)[number];
@@ -36,6 +38,8 @@ export const PACKAGE_FEATURE_LABELS: Record<PackageFeatureId, string> = {
   lesemodus: "Lesemodus",
   warum: "Warum",
   hintergrund: "Hintergrund",
+  fortsetzen: "Fortsetzen",
+  adventskalender: "Adventskalenderbuch",
 };
 
 export type MembershipPackage = {
@@ -76,6 +80,7 @@ export const FALLBACK_MEMBERSHIP_PACKAGES: MembershipPackage[] = [
       "buecherei",
       "bilder",
       "warum",
+      "fortsetzen",
     ],
     sortOrder: 2,
   },
@@ -96,6 +101,8 @@ export const FALLBACK_MEMBERSHIP_PACKAGES: MembershipPackage[] = [
       "markierung",
       "vorlesen",
       "hintergrund",
+      "fortsetzen",
+      "adventskalender",
     ],
     sortOrder: 3,
   },

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileDown, Loader2, Maximize2, Pause, Play, X } from "lucide-react";
+import { FileDown, GitBranchPlus, Loader2, Maximize2, Pause, Play, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   synthesizeStorySpeechAction,
@@ -17,6 +17,7 @@ import {
   BotGuardFields,
   useBotGuardFields,
 } from "@/components/features/security/bot-guard-fields";
+import { StoryContinueDialog } from "@/components/features/stories/story-continue-dialog";
 import { StoryFactsList } from "@/components/features/stories/story-facts-list";
 import { StoryHtmlBody } from "@/components/features/stories/story-html-body";
 import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
@@ -30,7 +31,8 @@ import {
 import { plainTextFromStoryHtml } from "@/lib/stories/plain-text-from-html";
 import type { ReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
 import { normalizeReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
-import type { StorySchoolStageId } from "@/lib/stories/options";
+import type { StoryLengthCatalog, StoryLengthStepId } from "@/lib/stories/length";
+import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
 import {
   typographyDefaultsForStage,
   type ReadingTypographyDefaultsCatalog,
@@ -64,6 +66,12 @@ export function StoryResultPanel({
   readingModePrefs = null,
   onReadingModePrefsChange,
   typographyDefaults,
+  allowContinue = false,
+  libraryStoryId = null,
+  lengthCatalog = null,
+  continueLengthStep = "mittel",
+  continueMood = "spannend",
+  onContinued,
   eyebrow = "Deine Geschichte",
   inviteUserId = null,
   onClose,
@@ -85,6 +93,19 @@ export function StoryResultPanel({
   onReadingModePrefsChange?: (prefs: ReadingModePrefs | null) => void;
   /** Admin typography defaults per school stage (card + Lesemodus Standard). */
   typographyDefaults: ReadingTypographyDefaultsCatalog;
+  /** Package `fortsetzen`: show continue control when library id is known. */
+  allowContinue?: boolean;
+  libraryStoryId?: string | null;
+  lengthCatalog?: StoryLengthCatalog | null;
+  continueLengthStep?: StoryLengthStepId;
+  continueMood?: StoryMoodId;
+  onContinued?: (result: {
+    storyHtml: string;
+    facts: string[];
+    schoolStage: StorySchoolStageId;
+    libraryStoryId: string;
+    creditsRemaining?: number;
+  }) => void;
   eyebrow?: string;
   /** When set, invite link includes a personal `?ref=` code. */
   inviteUserId?: string | null;
@@ -93,6 +114,7 @@ export function StoryResultPanel({
 }) {
   const botGuard = useBotGuardFields();
   const [readingModeOpen, setReadingModeOpen] = useState(false);
+  const [continueOpen, setContinueOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
@@ -438,6 +460,18 @@ export function StoryResultPanel({
           </p>
           <div className="flex flex-col items-end gap-3 self-end sm:self-auto">
             <div className="flex items-center gap-2">
+              {allowContinue && libraryStoryId && lengthCatalog ? (
+                <button
+                  type="button"
+                  onClick={() => setContinueOpen(true)}
+                  disabled={!storyHtml}
+                  className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-orange-700 text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
+                  aria-label="Wie könnte es weitergehen?"
+                  title="Wie könnte es weitergehen?"
+                >
+                  <GitBranchPlus className="size-5" aria-hidden />
+                </button>
+              ) : null}
               {allowReadingMode ? (
                 <button
                   type="button"
@@ -583,6 +617,21 @@ export function StoryResultPanel({
           customPrefs={readingModePrefs}
           stageDefaults={stageDefaults}
           onPrefsChange={onReadingModePrefsChange}
+        />
+      ) : null}
+
+      {allowContinue && libraryStoryId && lengthCatalog ? (
+        <StoryContinueDialog
+          open={continueOpen}
+          onClose={() => setContinueOpen(false)}
+          parentStoryId={libraryStoryId}
+          lengthCatalog={lengthCatalog}
+          initialSchoolStage={schoolStage}
+          initialLengthStep={continueLengthStep}
+          initialMood={continueMood}
+          onSuccess={(result) => {
+            onContinued?.(result);
+          }}
         />
       ) : null}
 

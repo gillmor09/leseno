@@ -42,6 +42,24 @@ export async function MembershipStoryPage() {
     console.error("[MembershipStoryPage] credits", error);
   }
 
+  // Catch-up: grant any paid months missed while the app was unused.
+  if (user?.id && hasStripeCheckoutConfig()) {
+    try {
+      const { reconcileSubscriptionCreditGrants } = await import(
+        "@/lib/stripe/credit-grants"
+      );
+      const { loadMyCredits: reloadCredits } = await import(
+        "@/lib/users/billing"
+      );
+      const catchUp = await reconcileSubscriptionCreditGrants(user.id);
+      if (catchUp.creditsGranted > 0) {
+        initialCredits = await reloadCredits();
+      }
+    } catch (error) {
+      console.warn("[MembershipStoryPage] credit catch-up", error);
+    }
+  }
+
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />

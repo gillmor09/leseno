@@ -209,6 +209,7 @@ export function MyWorldManager({
             interests: activeProfile.interests,
             experiences: activeProfile.experiences,
             fears: activeProfile.fears,
+            fearsGentle: activeProfile.fearsGentle,
             includeImages: activeProfile.includeImages,
             syllableHelp: activeProfile.syllableHelp,
             wordHighlight: activeProfile.wordHighlight,

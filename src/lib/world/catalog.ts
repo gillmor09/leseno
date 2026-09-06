@@ -2,6 +2,7 @@
  * Meine Welt: one auth user may own many child profiles.
  * `experiences` = wish-list ("Das möchte ich mal erleben").
  * `fears` = "Davor habe ich Angst".
+ * `fearsGentle` = optionally weave one fear gently into spannend/motivierend stories.
  * Extras: Bilder, Silbenhilfe, Wort-Markierung, Vorlesbar (`readableAloud`).
  * Story defaults: schoolStage, lengthStep, mood.
  * Lesemodus: `readingModePrefs` (typography + column width).
@@ -22,6 +23,11 @@ export type ChildProfile = {
   interests: string[];
   experiences: string[];
   fears: string[];
+  /**
+   * When true, spannend/motivierend stories may gently include one fear
+   * (see `buildPersonalStoryContext`).
+   */
+  fearsGentle: boolean;
   includeImages: boolean;
   syllableHelp: boolean;
   wordHighlight: boolean;
@@ -77,6 +83,7 @@ export const EMPTY_CHILD_PROFILE_FIELDS: ChildProfileFields = {
   interests: [],
   experiences: [],
   fears: [],
+  fearsGentle: false,
   includeImages: false,
   syllableHelp: false,
   wordHighlight: false,

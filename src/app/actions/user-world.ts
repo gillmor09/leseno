@@ -69,6 +69,7 @@ export async function saveChildProfileAction(
         interests: parsed.data.interests,
         experiences: parsed.data.experiences,
         fears: parsed.data.fears,
+        fearsGentle: parsed.data.fearsGentle,
         includeImages:
           featuresInclude(features, "bilder") && parsed.data.includeImages,
         syllableHelp:

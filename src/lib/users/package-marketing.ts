@@ -16,6 +16,8 @@ export const PACKAGE_COMPARE_FEATURE_IDS: PackageFeatureId[] = [
   "meine_welt",
   "meine_welt_familie",
   "buecherei",
+  "fortsetzen",
+  "adventskalender",
   "export",
   "bilder",
   "warum",
@@ -32,6 +34,8 @@ export const PACKAGE_COMPARE_FEATURE_HINTS: Partial<
   meine_welt: "Persönliches Kinderprofil",
   meine_welt_familie: "Mehrere Kinder-Profile",
   buecherei: "Geschichten speichern & erneut lesen",
+  fortsetzen: "„Wie könnte es weitergehen?“",
+  adventskalender: "24 Tage, tagesweise öffnen",
   export: "Als PDF speichern",
   bilder: "Illustrationen in der Geschichte",
   warum: "Hintergrund zu Aha-Momenten",
@@ -48,103 +52,138 @@ const PAID_TAGLINES: Record<Exclude<UserPackageId, "basis">, string> = {
 };
 
 const PAID_BLURBS: Record<Exclude<UserPackageId, "basis">, string> = {
-  plus: "Mehr Geschichten dank Credits, Meine Bücherei zum Wiederlesen, ein Kinderprofil und PDF-Export — wenn Lesen zum Ritual wird.",
-  pro: "Mehrere Kinder-Profile, Bücherei, Bilder in den Geschichten und „Warum?“ zum Nachforschen — wenn leseno zum Familien-Ritual wird.",
+  plus: "Jeden Monat Credits zum Buchungstag — und sie verfallen nie. Dazu Meine Bücherei, ein Kinderprofil und PDF-Export.",
+  pro: "Mehrere Kinder-Profile, Bücherei, Bilder, „Warum?“ und Fortsetzungen — wenn leseno zum Familien-Ritual wird.",
   ultimate:
-    "Alles aus Pro plus Silbenhilfe, Vorlesen mit Wort-Markierung, PDF-Export und tieferes Hintergrundwissen.",
+    "Alles aus Pro plus Silbenhilfe, Vorlesen mit Wort-Markierung, PDF-Export, tieferes Hintergrundwissen und das Adventskalenderbuch.",
 };
 
+/** Pricing-card bullet: inherited tier vs. incremental extras. */
+export type MarketingBullet = {
+  text: string;
+  /** `included` = check (Alles von …); `extra` = plus (Zusatz). */
+  kind: "included" | "extra";
+};
+
+const FEATURE_BULLET_ORDER: PackageFeatureId[] = [
+  "lesemodus",
+  "meine_welt",
+  "meine_welt_familie",
+  "buecherei",
+  "fortsetzen",
+  "adventskalender",
+  "export",
+  "bilder",
+  "warum",
+  "hintergrund",
+  "silbenmethode",
+  "vorlesen",
+  "markierung",
+];
+
+function featureBulletText(
+  pkg: MembershipPackage,
+  feature: PackageFeatureId,
+): string | null {
+  switch (feature) {
+    case "lesemodus":
+      return "Lesemodus: Vollbild mit Schrift & Abständen";
+    case "meine_welt_familie":
+      return "Meine Welt für beliebig viele Kinder";
+    case "meine_welt":
+      return packageHasFeature(pkg, "meine_welt_familie")
+        ? null
+        : "Meine Welt für ein Kind";
+    case "buecherei":
+      return "Meine Bücherei: Geschichten speichern und erneut lesen";
+    case "fortsetzen":
+      return "Geschichten fortsetzen („Wie könnte es weitergehen?“)";
+    case "adventskalender":
+      return "Adventskalenderbuch: 24 Tage mit PIN-Vorschau für Eltern";
+    case "export":
+      return "Export als PDF zum Offline-Lesen";
+    case "bilder":
+      return "Bilder in den Geschichten";
+    case "warum":
+      return "„Warum?“ zu Aha-Momenten in der Geschichte";
+    case "hintergrund":
+      return "„Ich will mehr wissen“ für tieferen Hintergrund";
+    case "silbenmethode":
+      return "Silbenhilfe für den Lesefluss";
+    case "vorlesen":
+      return "Vorlesen mit einstellbarem Tempo";
+    case "markierung":
+      return "Wort-Markierung beim Vorlesen";
+    default:
+      return null;
+  }
+}
+
+function creditsBulletText(credits: number): string {
+  const sehrKurz = Math.floor(credits / 10);
+  const mittel = Math.floor(credits / 30);
+  return `jeden Monat ${credits} Credits (verfallen nie; z. B. bis ca. ${sehrKurz} sehr kurze oder ca. ${mittel} mittlere Geschichten)`;
+}
+
+function previousPackageInCatalog(
+  pkg: MembershipPackage,
+  catalog: readonly MembershipPackage[],
+): MembershipPackage | null {
+  const ordered = [...catalog].sort((a, b) => a.sortOrder - b.sortOrder);
+  const index = ordered.findIndex((row) => row.id === pkg.id);
+  if (index <= 0) return null;
+  return ordered[index - 1] ?? null;
+}
+
 /**
- * Short bullets for a pricing card, derived from package features + credits.
+ * Pricing-card bullets.
+ * - Plus: flat checklist (check icons), credits first — no „Alles von Basis“.
+ * - Pro / Ultimate: „Alles von …“ (check) + only incremental extras (plus).
  */
-export function marketingBulletsForPackage(pkg: MembershipPackage): string[] {
-  if (pkg.id === "ultimate") {
-    const bullets: string[] = [
-      "Alles aus Pro (Familie, Bücherei, Bilder, Warum)",
-    ];
-    if (packageHasFeature(pkg, "lesemodus")) {
-      bullets.push("Lesemodus: Vollbild mit Schrift & Abständen");
-    }
+export function marketingBulletsForPackage(
+  pkg: MembershipPackage,
+  catalog: readonly MembershipPackage[] = [],
+): MarketingBullet[] {
+  if (pkg.id === "plus") {
+    const bullets: MarketingBullet[] = [];
     if (pkg.credits > 0) {
-      const sehrKurz = Math.floor(pkg.credits / 10);
-      const mittel = Math.floor(pkg.credits / 30);
-      bullets.push(
-        `inkl. ${pkg.credits} Credits (z. B. bis ca. ${sehrKurz} sehr kurze oder ca. ${mittel} mittlere Geschichten)`,
-      );
-    } else {
-      bullets.push(
-        "Credits separat nachladen (oder vorhandenes Guthaben nutzen)",
-      );
+      bullets.push({ kind: "included", text: creditsBulletText(pkg.credits) });
     }
-    if (packageHasFeature(pkg, "export")) {
-      bullets.push("Export als PDF zum Offline-Lesen");
-    }
-    if (packageHasFeature(pkg, "buecherei")) {
-      bullets.push("Meine Bücherei: Geschichten speichern und erneut lesen");
-    }
-    if (packageHasFeature(pkg, "silbenmethode")) {
-      bullets.push("Silbenhilfe für den Lesefluss");
-    }
-    if (packageHasFeature(pkg, "vorlesen")) {
-      bullets.push("Vorlesen mit einstellbarem Tempo");
-    }
-    if (packageHasFeature(pkg, "markierung")) {
-      bullets.push("Wort-Markierung beim Vorlesen");
-    }
-    if (packageHasFeature(pkg, "hintergrund")) {
-      bullets.push("„Ich will mehr wissen“ für tieferen Hintergrund");
+    for (const feature of FEATURE_BULLET_ORDER) {
+      if (!packageHasFeature(pkg, feature)) continue;
+      const text = featureBulletText(pkg, feature);
+      if (!text) continue;
+      bullets.push({ kind: "included", text });
     }
     return bullets;
   }
 
-  const bullets: string[] = [];
+  const previous =
+    catalog.length > 0 ? previousPackageInCatalog(pkg, catalog) : null;
+  const bullets: MarketingBullet[] = [];
 
-  if (packageHasFeature(pkg, "lesemodus")) {
-    bullets.push("Lesemodus: Vollbild mit Schrift & Abständen");
-  }
-
-  if (pkg.credits > 0) {
-    const sehrKurz = Math.floor(pkg.credits / 10);
-    const mittel = Math.floor(pkg.credits / 30);
-    bullets.push(
-      `inkl. ${pkg.credits} Credits (z. B. bis ca. ${sehrKurz} sehr kurze oder ca. ${mittel} mittlere Geschichten)`,
-    );
-  } else if (pkg.id !== "basis") {
-    bullets.push(
-      "Credits separat nachladen (oder vorhandenes Guthaben nutzen)",
-    );
+  if (previous) {
+    bullets.push({
+      kind: "included",
+      text: `Alles von ${previous.label}`,
+    });
   }
 
-  if (packageHasFeature(pkg, "meine_welt_familie")) {
-    bullets.push("Meine Welt für beliebig viele Kinder");
-  } else if (packageHasFeature(pkg, "meine_welt")) {
-    bullets.push("Meine Welt für ein Kind");
+  const previousFeatures = new Set(previous?.features ?? []);
+  for (const feature of FEATURE_BULLET_ORDER) {
+    if (!packageHasFeature(pkg, feature)) continue;
+    if (previousFeatures.has(feature)) continue;
+    const text = featureBulletText(pkg, feature);
+    if (!text) continue;
+    bullets.push({ kind: "extra", text });
   }
 
-  if (packageHasFeature(pkg, "buecherei")) {
-    bullets.push("Meine Bücherei: Geschichten speichern und erneut lesen");
-  }
-
-  if (packageHasFeature(pkg, "export")) {
-    bullets.push("Export als PDF zum Offline-Lesen");
-  }
-  if (packageHasFeature(pkg, "bilder")) {
-    bullets.push("Bilder in den Geschichten");
-  }
-  if (packageHasFeature(pkg, "warum")) {
-    bullets.push("„Warum?“ zu Aha-Momenten in der Geschichte");
-  }
-  if (packageHasFeature(pkg, "hintergrund")) {
-    bullets.push("„Ich will mehr wissen“ für tieferen Hintergrund");
-  }
-  if (packageHasFeature(pkg, "silbenmethode")) {
-    bullets.push("Silbenhilfe für den Lesefluss");
-  }
-  if (packageHasFeature(pkg, "vorlesen")) {
-    bullets.push("Vorlesen mit einstellbarem Tempo");
-  }
-  if (packageHasFeature(pkg, "markierung")) {
-    bullets.push("Wort-Markierung beim Vorlesen");
+  const previousCredits = previous?.credits ?? 0;
+  if (pkg.credits > previousCredits) {
+    bullets.push({
+      kind: "extra",
+      text: creditsBulletText(pkg.credits),
+    });
   }
 
   return bullets;

@@ -16,3 +16,10 @@ export const STORY_CREDITS_BY_LENGTH: Record<StoryLengthStepId, number> = {
 export function storyCreditsForLength(lengthStep: StoryLengthStepId): number {
   return STORY_CREDITS_BY_LENGTH[lengthStep];
 }
+
+/** Credits for a full 24-day Advent calendar book at the chosen length. */
+export function adventBookCreditsForLength(
+  lengthStep: StoryLengthStepId,
+): number {
+  return storyCreditsForLength(lengthStep) * 24;
+}

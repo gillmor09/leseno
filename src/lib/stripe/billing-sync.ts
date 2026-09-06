@@ -161,7 +161,7 @@ export async function addUserCredits(
 }
 
 /**
- * Keeps role + Stripe ids in sync without re-granting package credits.
+ * Keeps role + Stripe ids in sync. Monthly credits are granted on invoice.paid.
  * Opens a new booking row only when the active package id changes.
  */
 export async function syncPaidMembership(input: {
@@ -193,7 +193,9 @@ export async function syncPaidMembership(input: {
 }
 
 /**
- * First activation after Checkout: role, booking, included package credits.
+ * First activation after Checkout: role + booking.
+ * Package credits are granted on `invoice.paid` (billing anniversary), not here —
+ * unless `grantPackageCredits` is set for admin/legacy paths.
  */
 export async function activatePaidMembership(input: {
   userId: string;

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Check } from "lucide-react";
+import { Check, Plus } from "lucide-react";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import {
@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = buildPageMetadata({
   title: "Preise: Plus, Pro & Ultimate im Vergleich",
   description:
-    "leseno-Pakete im Vergleich: Credits, Meine Bücherei, Meine Welt, Bilder, Warum, Silbenhilfe und Vorlesen. Monatlich kündbar — oder kostenlos starten.",
+    "leseno-Pakete: Credits verfallen nie, Fortsetzen, Adventskalenderbuch, Bücherei und Vorlesen. Abrechnung am Buchungstag — zum Periodenende kündbar.",
   path: "/preise",
 });
 
@@ -57,16 +57,17 @@ export default async function PreisePage() {
             Pakete für Kinder, die gerne Geschichten lesen.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Plus für Credits, Bücherei und PDF, Pro für Familie und Bilder,
-            Ultimate für Silbenhilfe und Vorlesen. Monatlich kündbar. Zahlung
-            per Karte oder PayPal.
+            Plus für monatliche Credits (verfallen nie), Bücherei und PDF, Pro
+            für Familie, Bilder und Fortsetzen, Ultimate für Silbenhilfe,
+            Vorlesen und Adventskalenderbuch. Abrechnung am Buchungstag —
+            kündbar zum Periodenende. Zahlung per Karte oder PayPal.
           </p>
 
           <div className="mt-10 grid gap-6 lg:grid-cols-3">
             {paidPackages.map((pkg) => {
               const dark = packageCardTone(pkg.id) === "dark";
               const featured = isFeaturedPackage(pkg.id);
-              const bullets = marketingBulletsForPackage(pkg);
+              const bullets = marketingBulletsForPackage(pkg, allPackages);
               return (
                 <article
                   key={pkg.id}
@@ -92,24 +93,27 @@ export default async function PreisePage() {
                     {marketingBlurbForPackage(pkg)}
                   </p>
                   <ul className="mt-6 flex-1 space-y-3">
-                    {bullets.map((feature) => (
-                      <li
-                        key={feature}
-                        className={cn(
-                          "flex gap-2 text-sm leading-relaxed",
-                          dark ? "text-zinc-200" : "text-zinc-700",
-                        )}
-                      >
-                        <Check
+                    {bullets.map((feature) => {
+                      const Icon = feature.kind === "included" ? Check : Plus;
+                      return (
+                        <li
+                          key={`${feature.kind}-${feature.text}`}
                           className={cn(
-                            "mt-0.5 size-4 shrink-0",
-                            dark ? "text-yellow-400" : "text-orange-700",
+                            "flex gap-2 text-sm leading-relaxed",
+                            dark ? "text-zinc-200" : "text-zinc-700",
                           )}
-                          aria-hidden
-                        />
-                        {feature}
-                      </li>
-                    ))}
+                        >
+                          <Icon
+                            className={cn(
+                              "mt-0.5 size-4 shrink-0",
+                              dark ? "text-yellow-400" : "text-orange-700",
+                            )}
+                            aria-hidden
+                          />
+                          {feature.text}
+                        </li>
+                      );
+                    })}
                   </ul>
                   <div className="mt-8">
                     <p className="flex items-baseline gap-1">
@@ -146,10 +150,11 @@ export default async function PreisePage() {
               Extra-Geschichten flexibel nachladen
             </h2>
             <p className="mt-2 max-w-3xl text-sm leading-relaxed text-zinc-600 sm:text-base">
-              Wenn das Kontingent nicht reicht: Credits nachladen und genau so
-              viele Geschichten erzeugen, wie ihr braucht — ohne Paketwechsel.
-              Pro und Ultimate bringen von Haus aus oft keine Credits mit;
-              dann reicht ein Nachkauf.
+              Paket-Credits kommen jeden Monat am Buchungstag dazu — und
+              verfallen nie. Rest vom Vormonat bleibt liegen. Wenn das
+              Kontingent trotzdem nicht reicht: Credits nachladen, ohne
+              Paketwechsel. Pro und Ultimate bringen von Haus aus oft keine
+              Credits mit; dann reicht ein Nachkauf.
             </p>
             <div className="mt-6 flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <p className="flex items-baseline gap-1">
@@ -169,6 +174,30 @@ export default async function PreisePage() {
               pro Geschichte. 300 Credits reichen z. B. für bis zu 30 sehr
               kurze oder 10 mittlere Geschichten.
             </p>
+          </article>
+
+          <article className="mt-6 rounded-[1.75rem] bg-white p-8 shadow-xl ring-1 ring-zinc-950/10 sm:p-10">
+            <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+              Abrechnung
+            </p>
+            <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-zinc-950">
+              Am Tag der Buchung — fair und klar
+            </h2>
+            <ul className="mt-4 max-w-3xl space-y-3 text-sm leading-relaxed text-zinc-600 sm:text-base">
+              <li>
+                Gebucht am 4.? Dann Abrechnung und Credit-Gutschrift immer am 4.
+                der Folgemonate.
+              </li>
+              <li>
+                Kündigung gilt zum Ende der laufenden Periode — Zugang bleibt
+                bis dahin.
+              </li>
+              <li>
+                Auch wenn ihr die App mal zwei Monate nicht öffnet: Bei aktivem
+                Abo werden die Monate trotzdem gutgeschrieben. Credits summieren
+                sich.
+              </li>
+            </ul>
           </article>
 
           <div className="mt-8 flex flex-col items-center gap-3 text-center">

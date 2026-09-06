@@ -23,6 +23,8 @@ export type UserStorySummary = {
   isRead: boolean;
   schoolStage: StorySchoolStageId;
   personalMode: boolean;
+  /** Null for root stories; set when this row continues another story. */
+  parentStoryId: string | null;
   createdAt: string;
 };
 
@@ -50,6 +52,7 @@ export type SaveUserStoryInput = {
   syllableHelp?: boolean;
   includeImages?: boolean;
   creditsCharged?: number | null;
+  parentStoryId?: string | null;
 };
 
 function asSchoolStage(value: unknown): StorySchoolStageId {
@@ -97,6 +100,8 @@ function mapSummary(row: Record<string, unknown>): UserStorySummary {
     isRead: Boolean(row.is_read),
     schoolStage: asSchoolStage(row.school_stage),
     personalMode: Boolean(row.personal_mode),
+    parentStoryId:
+      typeof row.parent_story_id === "string" ? row.parent_story_id : null,
     createdAt:
       typeof row.created_at === "string"
         ? row.created_at
@@ -137,6 +142,7 @@ export async function saveMyStory(
     p_syllable_help: input.syllableHelp ?? false,
     p_include_images: input.includeImages ?? false,
     p_credits_charged: input.creditsCharged ?? null,
+    p_parent_story_id: input.parentStoryId ?? null,
   });
   if (error) {
     throw new Error(error.message);
@@ -197,6 +203,17 @@ export async function setMyStoryRead(
   const { error } = await supabase.rpc("set_my_story_read", {
     p_id: storyId,
     p_is_read: isRead,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/** Deletes one owned library story. Continuations keep their rows (parent cleared). */
+export async function deleteMyStory(storyId: string): Promise<void> {
+  const supabase = await createClient(null);
+  const { error } = await supabase.rpc("delete_my_story", {
+    p_id: storyId,
   });
   if (error) {
     throw new Error(error.message);

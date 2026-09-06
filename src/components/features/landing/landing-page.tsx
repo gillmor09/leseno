@@ -5,7 +5,7 @@ import {
   BookOpen,
   Check,
   BicepsFlexed,
-  HelpCircle,
+  CalendarDays,
   ImageIcon,
   Maximize2,
   Smile,
@@ -83,39 +83,34 @@ const moods = [
 
 const strengths = [
   {
-    title: "Lesen aus Lust",
-    text: "Keine Hausaufgaben-Stimmung: Du liest, weil die Geschichte dich packt — und bleibst gerne hängen.",
-    icon: BookOpen,
+    title: "Geschichten nur für dich",
+    text: "Thema, Lesestufe und Ton — die Geschichte fühlt sich an wie für dich gemacht. Du liest, weil du willst.",
+    icon: Sparkles,
   },
   {
-    title: "Lesemodus (Basis)",
-    text: "Geschichte und Warum-Fragen im Vollbild — Schriftgröße, Zeilen- und Zeichenabstand nach Bedarf.",
+    title: "Lesemodus",
+    text: "Vollbild ohne Ablenkung. Schriftgröße, Abstände und Breite so einstellen, dass Lesen sich gut anfühlt.",
     icon: Maximize2,
   },
   {
-    title: "Meine Bücherei (Plus)",
-    text: "Fertige Geschichten speichern, Favoriten setzen und später erneut lesen — alles an einem Ort.",
+    title: "Bücherei & Fortsetzen",
+    text: "Geschichten speichern und Favoriten setzen — und mit Pro fragen: „Wie könnte es weitergehen?“",
     icon: BookMarked,
   },
   {
-    title: "Vorlesen (Ultimate)",
-    text: "Müde Augen? Mit Ultimate lass die Geschichte vorlesen — mit Tempo und optionaler Wort-Markierung.",
+    title: "Vorlesen & Silbenhilfe",
+    text: "Müde oder stecken geblieben? Vorlesen mit Tempo — und Silbenhilfe, damit der Fluss bleibt.",
     icon: Volume2,
   },
   {
-    title: "Silbenhilfe (Ultimate)",
-    text: "Schwierige Wörter in Silben teilen — damit der Lesefluss bleibt und die Neugier nicht abreißt.",
-    icon: Target,
-  },
-  {
-    title: "Mit Bildern erleben (Pro)",
-    text: "Illustrationen zur Geschichte: Du siehst, was du liest — und bleibst mittendrin.",
+    title: "Mit Bildern mittendrin",
+    text: "Illustrationen zur Geschichte: Du siehst, was du liest — und bleibst mittendrin im Abenteuer.",
     icon: ImageIcon,
   },
   {
-    title: "Warum? (Pro)",
-    text: "Neugierig? Tippe auf „Warum?“ und hol dir den Hintergrund. Mit Ultimate geht’s noch tiefer.",
-    icon: HelpCircle,
+    title: "Adventskalenderbuch",
+    text: "Mit Ultimate: 24 Tage, eine fortlaufende Geschichte — Türen öffnen sich erst am richtigen Dezember-Tag.",
+    icon: CalendarDays,
   },
 ] as const;
 
@@ -123,10 +118,11 @@ const parentPoints = [
   "Eigenmotivation statt Druck: Kinder lesen, weil sie die Geschichte wollen — nicht weil jemand bewertet.",
   "Kein Schulgefühl: eigene Abenteuer statt starrer Lesebücher oder Übungsblätter.",
   "Passend zum Kind: Sprache und Länge fühlen sich gut an — ohne Test- oder Notenstimmung.",
+  "Credits verfallen nie: Monatliche Gutschrift am Buchungstag; Rest bleibt fair in Folgemonaten liegen.",
   "Neugier inklusive: echtes Wissen steckt mitten im Abenteuer; mit Pro gibt’s „Warum?“ zum Nachforschen.",
-  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits, Bücherei & PDF, Pro für Familie & Bilder, Ultimate für Silbenhilfe & Vorlesen.",
-  "Meine Welt: ab Plus ein Kinderprofil, mit Pro beliebig viele unter einem Konto.",
-  "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden.",
+  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits & Bücherei, Pro für Familie & Fortsetzen, Ultimate für Silbenhilfe, Vorlesen & Adventskalenderbuch.",
+  "Meine Welt: ab Plus ein Kinderprofil (Interessen & Erlebnisse), mit Pro beliebig viele unter einem Konto.",
+  "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden. Abo zum Periodenende kündbar.",
   "Weiterempfehlen leicht: Link teilen — Freundinnen starten kostenlos mit Basis.",
 ] as const;
 
@@ -299,12 +295,12 @@ function StrengthsSection() {
           Deine Superkräfte
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Alles, was Neugier und Leselust brauchen.
+          Sechs Dinge, die Lesen leichter machen.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Geschichten, die pullen — und Aha-Momente unterwegs. Lesemodus, Meine
-          Bücherei, Silbenhilfe, Vorlesen, Bilder und „Warum?“ findest du in den
-          Paketen.
+          Die Highlights, die zählen: eigene Geschichten, Lesemodus, Bücherei mit
+          Fortsetzen, Vorlesen, Bilder und das Adventskalenderbuch — je nach
+          Paket freischaltbar.
         </p>
         <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {strengths.map((item) => {
@@ -609,7 +605,7 @@ function PricingSection() {
             </p>
             <p className="mt-1 text-sm text-zinc-400">
               {withLesenoBrand(
-                "Credits, Bücherei, Meine Welt und PDF — wenn leseno zum Ritual wird",
+                "Monatliche Credits, die nie verfallen — plus Bücherei, Meine Welt und PDF",
               )}
             </p>
             <ul className="mt-6 space-y-3 text-sm text-zinc-200">
@@ -618,7 +614,7 @@ function PricingSection() {
                   className="mt-0.5 size-4 shrink-0 text-yellow-400"
                   aria-hidden
                 />
-                Credits für viele weitere Geschichten
+                Jeden Monat Credits — Rest bleibt liegen
               </li>
               <li className="flex gap-2">
                 <Check

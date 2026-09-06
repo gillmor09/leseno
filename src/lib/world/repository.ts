@@ -69,6 +69,7 @@ function mapRow(row: Record<string, unknown>): ChildProfile {
     interests: asStringList(row.interests),
     experiences: asStringList(row.experiences),
     fears: asStringList(row.fears),
+    fearsGentle: asBool(row.fears_gentle, false),
     includeImages: asBool(row.include_images, false),
     syllableHelp: asBool(row.syllable_help, false),
     wordHighlight: asBool(row.word_highlight, false),
@@ -133,6 +134,7 @@ export async function saveChildProfile(input: {
     p_length_step: input.fields.lengthStep,
     p_mood: input.fields.mood,
     p_is_default: input.fields.isDefault,
+    p_fears_gentle: input.fields.fearsGentle,
   });
 
   if (error) {
@@ -196,6 +198,7 @@ export async function loadMyWorld(): Promise<ChildProfileFields> {
       interests: [],
       experiences: [],
       fears: [],
+      fearsGentle: false,
       includeImages: false,
       syllableHelp: false,
       wordHighlight: false,
@@ -212,6 +215,7 @@ export async function loadMyWorld(): Promise<ChildProfileFields> {
     interests: first.interests,
     experiences: first.experiences,
     fears: first.fears,
+    fearsGentle: first.fearsGentle,
     includeImages: first.includeImages,
     syllableHelp: first.syllableHelp,
     wordHighlight: first.wordHighlight,

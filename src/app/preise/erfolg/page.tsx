@@ -4,6 +4,7 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { storyPathForRole } from "@/lib/users/catalog";
 import { getCurrentUser } from "@/lib/auth/session";
+import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
 
 export const metadata: Metadata = {
   title: "Zahlung erfolgreich — Leseno",
@@ -11,7 +12,8 @@ export const metadata: Metadata = {
 };
 
 /**
- * Post-Checkout landing. Entitlements are applied by the Stripe webhook.
+ * Post-Checkout landing. Entitlements are applied by the Stripe webhook;
+ * catch-up reconciles paid invoices if the first webhook was delayed.
  */
 export default async function PreiseErfolgPage({
   searchParams,
@@ -27,6 +29,17 @@ export default async function PreiseErfolgPage({
       : "basis";
   const storyHref = storyPathForRole(role);
 
+  if (user?.id && !isCredits && hasStripeCheckoutConfig()) {
+    try {
+      const { reconcileSubscriptionCreditGrants } = await import(
+        "@/lib/stripe/credit-grants"
+      );
+      await reconcileSubscriptionCreditGrants(user.id);
+    } catch (error) {
+      console.warn("[preise/erfolg] credit catch-up", error);
+    }
+  }
+
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
@@ -40,8 +53,8 @@ export default async function PreiseErfolgPage({
           </h1>
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
             {isCredits
-              ? "Die Gutschrift erscheint in wenigen Sekunden auf deinem Konto (Stripe-Webhook). Danach kannst du weiter Geschichten erzeugen."
-              : "Dein Abo wird gerade freigeschaltet. Kurz warten und Seite neu laden, falls die Rolle noch nicht passt — dann geht’s los mit Lesen."}
+              ? "Die Gutschrift erscheint in wenigen Sekunden auf deinem Konto (Stripe-Webhook). Danach kannst du weiter Geschichten erzeugen. Credits verfallen bei leseno nicht."
+              : "Dein Abo wird freigeschaltet. Die Paket-Credits für diesen Monat werden mit der bezahlten Rechnung gutgeschrieben — und bleiben, bis du sie nutzt. Kurz warten und Seite neu laden, falls die Rolle noch nicht passt."}
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link

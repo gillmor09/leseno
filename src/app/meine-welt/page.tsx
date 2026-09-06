@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import { MembershipCreditsHeader } from "@/components/features/membership/membership-credits-header";
 import { MyWorldManager } from "@/components/features/world/my-world-manager";
 import { getCurrentUser } from "@/lib/auth/session";
+import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
+import { loadReadingTypographyDefaults } from "@/lib/stories/reading-typography-repository";
+import { loadMyCredits } from "@/lib/users/billing";
 import { STORY_PATH } from "@/lib/users/catalog";
 import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
 import { listMyChildProfiles } from "@/lib/world/repository";
-import { loadReadingTypographyDefaults } from "@/lib/stories/reading-typography-repository";
 
 export const metadata: Metadata = {
   title: "Meine Welt — Leseno",
@@ -35,6 +38,13 @@ export default async function MeineWeltPage() {
   const allowFamily = featuresInclude(features, "meine_welt_familie");
   const typographyDefaults = await loadReadingTypographyDefaults();
 
+  let initialCredits = 0;
+  try {
+    initialCredits = await loadMyCredits();
+  } catch (error) {
+    console.error("[MeineWeltPage] credits", error);
+  }
+
   let profiles: Awaited<ReturnType<typeof listMyChildProfiles>> = [];
   let loadError: string | null = null;
 
@@ -52,19 +62,15 @@ export default async function MeineWeltPage() {
       <AppHeader />
       <main className="flex-1">
         <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
-          <div className="flex items-start justify-between gap-4">
-            <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-              {allowFamily ? "Familie" : "Meine Welt"}
-            </p>
-            {user.email ? (
-              <p
-                className="max-w-[55%] truncate text-right text-xs font-medium text-zinc-400 sm:text-sm"
-                title={user.email}
-              >
-                {user.email}
+          <MembershipCreditsHeader
+            badge={
+              <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
+                {allowFamily ? "Familie" : "Meine Welt"}
               </p>
-            ) : null}
-          </div>
+            }
+            initialCredits={initialCredits}
+            checkoutEnabled={hasStripeCheckoutConfig()}
+          />
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
             Meine Welt
           </h1>

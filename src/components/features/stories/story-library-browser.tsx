@@ -2,17 +2,22 @@
 
 /**
  * Meine Bücherei: title cards, favorites, read flag, expand into StoryResultPanel.
+ * Continuations (`parent_story_id`) render indented under their predecessor.
  */
 
 import { useMemo, useState, useTransition } from "react";
-import { BookCheck, Loader2, Star } from "lucide-react";
+import { BookCheck, GitBranch, Loader2, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  deleteMyStoryAction,
   getMyStoryAction,
   setMyStoryFavoriteAction,
   setMyStoryReadAction,
 } from "@/app/actions/story-library";
 import { StoryResultPanel } from "@/components/features/stories/story-result-panel";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import type { StoryLengthCatalog } from "@/lib/stories/length";
+import type { AdventBookSummary } from "@/lib/stories/advent-repository";
 import type {
   UserStoryDetail,
   UserStorySummary,
@@ -37,19 +42,77 @@ type LibraryProfileOption = {
   wordHighlight: boolean;
 };
 
+type StoryTreeRow = {
+  story: UserStorySummary;
+  depth: number;
+};
+
+/**
+ * Flattens stories into a tree walk: roots (no parent in the set) first,
+ * then children indented. Roots keep favorite-first / newest ordering.
+ */
+function flattenStoryTree(stories: UserStorySummary[]): StoryTreeRow[] {
+  const byId = new Map(stories.map((story) => [story.id, story]));
+  const children = new Map<string, UserStorySummary[]>();
+
+  for (const story of stories) {
+    const parentId = story.parentStoryId;
+    if (parentId && byId.has(parentId)) {
+      const list = children.get(parentId) ?? [];
+      list.push(story);
+      children.set(parentId, list);
+    }
+  }
+
+  for (const list of children.values()) {
+    list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  const roots = stories
+    .filter(
+      (story) =>
+        !story.parentStoryId || !byId.has(story.parentStoryId),
+    )
+    .sort((a, b) => {
+      if (a.isFavorite !== b.isFavorite) {
+        return a.isFavorite ? -1 : 1;
+      }
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+
+  const rows: StoryTreeRow[] = [];
+  const walk = (story: UserStorySummary, depth: number) => {
+    rows.push({ story, depth });
+    for (const child of children.get(story.id) ?? []) {
+      walk(child, depth + 1);
+    }
+  };
+  for (const root of roots) {
+    walk(root, 0);
+  }
+  return rows;
+}
+
 export function StoryLibraryBrowser({
   initialStories,
+  initialAdventBooks = [],
   profileOptions,
   enabledFeatures,
   typographyDefaults,
+  lengthCatalog,
 }: {
   initialStories: UserStorySummary[];
+  /** Ultimate Advent books shown above the story list. */
+  initialAdventBooks?: AdventBookSummary[];
   /** Child profiles for filter chips + Lesemodus prefs. */
   profileOptions: LibraryProfileOption[];
   enabledFeatures: readonly PackageFeatureId[];
   typographyDefaults: ReadingTypographyDefaultsCatalog;
+  /** Needed for „Wie könnte es weitergehen?“ (Pro+). */
+  lengthCatalog: StoryLengthCatalog;
 }) {
   const [stories, setStories] = useState(initialStories);
+  const [adventBooks] = useState(initialAdventBooks);
   const [profiles, setProfiles] = useState(profileOptions);
   const [filter, setFilter] = useState<ProfileFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -61,6 +124,10 @@ export function StoryLibraryBrowser({
     null,
   );
   const [readPendingId, setReadPendingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<UserStorySummary | null>(
+    null,
+  );
+  const [deletePending, setDeletePending] = useState(false);
   const [, startTransition] = useTransition();
 
   const allowVorlesen = featuresInclude(enabledFeatures, "vorlesen");
@@ -69,6 +136,8 @@ export function StoryLibraryBrowser({
   const allowFactWhy = featuresInclude(enabledFeatures, "warum");
   const allowFactWhyMore = featuresInclude(enabledFeatures, "hintergrund");
   const allowReadingMode = featuresInclude(enabledFeatures, "lesemodus");
+  const allowContinue = featuresInclude(enabledFeatures, "fortsetzen");
+  const allowAdvent = featuresInclude(enabledFeatures, "adventskalender");
 
   const filtered = useMemo(() => {
     if (filter === "all") return stories;
@@ -77,6 +146,11 @@ export function StoryLibraryBrowser({
     }
     return stories.filter((story) => story.childProfileId === filter);
   }, [stories, filter]);
+
+  const treeRows = useMemo(
+    () => flattenStoryTree(filtered),
+    [filtered],
+  );
 
   function handleToggleFavorite(story: UserStorySummary) {
     const next = !story.isFavorite;
@@ -92,16 +166,9 @@ export function StoryLibraryBrowser({
         return;
       }
       setStories((prev) =>
-        [...prev]
-          .map((item) =>
-            item.id === story.id ? { ...item, isFavorite: next } : item,
-          )
-          .sort((a, b) => {
-            if (a.isFavorite !== b.isFavorite) {
-              return a.isFavorite ? -1 : 1;
-            }
-            return b.createdAt.localeCompare(a.createdAt);
-          }),
+        prev.map((item) =>
+          item.id === story.id ? { ...item, isFavorite: next } : item,
+        ),
       );
       if (expandedStory?.id === story.id) {
         setExpandedStory({ ...expandedStory, isFavorite: next });
@@ -155,10 +222,92 @@ export function StoryLibraryBrowser({
     });
   }
 
+  function handleDeleteConfirm() {
+    if (!deleteTarget || deletePending) return;
+    const target = deleteTarget;
+    setDeletePending(true);
+    startTransition(async () => {
+      const result = await deleteMyStoryAction({ storyId: target.id });
+      setDeletePending(false);
+      if (!result.success) {
+        toast.error(result.error ?? "Löschen fehlgeschlagen.");
+        return;
+      }
+      setStories((prev) =>
+        prev
+          .filter((item) => item.id !== target.id)
+          .map((item) =>
+            item.parentStoryId === target.id
+              ? { ...item, parentStoryId: null }
+              : item,
+          ),
+      );
+      if (expandedId === target.id) {
+        setExpandedId(null);
+        setExpandedStory(null);
+      }
+      setDeleteTarget(null);
+      toast.success("Geschichte gelöscht.");
+    });
+  }
+
   const showProfileFilters = profiles.length > 0;
 
   return (
     <div className="mt-10 space-y-4">
+      {allowAdvent && adventBooks.length > 0 ? (
+        <div className="space-y-3">
+          <p className="text-xs font-extrabold tracking-wide text-orange-700 uppercase">
+            Adventskalenderbücher
+          </p>
+          <ul className="space-y-3">
+            {adventBooks.map((book) => (
+              <li key={book.id}>
+                <a
+                  href={`/adventskalender/${book.id}`}
+                  className="block rounded-[1.75rem] bg-white p-5 shadow-xl ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out hover:ring-orange-700/30 sm:p-6"
+                >
+                  <h2 className="text-lg font-extrabold tracking-tight text-zinc-950 sm:text-xl">
+                    {book.title}
+                  </h2>
+                  <p className="mt-1 text-xs font-semibold text-zinc-500">
+                    {book.daysReady}/24 Tage ·{" "}
+                    {book.status === "ready"
+                      ? "fertig"
+                      : book.status === "failed"
+                        ? "unterbrochen"
+                        : "in Arbeit"}
+                    {book.profileDisplayName
+                      ? ` · ${book.profileDisplayName}`
+                      : null}
+                  </p>
+                </a>
+              </li>
+            ))}
+          </ul>
+          {allowAdvent ? (
+            <p className="text-sm font-semibold text-zinc-600">
+              <a
+                href="/adventskalender"
+                className="text-orange-700 underline-offset-2 hover:underline"
+              >
+                Neues Adventskalenderbuch anlegen
+              </a>
+            </p>
+          ) : null}
+        </div>
+      ) : allowAdvent ? (
+        <p className="rounded-[1.75rem] bg-white p-5 text-sm font-semibold text-zinc-600 shadow-xl ring-1 ring-zinc-950/10 sm:p-6">
+          Noch kein Adventskalenderbuch.{" "}
+          <a
+            href="/adventskalender"
+            className="font-bold text-orange-700 underline-offset-2 hover:underline"
+          >
+            Jetzt anlegen
+          </a>
+        </p>
+      ) : null}
+
       {showProfileFilters ? (
         <div className="flex flex-wrap gap-2">
           <FilterChip
@@ -182,7 +331,7 @@ export function StoryLibraryBrowser({
         </div>
       ) : null}
 
-      {filtered.length === 0 ? (
+      {treeRows.length === 0 ? (
         <p className="rounded-[1.75rem] bg-white p-8 text-sm leading-relaxed text-zinc-600 shadow-xl ring-1 ring-zinc-950/10">
           Noch keine Geschichten in der Bücherei. Erzeuge eine unter{" "}
           <a
@@ -195,7 +344,7 @@ export function StoryLibraryBrowser({
         </p>
       ) : (
         <ul className="space-y-3">
-          {filtered.map((story) => {
+          {treeRows.map(({ story, depth }) => {
             const stageLabel =
               STORY_SCHOOL_STAGES.find(
                 (stage) => stage.id === story.schoolStage,
@@ -204,6 +353,7 @@ export function StoryLibraryBrowser({
               ? (profiles.find((p) => p.id === story.childProfileId) ?? null)
               : null;
             const meta = [
+              depth > 0 ? "Fortsetzung" : null,
               story.profileDisplayName
                 ? story.profileDisplayName
                 : story.personalMode
@@ -218,11 +368,20 @@ export function StoryLibraryBrowser({
             const isExpanded = expandedId === story.id;
 
             return (
-              <li key={story.id} className="space-y-3">
+              <li
+                key={story.id}
+                className="space-y-3"
+                style={
+                  depth > 0
+                    ? { marginLeft: `min(${depth * 1.25}rem, 3rem)` }
+                    : undefined
+                }
+              >
                 <article
                   className={cn(
                     "rounded-[1.75rem] bg-white p-5 shadow-xl ring-1 ring-zinc-950/10 sm:p-6",
                     story.isRead && "opacity-90",
+                    depth > 0 && "border-l-4 border-orange-400",
                   )}
                 >
                   <div className="flex items-start gap-3">
@@ -233,11 +392,17 @@ export function StoryLibraryBrowser({
                     >
                       <h2
                         className={cn(
-                          "text-lg font-extrabold tracking-tight underline-offset-2 hover:text-orange-700 hover:underline sm:text-xl",
+                          "flex items-start gap-2 text-lg font-extrabold tracking-tight underline-offset-2 hover:text-orange-700 hover:underline sm:text-xl",
                           story.isRead ? "text-zinc-500" : "text-zinc-950",
                         )}
                       >
-                        {story.title}
+                        {depth > 0 ? (
+                          <GitBranch
+                            className="mt-1 size-4 shrink-0 text-orange-600"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <span>{story.title}</span>
                       </h2>
                       <p className="mt-1 text-xs font-semibold text-zinc-500">
                         {meta}
@@ -295,6 +460,15 @@ export function StoryLibraryBrowser({
                         aria-hidden
                       />
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(story)}
+                      className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-zinc-500 transition-all duration-200 ease-in-out hover:bg-orange-100 hover:text-orange-800"
+                      aria-label="Geschichte löschen"
+                      title="Geschichte löschen"
+                    >
+                      <Trash2 className="size-5" aria-hidden />
+                    </button>
                   </div>
                 </article>
 
@@ -329,6 +503,40 @@ export function StoryLibraryBrowser({
                     readingProfileId={story.childProfileId}
                     readingModePrefs={storyProfile?.readingModePrefs ?? null}
                     typographyDefaults={typographyDefaults}
+                    allowContinue={allowContinue}
+                    libraryStoryId={expandedStory.id}
+                    lengthCatalog={lengthCatalog}
+                    continueLengthStep={
+                      expandedStory.lengthStep ?? "mittel"
+                    }
+                    continueMood={expandedStory.mood ?? "spannend"}
+                    onContinued={(result) => {
+                      const summary: UserStorySummary = {
+                        id: result.libraryStoryId,
+                        title: titleFromHtmlHint(result.storyHtml),
+                        childProfileId: story.childProfileId,
+                        profileDisplayName: story.profileDisplayName,
+                        isFavorite: false,
+                        isRead: false,
+                        schoolStage: result.schoolStage,
+                        personalMode: story.personalMode,
+                        parentStoryId: story.id,
+                        createdAt: new Date().toISOString(),
+                      };
+                      setStories((prev) => [summary, ...prev]);
+                      setExpandedId(result.libraryStoryId);
+                      setExpandedStory({
+                        ...summary,
+                        storyHtml: result.storyHtml,
+                        facts: result.facts,
+                        lengthStep: expandedStory.lengthStep,
+                        mood: expandedStory.mood,
+                        topic: expandedStory.topic,
+                        syllableHelp: expandedStory.syllableHelp,
+                        includeImages: expandedStory.includeImages,
+                        creditsCharged: null,
+                      });
+                    }}
                     onReadingModePrefsChange={(prefs) => {
                       if (!story.childProfileId) return;
                       const profileId = story.childProfileId;
@@ -352,6 +560,22 @@ export function StoryLibraryBrowser({
           })}
         </ul>
       )}
+
+      <ConfirmDeleteDialog
+        open={Boolean(deleteTarget)}
+        title="Geschichte löschen?"
+        description={
+          deleteTarget
+            ? `Die Geschichte „${deleteTarget.title}“ wird dauerhaft aus der Bücherei entfernt. Fortsetzungen bleiben erhalten, verlieren aber die Verknüpfung zu dieser Vorgeschichte. Das lässt sich nicht rückgängig machen.`
+            : ""
+        }
+        confirmLabel="Geschichte löschen"
+        pending={deletePending}
+        onCancel={() => {
+          if (!deletePending) setDeleteTarget(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+      />
     </div>
   );
 }
@@ -389,4 +613,11 @@ function formatStoryDate(iso: string): string {
     month: "2-digit",
     year: "numeric",
   });
+}
+
+/** Best-effort title for optimistic library insert after continue. */
+function titleFromHtmlHint(html: string): string {
+  const match = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  if (!match?.[1]) return "Fortsetzung";
+  return match[1].replace(/<[^>]+>/g, "").trim() || "Fortsetzung";
 }

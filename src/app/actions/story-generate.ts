@@ -30,6 +30,14 @@ export type StoryGenerateActionData = StoryGenerateResult & {
   creditsRemaining?: number;
   /** Credits charged for this story (omit in trial). */
   creditsCharged?: number;
+  /** Library id when auto-saved (`buecherei`). */
+  libraryStoryId?: string;
+  /** Personal seed chosen for this generation (Meine Welt). */
+  personalSeed?: {
+    topic: string;
+    seedSource: "interest" | "experience";
+    gentleFear: string | null;
+  };
 };
 
 /**
@@ -130,7 +138,9 @@ export async function generateFreeStoryAction(
           error: "Dieses Profil wurde nicht gefunden. Bitte Meine Welt prüfen.",
         };
       }
-      personal = buildPersonalStoryContext(profile);
+      personal = buildPersonalStoryContext(profile, {
+        mood: parsed.data.mood,
+      });
       topic = personal.topic;
       schoolStage = profile.schoolStage;
       includeImages = profile.includeImages;
@@ -196,6 +206,7 @@ export async function generateFreeStoryAction(
     }
 
     const user = await getCurrentUser();
+    let libraryStoryId: string | undefined;
     if (user) {
       const { logUserActivity } = await import("@/lib/users/activity");
       await logUserActivity({
@@ -209,6 +220,8 @@ export async function generateFreeStoryAction(
           schoolStage,
           includeImages,
           topic,
+          seedSource: personal?.seedSource,
+          gentleFear: personal?.gentleFear ?? null,
           creditsCharged: creditCost > 0 ? creditCost : undefined,
         },
       });
@@ -224,7 +237,7 @@ export async function generateFreeStoryAction(
           const { saveMyStory } = await import(
             "@/lib/stories/library-repository"
           );
-          await saveMyStory({
+          libraryStoryId = await saveMyStory({
             title: titleFromStoryHtml(result.story),
             storyHtml: result.story,
             facts: result.facts,
@@ -250,6 +263,16 @@ export async function generateFreeStoryAction(
       success: true,
       data: {
         ...result,
+        ...(libraryStoryId ? { libraryStoryId } : {}),
+        ...(personal
+          ? {
+              personalSeed: {
+                topic: personal.topic,
+                seedSource: personal.seedSource,
+                gentleFear: personal.gentleFear,
+              },
+            }
+          : {}),
         ...(creditCost > 0
           ? { creditsCharged: creditCost, creditsRemaining }
           : {}),

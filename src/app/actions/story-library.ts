@@ -7,6 +7,7 @@
 
 import { getCurrentUser } from "@/lib/auth/session";
 import {
+  deleteMyStory,
   getMyStory,
   listMyStories,
   setMyStoryFavorite,
@@ -133,6 +134,42 @@ export async function setMyStoryReadAction(input: {
         error instanceof Error
           ? error.message
           : "Gelesen-Status konnte nicht gespeichert werden.",
+    };
+  }
+}
+
+/** Deletes one owned library story (confirm in UI first). */
+export async function deleteMyStoryAction(input: {
+  storyId: string;
+}): Promise<ActionResult<{ storyId: string }>> {
+  const denied = await assertBuechereiAccess();
+  if (denied) {
+    return { success: false, error: denied };
+  }
+  if (!input.storyId?.trim()) {
+    return { success: false, error: "Geschichte fehlt." };
+  }
+  try {
+    await deleteMyStory(input.storyId);
+    const user = await getCurrentUser();
+    if (user) {
+      const { logUserActivity } = await import("@/lib/users/activity");
+      await logUserActivity({
+        action: "story.delete",
+        label: "Geschichte gelöscht",
+        userId: user.id,
+        metadata: { storyId: input.storyId },
+      });
+    }
+    return { success: true, data: { storyId: input.storyId } };
+  } catch (error) {
+    console.error("[deleteMyStoryAction]", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Geschichte konnte nicht gelöscht werden.",
     };
   }
 }

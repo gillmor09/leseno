@@ -122,6 +122,7 @@ export function FreeStoryForm({
   );
   const [output, setOutput] = useState("");
   const [learnedFacts, setLearnedFacts] = useState<string[]>([]);
+  const [libraryStoryId, setLibraryStoryId] = useState<string | null>(null);
   const [storySchoolStage, setStorySchoolStage] =
     useState<StorySchoolStageId | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
@@ -166,6 +167,7 @@ export function FreeStoryForm({
   const allowFactWhy = canFeature("warum");
   const allowFactWhyMore = canFeature("hintergrund");
   const allowReadingMode = canFeature("lesemodus");
+  const allowContinue = canFeature("fortsetzen") && canFeature("buecherei");
   const storyCreditCost = trialMode
     ? 0
     : storyCreditsForLength(lengthStep);
@@ -226,6 +228,7 @@ export function FreeStoryForm({
     });
 
     startTransition(async () => {
+      setLibraryStoryId(null);
       const result = await generateFreeStoryAction({
         personalMode: trialMode ? false : personalMode,
         profileId:
@@ -258,7 +261,20 @@ export function FreeStoryForm({
           .filter(Boolean),
       );
       setStorySchoolStage(schoolStage);
+      setLibraryStoryId(result.data.libraryStoryId ?? null);
       setSelectionExpanded(false);
+      if (result.data.personalSeed) {
+        const seed = result.data.personalSeed;
+        const sourceLabel =
+          seed.seedSource === "experience"
+            ? "Erlebniswunsch"
+            : "Interesse";
+        toast.success(
+          `Geschichte ist da — Kern (${sourceLabel}): ${seed.topic}`,
+        );
+      } else {
+        toast.success("Geschichte ist da!");
+      }
       if (
         typeof result.data.creditsRemaining === "number" &&
         onCreditsChange
@@ -658,6 +674,23 @@ export function FreeStoryForm({
           readingProfileId={activeProfileId}
           readingModePrefs={selectedProfile?.readingModePrefs ?? null}
           typographyDefaults={typographyDefaults}
+          allowContinue={allowContinue}
+          libraryStoryId={libraryStoryId}
+          lengthCatalog={lengthCatalog}
+          continueLengthStep={lengthStep}
+          continueMood={mood}
+          onContinued={(result) => {
+            setOutput(result.storyHtml);
+            setLearnedFacts(result.facts);
+            setStorySchoolStage(result.schoolStage);
+            setLibraryStoryId(result.libraryStoryId);
+            if (
+              typeof result.creditsRemaining === "number" &&
+              onCreditsChange
+            ) {
+              onCreditsChange(result.creditsRemaining);
+            }
+          }}
           onReadingModePrefsChange={(prefs) => {
             if (!activeProfileId) return;
             setProfiles((current) =>

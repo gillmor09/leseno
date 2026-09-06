@@ -215,6 +215,9 @@ export default function AgbPage() {
                 Mitgliedschaften laufen zunächst für die gebuchte Periode
                 (typischerweise ein Monat) und verlängern sich automatisch um
                 dieselbe Periode, sofern sie nicht rechtzeitig gekündigt werden.
+                Die Abrechnung erfolgt jeweils am gleichen Tag des Monats, an dem
+                das Paket gebucht wurde (Beispiel: Buchung am 4. → nächste
+                Abrechnung am 4. des Folgemonats).
               </p>
               <p>
                 Du kannst das Abo jederzeit zum Ende der laufenden
@@ -227,8 +230,9 @@ export default function AgbPage() {
                   info@leseno.de
                 </a>
                 . Nach wirksamer Kündigung bleibt der Zugang bis zum Periodenende
-                erhalten; danach entfallen die paketgebundenen Leistungen
-                (Rückfall auf Basis, soweit nichts anderes vereinbart ist).
+                (dem jeweiligen Abrechnungstag) erhalten; danach entfallen die
+                paketgebundenen Leistungen (Rückfall auf Basis, soweit nichts
+                anderes vereinbart ist).
               </p>
               <p>
                 Das Recht zur außerordentlichen Kündigung aus wichtigem Grund
@@ -240,14 +244,17 @@ export default function AgbPage() {
               <p>
                 Credits sind digitale Nutzungseinheiten. Der Verbrauch richtet
                 sich nach der jeweils ausgewiesenen Credit-Logik (z. B. Länge
-                der Geschichte). Enthaltene Credits aus einem Abo und zugekaufte
-                Credits werden dem Konto gutgeschrieben.
+                der Geschichte). Enthaltene Credits aus einem Abo werden zu
+                Beginn jeder bezahlten Abrechnungsperiode gutgeschrieben;
+                zugekaufte Credits werden dem Konto nach erfolgreichem Kauf
+                gutgeschrieben. Bleibt ein Abo aktiv, werden auch Perioden
+                gutgeschrieben, in denen die App nicht genutzt wurde.
               </p>
               <p>
-                Credits verfallen nicht automatisch zum Monatsende, soweit auf
-                der Website nichts Abweichendes angegeben ist. Eine Auszahlung
-                von Credits in Geld ist ausgeschlossen. Bereits verbrauchte
-                Credits werden nicht erstattet.
+                Credits verfallen nicht. Nicht verbrauchte Credits werden in
+                Folgemonate übernommen und summieren sich mit neuen Gutschriften.
+                Eine Auszahlung von Credits in Geld ist ausgeschlossen. Bereits
+                verbrauchte Credits werden nicht erstattet.
               </p>
             </Section>
 

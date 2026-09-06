@@ -1,5 +1,6 @@
 /**
- * Stripe webhook event handlers: Checkout completed, subscription lifecycle.
+ * Stripe webhook event handlers: Checkout, invoice.paid (monthly credits), subscription lifecycle.
+ * Billing anniversary = Stripe period day; credits never expire (ledger + balance carry over).
  */
 
 import type Stripe from "stripe";
@@ -13,13 +14,16 @@ import {
 } from "@/lib/stripe/config";
 import {
   activatePaidMembership,
-  addUserCredits,
   claimStripeWebhookEvent,
   deactivatePaidMembership,
   findUserIdByStripeCustomerId,
   saveStripeCustomerId,
   syncPaidMembership,
 } from "@/lib/stripe/billing-sync";
+import {
+  grantCreditsPackOnce,
+  grantPackageCreditsForPaidInvoice,
+} from "@/lib/stripe/credit-grants";
 import { logUserActivity } from "@/lib/users/activity";
 
 function customerIdFrom(
@@ -79,16 +83,22 @@ async function handleCheckoutSessionCompleted(
         : STRIPE_CREDITS_PACK_AMOUNT;
 
     if (credits > 0) {
-      await addUserCredits(userId, credits);
-      await logUserActivity({
+      const result = await grantCreditsPackOnce({
         userId,
-        action: "billing.credits_purchased",
-        label: String(credits),
-        metadata: {
-          sessionId: session.id,
-          credits,
-        },
+        amount: credits,
+        checkoutSessionId: session.id,
       });
+      if (result.granted > 0) {
+        await logUserActivity({
+          userId,
+          action: "billing.credits_purchased",
+          label: String(credits),
+          metadata: {
+            sessionId: session.id,
+            credits,
+          },
+        });
+      }
     }
     return;
   }
@@ -113,13 +123,13 @@ async function handleCheckoutSessionCompleted(
       return;
     }
 
-    // Grant included package credits only on the initial Checkout completion.
+    // Role + booking only. Package credits come from invoice.paid (anniversary day).
     await activatePaidMembership({
       userId,
       packageId: packageIdRaw,
       customerId,
       subscriptionId,
-      grantPackageCredits: true,
+      grantPackageCredits: false,
       notes: `stripe_checkout:${session.id}`,
     });
   }
@@ -150,7 +160,8 @@ async function handleSubscriptionUpdated(
       console.warn("[stripe] subscription without package", subscription.id);
       return;
     }
-    // Renewals / plan changes: keep role in sync; do not re-grant package credits.
+    // Renewals / plan changes: keep role in sync.
+    // Monthly credits: invoice.paid (same day-of-month as booking).
     await syncPaidMembership({
       userId,
       packageId,
@@ -161,6 +172,7 @@ async function handleSubscriptionUpdated(
     return;
   }
 
+  // cancel_at_period_end keeps status "active" until anniversary — do not demote early.
   if (
     status === "canceled" ||
     status === "unpaid" ||
@@ -189,6 +201,11 @@ async function handleSubscriptionDeleted(
     userId,
     subscriptionId: subscription.id,
   });
+}
+
+/** Paid subscription invoice → that month's package credits (idempotent ledger). */
+async function handleInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
+  await grantPackageCreditsForPaidInvoice(invoice);
 }
 
 /**
@@ -230,6 +247,9 @@ export async function processStripeWebhookEvent(
         await handleCheckoutSessionCompleted(
           event.data.object as Stripe.Checkout.Session,
         );
+        break;
+      case "invoice.paid":
+        await handleInvoicePaid(event.data.object as Stripe.Invoice);
         break;
       case "customer.subscription.updated":
         await handleSubscriptionUpdated(
