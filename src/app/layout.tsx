@@ -79,8 +79,10 @@ export default function RootLayout({
       lang="de"
       className={`${nunito.variable} ${geistMono.variable} h-full scroll-smooth antialiased`}
     >
-      <body className="flex min-h-full flex-col font-sans">
+      <head>
         <GoogleAnalytics />
+      </head>
+      <body className="flex min-h-full flex-col font-sans">
         <Suspense fallback={null}>
           <CaptureReferral />
         </Suspense>
