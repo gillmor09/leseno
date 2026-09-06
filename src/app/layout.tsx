@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import dynamic from "next/dynamic";
 import { Nunito } from "next/font/google";
 import { GoogleAnalytics } from "@/components/analytics/google-analytics";
 import { CaptureReferral } from "@/components/features/marketing/capture-referral";
+import { LazyAppToaster } from "@/components/ui/lazy-app-toaster";
 import { getMetadataBaseUrl, SITE_NAME } from "@/lib/seo";
 import "./globals.css";
 
@@ -15,13 +15,6 @@ const nunito = Nunito({
   preload: true,
   adjustFontFallback: true,
 });
-
-/** Toaster only on the client; keeps sonner out of the server RSC payload. */
-const AppToaster = dynamic(
-  () =>
-    import("@/components/ui/app-toaster").then((mod) => mod.AppToaster),
-  { ssr: false },
-);
 
 const defaultTitle =
   "leseno — Eigene Geschichten aus Spaß und Neugier";
@@ -91,7 +84,7 @@ export default function RootLayout({
         </a>
         <CaptureReferral />
         {children}
-        <AppToaster />
+        <LazyAppToaster />
         <GoogleAnalytics />
       </body>
     </html>
