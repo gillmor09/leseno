@@ -5,7 +5,7 @@ import { SignUpForm } from "@/components/features/auth/sign-up-form";
 export const metadata: Metadata = {
   title: "Registrieren — Leseno",
   description:
-    "Konto anlegen und mit Basis kostenlos starten — eigene Geschichten zum Lesen üben für Grundschulkinder.",
+    "Konto anlegen und mit Basis kostenlos starten — eigene Geschichten aus Spaß und Neugier.",
 };
 
 /**

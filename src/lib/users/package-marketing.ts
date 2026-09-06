@@ -32,7 +32,7 @@ export const PACKAGE_COMPARE_FEATURE_HINTS: Partial<
   buecherei: "Geschichten speichern & erneut lesen",
   export: "Als PDF speichern",
   bilder: "Illustrationen in der Geschichte",
-  warum: "Hintergrund zu gelernten Fakten",
+  warum: "Hintergrund zu Aha-Momenten",
   hintergrund: "„Ich will mehr wissen“",
   silbenmethode: "Silbenhilfe beim Lesen",
   vorlesen: "Vorlesen mit Tempo",
@@ -40,14 +40,14 @@ export const PACKAGE_COMPARE_FEATURE_HINTS: Partial<
 };
 
 const PAID_TAGLINES: Record<Exclude<UserPackageId, "basis">, string> = {
-  plus: "Regelmäßig Lesen üben",
+  plus: "Mehr Geschichten im Alltag",
   pro: "Für die ganze Lesefamilie",
-  ultimate: "Volle Leseförderung",
+  ultimate: "Alles für Lesefluss & Vorlesen",
 };
 
 const PAID_BLURBS: Record<Exclude<UserPackageId, "basis">, string> = {
-  plus: "Mehr Geschichten dank Credits, Meine Bücherei zum Wiederlesen, ein Kinderprofil und PDF-Export — ideal zum regelmäßigen Lesen üben.",
-  pro: "Mehrere Kinder-Profile, Bücherei, Bilder in den Geschichten und „Warum?“ zum Nachforschen — wenn Leseno zum Familien-Ritual wird.",
+  plus: "Mehr Geschichten dank Credits, Meine Bücherei zum Wiederlesen, ein Kinderprofil und PDF-Export — wenn Lesen zum Ritual wird.",
+  pro: "Mehrere Kinder-Profile, Bücherei, Bilder in den Geschichten und „Warum?“ zum Nachforschen — wenn leseno zum Familien-Ritual wird.",
   ultimate:
     "Alles aus Pro plus Silbenhilfe, Vorlesen mit Wort-Markierung, PDF-Export und tieferes Hintergrundwissen.",
 };
@@ -78,7 +78,7 @@ export function marketingBulletsForPackage(pkg: MembershipPackage): string[] {
       bullets.push("Meine Bücherei: Geschichten speichern und erneut lesen");
     }
     if (packageHasFeature(pkg, "silbenmethode")) {
-      bullets.push("Silbenmethode für Erstleser");
+      bullets.push("Silbenhilfe für den Lesefluss");
     }
     if (packageHasFeature(pkg, "vorlesen")) {
       bullets.push("Vorlesen mit einstellbarem Tempo");
@@ -123,13 +123,13 @@ export function marketingBulletsForPackage(pkg: MembershipPackage): string[] {
     bullets.push("Bilder in den Geschichten");
   }
   if (packageHasFeature(pkg, "warum")) {
-    bullets.push("„Warum?“ zu gelernten Fakten");
+    bullets.push("„Warum?“ zu Aha-Momenten in der Geschichte");
   }
   if (packageHasFeature(pkg, "hintergrund")) {
     bullets.push("„Ich will mehr wissen“ für tieferen Hintergrund");
   }
   if (packageHasFeature(pkg, "silbenmethode")) {
-    bullets.push("Silbenmethode für Erstleser");
+    bullets.push("Silbenhilfe für den Lesefluss");
   }
   if (packageHasFeature(pkg, "vorlesen")) {
     bullets.push("Vorlesen mit einstellbarem Tempo");

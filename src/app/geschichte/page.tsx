@@ -4,7 +4,7 @@ import { MembershipStoryPage } from "@/components/features/stories/membership-st
 export const metadata: Metadata = {
   title: "Deine Geschichte — Leseno",
   description:
-    "Wähl ein Top-Thema oder „Ganz persönlich“, stell Schulstufe und Länge ein — dann lies deine Geschichte mit Wissen und Staunen.",
+    "Wähl ein Top-Thema oder „Ganz persönlich“, stell Lesestufe und Länge ein — dann lies deine Geschichte und staune unterwegs.",
 };
 
 /**

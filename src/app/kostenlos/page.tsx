@@ -7,9 +7,9 @@ import { TRIAL_MAX_STORIES_PER_IP_PER_DAY } from "@/lib/stories/trial-limits";
 import { buildPageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Kostenlos Lesen üben — Geschichten für die Grundschule",
+  title: "Kostenlos ausprobieren — eigene Geschichten ohne Konto",
   description:
-    "Leseno kostenlos ausprobieren: eigene kurze Geschichten für Erstklässler und Zweitklässler — ohne Konto. Lesen üben in wenigen Minuten.",
+    "leseno kostenlos ausprobieren: eine kurze eigene Geschichte ohne Konto — aus Spaß und Neugier, ohne Druck. In wenigen Minuten loslegen.",
   path: "/kostenlos",
 });
 
@@ -29,13 +29,12 @@ export default async function KostenlosPage() {
             Kostenlos ausprobieren
           </p>
           <h1 className="mt-4 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl lg:text-5xl lg:leading-[1.1]">
-            Lesen üben — ohne Konto, ohne Abo.
+            Eine Geschichte — ohne Konto, ohne Abo.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Probier Leseno mit einer kurzen Geschichte für die 1. oder 2.
-            Klasse. Ideal für Grundschulkinder, die gerne lesen oder Lesen üben
-            wollen. Im Testmodus: Textlänge bis mittel, ohne Bilder, Vorlesen,
-            PDF und Warum-Fragen. Maximal{" "}
+            Probier leseno mit einer kurzen Geschichte. Ideal, um zu spüren, ob
+            Lesen so Spaß macht. Im Testmodus: leichte Lesestufe, Textlänge bis
+            mittel, ohne Bilder, Vorlesen, PDF und Warum-Fragen. Maximal{" "}
             {TRIAL_MAX_STORIES_PER_IP_PER_DAY} Geschichten pro Tag.
           </p>
           <p className="mt-3 max-w-2xl text-sm font-semibold text-zinc-500">

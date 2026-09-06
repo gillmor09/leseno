@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = buildPageMetadata({
   title: "Preise: Plus, Pro & Ultimate im Vergleich",
   description:
-    "Leseno-Pakete für Grundschulkinder im Vergleich: Credits, Meine Bücherei, Meine Welt, Bilder, Warum, Silbenhilfe und Vorlesen. Monatlich kündbar — oder kostenlos starten.",
+    "leseno-Pakete im Vergleich: Credits, Meine Bücherei, Meine Welt, Bilder, Warum, Silbenhilfe und Vorlesen. Monatlich kündbar — oder kostenlos starten.",
   path: "/preise",
 });
 
@@ -54,7 +54,7 @@ export default async function PreisePage() {
             Preise
           </p>
           <h1 className="mt-4 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl lg:text-5xl lg:leading-[1.1]">
-            Pakete für Grundschulkinder, die gerne lesen.
+            Pakete für Kinder, die gerne Geschichten lesen.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             Plus für Credits, Bücherei und PDF, Pro für Familie und Bilder,

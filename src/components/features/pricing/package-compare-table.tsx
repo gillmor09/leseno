@@ -39,7 +39,7 @@ export function PackageCompareTable({
           Was steckt in welchem Paket?
         </h2>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-600">
-          Thema, Schulstufe, Ton und Textlänge gibt’s in jedem Paket.
+          Thema, Lesestufe, Ton und Textlänge gibt’s in jedem Paket.
           Die Tabelle zeigt die Extra-Funktionen — Stand aus der
           Paketverwaltung.
         </p>

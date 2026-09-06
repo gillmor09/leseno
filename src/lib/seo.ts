@@ -65,7 +65,7 @@ export function buildPageMetadata(input: PageSeoInput): Metadata {
           url: DEFAULT_OG_IMAGE,
           width: 1536,
           height: 1024,
-          alt: "Grundschulkind liest eine Leseno-Geschichte",
+          alt: "Kind liest eine Leseno-Geschichte",
         },
       ],
     },
@@ -88,11 +88,11 @@ export function homeJsonLd() {
     "@type": "WebApplication",
     name: SITE_NAME,
     url: "https://leseno.de",
-    applicationCategory: "EducationalApplication",
+    applicationCategory: "EntertainmentApplication",
     operatingSystem: "Web",
     inLanguage: "de-DE",
     description:
-      "Eigene Geschichten für Grundschulkinder: Lesen üben, Wissen staunen — altersgerecht. Kostenlos mit Basis starten.",
+      "Eigene Geschichten, die Kinder freiwillig lesen wollen — aus Spaß und Neugier, ohne Druck. Kostenlos mit Basis starten.",
     offers: {
       "@type": "Offer",
       price: "0",
@@ -100,9 +100,10 @@ export function homeJsonLd() {
       description: "Basis kostenlos starten; Plus, Pro und Ultimate optional.",
     },
     audience: {
-      "@type": "EducationalAudience",
-      educationalRole: "student",
-      name: "Grundschulkinder (ca. 5–10 Jahre)",
+      "@type": "PeopleAudience",
+      suggestedMinAge: 5,
+      suggestedMaxAge: 10,
+      name: "Kinder und Familien",
     },
   };
 }

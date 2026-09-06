@@ -18,9 +18,9 @@ const geistMono = Geist_Mono({
 });
 
 const defaultTitle =
-  "leseno — Lesen üben mit eigenen Geschichten für Grundschulkinder";
+  "leseno — Eigene Geschichten aus Spaß und Neugier";
 const defaultDescription =
-  "Eigene Geschichten für Grundschulkinder: Lesen üben, Wissen staunen — altersgerecht für Klasse 1 bis 4. Kostenlos mit Basis starten.";
+  "Eigene Geschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Kostenlos mit Basis starten.";
 
 export const metadata: Metadata = {
   metadataBase: getMetadataBaseUrl(),
@@ -30,14 +30,14 @@ export const metadata: Metadata = {
   },
   description: defaultDescription,
   keywords: [
-    "Lesen üben",
-    "Grundschule",
     "Geschichten für Kinder",
+    "Kinder lesen",
     "Vorlesen App",
-    "Erstlesen",
+    "persönliche Geschichten",
     "Silbenhilfe",
-    "Leseförderung",
+    "Lesen ohne Druck",
     "Leseapp Kinder",
+    "Neugier",
   ],
   authors: [{ name: SITE_NAME }],
   creator: SITE_NAME,

@@ -3,9 +3,9 @@ import { LandingPage } from "@/components/features/landing/landing-page";
 import { buildPageMetadata, homeJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Lesen üben mit eigenen Geschichten für Grundschulkinder",
+  title: "Eigene Geschichten aus Spaß und Neugier",
   description:
-    "Eigene Geschichten für Grundschulkinder: Lesen üben, Wissen staunen — altersgerecht. Silbenhilfe, Vorlesen und Bilder in den Paketen. Kostenlos mit Basis starten.",
+    "Eigene Geschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Silbenhilfe, Vorlesen und Bilder in den Paketen. Kostenlos mit Basis starten.",
   path: "/",
 });
 

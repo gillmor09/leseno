@@ -57,8 +57,8 @@ export function GeschichteComposer({
       </h1>
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
         {allowMeineWelt
-          ? "Nimm ein Top-Thema oder schalte „Ganz persönlich“ ein. Dann stell Schulstufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."
-          : "Nimm ein Top-Thema und stell Schulstufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."}
+          ? "Nimm ein Top-Thema oder schalte „Ganz persönlich“ ein. Dann stell Lesestufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."
+          : "Nimm ein Top-Thema und stell Lesestufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."}
       </p>
       {inviteUserId ? (
         <div className="mt-6">
