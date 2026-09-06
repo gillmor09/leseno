@@ -30,6 +30,7 @@ import type { StoryLengthCatalog, StoryLengthStepId } from "@/lib/stories/length
 import type { ReadingTypographyDefaultsCatalog } from "@/lib/stories/reading-typography-defaults";
 import { StoryResultPanel } from "@/components/features/stories/story-result-panel";
 import { ChildProfilePickerCard } from "@/components/features/stories/child-profile-picker-card";
+import { ChildProfilePinUnlockDialog } from "@/components/features/world/child-profile-pin-unlock-dialog";
 import type { ChildProfileOption } from "@/lib/world/catalog";
 import { FREE_READING_EXTRAS } from "@/lib/world/catalog";
 import {
@@ -72,6 +73,7 @@ export function FreeStoryForm({
   initialCredits = 0,
   onCreditsChange,
   inviteUserId = null,
+  initialUnlockedProfileIds = [],
 }: {
   lengthCatalog: StoryLengthCatalog;
   typographyDefaults: ReadingTypographyDefaultsCatalog;
@@ -90,14 +92,20 @@ export function FreeStoryForm({
   onCreditsChange?: (credits: number) => void;
   /** Personal invite `?ref=` after a story (membership). */
   inviteUserId?: string | null;
+  /** Profile ids without PIN or already unlocked this session. */
+  initialUnlockedProfileIds?: string[];
 }) {
   const canFeature = (feature: PackageFeatureId) =>
     !trialMode && featuresInclude(enabledFeatures, feature);
 
+  const unlockedAtStart = new Set(initialUnlockedProfileIds);
   const startupProfile = trialMode
     ? null
     : (childProfiles?.find(
-        (profile) => profile.isDefault && profile.personalReady,
+        (profile) =>
+          profile.isDefault &&
+          profile.personalReady &&
+          (!profile.hasPin || unlockedAtStart.has(profile.id)),
       ) ?? null);
 
   const [topic, setTopic] = useState<StoryTopTopic | "">(
@@ -107,6 +115,13 @@ export function FreeStoryForm({
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     startupProfile?.id ?? null,
   );
+  const [unlockedIds, setUnlockedIds] = useState(
+    () => new Set(initialUnlockedProfileIds),
+  );
+  const [pendingUnlock, setPendingUnlock] = useState<{
+    profileId: string;
+    profileName: string;
+  } | null>(null);
   const [schoolStage, setSchoolStage] = useState<StorySchoolStageId>(
     trialMode
       ? TRIAL_DEFAULT_SCHOOL_STAGE
@@ -312,18 +327,7 @@ export function FreeStoryForm({
   const selectionCardClass =
     "rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8";
 
-  function handleProfileSelect(profileId: string | null) {
-    if (profileId === null) {
-      setSelectedProfileId(null);
-      setLengthMoodOpen(false);
-      if (!topic) setTopic(STORY_TOP_TOPICS[0]);
-      trackUserActivity({
-        action: "story.profile_select",
-        label: "Leser: Freies lesen",
-        metadata: { profileId: null },
-      });
-      return;
-    }
+  function applyProfileSelect(profileId: string) {
     const next = profiles?.find((profile) => profile.id === profileId);
     if (!next) return;
     if (!next.personalReady) {
@@ -346,12 +350,37 @@ export function FreeStoryForm({
     });
   }
 
+  function handleProfileSelect(profileId: string | null) {
+    if (profileId === null) {
+      setSelectedProfileId(null);
+      setLengthMoodOpen(false);
+      if (!topic) setTopic(STORY_TOP_TOPICS[0]);
+      trackUserActivity({
+        action: "story.profile_select",
+        label: "Leser: Freies lesen",
+        metadata: { profileId: null },
+      });
+      return;
+    }
+    const next = profiles?.find((profile) => profile.id === profileId);
+    if (!next) return;
+    if (next.hasPin && !unlockedIds.has(profileId)) {
+      setPendingUnlock({
+        profileId,
+        profileName: next.displayName,
+      });
+      return;
+    }
+    applyProfileSelect(profileId);
+  }
+
   return (
     <div className="grid items-start gap-8">
       {childProfiles !== null && !trialMode && !selectionCollapsed ? (
         <ChildProfilePickerCard
           profiles={profiles ?? []}
           selectedId={selectedProfileId}
+          unlockedIds={unlockedIds}
           onSelect={handleProfileSelect}
           disabled={isPending}
           lengthLabel={
@@ -371,6 +400,21 @@ export function FreeStoryForm({
               ? () => setLengthMoodOpen((open) => !open)
               : undefined
           }
+        />
+      ) : null}
+
+      {pendingUnlock ? (
+        <ChildProfilePinUnlockDialog
+          open
+          profileId={pendingUnlock.profileId}
+          profileName={pendingUnlock.profileName}
+          onCancel={() => setPendingUnlock(null)}
+          onUnlocked={() => {
+            const id = pendingUnlock.profileId;
+            setUnlockedIds((current) => new Set(current).add(id));
+            setPendingUnlock(null);
+            applyProfileSelect(id);
+          }}
         />
       ) : null}
 

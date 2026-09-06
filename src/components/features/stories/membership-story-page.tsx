@@ -35,6 +35,21 @@ export async function MembershipStoryPage() {
     ? await loadChildProfileOptionsForUser(true)
     : null;
 
+  let unlockedProfileIds: string[] = [];
+  if (user?.id && childProfiles && childProfiles.length > 0) {
+    try {
+      const { listUnlockedChildProfileIds } = await import(
+        "@/lib/world/profile-pin-access"
+      );
+      unlockedProfileIds = await listUnlockedChildProfileIds(
+        user.id,
+        childProfiles,
+      );
+    } catch (error) {
+      console.warn("[MembershipStoryPage] profile unlock", error);
+    }
+  }
+
   let initialCredits = 0;
   try {
     initialCredits = await loadMyCredits();
@@ -63,7 +78,7 @@ export async function MembershipStoryPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <GeschichteComposer
             packageLabel={packageLabel}
@@ -73,6 +88,7 @@ export async function MembershipStoryPage() {
             lengthCatalog={lengthCatalog}
             typographyDefaults={typographyDefaults}
             childProfiles={childProfiles}
+            unlockedProfileIds={unlockedProfileIds}
             enabledFeatures={enabledFeatures}
             inviteUserId={user?.id ?? null}
           />

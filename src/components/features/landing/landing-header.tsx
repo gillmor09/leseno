@@ -28,7 +28,13 @@ const navItems = [
 function goToSection(href: string) {
   const id = href.startsWith("#") ? href.slice(1) : href;
   const target = document.getElementById(id);
-  target?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const reducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  target?.scrollIntoView({
+    behavior: reducedMotion ? "auto" : "smooth",
+    block: "start",
+  });
 }
 
 /**
@@ -166,6 +172,7 @@ export function LandingHeader({
               width={40}
               height={40}
               className="size-9 sm:size-10"
+              sizes="40px"
               priority
             />
             <span className="text-xl font-extrabold tracking-tight text-zinc-950">

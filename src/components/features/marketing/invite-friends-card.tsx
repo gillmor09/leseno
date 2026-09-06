@@ -1,7 +1,6 @@
-"use client";
-
 /**
  * Invite / Empfehlung card for landing, story result, and membership pages.
+ * Server component — only the share button is a client island.
  */
 
 import { ShareInviteButton } from "@/components/features/marketing/share-invite-button";
@@ -63,7 +62,7 @@ export function InviteFriendsCard({
         <p className="mt-4 text-base leading-relaxed text-zinc-300">
           {SHARE_SECTION_BODY}
         </p>
-        <p className="mt-3 text-sm text-zinc-400">
+        <p className="mt-3 text-sm text-zinc-300">
           Bei Instagram: Text kopieren, App öffnen, in Story oder DM einfügen —
           Instagram erlaubt keine Direkt-Links von Websites.
         </p>

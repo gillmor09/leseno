@@ -76,5 +76,42 @@ export const saveChildReadingModePrefsSchema = z.object({
     .nullable(),
 });
 
+const pinSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4,8}$/, { message: "PIN: 4 bis 8 Ziffern." });
+
+export const unlockChildProfilePinSchema = z.object({
+  profileId: z.string().uuid({ message: "Ungültige Profil-ID." }),
+  pin: pinSchema,
+});
+
+export const lockChildProfilePinSchema = z.object({
+  profileId: z.string().uuid({ message: "Ungültige Profil-ID." }),
+});
+
+export const setChildProfilePinSchema = z
+  .object({
+    profileId: z.string().uuid({ message: "Ungültige Profil-ID." }),
+    pin: pinSchema,
+    pinConfirm: pinSchema,
+    /** Required when a PIN already exists. */
+    currentPin: z.string().trim().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.pin !== value.pinConfirm) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["pinConfirm"],
+        message: "Die PIN-Wiederholung stimmt nicht.",
+      });
+    }
+  });
+
+export const removeChildProfilePinSchema = z.object({
+  profileId: z.string().uuid({ message: "Ungültige Profil-ID." }),
+  currentPin: pinSchema,
+});
+
 /** @deprecated Use childProfileFieldsSchema */
 export const userWorldSchema = childProfileFieldsSchema;

@@ -34,6 +34,7 @@ export async function loadChildProfileOptionsForUser(
         readableAloud: profile.readableAloud,
         isDefault: profile.isDefault,
         readingModePrefs: profile.readingModePrefs,
+        hasPin: profile.hasPin,
       };
     });
   } catch (error) {

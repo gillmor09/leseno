@@ -1,15 +1,23 @@
 "use client";
 
 /**
- * Learned-facts list with per-fact „Warum?“ → FactWhyDialog.
- * Used on story composers and the landing demo facts block.
+ * Learned-facts list with per-fact „Warum?“ → FactWhyDialog (lazy-loaded).
+ * Used on story composers; landing uses static markup instead.
  */
 
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import { Lightbulb } from "lucide-react";
-import { FactWhyDialog } from "@/components/features/stories/fact-why-dialog";
 import type { StorySchoolStageId } from "@/lib/stories/options";
 import { cn } from "@/lib/utils";
+
+const FactWhyDialog = dynamic(
+  () =>
+    import("@/components/features/stories/fact-why-dialog").then(
+      (mod) => mod.FactWhyDialog,
+    ),
+  { ssr: false },
+);
 
 type StoryFactsListProps = {
   facts: string[];
@@ -61,7 +69,7 @@ export function StoryFactsList({
               <Lightbulb className="size-5" aria-hidden />
             </span>
             <div>
-              <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+              <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
                 Wissen
               </p>
               <h2
@@ -103,9 +111,7 @@ export function StoryFactsList({
                     onClick={() => setActiveFact(fact)}
                     className={cn(
                       "mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold tracking-wide uppercase transition-all duration-200 ease-in-out",
-                      isStory
-                        ? "bg-yellow-400 text-zinc-950 hover:bg-yellow-300"
-                        : "bg-yellow-400 text-zinc-950 hover:bg-yellow-300",
+                      "bg-yellow-400 text-zinc-950 hover:bg-yellow-300",
                     )}
                   >
                     Warum?
@@ -117,10 +123,10 @@ export function StoryFactsList({
         </ul>
       </section>
 
-      {allowFactWhy ? (
+      {allowFactWhy && activeFact ? (
         <FactWhyDialog
-          open={Boolean(activeFact)}
-          fact={activeFact ?? ""}
+          open
+          fact={activeFact}
           schoolStage={schoolStage}
           allowMore={allowFactWhyMore}
           onClose={() => setActiveFact(null)}

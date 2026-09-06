@@ -116,6 +116,13 @@ export async function createAdventBookAction(
       if (!profile) {
         return { success: false, error: "Kinder-Profil nicht gefunden." };
       }
+      const { assertChildProfileUnlocked } = await import(
+        "@/lib/world/profile-pin-access"
+      );
+      const lockError = await assertChildProfileUnlocked(profile.id);
+      if (lockError) {
+        return { success: false, error: lockError };
+      }
       childProfileId = profile.id;
       schoolStage = profile.schoolStage;
       topic = `Advent mit ${profile.displayName || "Kind"}`;

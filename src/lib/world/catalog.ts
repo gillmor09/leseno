@@ -37,13 +37,15 @@ export type ChildProfile = {
   isDefault: boolean;
   /** Lesemodus override; null = follow admin stage Standard. */
   readingModePrefs: ReadingModePrefs | null;
+  /** Optional parent PIN is set (hash never exposed to the client). */
+  hasPin: boolean;
   sortOrder: number;
 };
 
 /** Profile fields without id (create draft / form body). */
 export type ChildProfileFields = Omit<
   ChildProfile,
-  "id" | "sortOrder" | "readingModePrefs"
+  "id" | "sortOrder" | "readingModePrefs" | "hasPin"
 >;
 
 /** Lightweight row for story-page tabs + extras applied on select. */
@@ -64,6 +66,8 @@ export type ChildProfileOption = {
   isDefault: boolean;
   /** null = follow admin stage Standard in Lesemodus. */
   readingModePrefs: ReadingModePrefs | null;
+  /** Parent PIN required before selecting / editing. */
+  hasPin: boolean;
 };
 
 /** Defaults for Freies lesen (no profile). */

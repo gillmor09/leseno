@@ -21,6 +21,7 @@ import {
 import { useMembershipCredits } from "@/components/features/membership/membership-credits-header";
 import { StoryLengthSlider } from "@/components/features/stories/story-length-slider";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { ChildProfilePinUnlockDialog } from "@/components/features/world/child-profile-pin-unlock-dialog";
 import { ADVENT_DAY_COUNT } from "@/lib/stories/advent";
 import { adventBookCreditsForLength } from "@/lib/stories/credits-cost";
 import type { StoryLengthCatalog, StoryLengthStepId } from "@/lib/stories/length";
@@ -75,6 +76,18 @@ export function AdventBookCreateForm({
   const [waitingOpen, setWaitingOpen] = useState(false);
   const [progressDay, setProgressDay] = useState(0);
   const [isPending, startTransition] = useTransition();
+  const [unlockedIds, setUnlockedIds] = useState(() => {
+    const ids = new Set<string>();
+    for (const profile of childProfiles ?? []) {
+      if (!profile.hasPin) ids.add(profile.id);
+    }
+    return ids;
+  });
+  const [pendingUnlock, setPendingUnlock] = useState<{
+    profileId: string;
+    profileName: string;
+    after?: "confirm";
+  } | null>(null);
 
   const creditCost = useMemo(
     () => adventBookCreditsForLength(lengthStep),
@@ -101,6 +114,20 @@ export function AdventBookCreateForm({
     const error = validateBeforeConfirm();
     if (error) {
       toast.error(error);
+      return;
+    }
+    if (
+      personalMode &&
+      allowMeineWelt &&
+      profileId &&
+      !unlockedIds.has(profileId)
+    ) {
+      const profile = childProfiles?.find((row) => row.id === profileId);
+      setPendingUnlock({
+        profileId,
+        profileName: profile?.displayName || "Ohne Namen",
+        after: "confirm",
+      });
       return;
     }
     setConfirmOpen(true);
@@ -226,12 +253,30 @@ export function AdventBookCreateForm({
             </span>
             <select
               value={profileId ?? ""}
-              onChange={(event) => setProfileId(event.target.value || null)}
+              onChange={(event) => {
+                const nextId = event.target.value || null;
+                if (!nextId) {
+                  setProfileId(null);
+                  return;
+                }
+                const profile = childProfiles?.find((row) => row.id === nextId);
+                if (profile?.hasPin && !unlockedIds.has(nextId)) {
+                  setPendingUnlock({
+                    profileId: nextId,
+                    profileName: profile.displayName || "Ohne Namen",
+                  });
+                  return;
+                }
+                setProfileId(nextId);
+              }}
               className="w-full rounded-2xl border-0 bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-900 ring-1 ring-zinc-950/10"
             >
               {childProfiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>
                   {profile.displayName || "Ohne Namen"}
+                  {profile.hasPin && !unlockedIds.has(profile.id)
+                    ? " (PIN)"
+                    : ""}
                 </option>
               ))}
             </select>
@@ -386,6 +431,25 @@ export function AdventBookCreateForm({
         onCancel={() => setConfirmOpen(false)}
         onConfirm={handleConfirmCreate}
       />
+
+      {pendingUnlock ? (
+        <ChildProfilePinUnlockDialog
+          open
+          profileId={pendingUnlock.profileId}
+          profileName={pendingUnlock.profileName}
+          onCancel={() => setPendingUnlock(null)}
+          onUnlocked={() => {
+            const id = pendingUnlock.profileId;
+            const after = pendingUnlock.after;
+            setUnlockedIds((current) => new Set(current).add(id));
+            setProfileId(id);
+            setPendingUnlock(null);
+            if (after === "confirm") {
+              setConfirmOpen(true);
+            }
+          }}
+        />
+      ) : null}
 
       <AdventWaitingDialog open={waitingOpen} progressDay={progressDay} />
     </div>

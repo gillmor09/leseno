@@ -89,7 +89,7 @@ export default async function MeineBuechereiPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <MembershipCreditsHeader
             badge={

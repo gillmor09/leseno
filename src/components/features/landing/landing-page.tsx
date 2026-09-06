@@ -7,6 +7,7 @@ import {
   BicepsFlexed,
   CalendarDays,
   ImageIcon,
+  Lightbulb,
   Maximize2,
   Smile,
   Sparkles,
@@ -17,7 +18,6 @@ import {
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
-import { StoryFactsList } from "@/components/features/stories/story-facts-list";
 
 /** Brand name in body copy: always lowercase + bold. */
 function withLesenoBrand(text: string): ReactNode {
@@ -151,7 +151,7 @@ export function LandingPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
-      <main>
+      <main id="main">
         <HeroSection />
         <StepsSection />
         <StrengthsSection />
@@ -198,7 +198,7 @@ function HeroSection() {
               Ohne Konto ausprobieren
             </a>
           </div>
-          <p className="mt-5 text-sm font-semibold text-zinc-500">
+          <p className="mt-5 text-sm font-semibold text-zinc-600">
             Spaß · Neugier · Bücherei · Pakete für Bilder, Silbenhilfe &amp;
             Vorlesen
           </p>
@@ -212,11 +212,13 @@ function HeroSection() {
               width={1536}
               height={1024}
               className="h-auto w-full"
+              sizes="(max-width: 1024px) 100vw, 50vw"
               priority
+              fetchPriority="high"
             />
           </div>
           <div className="absolute -bottom-5 left-4 right-4 rounded-2xl bg-white p-4 shadow-xl ring-1 ring-zinc-950/10 sm:left-8 sm:right-auto sm:w-72">
-            <p className="text-xs font-extrabold tracking-wide text-orange-700 uppercase">
+            <p className="text-xs font-extrabold tracking-wide text-orange-800 uppercase">
               So sieht’s aus
             </p>
             <p className="mt-1 text-sm font-extrabold text-zinc-950">
@@ -245,7 +247,7 @@ function StepsSection() {
   return (
     <section id="so-gehts" className="scroll-mt-20 bg-white">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+        <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
           So geht’s
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
@@ -268,7 +270,7 @@ function StepsSection() {
                   <span className="flex size-11 items-center justify-center rounded-2xl bg-orange-700 text-white">
                     <Icon className="size-5" aria-hidden />
                   </span>
-                  <span className="text-sm font-extrabold text-zinc-400">
+                  <span className="text-sm font-extrabold text-zinc-500">
                     {step.number}
                   </span>
                 </div>
@@ -291,7 +293,7 @@ function StrengthsSection() {
   return (
     <section id="staerken" className="scroll-mt-20">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+        <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
           Deine Superkräfte
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
@@ -332,7 +334,7 @@ function MoodsSection() {
   return (
     <section id="stimmungen" className="scroll-mt-20 bg-white">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+        <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
           Drei Töne
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
@@ -356,6 +358,8 @@ function MoodsSection() {
                   width={900}
                   height={900}
                   className="aspect-square h-auto w-full object-cover"
+                  sizes="(max-width: 768px) 100vw, 33vw"
+                  loading="lazy"
                 />
                 <div className="bg-white p-6">
                   <div className="flex items-center gap-2">
@@ -403,12 +407,19 @@ function FactsSection() {
             nebenbei. Mit Pro kannst du bei „Warum?“ tiefer nachfragen.
           </p>
         </div>
-        <StoryFactsList
-          facts={[...landingDemoFacts]}
-          schoolStage="klasse_3"
-          density="landing"
-          showHeader={false}
-        />
+        <ul className="grid gap-3 sm:grid-cols-2" aria-label="Beispiel-Fakten">
+          {landingDemoFacts.map((fact) => (
+            <li
+              key={fact}
+              className="flex gap-3 rounded-2xl bg-zinc-700 px-4 py-3 text-sm leading-relaxed font-semibold text-white"
+            >
+              <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-zinc-950">
+                <Lightbulb className="size-3.5" aria-hidden />
+              </span>
+              <p>{fact}</p>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );
@@ -457,7 +468,7 @@ function TrySection() {
               </a>
             </div>
             <div className="relative min-h-64 bg-gradient-to-br from-orange-50 via-yellow-50 to-gray-100 p-8 sm:p-10 lg:flex lg:flex-col lg:justify-center lg:p-12">
-              <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+              <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
                 Was du bekommst
               </p>
               <ul className="mt-4 space-y-3">
@@ -503,10 +514,12 @@ function ParentsSection() {
             width={1400}
             height={933}
             className="h-auto w-full"
+            sizes="(max-width: 1024px) 100vw, 50vw"
+            loading="lazy"
           />
         </div>
         <div>
-          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+          <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
             Für Eltern
           </p>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
@@ -540,7 +553,7 @@ function PricingSection() {
   return (
     <section id="preise" className="scroll-mt-20">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+        <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
           Freemium
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
@@ -553,7 +566,7 @@ function PricingSection() {
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-2">
           <article className="rounded-[1.75rem] bg-white p-8 shadow-xl ring-1 ring-zinc-950/10">
-            <p className="text-sm font-extrabold tracking-wide text-zinc-500 uppercase">
+            <p className="text-sm font-extrabold tracking-wide text-zinc-600 uppercase">
               Basis
             </p>
             <p className="mt-2 text-3xl font-extrabold text-zinc-950">0 €</p>
@@ -603,7 +616,7 @@ function PricingSection() {
             <p className="mt-2 text-3xl font-extrabold">
               Mehr Geschichten im Alltag
             </p>
-            <p className="mt-1 text-sm text-zinc-400">
+            <p className="mt-1 text-sm text-zinc-300">
               {withLesenoBrand(
                 "Monatliche Credits, die nie verfallen — plus Bücherei, Meine Welt und PDF",
               )}
@@ -654,6 +667,8 @@ function ClosingSection() {
           width={80}
           height={80}
           className="mx-auto size-16"
+          sizes="64px"
+          loading="lazy"
         />
         <h2 className="mt-6 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
           Bereit für die nächste Geschichte?

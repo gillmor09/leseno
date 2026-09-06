@@ -12,6 +12,7 @@ import {
   saveChildProfileAction,
   saveChildReadingModePrefsAction,
 } from "@/app/actions/user-world";
+import { ChildProfilePinSettings } from "@/components/features/world/child-profile-pin-settings";
 import { ReadingModePrefsControls } from "@/components/features/stories/reading-mode-prefs-controls";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import type { ChildProfile, ChildProfileFields } from "@/lib/world/catalog";
@@ -76,9 +77,13 @@ type MyWorldProfileEditorProps = {
   initialFields: ChildProfileFields;
   /** Custom Lesemodus prefs; null = follow admin stage Standard. */
   initialReadingModePrefs?: ReadingModePrefs | null;
+  /** Whether a parent PIN is already set (existing profiles only). */
+  initialHasPin?: boolean;
   typographyDefaults: ReadingTypographyDefaultsCatalog;
   onSaved: (profile: ChildProfile) => void;
   onDeleted?: (profileId: string) => void;
+  onHasPinChange?: (hasPin: boolean) => void;
+  onLocked?: () => void;
   canDelete?: boolean;
   /** Another profile already marked as default (name for confirm copy). */
   otherDefaultName?: string | null;
@@ -95,9 +100,12 @@ export function MyWorldProfileEditor({
   profileId,
   initialFields,
   initialReadingModePrefs = null,
+  initialHasPin = false,
   typographyDefaults,
   onSaved,
   onDeleted,
+  onHasPinChange,
+  onLocked,
   canDelete = false,
   otherDefaultName = null,
   onClaimDefault,
@@ -128,10 +136,12 @@ export function MyWorldProfileEditor({
   const [deletePending, setDeletePending] = useState(false);
   const [defaultConfirmOpen, setDefaultConfirmOpen] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const [hasPin, setHasPin] = useState(initialHasPin);
   const allowLesemodus = featuresInclude(enabledFeatures, "lesemodus");
 
   useEffect(() => {
     setFields(initialFields);
+    setHasPin(initialHasPin);
     const follows = initialReadingModePrefs == null;
     setFollowsStandard(follows);
     setReadingPrefs(
@@ -239,6 +249,7 @@ export function MyWorldProfileEditor({
       readableAloud: fields.readableAloud,
       isDefault: fields.isDefault,
       readingModePrefs: prefsToSave,
+      hasPin,
       sortOrder: 0,
     });
   }
@@ -688,6 +699,23 @@ export function MyWorldProfileEditor({
             </button>
           </section>
         ) : null}
+
+        {profileId ? (
+          <ChildProfilePinSettings
+            profileId={profileId}
+            hasPin={hasPin}
+            onHasPinChange={(next) => {
+              setHasPin(next);
+              onHasPinChange?.(next);
+            }}
+            onLocked={onLocked}
+          />
+        ) : (
+          <p className="rounded-[1.75rem] bg-orange-50 px-5 py-4 text-sm leading-relaxed text-orange-900 ring-1 ring-orange-700/10">
+            Nach dem ersten Speichern kannst du optional eine Eltern-PIN setzen,
+            damit Kinder das Profil nicht ungefragt bearbeiten oder auswählen.
+          </p>
+        )}
 
         {fieldError ? (
           <p className="text-sm font-semibold text-orange-800">{fieldError}</p>

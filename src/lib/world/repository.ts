@@ -78,6 +78,7 @@ function mapRow(row: Record<string, unknown>): ChildProfile {
     readingModePrefs: hasCustomReadingModePrefs(row.reading_mode_prefs)
       ? normalizeReadingModePrefs(row.reading_mode_prefs)
       : null,
+    hasPin: asBool(row.has_pin, false),
     sortOrder:
       typeof row.sort_order === "number"
         ? row.sort_order
@@ -157,6 +158,48 @@ export async function deleteChildProfile(profileId: string): Promise<void> {
     p_id: profileId,
   });
 
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/** Returns stored PIN hash for an owned profile, or null when unset. */
+export async function getChildProfilePinHash(
+  profileId: string,
+): Promise<string | null> {
+  const supabase = await createClient(null);
+  const { data, error } = await supabase.rpc("get_my_child_profile_pin_hash", {
+    p_id: profileId,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+  return typeof data === "string" && data.length > 0 ? data : null;
+}
+
+/** Stores a new PIN hash on an owned profile. */
+export async function setChildProfilePinHash(
+  profileId: string,
+  pinHash: string,
+): Promise<void> {
+  const supabase = await createClient(null);
+  const { error } = await supabase.rpc("set_my_child_profile_pin", {
+    p_id: profileId,
+    p_pin_hash: pinHash,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/** Removes the PIN from an owned profile. */
+export async function clearChildProfilePinHash(
+  profileId: string,
+): Promise<void> {
+  const supabase = await createClient(null);
+  const { error } = await supabase.rpc("clear_my_child_profile_pin", {
+    p_id: profileId,
+  });
   if (error) {
     throw new Error(error.message);
   }

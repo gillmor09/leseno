@@ -95,6 +95,13 @@ export async function continueStoryAction(
       if (featuresInclude(packageFeatures, "meine_welt")) {
         const profile = await loadChildProfile(parent.childProfileId);
         if (profile) {
+          const { assertChildProfileUnlocked } = await import(
+            "@/lib/world/profile-pin-access"
+          );
+          const lockError = await assertChildProfileUnlocked(profile.id);
+          if (lockError) {
+            return { success: false, error: lockError };
+          }
           personal = buildPersonalStoryContext(profile, {
             forceTopic: parent.topic,
             mood: parsed.data.mood,

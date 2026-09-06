@@ -10,11 +10,13 @@ import "./globals.css";
 const nunito = Nunito({
   variable: "--font-nunito",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+  display: "swap",
 });
 
 const defaultTitle =
@@ -77,12 +79,15 @@ export default function RootLayout({
   return (
     <html
       lang="de"
-      className={`${nunito.variable} ${geistMono.variable} h-full scroll-smooth antialiased`}
+      className={`${nunito.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
         <GoogleAnalytics />
       </head>
       <body className="flex min-h-full flex-col font-sans">
+        <a href="#main" className="skip-link">
+          Zum Inhalt springen
+        </a>
         <Suspense fallback={null}>
           <CaptureReferral />
         </Suspense>

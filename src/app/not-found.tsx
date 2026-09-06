@@ -15,7 +15,7 @@ export default function NotFound() {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
-      <main className="flex flex-1 items-center justify-center px-4 py-16 sm:px-6">
+      <main id="main" className="flex flex-1 items-center justify-center px-4 py-16 sm:px-6">
         <div className="w-full max-w-lg text-center">
           <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
             404

@@ -138,6 +138,13 @@ export async function generateFreeStoryAction(
           error: "Dieses Profil wurde nicht gefunden. Bitte Meine Welt prüfen.",
         };
       }
+      const { assertChildProfileUnlocked } = await import(
+        "@/lib/world/profile-pin-access"
+      );
+      const lockError = await assertChildProfileUnlocked(parsed.data.profileId);
+      if (lockError) {
+        return { success: false, error: lockError };
+      }
       personal = buildPersonalStoryContext(profile, {
         mood: parsed.data.mood,
       });

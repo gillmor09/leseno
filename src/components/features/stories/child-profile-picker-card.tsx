@@ -5,7 +5,7 @@
  * With a profile selected: shows length/mood defaults + link to edit them.
  */
 
-import { Users } from "lucide-react";
+import { Users, Lock } from "lucide-react";
 import type { ChildProfileOption } from "@/lib/world/catalog";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,8 @@ type ChildProfilePickerCardProps = {
   profiles: ChildProfileOption[];
   /** `null` = Freies lesen (no profile). */
   selectedId: string | null;
+  /** Profile ids currently unlocked (or without PIN). */
+  unlockedIds?: ReadonlySet<string>;
   onSelect: (profileId: string | null) => void;
   disabled?: boolean;
   /** Current length label when a profile is selected. */
@@ -30,6 +32,7 @@ type ChildProfilePickerCardProps = {
 export function ChildProfilePickerCard({
   profiles,
   selectedId,
+  unlockedIds,
   onSelect,
   disabled = false,
   lengthLabel = null,
@@ -108,6 +111,8 @@ export function ChildProfilePickerCard({
             </button>
             {profiles.map((profile) => {
               const selected = selectedId === profile.id;
+              const locked =
+                profile.hasPin && !(unlockedIds?.has(profile.id) ?? false);
               return (
                 <button
                   key={profile.id}
@@ -117,12 +122,13 @@ export function ChildProfilePickerCard({
                   disabled={disabled}
                   onClick={() => onSelect(profile.id)}
                   className={cn(
-                    "rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out disabled:opacity-50",
+                    "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out disabled:opacity-50",
                     selected
                       ? "bg-yellow-400 text-zinc-950 ring-1 ring-yellow-400"
                       : "bg-gray-100 text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-white",
                   )}
                 >
+                  {locked ? <Lock className="size-3.5" aria-hidden /> : null}
                   {profile.displayName}
                   {profile.isDefault ? " · Standard" : ""}
                 </button>

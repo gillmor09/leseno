@@ -12,12 +12,14 @@ export function LandingFooter() {
             width={36}
             height={36}
             className="size-9 rounded-full"
+            sizes="36px"
+            loading="lazy"
           />
           <div>
             <p className="text-lg font-extrabold tracking-tight text-white">
               leseno
             </p>
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-zinc-300">
               Lesen, das zu dir gehört.
             </p>
           </div>

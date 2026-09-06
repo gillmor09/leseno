@@ -2,7 +2,8 @@ import Script from "next/script";
 
 /**
  * Google Analytics 4 (gtag). Loads only when `NEXT_PUBLIC_GA_MEASUREMENT_ID` is set.
- * Must render inside `<head>` so Google Search Console can verify site ownership via GA.
+ * `afterInteractive` keeps the first paint light; Search Console verification can use
+ * an HTML meta tag if GA must not load early.
  */
 export function GoogleAnalytics() {
   const measurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
@@ -14,9 +15,9 @@ export function GoogleAnalytics() {
     <>
       <Script
         src={`https://www.googletagmanager.com/gtag/js?id=${measurementId}`}
-        strategy="beforeInteractive"
+        strategy="afterInteractive"
       />
-      <Script id="google-analytics" strategy="beforeInteractive">
+      <Script id="google-analytics" strategy="afterInteractive">
         {`
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}

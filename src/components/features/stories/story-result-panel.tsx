@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { FileDown, GitBranchPlus, Loader2, Maximize2, Pause, Play, X } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -20,8 +21,6 @@ import {
 import { StoryContinueDialog } from "@/components/features/stories/story-continue-dialog";
 import { StoryFactsList } from "@/components/features/stories/story-facts-list";
 import { StoryHtmlBody } from "@/components/features/stories/story-html-body";
-import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
-import { StoryReadingMode } from "@/components/features/stories/story-reading-mode";
 import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
 import {
   exportFontSizeForSchoolStage,
@@ -47,6 +46,22 @@ import {
   wrapStoryWordsForTts,
   type TtsMediaClock,
 } from "@/lib/stories/tts-dom-highlight";
+
+const StoryPdfPreviewDialog = dynamic(
+  () =>
+    import("@/components/features/stories/story-pdf-preview-dialog").then(
+      (mod) => mod.StoryPdfPreviewDialog,
+    ),
+  { ssr: false },
+);
+
+const StoryReadingMode = dynamic(
+  () =>
+    import("@/components/features/stories/story-reading-mode").then(
+      (mod) => mod.StoryReadingMode,
+    ),
+  { ssr: false },
+);
 
 const CARD_STORY_CLASS =
   "[&_h1]:mb-[0.75em] [&_h1]:text-[1.35em] [&_h1]:font-extrabold " +
@@ -604,7 +619,7 @@ export function StoryResultPanel({
         <InviteFriendsCard variant="compact" />
       ) : null}
 
-      {allowReadingMode ? (
+      {allowReadingMode && readingModeOpen ? (
         <StoryReadingMode
           open={readingModeOpen}
           onClose={() => setReadingModeOpen(false)}
@@ -638,19 +653,21 @@ export function StoryResultPanel({
       {isTtsLoading ? (
         <TtsWaitOverlay wordHighlight={wordHighlight} />
       ) : null}
-      <StoryPdfPreviewDialog
-        open={pdfPreviewOpen}
-        previewHtml={pdfPreviewHtml}
-        pdfUrl={pdfPreviewUrl}
-        onClose={() => {
-          setPdfPreviewOpen(false);
-          if (pdfPreviewUrl) {
-            URL.revokeObjectURL(pdfPreviewUrl);
-          }
-          setPdfPreviewUrl(null);
-          setPdfPreviewHtml(null);
-        }}
-      />
+      {pdfPreviewOpen ? (
+        <StoryPdfPreviewDialog
+          open={pdfPreviewOpen}
+          previewHtml={pdfPreviewHtml}
+          pdfUrl={pdfPreviewUrl}
+          onClose={() => {
+            setPdfPreviewOpen(false);
+            if (pdfPreviewUrl) {
+              URL.revokeObjectURL(pdfPreviewUrl);
+            }
+            setPdfPreviewUrl(null);
+            setPdfPreviewHtml(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

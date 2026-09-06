@@ -12,6 +12,7 @@ import { STORY_PATH } from "@/lib/users/catalog";
 import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
 import { listMyChildProfiles } from "@/lib/world/repository";
+import { listUnlockedChildProfileIds } from "@/lib/world/profile-pin-access";
 
 export const metadata: Metadata = {
   title: "Meine Welt — Leseno",
@@ -46,10 +47,12 @@ export default async function MeineWeltPage() {
   }
 
   let profiles: Awaited<ReturnType<typeof listMyChildProfiles>> = [];
+  let unlockedProfileIds: string[] = [];
   let loadError: string | null = null;
 
   try {
     profiles = await listMyChildProfiles();
+    unlockedProfileIds = await listUnlockedChildProfileIds(user.id, profiles);
   } catch (error) {
     console.error("[MeineWeltPage]", error);
     const detail =
@@ -60,7 +63,7 @@ export default async function MeineWeltPage() {
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
-      <main className="flex-1">
+      <main id="main" className="flex-1">
         <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
           <MembershipCreditsHeader
             badge={
@@ -76,8 +79,8 @@ export default async function MeineWeltPage() {
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             {allowFamily
-              ? "Lege für jedes Kind ein eigenes Profil an — mit Namen, Freunden, Interessen und Wünschen. So werden persönliche Geschichten wirklich passend."
-              : "Lege ein Profil für dein Kind an — mit Namen, Freunden, Interessen und Wünschen. So werden persönliche Geschichten wirklich passend."}
+              ? "Lege für jedes Kind ein eigenes Profil an — mit Namen, Freunden, Interessen und Wünschen. Optional mit Eltern-PIN absichern."
+              : "Lege ein Profil für dein Kind an — mit Namen, Freunden, Interessen und Wünschen. Optional mit Eltern-PIN absichern."}
           </p>
 
           {loadError ? (
@@ -88,6 +91,7 @@ export default async function MeineWeltPage() {
             <div className="mt-10">
               <MyWorldManager
                 initialProfiles={profiles}
+                initialUnlockedProfileIds={unlockedProfileIds}
                 allowFamily={allowFamily}
                 enabledFeatures={features}
                 typographyDefaults={typographyDefaults}

@@ -24,6 +24,7 @@ function GeschichteComposerBody({
   lengthCatalog,
   typographyDefaults,
   childProfiles,
+  unlockedProfileIds,
   enabledFeatures,
   inviteUserId,
   fallbackCredits,
@@ -33,6 +34,7 @@ function GeschichteComposerBody({
   lengthCatalog: StoryLengthCatalog;
   typographyDefaults: ReadingTypographyDefaultsCatalog;
   childProfiles: ChildProfileOption[] | null;
+  unlockedProfileIds: string[];
   enabledFeatures: readonly PackageFeatureId[];
   inviteUserId: string | null;
   fallbackCredits: number;
@@ -73,6 +75,7 @@ function GeschichteComposerBody({
           lengthCatalog={lengthCatalog}
           typographyDefaults={typographyDefaults}
           childProfiles={childProfiles}
+          initialUnlockedProfileIds={unlockedProfileIds}
           enabledFeatures={enabledFeatures}
           initialCredits={credits}
           onCreditsChange={onCreditsChange}
@@ -91,6 +94,7 @@ export function GeschichteComposer({
   lengthCatalog,
   typographyDefaults,
   childProfiles,
+  unlockedProfileIds = [],
   enabledFeatures,
   inviteUserId = null,
 }: {
@@ -101,6 +105,7 @@ export function GeschichteComposer({
   lengthCatalog: StoryLengthCatalog;
   typographyDefaults: ReadingTypographyDefaultsCatalog;
   childProfiles: ChildProfileOption[] | null;
+  unlockedProfileIds?: string[];
   enabledFeatures: readonly PackageFeatureId[];
   inviteUserId?: string | null;
 }) {
@@ -122,6 +127,7 @@ export function GeschichteComposer({
         lengthCatalog={lengthCatalog}
         typographyDefaults={typographyDefaults}
         childProfiles={childProfiles}
+        unlockedProfileIds={unlockedProfileIds}
         enabledFeatures={enabledFeatures}
         inviteUserId={inviteUserId}
         fallbackCredits={initialCredits}
