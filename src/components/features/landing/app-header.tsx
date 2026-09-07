@@ -12,7 +12,7 @@ import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
 
 /**
- * Server wrapper: zero-JS marketing header when signed out; client chrome when signed in
+ * Server wrapper: marketing header when signed out; member chrome when signed in
  * (Bücherei / Geschichte / Meine Welt / Abmelden + optional admin cog).
  */
 export async function AppHeader() {

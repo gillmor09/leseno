@@ -1,10 +1,15 @@
-import Image from "next/image";
+"use client";
 
 /**
- * Zero-JS marketing chrome for signed-out visitors.
- * Hash links use `/#…` (native smooth scroll via `html { scroll-behavior }`).
- * Mobile nav: `<details>` — no React state / layout reads.
+ * Marketing chrome for signed-out visitors.
+ * Desktop: section links + auth buttons. Mobile: hamburger only (auth in panel).
  */
+
+import { useEffect, useId, useRef, useState } from "react";
+import Image from "next/image";
+import { Menu, X } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
 
 const navItems = [
   { hash: "so-gehts", label: "So geht’s" },
@@ -16,7 +21,7 @@ const navItems = [
 ] as const;
 
 const headerBtnBase =
-  "inline-flex rounded-full px-3 py-2 text-sm font-bold text-white transition-all duration-200 ease-in-out sm:px-4";
+  "rounded-full px-3 py-2 text-sm font-bold text-white transition-all duration-200 ease-in-out sm:px-4";
 const headerBtnIdle = "bg-zinc-800 hover:bg-zinc-900";
 
 export function LandingMarketingHeader({
@@ -26,6 +31,26 @@ export function LandingMarketingHeader({
   registerActive?: boolean;
   signInActive?: boolean;
 }) {
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const headerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!headerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [open]);
+
   const registerClass = registerActive
     ? "bg-orange-700 hover:bg-orange-800"
     : headerBtnIdle;
@@ -33,23 +58,31 @@ export function LandingMarketingHeader({
     ? "bg-orange-700 hover:bg-orange-800"
     : headerBtnIdle;
 
+  function closeMenu() {
+    setOpen(false);
+  }
+
   return (
-    <header className="sticky top-0 z-50 border-b border-zinc-950/10 bg-white/95 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+    <header
+      ref={headerRef}
+      className="sticky top-0 z-50 border-b border-zinc-950/10 bg-white/95 backdrop-blur-md"
+    >
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
         <a
           href="/#start"
-          className="flex items-center gap-2.5 transition-all duration-200 ease-in-out"
+          className="flex min-w-0 shrink items-center gap-2.5 transition-all duration-200 ease-in-out"
+          onClick={closeMenu}
         >
           <Image
             src="/landing/vogel-hell.webp"
             alt=""
             width={40}
             height={40}
-            className="size-9 sm:size-10"
+            className="size-9 shrink-0 sm:size-10"
             sizes="40px"
             priority
           />
-          <span className="text-xl font-extrabold tracking-tight text-zinc-950">
+          <span className="truncate text-xl font-extrabold tracking-tight text-zinc-950">
             leseno
           </span>
         </a>
@@ -69,68 +102,84 @@ export function LandingMarketingHeader({
           ))}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Display class must not fight `inline-flex` from a shared base — only md+. */}
           <a
             href="/registrieren"
-            className={`hidden sm:inline-flex ${headerBtnBase} ${registerClass}`}
+            className={cn(
+              "hidden md:inline-flex",
+              headerBtnBase,
+              registerClass,
+            )}
           >
             Jetzt registrieren
           </a>
           <a
             href="/anmelden"
-            className={`hidden sm:inline-flex ${headerBtnBase} ${signInClass}`}
+            className={cn("hidden md:inline-flex", headerBtnBase, signInClass)}
           >
             Anmelden
           </a>
 
-          <details className="relative md:hidden">
-            <summary
-              className="inline-flex size-10 list-none items-center justify-center rounded-full text-zinc-950 transition-all duration-200 ease-in-out hover:bg-gray-100 [&::-webkit-details-marker]:hidden"
-              aria-label="Menü öffnen"
-            >
-              <span className="sr-only">Menü</span>
-              <svg
-                className="size-6"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                aria-hidden
-              >
-                <path d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </summary>
-            <div className="absolute right-0 z-50 mt-2 w-[min(100vw-2rem,20rem)] rounded-2xl border border-zinc-950/10 bg-white p-3 shadow-xl">
-              <nav
-                className="flex flex-col gap-1"
-                aria-label="Mobiles Menü"
-              >
-                {navItems.map((item) => (
-                  <a
-                    key={item.hash}
-                    href={`/#${item.hash}`}
-                    className="rounded-xl px-3 py-2.5 text-base font-semibold text-zinc-950 transition-all duration-200 ease-in-out hover:bg-gray-100"
-                  >
-                    {item.label}
-                  </a>
-                ))}
-                <a
-                  href="/registrieren"
-                  className={`mt-2 rounded-full px-4 py-2.5 text-center text-sm font-bold text-white transition-all duration-200 ease-in-out ${registerClass}`}
-                >
-                  Jetzt registrieren
-                </a>
-                <a
-                  href="/anmelden"
-                  className={`rounded-full px-4 py-2.5 text-center text-sm font-bold text-white transition-all duration-200 ease-in-out ${signInClass}`}
-                >
-                  Anmelden
-                </a>
-              </nav>
-            </div>
-          </details>
+          <button
+            type="button"
+            className="inline-flex size-10 items-center justify-center rounded-full text-zinc-950 transition-all duration-200 ease-in-out hover:bg-gray-100 md:hidden"
+            aria-expanded={open}
+            aria-controls={panelId}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {open ? (
+              <X className="size-6" aria-hidden />
+            ) : (
+              <Menu className="size-6" aria-hidden />
+            )}
+            <span className="sr-only">
+              {open ? "Menü schließen" : "Menü öffnen"}
+            </span>
+          </button>
         </div>
+      </div>
+
+      <div
+        id={panelId}
+        className={cn(
+          "border-t border-zinc-950/10 bg-white md:hidden",
+          open ? "block" : "hidden",
+        )}
+      >
+        <nav
+          className="mx-auto flex max-w-6xl flex-col gap-1 px-4 py-3"
+          aria-label="Mobiles Menü"
+        >
+          {navItems.map((item) => (
+            <a
+              key={item.hash}
+              href={`/#${item.hash}`}
+              onClick={closeMenu}
+              className="rounded-xl px-3 py-2.5 text-base font-semibold text-zinc-950 transition-all duration-200 ease-in-out hover:bg-gray-100"
+            >
+              {item.label}
+            </a>
+          ))}
+          <a
+            href="/registrieren"
+            onClick={closeMenu}
+            className={cn(
+              "mt-2 inline-flex justify-center",
+              headerBtnBase,
+              registerClass,
+            )}
+          >
+            Jetzt registrieren
+          </a>
+          <a
+            href="/anmelden"
+            onClick={closeMenu}
+            className={cn("inline-flex justify-center", headerBtnBase, signInClass)}
+          >
+            Anmelden
+          </a>
+        </nav>
       </div>
     </header>
   );
