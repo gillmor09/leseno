@@ -1,9 +1,9 @@
 /**
- * Social Media caption (Gemini + motivation angle) + image (Gemini scene → FLUX.2).
+ * Social Media caption (text model) + image (scene plan → images-default pixels).
  */
 
+import { generateImage } from "@/lib/ai/generate-image";
 import { generateText } from "@/lib/ai/provider";
-import { generateIonosImage } from "@/lib/ai/ionos-images";
 import {
   FALLBACK_AI_MODELS,
   type AiModelConfig,
@@ -21,7 +21,7 @@ import {
 } from "@/lib/social/motivation";
 import type { SocialChannel, SocialChannelCraft } from "@/lib/social/types";
 
-/** Resolves Gemini model for social captions and FLUX scene briefs (`social-default`). */
+/** Resolves text model for captions and scene briefs (`social-default`). */
 async function resolveSocialTextModel(): Promise<AiModelConfig> {
   try {
     const catalog = await loadPromptAdminCatalog({ mergeFallback: true });
@@ -43,6 +43,25 @@ async function resolveSocialTextModel(): Promise<AiModelConfig> {
     FALLBACK_AI_MODELS.find((m) => m.id === "story-default");
   if (!fallback) {
     throw new Error("Social-/Gemini-Modell fehlt im Katalog.");
+  }
+  return fallback;
+}
+
+/**
+ * Pixel model for Social images — same catalog row as story illustrations
+ * (`images-default`: FLUX or Gemini Image).
+ */
+async function resolveSocialImagesModel(): Promise<AiModelConfig> {
+  try {
+    const catalog = await loadPromptAdminCatalog({ mergeFallback: true });
+    const model = catalog.models.find((m) => m.id === "images-default");
+    if (model?.isActive) return model;
+  } catch {
+    /* fallback */
+  }
+  const fallback = FALLBACK_AI_MODELS.find((m) => m.id === "images-default");
+  if (!fallback) {
+    throw new Error("Illustrationsmodell (images-default) fehlt im Katalog.");
   }
   return fallback;
 }
@@ -86,8 +105,8 @@ export async function refineSocialCaption(input: {
 }
 
 /**
- * Gemini invents a lively visual scene from the caption (brand image prompt = style),
- * then FLUX.2 renders that scene at 1024².
+ * Text model invents a scene from the caption; `images-default` renders at ~1024²
+ * (IONOS FLUX or Gemini Image — whatever Admin set).
  */
 export async function generateSocialImage(input: {
   imagePromptTemplate: string;
@@ -100,14 +119,17 @@ export async function generateSocialImage(input: {
   promptUsed: string;
   sceneDescription: string;
 }> {
-  const model = await resolveSocialTextModel();
+  const [textModel, imagesModel] = await Promise.all([
+    resolveSocialTextModel(),
+    resolveSocialImagesModel(),
+  ]);
   const angle = pickMotivationAngle(input.postDate);
   const plan = buildSocialImageScenePlanPrompt({
     ...input,
     sceneHint: angle.sceneHint,
   });
   const sceneRaw = await generateText({
-    model,
+    model: textModel,
     systemInstruction: plan.systemInstruction,
     userText: plan.userText,
   });
@@ -117,7 +139,7 @@ export async function generateSocialImage(input: {
     .trim();
 
   if (!sceneDescription) {
-    throw new Error("Gemini hat keine Bildszene geliefert.");
+    throw new Error("Textmodell hat keine Bildszene geliefert.");
   }
 
   const promptUsed = buildSocialFluxPromptFromScene({
@@ -127,10 +149,10 @@ export async function generateSocialImage(input: {
     extraInstruction: input.extraInstruction,
   });
 
-  const result = await generateIonosImage({
+  const result = await generateImage({
+    model: imagesModel,
     prompt: promptUsed,
-    size: "1024x1024",
-    outputFormat: "jpeg",
+    sizePx: 1024,
   });
 
   return { dataUrl: result.dataUrl, promptUsed, sceneDescription };

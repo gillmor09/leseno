@@ -58,14 +58,14 @@ export const FALLBACK_AI_MODELS: AiModelConfig[] = [
   },
   {
     id: "images-default",
-    label: "Illustrationsmodell (FLUX.2)",
+    label: "Illustrationsmodell",
     provider: "ionos-image",
     modelSlug: "black-forest-labs/FLUX.2-klein-4B",
     supportsSystemPrompt: false,
     supportsJsonOutput: false,
     isActive: true,
     notes:
-      "Erzeugt Illustrationen direkt über IONOS FLUX.2-klein (256×256). Anzahl: ≤300 Wörter 1 Bild, ≤1000 zwei, darüber drei.",
+      "Pixel für Geschichten + Social. Wechselbar auf Gemini 3.1 Flash Image oder 3 Pro Image (Admin).",
   },
   {
     id: "layout-default",

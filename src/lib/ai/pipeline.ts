@@ -8,8 +8,7 @@ import {
   illustrationCountForWordTarget,
   type FluxIllustrationPlan,
 } from "@/lib/ai/flux-illustrations";
-import { generateIonosImage } from "@/lib/ai/ionos-images";
-import { getIonosImageModelSlug } from "@/lib/ai/ionos";
+import { generateImage } from "@/lib/ai/generate-image";
 import { generateText } from "@/lib/ai/provider";
 import {
   FALLBACK_PROMPT_ADMIN_CATALOG,
@@ -147,7 +146,9 @@ function resolveModel(
 function resolveImagesModel(catalog: PromptAdminCatalog): AiModelConfig {
   const model = catalog.models.find((entry) => entry.id === "images-default");
   if (!model) {
-    throw new Error('Das Modell „images-default“ (FLUX) fehlt in der Verwaltung.');
+    throw new Error(
+      'Das Modell „images-default“ fehlt in der Verwaltung.',
+    );
   }
   return model;
 }
@@ -371,16 +372,15 @@ export function resolveIllustrationPlaceholders(
 
 async function generateIllustrationPixels(
   plans: FluxIllustrationPlan[],
-  modelSlug: string,
+  imagesModel: AiModelConfig,
 ): Promise<GeneratedIllustration[]> {
   // Max 3 images — run in parallel (bounded by plan count).
   return Promise.all(
     plans.map(async (plan) => {
-      const image = await generateIonosImage({
+      const image = await generateImage({
+        model: imagesModel,
         prompt: plan.imagePrompt,
-        size: "256x256",
-        modelSlug,
-        outputFormat: "png",
+        sizePx: 256,
       });
       return {
         ...plan,
@@ -536,11 +536,6 @@ export async function generateStoryPipeline(
     friendNames: input.personal?.friendNames,
   });
 
-  const fluxModelSlug =
-    imagesModel.provider.trim().toLowerCase() === "ionos-image"
-      ? imagesModel.modelSlug
-      : getIonosImageModelSlug();
-
   const [storyHtmlRaw, illustrations] = await Promise.all([
     generateText({
       model: storyModel,
@@ -551,7 +546,7 @@ export async function generateStoryPipeline(
       userText: fillPromptTemplate(storyTemplate.userTemplate, afterFactsValues),
       preferJson: false,
     }).then((text) => stripCodeFence(text)),
-    generateIllustrationPixels(fluxPlans, fluxModelSlug),
+    generateIllustrationPixels(fluxPlans, imagesModel),
   ]);
 
   if (!storyHtmlRaw.trim()) {
@@ -706,11 +701,6 @@ export async function generateContinuationPipeline(
     friendNames: input.personal?.friendNames,
   });
 
-  const fluxModelSlug =
-    imagesModel.provider.trim().toLowerCase() === "ionos-image"
-      ? imagesModel.modelSlug
-      : getIonosImageModelSlug();
-
   const [storyHtmlRaw, illustrations] = await Promise.all([
     generateText({
       model: storyModel,
@@ -721,7 +711,7 @@ export async function generateContinuationPipeline(
       userText: fillPromptTemplate(storyTemplate.userTemplate, sharedValues),
       preferJson: false,
     }).then((text) => stripCodeFence(text)),
-    generateIllustrationPixels(fluxPlans, fluxModelSlug),
+    generateIllustrationPixels(fluxPlans, imagesModel),
   ]);
 
   if (!storyHtmlRaw.trim()) {
@@ -883,11 +873,6 @@ export async function generateAdventDayPipeline(
     friendNames: input.personal?.friendNames,
   });
 
-  const fluxModelSlug =
-    imagesModel.provider.trim().toLowerCase() === "ionos-image"
-      ? imagesModel.modelSlug
-      : getIonosImageModelSlug();
-
   const [storyHtmlRaw, illustrations] = await Promise.all([
     generateText({
       model: storyModel,
@@ -898,7 +883,7 @@ export async function generateAdventDayPipeline(
       userText: fillPromptTemplate(storyTemplate.userTemplate, sharedValues),
       preferJson: false,
     }).then((text) => stripCodeFence(text)),
-    generateIllustrationPixels(fluxPlans, fluxModelSlug),
+    generateIllustrationPixels(fluxPlans, imagesModel),
   ]);
 
   if (!storyHtmlRaw.trim()) {

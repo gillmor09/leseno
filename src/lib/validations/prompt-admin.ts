@@ -1,16 +1,41 @@
 import "@/lib/validations/configure-zod";
 import { z } from "zod";
 
-export const promptModelSchema = z.object({
-  id: z.string().min(1, { message: "Modell-ID fehlt." }),
-  label: z.string().trim().min(1, { message: "Modellname fehlt." }),
-  provider: z.string().trim().min(1, { message: "Provider fehlt." }),
-  modelSlug: z.string().trim().min(1, { message: "Model-Slug fehlt." }),
-  supportsSystemPrompt: z.boolean(),
-  supportsJsonOutput: z.boolean(),
-  isActive: z.boolean(),
-  notes: z.string().trim().nullable(),
-});
+import { providerForWiredSlug } from "@/lib/ai/wired-models";
+
+/**
+ * Model row from Admin KI-Modelle.
+ * Provider is derived from the wired slug — free-text providers are rejected.
+ */
+export const promptModelSchema = z
+  .object({
+    id: z.string().min(1, { message: "Modell-ID fehlt." }),
+    label: z.string().trim().min(1, { message: "Modellname fehlt." }),
+    provider: z.string().trim().min(1, { message: "Provider fehlt." }),
+    modelSlug: z.string().trim().min(1, { message: "Modell fehlt." }),
+    supportsSystemPrompt: z.boolean(),
+    supportsJsonOutput: z.boolean(),
+    isActive: z.boolean(),
+    notes: z.string().trim().nullable(),
+  })
+  .superRefine((model, ctx) => {
+    const provider = providerForWiredSlug(model.modelSlug);
+    if (!provider) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["modelSlug"],
+        message: `Modell „${model.modelSlug}“ ist nicht angebunden. Bitte aus der Liste wählen.`,
+      });
+      return;
+    }
+    if (model.provider !== provider) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["provider"],
+        message: `Provider muss „${provider}“ für dieses Modell sein.`,
+      });
+    }
+  });
 
 export const promptTemplateSchema = z.object({
   id: z.string().min(1, { message: "Prompt-ID fehlt." }),

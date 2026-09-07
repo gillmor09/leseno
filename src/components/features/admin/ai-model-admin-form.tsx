@@ -2,22 +2,18 @@
 
 /**
  * Admin editor for reusable AI model settings.
- * Prompt templates reference these model records by id.
+ * Prompt templates / social resolve these rows by id; the model slug picks a wired endpoint.
  */
 
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { saveAiModelsAction } from "@/app/actions/prompt-admin";
+import {
+  WIRED_AI_ENDPOINTS,
+  findWiredAiEndpoint,
+} from "@/lib/ai/wired-models";
 import type { AiModelConfig } from "@/lib/prompts/catalog";
 import { cn } from "@/lib/utils";
-
-const PROVIDER_OPTIONS = [
-  { id: "openai", label: "openai" },
-  { id: "openai-compatible", label: "openai-compatible" },
-  { id: "ionos-image", label: "ionos-image" },
-  { id: "gemini", label: "gemini" },
-  { id: "claude", label: "claude" },
-] as const;
 
 export function AiModelAdminForm({
   models: initialModels,
@@ -38,6 +34,18 @@ export function AiModelAdminForm({
     setModels((current) =>
       current.map((model) =>
         model.id === id ? { ...model, [field]: value } : model,
+      ),
+    );
+  }
+
+  function setModelEndpoint(id: string, modelSlug: string) {
+    const wired = findWiredAiEndpoint(modelSlug);
+    if (!wired) return;
+    setModels((current) =>
+      current.map((model) =>
+        model.id === id
+          ? { ...model, modelSlug: wired.modelSlug, provider: wired.provider }
+          : model,
       ),
     );
   }
@@ -80,122 +88,128 @@ export function AiModelAdminForm({
         <div className="border-b border-zinc-950/10 bg-gray-100 px-6 py-4">
           <h2 className="text-lg font-extrabold text-zinc-950">KI-Modelle</h2>
           <p className="text-sm text-zinc-600">
-            Provider „openai-compatible“ nutzt den IONOS AI Model Hub für Text
-            (`IONOS_API_TOKEN`). „ionos-image“ steuert FLUX.2 für Illustrationen
-            (256×256).
+            Was du hier speicherst, ist aktiv zur Laufzeit (Kosten &amp; Routing).
+            Die Auswahl enthält nur angebundene Endpunkte; der Provider wird
+            automatisch gesetzt.
           </p>
         </div>
         <div className="divide-y divide-zinc-950/5">
-          {models.map((model) => (
-            <div key={model.id} className="grid gap-4 px-6 py-5">
-              <div className="grid gap-4 sm:grid-cols-2">
+          {models.map((model) => {
+            const wired = findWiredAiEndpoint(model.modelSlug);
+            const selectValue = wired ? model.modelSlug : "";
+            return (
+              <div key={model.id} className="grid gap-4 px-6 py-5">
+                <p className="text-xs font-bold tracking-wide text-zinc-400 uppercase">
+                  ID: {model.id}
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                      Name
+                    </span>
+                    <input
+                      type="text"
+                      disabled={!canSave}
+                      value={model.label}
+                      onChange={(event) =>
+                        patchModel(model.id, "label", event.target.value)
+                      }
+                      className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                      Modell
+                    </span>
+                    <select
+                      disabled={!canSave}
+                      value={selectValue}
+                      onChange={(event) =>
+                        setModelEndpoint(model.id, event.target.value)
+                      }
+                      className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
+                    >
+                      {!wired ? (
+                        <option value="" disabled>
+                          Unbekannt: {model.modelSlug} — bitte wählen
+                        </option>
+                      ) : null}
+                      {WIRED_AI_ENDPOINTS.map((endpoint) => (
+                        <option
+                          key={endpoint.modelSlug}
+                          value={endpoint.modelSlug}
+                        >
+                          {endpoint.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="mt-1 block text-xs text-zinc-500">
+                      {wired
+                        ? `${wired.usage} · Provider: ${wired.provider}`
+                        : "Aktueller Slug ist nicht angebunden — Auswahl speichern."}
+                    </span>
+                  </label>
+                </div>
                 <label className="block">
                   <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                    Name
+                    Notizen
                   </span>
-                  <input
-                    type="text"
+                  <textarea
+                    rows={2}
                     disabled={!canSave}
-                    value={model.label}
+                    value={model.notes ?? ""}
                     onChange={(event) =>
-                      patchModel(model.id, "label", event.target.value)
+                      patchModel(model.id, "notes", event.target.value || null)
                     }
                     className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
                   />
                 </label>
-                <label className="block">
-                  <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                    Provider
-                  </span>
-                  <select
-                    disabled={!canSave}
-                    value={model.provider}
-                    onChange={(event) =>
-                      patchModel(model.id, "provider", event.target.value)
-                    }
-                    className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
-                  >
-                    {PROVIDER_OPTIONS.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="flex flex-wrap gap-3 text-sm text-zinc-700">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      disabled={!canSave}
+                      checked={model.supportsSystemPrompt}
+                      onChange={(event) =>
+                        patchModel(
+                          model.id,
+                          "supportsSystemPrompt",
+                          event.target.checked,
+                        )
+                      }
+                    />
+                    System-Prompt
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      disabled={!canSave}
+                      checked={model.supportsJsonOutput}
+                      onChange={(event) =>
+                        patchModel(
+                          model.id,
+                          "supportsJsonOutput",
+                          event.target.checked,
+                        )
+                      }
+                    />
+                    JSON-Ausgabe
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      disabled={!canSave}
+                      checked={model.isActive}
+                      onChange={(event) =>
+                        patchModel(model.id, "isActive", event.target.checked)
+                      }
+                    />
+                    Aktiv
+                  </label>
+                </div>
               </div>
-              <label className="block">
-                <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                  Model-Slug
-                </span>
-                <input
-                  type="text"
-                  disabled={!canSave}
-                  value={model.modelSlug}
-                  onChange={(event) =>
-                    patchModel(model.id, "modelSlug", event.target.value)
-                  }
-                  className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                  Notizen
-                </span>
-                <textarea
-                  rows={2}
-                  disabled={!canSave}
-                  value={model.notes ?? ""}
-                  onChange={(event) =>
-                    patchModel(model.id, "notes", event.target.value || null)
-                  }
-                  className="mt-1 w-full rounded-2xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out focus:bg-white focus:ring-2 focus:ring-orange-700"
-                />
-              </label>
-              <div className="flex flex-wrap gap-3 text-sm text-zinc-700">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    disabled={!canSave}
-                    checked={model.supportsSystemPrompt}
-                    onChange={(event) =>
-                      patchModel(
-                        model.id,
-                        "supportsSystemPrompt",
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  System-Prompt
-                </label>
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    disabled={!canSave}
-                    checked={model.supportsJsonOutput}
-                    onChange={(event) =>
-                      patchModel(
-                        model.id,
-                        "supportsJsonOutput",
-                        event.target.checked,
-                      )
-                    }
-                  />
-                  JSON-Ausgabe
-                </label>
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    disabled={!canSave}
-                    checked={model.isActive}
-                    onChange={(event) =>
-                      patchModel(model.id, "isActive", event.target.checked)
-                    }
-                  />
-                  Aktiv
-                </label>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 

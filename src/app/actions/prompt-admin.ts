@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
+import { providerForWiredSlug } from "@/lib/ai/wired-models";
 import type { ActionResult } from "@/lib/types/actions";
 import {
   updateAiModels,
@@ -34,7 +35,17 @@ export async function saveAiModelsAction(
   }
 
   try {
-    await updateAiModels(parsed.data.models);
+    // Provider is always derived from the wired slug (never trust client alone).
+    const models = parsed.data.models.map((model) => {
+      const provider = providerForWiredSlug(model.modelSlug);
+      if (!provider) {
+        throw new Error(
+          `Modell „${model.modelSlug}“ ist nicht angebunden.`,
+        );
+      }
+      return { ...model, provider };
+    });
+    await updateAiModels(models);
     revalidatePath("/admin/ki-modelle");
     revalidatePath("/admin/prompts");
     return { success: true };

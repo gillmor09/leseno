@@ -18,7 +18,8 @@ export type GeminiGenerateResult = {
   modelSlug: string;
 };
 
-function getGeminiApiKey(): string {
+/** Shared by text + image Gemini clients (`GEMINI_API_KEY`). */
+export function getGeminiApiKey(): string {
   const key = process.env.GEMINI_API_KEY?.trim() ?? "";
   if (!key) {
     throw new Error(
