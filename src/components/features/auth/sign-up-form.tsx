@@ -16,6 +16,7 @@ import {
   clearStoredReferralCode,
   readStoredReferralCode,
 } from "@/lib/marketing/referral";
+import { readStoredPromoCode } from "@/lib/promo/marketing";
 import { cn } from "@/lib/utils";
 
 export function SignUpForm() {
@@ -23,6 +24,7 @@ export function SignUpForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [promoCode, setPromoCode] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -30,6 +32,7 @@ export function SignUpForm() {
 
   useEffect(() => {
     setReferralCode(readStoredReferralCode());
+    setPromoCode(readStoredPromoCode());
   }, []);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -43,6 +46,7 @@ export function SignUpForm() {
         password,
         confirmPassword,
         ...(referralCode ? { referralCode } : {}),
+        ...(promoCode ? { promoCode } : {}),
         ...botGuard.getBotGuardPayload(),
       });
 
@@ -53,6 +57,7 @@ export function SignUpForm() {
       }
 
       clearStoredReferralCode();
+      // Keep promo in storage until first Checkout; also stored pending server-side.
       setMessage(
         typeof result.data === "string"
           ? result.data
@@ -128,6 +133,13 @@ export function SignUpForm() {
             className={authInputClassName}
           />
         </label>
+
+        {promoCode ? (
+          <p className="rounded-2xl bg-orange-50 px-4 py-3 text-sm font-semibold text-orange-950 ring-1 ring-orange-700/15">
+            Promo-Code <span className="font-extrabold">{promoCode}</span> wird
+            bei der ersten Paket-Buchung berücksichtigt.
+          </p>
+        ) : null}
 
         {fieldError ? (
           <p className="text-sm font-semibold text-orange-800">{fieldError}</p>

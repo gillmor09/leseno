@@ -132,6 +132,37 @@ async function handleCheckoutSessionCompleted(
       grantPackageCredits: false,
       notes: `stripe_checkout:${session.id}`,
     });
+
+    const promoId = session.metadata?.promoId;
+    if (typeof promoId === "string" && promoId.length > 0) {
+      try {
+        const { recordPromoRedemption } = await import(
+          "@/lib/promo/repository"
+        );
+        const recorded = await recordPromoRedemption({
+          promoId,
+          userId,
+          packageId: packageIdRaw,
+          checkoutSessionId: session.id,
+          subscriptionId,
+        });
+        if (recorded) {
+          await logUserActivity({
+            userId,
+            action: "billing.promo_redeemed",
+            label: session.metadata?.promoCode ?? promoId,
+            metadata: {
+              promoId,
+              promoCode: session.metadata?.promoCode ?? null,
+              packageId: packageIdRaw,
+              sessionId: session.id,
+            },
+          });
+        }
+      } catch (error) {
+        console.warn("[stripe] promo redemption failed", session.id, error);
+      }
+    }
   }
 }
 

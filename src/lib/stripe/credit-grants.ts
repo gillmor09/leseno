@@ -88,6 +88,21 @@ export async function grantPackageCreditsForPaidInvoice(
     return { granted: 0, skippedReason: "no_user" };
   }
 
+  try {
+    const supabase = createServiceClient(null);
+    const { data: profile } = await supabase
+      .schema("leseno")
+      .from("user_profiles")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (profile?.role === "admin") {
+      return { granted: 0, skippedReason: "admin_user" };
+    }
+  } catch (error) {
+    console.warn("[credits] admin role check", invoice.id, error);
+  }
+
   let packageId = packageFromInvoice(invoice);
   if (!packageId) {
     const subscriptionId = subscriptionIdFromInvoice(invoice);

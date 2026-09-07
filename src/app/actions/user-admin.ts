@@ -4,17 +4,26 @@ import { revalidatePath } from "next/cache";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
+  listPackageBookingsForUser,
+  listPromoRedemptionsForUser,
+  type UserPromoRedemption,
+} from "@/lib/users/billing";
+import {
   deleteUserForAdmin,
   updateUsersForAdmin,
 } from "@/lib/users/repository";
+import type { UserPackageBooking } from "@/lib/users/packages";
 import type { ActionResult } from "@/lib/types/actions";
 import {
   deleteUserAdminSchema,
   userAdminFormSchema,
 } from "@/lib/validations/user-admin";
+import { z } from "zod";
+import "@/lib/validations/configure-zod";
 
 /**
  * Saves admin changes for user email and role assignments. Admin role required.
+ * Role changes also write package booking history; admin users get 0 credits.
  */
 export async function saveUsersAdminAction(
   input: unknown,
@@ -90,6 +99,55 @@ export async function deleteUserAdminAction(
         error instanceof Error
           ? error.message
           : "Löschen hat nicht geklappt.",
+    };
+  }
+}
+
+const historySchema = z.object({
+  userId: z.string().uuid("Ungültige User-ID."),
+});
+
+/**
+ * Package bookings + promo redemptions for one user (admin history dialog).
+ */
+export async function getUserBillingHistoryAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    bookings: UserPackageBooking[];
+    promos: UserPromoRedemption[];
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) {
+    return { success: false, error: denied };
+  }
+
+  const parsed = historySchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültige User-ID.",
+    };
+  }
+
+  try {
+    const [bookings, promos] = await Promise.all([
+      listPackageBookingsForUser(parsed.data.userId),
+      listPromoRedemptionsForUser(parsed.data.userId).catch((error) => {
+        console.warn("[getUserBillingHistoryAction] promos", error);
+        return [] as UserPromoRedemption[];
+      }),
+    ]);
+    return { success: true, data: { bookings, promos } };
+  } catch (error) {
+    console.error("[getUserBillingHistoryAction]", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Verlauf konnte nicht geladen werden.",
     };
   }
 }

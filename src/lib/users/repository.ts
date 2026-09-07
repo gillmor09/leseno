@@ -1,12 +1,18 @@
 /**
  * Admin access to Supabase Auth users with app-level roles in `app_metadata.role`.
  * Also keeps `leseno.user_profiles.role` in sync when updating.
+ * Role changes write package booking history; admin role forces credits to 0.
  */
 
 import { createServiceClient } from "@/lib/supabase/service";
 import type { UserAdminRow, UserRoleId } from "@/lib/users/catalog";
 import { USER_ROLE_OPTIONS } from "@/lib/users/catalog";
-import { loadCreditsByUserIds } from "@/lib/users/billing";
+import {
+  endActivePackageBookings,
+  loadCreditsByUserIds,
+  startPackageBooking,
+} from "@/lib/users/billing";
+import { packageIdForMembershipRole } from "@/lib/users/packages";
 
 const ALLOWED_ROLES = new Set<UserRoleId>(
   USER_ROLE_OPTIONS.map((role) => role.id),
@@ -41,7 +47,8 @@ export async function loadUsersForAdmin(): Promise<UserAdminRow[]> {
       userId: user.id,
       email: user.email ?? "",
       role,
-      credits: creditsByUser.get(user.id) ?? 0,
+      // Admins stay outside the credit system in the UI.
+      credits: role === "admin" ? 0 : (creditsByUser.get(user.id) ?? 0),
       createdAt: user.created_at,
     };
   });
@@ -65,6 +72,10 @@ export async function updateUsersForAdmin(rows: UserAdminRow[]): Promise<void> {
 
   for (const row of rows) {
     const existingMetadata = metadataByUserId.get(row.userId) ?? {};
+    const previousRole =
+      typeof existingMetadata.role === "string" ? existingMetadata.role : null;
+    const credits = row.role === "admin" ? 0 : row.credits;
+
     const { data: updated, error: userError } =
       await supabase.auth.admin.updateUserById(row.userId, {
         email: row.email,
@@ -83,7 +94,7 @@ export async function updateUsersForAdmin(rows: UserAdminRow[]): Promise<void> {
       .update({
         role: row.role,
         email: row.email,
-        credits: row.credits,
+        credits,
       })
       .eq("user_id", row.userId);
 
@@ -94,6 +105,30 @@ export async function updateUsersForAdmin(rows: UserAdminRow[]): Promise<void> {
         row.userId,
         profileError.message,
       );
+    }
+
+    if (previousRole !== row.role) {
+      try {
+        if (row.role === "admin") {
+          await endActivePackageBookings(row.userId);
+        } else {
+          const packageId = packageIdForMembershipRole(row.role) ?? "basis";
+          await startPackageBooking({
+            userId: row.userId,
+            packageId,
+            notes: "admin_manual",
+          });
+        }
+      } catch (bookingError) {
+        console.warn(
+          "[updateUsersForAdmin] booking sync",
+          row.userId,
+          bookingError,
+        );
+        throw bookingError instanceof Error
+          ? bookingError
+          : new Error("Paket-Buchung konnte nicht aktualisiert werden.");
+      }
     }
   }
 }

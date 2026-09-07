@@ -43,14 +43,28 @@ Apply migrations:
 
 - `20260905160000_stripe_billing.sql` + `20260905161000_stripe_billing_rpc.sql`
 - **`20260906160000_credit_grants_billing.sql`** (monthly grant ledger)
+- **`20260907100000_promos.sql`** (promo codes + redemptions)
 
 Set Plus **Credits** in Admin → Pakete (e.g. 500) if needed.
 
-## 4. Behaviour
+## 4. Promo-Codes (Admin)
+
+Leseno Admin → **Promo-Codes** (`/admin/promo`) creates a Stripe **Coupon** + **Promotion Code** and stores rules in `leseno.promos`.
+
+| Flow | Behaviour |
+|------|-----------|
+| Link | `https://leseno.de/registrieren?promo=CODE` (or any page `?promo=`) → localStorage |
+| Signup | Valid code → `user_promo_pending` |
+| Checkout | Membership Session gets `discounts: [{ promotion_code }]`; Dashboard codes still work when no Leseno promo |
+| Webhook | `checkout.session.completed` → `promo_redemptions` + counter |
+
+Discount kinds: percent, fixed EUR, or free (100 %). Duration: once / repeating N months / forever. Applies to selected Plus/Pro/Ultimate packages.
+
+## 5. Behaviour
 
 | Ereignis | Wirkung |
 |----------|---------|
-| Checkout Abo | Role `paket1` / `paket2` / `paket3`, booking row |
+| Checkout Abo | Role `paket1` / `paket2` / `paket3`, booking row; optional Leseno promo discount via Stripe |
 | `invoice.paid` (create/cycle) | Package credits for that month (idempotent; stacks; never expire) |
 | Credits pack | +300 credits (once per Checkout session) |
 | Kündigung zum Periodenende | Zugang bis Anniversary; danach Role → `basis` (Admin bleibt Admin) |

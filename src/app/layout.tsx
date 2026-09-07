@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Nunito } from "next/font/google";
 import { GoogleAnalytics } from "@/components/analytics/google-analytics";
+import { CapturePromo } from "@/components/features/marketing/capture-promo";
 import { CaptureReferral } from "@/components/features/marketing/capture-referral";
 import { LazyAppToaster } from "@/components/ui/lazy-app-toaster";
 import { getMetadataBaseUrl, SITE_NAME } from "@/lib/seo";
@@ -83,6 +84,7 @@ export default function RootLayout({
           Zum Inhalt springen
         </a>
         <CaptureReferral />
+        <CapturePromo />
         {children}
         <LazyAppToaster />
         <GoogleAnalytics />

@@ -87,6 +87,10 @@ export async function createMembershipCheckoutUrl(input: {
   email: string;
   packageId: PaidMembershipPackageId;
   withdrawalConsent: true;
+  /** Stripe promotion_code id (promo_…) from Leseno admin sync. */
+  stripePromotionCodeId?: string | null;
+  promoId?: string | null;
+  promoCode?: string | null;
 }): Promise<string> {
   const priceId = getStripePriceIdForPackage(input.packageId);
   if (!priceId) {
@@ -99,6 +103,7 @@ export async function createMembershipCheckoutUrl(input: {
     email: input.email,
   });
   const consentedAt = new Date().toISOString();
+  const hasPromo = Boolean(input.stripePromotionCodeId);
 
   const session = await createCheckoutSession({
     mode: "subscription",
@@ -107,7 +112,14 @@ export async function createMembershipCheckoutUrl(input: {
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: `${siteUrl}/preise/erfolg?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${siteUrl}/preise?checkout=abgebrochen`,
-    allow_promotion_codes: true,
+    // Stripe forbids discounts + allow_promotion_codes on the same session.
+    ...(hasPromo
+      ? {
+          discounts: [
+            { promotion_code: input.stripePromotionCodeId as string },
+          ],
+        }
+      : { allow_promotion_codes: true }),
     billing_address_collection: "auto",
     custom_text: {
       submit: {
@@ -121,6 +133,8 @@ export async function createMembershipCheckoutUrl(input: {
       packageId: input.packageId,
       withdrawalConsent: "true",
       withdrawalConsentAt: consentedAt,
+      ...(input.promoId ? { promoId: input.promoId } : {}),
+      ...(input.promoCode ? { promoCode: input.promoCode } : {}),
     },
     subscription_data: {
       metadata: {
@@ -128,6 +142,8 @@ export async function createMembershipCheckoutUrl(input: {
         packageId: input.packageId,
         withdrawalConsent: "true",
         withdrawalConsentAt: consentedAt,
+        ...(input.promoId ? { promoId: input.promoId } : {}),
+        ...(input.promoCode ? { promoCode: input.promoCode } : {}),
       },
     },
   });

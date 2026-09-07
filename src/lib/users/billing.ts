@@ -67,12 +67,20 @@ export async function loadMyCredits(): Promise<number> {
 
 /**
  * Debits the signed-in user's credits. Returns the new balance.
+ * Admins are outside billing — no debit (balance stays as stored, typically 0).
  * Throws with a German message when the balance is too low.
  */
 export async function spendMyCredits(amount: number): Promise<number> {
   if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error("Credit-Betrag ungültig.");
   }
+
+  const { getCurrentUser } = await import("@/lib/auth/session");
+  const user = await getCurrentUser();
+  if (user?.app_metadata?.role === "admin") {
+    return loadMyCredits().catch(() => 0);
+  }
+
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient(null);
   const { data, error } = await supabase.rpc("spend_my_credits", {
@@ -170,4 +178,64 @@ export async function listPackageBookingsForUser(
   }
 
   return ((data ?? []) as BookingRow[]).map((row) => mapBooking(row));
+}
+
+/** Ends any open package booking for the user (e.g. promote to admin). */
+export async function endActivePackageBookings(
+  userId: string,
+  endedAt?: string,
+): Promise<void> {
+  const supabase = createServiceClient(null);
+  const { error } = await supabase.rpc("admin_end_active_package_bookings", {
+    p_user_id: userId,
+    p_ended_at: endedAt ?? new Date().toISOString(),
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export type UserPromoRedemption = {
+  id: string;
+  promoId: string;
+  promoCode: string;
+  promoLabel: string;
+  packageId: string;
+  checkoutSessionId: string | null;
+  subscriptionId: string | null;
+  redeemedAt: string;
+};
+
+/** Promo codes this user successfully redeemed at Checkout. */
+export async function listPromoRedemptionsForUser(
+  userId: string,
+): Promise<UserPromoRedemption[]> {
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc(
+    "admin_list_promo_redemptions_for_user",
+    { p_user_id: userId },
+  );
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as Array<{
+    id: string;
+    promo_id: string;
+    promo_code: string;
+    promo_label: string;
+    package_id: string;
+    stripe_checkout_session_id: string | null;
+    stripe_subscription_id: string | null;
+    redeemed_at: string;
+  }>).map((row) => ({
+    id: row.id,
+    promoId: row.promo_id,
+    promoCode: row.promo_code,
+    promoLabel: row.promo_label,
+    packageId: row.package_id,
+    checkoutSessionId: row.stripe_checkout_session_id,
+    subscriptionId: row.stripe_subscription_id,
+    redeemedAt: row.redeemed_at,
+  }));
 }

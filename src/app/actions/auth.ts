@@ -128,7 +128,7 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
   }
 
   const siteUrl = getAuthEmailSiteUrl();
-  const { email, password, referralCode } = parsed.data;
+  const { email, password, referralCode, promoCode } = parsed.data;
   const redirectTo = `${siteUrl}/auth/callback?next=/anmelden`;
   const adminClient = createServiceClient(null);
 
@@ -255,8 +255,23 @@ export async function signUpAction(input: unknown): Promise<ActionResult> {
     metadata: {
       email,
       ...(referralCode ? { referralCode } : {}),
+      ...(promoCode ? { promoCode } : {}),
     },
   });
+
+  if (promoCode) {
+    try {
+      const { getPromoByCode, setUserPromoPending } = await import(
+        "@/lib/promo/repository"
+      );
+      const promo = await getPromoByCode(promoCode);
+      if (promo?.active) {
+        await setUserPromoPending(userId, promo.code);
+      }
+    } catch (error) {
+      console.warn("[signUpAction] promo pending", error);
+    }
+  }
 
   return {
     success: true,

@@ -23,6 +23,16 @@ export const signUpSchema = signInSchema
       })
       .optional()
       .transform((value) => (value ? value.toLowerCase() : undefined)),
+    /** Promo from `?promo=` / localStorage — applied on first membership Checkout. */
+    promoCode: z
+      .string()
+      .trim()
+      .max(64)
+      .regex(/^[a-zA-Z0-9_-]*$/, {
+        message: "Ungültiger Promo-Code.",
+      })
+      .optional()
+      .transform((value) => (value ? value.toLowerCase() : undefined)),
   })
   .refine((value) => value.password === value.confirmPassword, {
     message: "Die Passwörter stimmen nicht überein.",

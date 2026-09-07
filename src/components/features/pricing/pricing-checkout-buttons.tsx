@@ -13,6 +13,10 @@ import {
 } from "@/app/actions/stripe-checkout";
 import { WithdrawalConsentDialog } from "@/components/features/pricing/withdrawal-consent-dialog";
 import type { PaidMembershipPackageId } from "@/lib/stripe/config";
+import {
+  clearStoredPromoCode,
+  readStoredPromoCode,
+} from "@/lib/promo/marketing";
 import { cn } from "@/lib/utils";
 
 function goToCheckoutUrl(url: string) {
@@ -46,10 +50,16 @@ export function MembershipCheckoutButton({
       const result = await startMembershipCheckoutAction({
         packageId,
         withdrawalConsent: true,
+        promoCode: readStoredPromoCode(),
       });
       if (!result.success || !result.data?.url) {
         toast.error(result.error ?? "Checkout fehlgeschlagen.");
         return;
+      }
+      if (result.data.promoWarning) {
+        toast.message(result.data.promoWarning);
+      } else {
+        clearStoredPromoCode();
       }
       setDialogOpen(false);
       goToCheckoutUrl(result.data.url);

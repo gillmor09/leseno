@@ -28,7 +28,9 @@ function requireWithdrawalConsent(consent: unknown): string | null {
 export async function startMembershipCheckoutAction(input: {
   packageId: string;
   withdrawalConsent: boolean;
-}): Promise<ActionResult<{ url: string }>> {
+  /** Optional promo from `?promo=` / localStorage. */
+  promoCode?: string | null;
+}): Promise<ActionResult<{ url: string; promoWarning?: string }>> {
   if (!isPaidMembershipPackageId(input.packageId)) {
     return { success: false, error: "Unbekanntes Paket." };
   }
@@ -51,6 +53,14 @@ export async function startMembershipCheckoutAction(input: {
     };
   }
 
+  if (user.app_metadata?.role === "admin") {
+    return {
+      success: false,
+      error:
+        "Admin-Konten liegen außerhalb der Bezahlung — bitte eine Testrolle nutzen oder ein anderes Konto.",
+    };
+  }
+
   try {
     const existingSub = await getStripeSubscriptionIdForUser(user.id);
     if (existingSub) {
@@ -66,13 +76,33 @@ export async function startMembershipCheckoutAction(input: {
       return { success: false, error: consentError };
     }
 
+    const { resolvePromoForCheckout } = await import(
+      "@/lib/promo/resolve-for-checkout"
+    );
+    const resolved = await resolvePromoForCheckout({
+      userId: user.id,
+      packageId: input.packageId,
+      promoCode: input.promoCode,
+    });
+
     const url = await createMembershipCheckoutUrl({
       userId: user.id,
       email: user.email,
       packageId: input.packageId,
       withdrawalConsent: true,
+      stripePromotionCodeId: resolved.promo?.stripePromotionCodeId ?? null,
+      promoId: resolved.promo?.id ?? null,
+      promoCode: resolved.promo?.code ?? null,
     });
-    return { success: true, data: { url } };
+    return {
+      success: true,
+      data: {
+        url,
+        ...("warning" in resolved && resolved.warning
+          ? { promoWarning: resolved.warning }
+          : {}),
+      },
+    };
   } catch (error) {
     console.error("[startMembershipCheckoutAction]", error);
     return {
@@ -105,6 +135,14 @@ export async function startCreditsCheckoutAction(input: {
       data: {
         url: `${siteUrl}/anmelden?next=${encodeURIComponent("/preise")}`,
       },
+    };
+  }
+
+  if (user.app_metadata?.role === "admin") {
+    return {
+      success: false,
+      error:
+        "Admin-Konten liegen außerhalb der Bezahlung — Credits sind nicht nötig.",
     };
   }
 

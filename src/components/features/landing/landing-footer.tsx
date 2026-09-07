@@ -61,6 +61,29 @@ export function LandingFooter() {
           >
             Widerruf
           </Link>
+          <a
+            href="https://www.instagram.com/leseno.de/"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="leseno auf Instagram"
+            title="Instagram"
+            className="inline-flex size-9 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="size-5"
+              aria-hidden
+            >
+              <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
+              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
+              <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
+            </svg>
+          </a>
         </nav>
       </div>
     </footer>
