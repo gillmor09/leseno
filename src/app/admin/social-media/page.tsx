@@ -7,7 +7,7 @@ import { hasServiceRoleConfig } from "@/lib/supabase/service";
 export const metadata: Metadata = {
   title: "Social Media — Leseno Admin",
   description:
-    "Monatsplanung für Instagram: CRAFT-Texte (gpt-oss) und FLUX.2-Bilder.",
+    "Monatsplanung für Instagram: CRAFT-Texte (Gemini) und FLUX.2-Bilder.",
 };
 
 /**

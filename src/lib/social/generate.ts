@@ -1,5 +1,5 @@
 /**
- * Social Media caption (gpt-oss + motivation angle) + image (gpt-oss scene → FLUX.2).
+ * Social Media caption (Gemini + motivation angle) + image (Gemini scene → FLUX.2).
  */
 
 import { generateText } from "@/lib/ai/provider";
@@ -21,19 +21,28 @@ import {
 } from "@/lib/social/motivation";
 import type { SocialChannel, SocialChannelCraft } from "@/lib/social/types";
 
-async function resolveGptOssModel(): Promise<AiModelConfig> {
+/** Resolves Gemini model for social captions and FLUX scene briefs (`social-default`). */
+async function resolveSocialTextModel(): Promise<AiModelConfig> {
   try {
     const catalog = await loadPromptAdminCatalog({ mergeFallback: true });
     const model =
-      catalog.models.find((m) => m.id === "fact-why-default") ??
-      catalog.models.find((m) => m.modelSlug.includes("gpt-oss"));
+      catalog.models.find((m) => m.id === "social-default") ??
+      catalog.models.find((m) => m.id === "story-default") ??
+      catalog.models.find(
+        (m) =>
+          m.provider === "gemini" &&
+          m.modelSlug.includes("flash") &&
+          m.isActive,
+      );
     if (model?.isActive) return model;
   } catch {
     /* fallback */
   }
-  const fallback = FALLBACK_AI_MODELS.find((m) => m.id === "fact-why-default");
+  const fallback =
+    FALLBACK_AI_MODELS.find((m) => m.id === "social-default") ??
+    FALLBACK_AI_MODELS.find((m) => m.id === "story-default");
   if (!fallback) {
-    throw new Error("gpt-oss Modell fehlt im Katalog.");
+    throw new Error("Social-/Gemini-Modell fehlt im Katalog.");
   }
   return fallback;
 }
@@ -46,7 +55,7 @@ export async function generateSocialCaption(input: {
   dayIndex: number;
   daysInMonth: number;
 }): Promise<{ caption: string; angle: MotivationAngle }> {
-  const model = await resolveGptOssModel();
+  const model = await resolveSocialTextModel();
   const angle = pickMotivationAngle(input.postDate);
   const prompt = buildCraftCaptionPrompt({ ...input, angle });
   const text = await generateText({
@@ -65,7 +74,7 @@ export async function refineSocialCaption(input: {
   refineInstruction: string;
   postDate: string;
 }): Promise<{ caption: string; angle: MotivationAngle }> {
-  const model = await resolveGptOssModel();
+  const model = await resolveSocialTextModel();
   const angle = pickMotivationAngle(input.postDate);
   const prompt = buildCraftRefinePrompt({ ...input, angle });
   const text = await generateText({
@@ -77,7 +86,7 @@ export async function refineSocialCaption(input: {
 }
 
 /**
- * gpt-oss invents a lively visual scene from the caption (brand image prompt = style),
+ * Gemini invents a lively visual scene from the caption (brand image prompt = style),
  * then FLUX.2 renders that scene at 1024².
  */
 export async function generateSocialImage(input: {
@@ -91,7 +100,7 @@ export async function generateSocialImage(input: {
   promptUsed: string;
   sceneDescription: string;
 }> {
-  const model = await resolveGptOssModel();
+  const model = await resolveSocialTextModel();
   const angle = pickMotivationAngle(input.postDate);
   const plan = buildSocialImageScenePlanPrompt({
     ...input,
@@ -108,7 +117,7 @@ export async function generateSocialImage(input: {
     .trim();
 
   if (!sceneDescription) {
-    throw new Error("gpt-oss hat keine Bildszene geliefert.");
+    throw new Error("Gemini hat keine Bildszene geliefert.");
   }
 
   const promptUsed = buildSocialFluxPromptFromScene({

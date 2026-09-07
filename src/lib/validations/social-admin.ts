@@ -52,3 +52,16 @@ export const socialGenerateImageSchema = z.object({
   channel: channelSchema.default("instagram"),
   extraInstruction: z.string().trim().max(2000).optional(),
 });
+
+export const socialClearImageSchema = z.object({
+  yearMonth: yearMonthSchema,
+  postDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  channel: channelSchema.default("instagram"),
+});
+
+export const socialSetPublishedSchema = z.object({
+  yearMonth: yearMonthSchema,
+  postDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  channel: channelSchema.default("instagram"),
+  published: z.boolean(),
+});

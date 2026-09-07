@@ -28,6 +28,7 @@ type PostRow = {
   caption: string;
   image_data_url: string | null;
   last_image_prompt: string | null;
+  published: boolean | null;
   updated_at: string;
 };
 
@@ -56,6 +57,7 @@ function mapPost(row: PostRow): SocialPost {
     caption: row.caption ?? "",
     imageDataUrl: row.image_data_url,
     lastImagePrompt: row.last_image_prompt,
+    published: Boolean(row.published),
     updatedAt: row.updated_at,
   };
 }
@@ -113,6 +115,7 @@ export async function upsertSocialPost(input: {
   imageDataUrl?: string | null;
   lastImagePrompt?: string | null;
   clearImage?: boolean;
+  published?: boolean | null;
 }): Promise<SocialPost> {
   const supabase = createServiceClient(null);
   await ensureSocialMonth(input.yearMonth);
@@ -124,6 +127,8 @@ export async function upsertSocialPost(input: {
     p_image_data_url: input.imageDataUrl ?? null,
     p_last_image_prompt: input.lastImagePrompt ?? null,
     p_clear_image: Boolean(input.clearImage),
+    p_published:
+      typeof input.published === "boolean" ? input.published : null,
   });
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;

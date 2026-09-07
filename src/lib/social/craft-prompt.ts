@@ -1,7 +1,7 @@
 /**
  * Builds CRAFT-style prompts for social captions and FLUX image prompts.
  * Captions: manifesto + one motivation angle (not a long storyline essay).
- * Images: gpt-oss plans a lively full scene, then FLUX + no-text guards.
+ * Images: Gemini plans a lively full scene, then FLUX + no-text guards.
  */
 
 import {
@@ -121,7 +121,7 @@ ${input.currentCaption.trim()}`;
 }
 
 /**
- * gpt-oss plans a FLUX scene: brand style system + caption mood → lively full situation.
+ * Gemini plans a FLUX scene: brand style system + caption mood → lively full situation.
  */
 export function buildSocialImageScenePlanPrompt(input: {
   imagePromptTemplate: string;
@@ -166,7 +166,7 @@ Write the FLUX brief now: full scene, orange–gold–cream, illustrated not pho
 }
 
 /**
- * Final FLUX pixel prompt from gpt-oss scene + shared guards.
+ * Final FLUX pixel prompt from Gemini scene + shared guards.
  */
 export function buildSocialFluxPromptFromScene(input: {
   sceneDescription: string;

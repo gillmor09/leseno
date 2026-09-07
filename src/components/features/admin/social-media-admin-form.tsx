@@ -9,13 +9,16 @@ import { createPortal } from "react-dom";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  clearSocialImageAction,
   generateSocialCaptionAction,
   generateSocialImageAction,
   loadSocialMonthAction,
   refineSocialCaptionAction,
   saveSocialCaptionAction,
   saveSocialGlobalSettingsAction,
+  setSocialPostPublishedAction,
 } from "@/app/actions/social-admin";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   datesInYearMonth,
   emptyGlobalSettings,
@@ -27,6 +30,35 @@ import { LESENO_SOCIAL_STYLE_GUIDE } from "@/lib/social/leseno-visual-style";
 import { cn } from "@/lib/utils";
 
 const CHANNEL = "instagram" as const;
+
+function hasCaption(post: SocialPost | undefined): boolean {
+  return Boolean(post?.caption?.trim());
+}
+
+function hasImage(post: SocialPost | undefined): boolean {
+  return Boolean(post?.imageDataUrl);
+}
+
+function StatusChip({
+  active,
+  label,
+}: {
+  active: boolean;
+  label: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide uppercase",
+        active
+          ? "bg-orange-100 text-orange-900 ring-1 ring-orange-700/20"
+          : "bg-zinc-100 text-zinc-400 ring-1 ring-zinc-950/5",
+      )}
+    >
+      {label}
+    </span>
+  );
+}
 
 function currentYearMonth(): string {
   const now = new Date();
@@ -87,6 +119,11 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
   const [refineHints, setRefineHints] = useState<Record<string, string>>({});
   const [imageHints, setImageHints] = useState<Record<string, string>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [deleteImageDate, setDeleteImageDate] = useState<string | null>(null);
+  const [deleteImagePending, setDeleteImagePending] = useState(false);
 
   const dates = useMemo(() => datesInYearMonth(yearMonth), [yearMonth]);
 
@@ -301,7 +338,7 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
               />
             </label>
             <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
-              Bild-Stil (System für gpt-oss → FLUX)
+              Bild-Stil (System für Gemini → FLUX)
               <textarea
                 rows={6}
                 disabled={busy || !canSave}
@@ -368,7 +405,7 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
           onClick={() => void runBatchCaptions()}
           className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
         >
-          Alle Texte erzeugen (gpt-oss)
+          Alle Texte erzeugen (Gemini)
         </button>
         <button
           type="button"
@@ -380,221 +417,355 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
         </button>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         <h2 className="text-xl font-extrabold text-zinc-950">
           Tage ({dates.length})
         </h2>
         {dates.map((date) => {
           const post = postsByDate[date];
           const angle = pickMotivationAngle(date);
+          const open = Boolean(expandedDates[date]);
+          const textOk = hasCaption(post);
+          const imageOk = hasImage(post);
+          const published = Boolean(post?.published);
+
           return (
             <article
               key={date}
-              className="rounded-[1.75rem] bg-white p-5 shadow-xl ring-1 ring-zinc-950/10"
+              className="rounded-[1.75rem] bg-white shadow-xl ring-1 ring-zinc-950/10"
             >
-              <h3 className="text-base font-extrabold text-zinc-950">
-                {new Date(`${date}T12:00:00`).toLocaleDateString("de-DE", {
-                  weekday: "long",
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </h3>
-              <p className="mt-1 text-xs font-semibold text-orange-800">
-                Winkel: {angle.title}
-              </p>
-              <textarea
-                rows={6}
-                disabled={busy || !canSave}
-                value={post?.caption ?? ""}
-                onChange={(e) => {
-                  const caption = e.target.value;
-                  setPostsByDate((prev) => ({
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() =>
+                  setExpandedDates((prev) => ({
                     ...prev,
-                    [date]: {
-                      id: post?.id ?? "",
-                      yearMonth,
-                      postDate: date,
-                      channel: CHANNEL,
-                      caption,
-                      imageDataUrl: post?.imageDataUrl ?? null,
-                      lastImagePrompt: post?.lastImagePrompt ?? null,
-                      updatedAt: post?.updatedAt ?? "",
-                    },
-                  }));
-                }}
-                className="mt-3 w-full rounded-xl border border-zinc-950/10 bg-gray-50 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-orange-700"
-                placeholder="Caption …"
-              />
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={busy || !canSave}
-                  onClick={() => {
-                    startTransition(async () => {
-                      setWaitStatus("Text wird erzeugt (gpt-oss) …");
-                      try {
-                        if (!(await persistGlobal())) return;
-                        const result = await generateSocialCaptionAction({
+                    [date]: !prev[date],
+                  }))
+                }
+                className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left"
+              >
+                <div className="min-w-0">
+                  <h3 className="text-base font-extrabold text-zinc-950">
+                    {new Date(`${date}T12:00:00`).toLocaleDateString("de-DE", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </h3>
+                  <p className="mt-1 truncate text-xs font-semibold text-orange-800">
+                    Winkel: {angle.title}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <StatusChip active={textOk} label="Text" />
+                    <StatusChip active={imageOk} label="Bild" />
+                    <StatusChip
+                      active={published}
+                      label={published ? "Veröffentlicht" : "Entwurf"}
+                    />
+                  </div>
+                </div>
+                <ChevronDown
+                  className={cn(
+                    "mt-1 size-5 shrink-0 text-zinc-500 transition-transform",
+                    open && "rotate-180",
+                  )}
+                  aria-hidden
+                />
+              </button>
+
+              {open ? (
+                <div className="space-y-3 border-t border-zinc-950/10 px-5 pb-5 pt-4">
+                  <div className="flex items-center justify-between gap-3 rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-zinc-950/5">
+                    <div>
+                      <p className="text-sm font-extrabold text-zinc-950">
+                        Veröffentlicht
+                      </p>
+                      <p className="text-xs text-zinc-600">
+                        Merker, ob der Beitrag schon live ist.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={published}
+                      disabled={busy || !canSave}
+                      onClick={() => {
+                        startTransition(async () => {
+                          const next = !published;
+                          const result = await setSocialPostPublishedAction({
+                            yearMonth,
+                            postDate: date,
+                            channel: CHANNEL,
+                            published: next,
+                          });
+                          if (!result.success || !result.data) {
+                            toast.error(result.error ?? "Fehler");
+                            return;
+                          }
+                          mergePost(result.data.post);
+                          toast.success(
+                            next
+                              ? "Als veröffentlicht markiert."
+                              : "Als Entwurf markiert.",
+                          );
+                        });
+                      }}
+                      className={cn(
+                        "relative h-8 w-14 shrink-0 rounded-full transition-all duration-200 ease-in-out disabled:opacity-60",
+                        published ? "bg-orange-700" : "bg-zinc-300",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-1 left-1 size-6 rounded-full bg-white shadow transition-all duration-200 ease-in-out",
+                          published && "translate-x-6",
+                        )}
+                      />
+                      <span className="sr-only">Veröffentlicht</span>
+                    </button>
+                  </div>
+
+                  <textarea
+                    rows={6}
+                    disabled={busy || !canSave}
+                    value={post?.caption ?? ""}
+                    onChange={(e) => {
+                      const caption = e.target.value;
+                      setPostsByDate((prev) => ({
+                        ...prev,
+                        [date]: {
+                          id: post?.id ?? "",
                           yearMonth,
                           postDate: date,
                           channel: CHANNEL,
+                          caption,
+                          imageDataUrl: post?.imageDataUrl ?? null,
+                          lastImagePrompt: post?.lastImagePrompt ?? null,
+                          published: post?.published ?? false,
+                          updatedAt: post?.updatedAt ?? "",
+                        },
+                      }));
+                    }}
+                    className="w-full rounded-xl border border-zinc-950/10 bg-gray-50 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-orange-700"
+                    placeholder="Caption …"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || !canSave}
+                      onClick={() => {
+                        startTransition(async () => {
+                          setWaitStatus("Text wird erzeugt (Gemini) …");
+                          try {
+                            if (!(await persistGlobal())) return;
+                            const result = await generateSocialCaptionAction({
+                              yearMonth,
+                              postDate: date,
+                              channel: CHANNEL,
+                            });
+                            if (!result.success || !result.data) {
+                              toast.error(result.error ?? "Fehler");
+                              return;
+                            }
+                            mergePost(result.data.post);
+                            toast.success(
+                              `Text erzeugt — ${result.data.angleTitle}`,
+                            );
+                          } finally {
+                            setWaitStatus(null);
+                          }
                         });
-                        if (!result.success || !result.data) {
-                          toast.error(result.error ?? "Fehler");
-                          return;
-                        }
-                        mergePost(result.data.post);
-                        toast.success(
-                          `Text erzeugt — ${result.data.angleTitle}`,
-                        );
-                      } finally {
-                        setWaitStatus(null);
-                      }
-                    });
-                  }}
-                  className="rounded-full bg-zinc-800 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
-                >
-                  Text erzeugen
-                </button>
-                <button
-                  type="button"
-                  disabled={busy || !canSave}
-                  onClick={() => {
-                    startTransition(async () => {
-                      const result = await saveSocialCaptionAction({
-                        yearMonth,
-                        postDate: date,
-                        channel: CHANNEL,
-                        caption: post?.caption ?? "",
-                      });
-                      if (!result.success || !result.data) {
-                        toast.error(result.error ?? "Fehler");
-                        return;
-                      }
-                      mergePost(result.data.post);
-                      toast.success("Text gespeichert.");
-                    });
-                  }}
-                  className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold ring-1 ring-zinc-950/10 disabled:opacity-60"
-                >
-                  Speichern
-                </button>
-              </div>
-              <label className="mt-3 block text-xs font-bold text-zinc-500">
-                Text nachbearbeiten (Prompt)
-                <div className="mt-1 flex gap-2">
-                  <input
-                    disabled={busy || !canSave}
-                    value={refineHints[date] ?? ""}
-                    onChange={(e) =>
-                      setRefineHints((prev) => ({
-                        ...prev,
-                        [date]: e.target.value,
-                      }))
-                    }
-                    className="min-w-0 flex-1 rounded-xl border border-zinc-950/10 bg-white px-3 py-1.5 text-sm"
-                    placeholder="Kürzer, mehr CTA …"
-                  />
-                  <button
-                    type="button"
-                    disabled={busy || !canSave}
-                    onClick={() => {
-                      const hint = refineHints[date]?.trim();
-                      if (!hint) {
-                        toast.error("Hinweis eingeben.");
-                        return;
-                      }
-                      startTransition(async () => {
-                        setWaitStatus("Text wird überarbeitet …");
-                        try {
-                          const result = await refineSocialCaptionAction({
+                      }}
+                      className="rounded-full bg-zinc-800 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                    >
+                      Text erzeugen
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !canSave}
+                      onClick={() => {
+                        startTransition(async () => {
+                          const result = await saveSocialCaptionAction({
                             yearMonth,
                             postDate: date,
                             channel: CHANNEL,
-                            refineInstruction: hint,
+                            caption: post?.caption ?? "",
                           });
                           if (!result.success || !result.data) {
                             toast.error(result.error ?? "Fehler");
                             return;
                           }
                           mergePost(result.data.post);
-                          toast.success("Text überarbeitet.");
-                        } finally {
-                          setWaitStatus(null);
+                          toast.success("Text gespeichert.");
+                        });
+                      }}
+                      className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold ring-1 ring-zinc-950/10 disabled:opacity-60"
+                    >
+                      Speichern
+                    </button>
+                  </div>
+                  <label className="block text-xs font-bold text-zinc-500">
+                    Text nachbearbeiten (Prompt)
+                    <div className="mt-1 flex gap-2">
+                      <input
+                        disabled={busy || !canSave}
+                        value={refineHints[date] ?? ""}
+                        onChange={(e) =>
+                          setRefineHints((prev) => ({
+                            ...prev,
+                            [date]: e.target.value,
+                          }))
                         }
-                      });
-                    }}
-                    className="shrink-0 rounded-full bg-orange-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
-                  >
-                    KI
-                  </button>
-                </div>
-              </label>
+                        className="min-w-0 flex-1 rounded-xl border border-zinc-950/10 bg-white px-3 py-1.5 text-sm"
+                        placeholder="Kürzer, mehr CTA …"
+                      />
+                      <button
+                        type="button"
+                        disabled={busy || !canSave}
+                        onClick={() => {
+                          const hint = refineHints[date]?.trim();
+                          if (!hint) {
+                            toast.error("Hinweis eingeben.");
+                            return;
+                          }
+                          startTransition(async () => {
+                            setWaitStatus("Text wird überarbeitet …");
+                            try {
+                              const result = await refineSocialCaptionAction({
+                                yearMonth,
+                                postDate: date,
+                                channel: CHANNEL,
+                                refineInstruction: hint,
+                              });
+                              if (!result.success || !result.data) {
+                                toast.error(result.error ?? "Fehler");
+                                return;
+                              }
+                              mergePost(result.data.post);
+                              toast.success("Text überarbeitet.");
+                            } finally {
+                              setWaitStatus(null);
+                            }
+                          });
+                        }}
+                        className="shrink-0 rounded-full bg-orange-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                      >
+                        KI
+                      </button>
+                    </div>
+                  </label>
 
-              {post?.imageDataUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={post.imageDataUrl}
-                  alt=""
-                  className="mt-3 aspect-square w-full max-w-[220px] rounded-xl object-cover ring-1 ring-zinc-950/10"
-                />
-              ) : (
-                <p className="mt-3 text-xs text-zinc-500">Kein Bild</p>
-              )}
-              <label className="mt-2 block text-xs font-bold text-zinc-500">
-                Bild neu (optional Extra-Prompt)
-                <div className="mt-1 flex gap-2">
-                  <input
-                    disabled={busy || !canSave}
-                    value={imageHints[date] ?? ""}
-                    onChange={(e) =>
-                      setImageHints((prev) => ({
-                        ...prev,
-                        [date]: e.target.value,
-                      }))
-                    }
-                    className="min-w-0 flex-1 rounded-xl border border-zinc-950/10 bg-white px-3 py-1.5 text-sm"
-                    placeholder="mehr Abendlicht …"
-                  />
-                  <button
-                    type="button"
-                    disabled={busy || !canSave}
-                    onClick={() => {
-                      startTransition(async () => {
-                        setWaitStatus(
-                          "Bild: gpt-oss plant Szene, dann FLUX …",
-                        );
-                        try {
-                          if (!(await persistGlobal())) return;
-                          const result = await generateSocialImageAction({
-                            yearMonth,
-                            postDate: date,
-                            channel: CHANNEL,
-                            extraInstruction:
-                              imageHints[date]?.trim() || undefined,
-                          });
-                          if (!result.success || !result.data) {
-                            toast.error(result.error ?? "Fehler");
-                            return;
-                          }
-                          mergePost(result.data.post);
-                          toast.success("Bild erzeugt.");
-                        } finally {
-                          setWaitStatus(null);
+                  {imageOk ? (
+                    <div className="space-y-2">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={post!.imageDataUrl!}
+                        alt=""
+                        className="aspect-square w-full max-w-[220px] rounded-xl object-cover ring-1 ring-zinc-950/10"
+                      />
+                      <button
+                        type="button"
+                        disabled={busy || !canSave}
+                        onClick={() => setDeleteImageDate(date)}
+                        className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-800 ring-1 ring-red-700/20 hover:bg-red-100 disabled:opacity-60"
+                      >
+                        Bild löschen
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500">Kein Bild</p>
+                  )}
+                  <label className="block text-xs font-bold text-zinc-500">
+                    Bild neu (optional Extra-Prompt)
+                    <div className="mt-1 flex gap-2">
+                      <input
+                        disabled={busy || !canSave}
+                        value={imageHints[date] ?? ""}
+                        onChange={(e) =>
+                          setImageHints((prev) => ({
+                            ...prev,
+                            [date]: e.target.value,
+                          }))
                         }
-                      });
-                    }}
-                    className="shrink-0 rounded-full bg-orange-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
-                  >
-                    FLUX
-                  </button>
+                        className="min-w-0 flex-1 rounded-xl border border-zinc-950/10 bg-white px-3 py-1.5 text-sm"
+                        placeholder="mehr Abendlicht …"
+                      />
+                      <button
+                        type="button"
+                        disabled={busy || !canSave}
+                        onClick={() => {
+                          startTransition(async () => {
+                            setWaitStatus(
+                              "Bild: Gemini plant Szene, dann FLUX …",
+                            );
+                            try {
+                              if (!(await persistGlobal())) return;
+                              const result = await generateSocialImageAction({
+                                yearMonth,
+                                postDate: date,
+                                channel: CHANNEL,
+                                extraInstruction:
+                                  imageHints[date]?.trim() || undefined,
+                              });
+                              if (!result.success || !result.data) {
+                                toast.error(result.error ?? "Fehler");
+                                return;
+                              }
+                              mergePost(result.data.post);
+                              toast.success("Bild erzeugt.");
+                            } finally {
+                              setWaitStatus(null);
+                            }
+                          });
+                        }}
+                        className="shrink-0 rounded-full bg-orange-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                      >
+                        FLUX
+                      </button>
+                    </div>
+                  </label>
                 </div>
-              </label>
+              ) : null}
             </article>
           );
         })}
       </div>
+
+      <ConfirmDeleteDialog
+        open={Boolean(deleteImageDate)}
+        title="Bild löschen?"
+        description={
+          deleteImageDate
+            ? `Das Bild für ${new Date(`${deleteImageDate}T12:00:00`).toLocaleDateString("de-DE")} wird unwiderruflich aus dem Beitrag entfernt. Text und Veröffentlicht-Status bleiben erhalten.`
+            : ""
+        }
+        confirmLabel="Bild löschen"
+        pending={deleteImagePending}
+        onCancel={() => {
+          if (!deleteImagePending) setDeleteImageDate(null);
+        }}
+        onConfirm={() => {
+          if (!deleteImageDate) return;
+          setDeleteImagePending(true);
+          void (async () => {
+            const result = await clearSocialImageAction({
+              yearMonth,
+              postDate: deleteImageDate,
+              channel: CHANNEL,
+            });
+            setDeleteImagePending(false);
+            if (!result.success || !result.data) {
+              toast.error(result.error ?? "Löschen fehlgeschlagen.");
+              return;
+            }
+            mergePost(result.data.post);
+            setDeleteImageDate(null);
+            toast.success("Bild gelöscht.");
+          })();
+        }}
+      />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Admin Social Media: global CRAFT settings + monthly day posts (gpt-oss + FLUX.2).
+ * Admin Social Media: global CRAFT settings + monthly day posts (Gemini + FLUX.2).
  */
 
 import { revalidatePath } from "next/cache";
@@ -26,11 +26,13 @@ import {
 } from "@/lib/social/types";
 import type { ActionResult } from "@/lib/types/actions";
 import {
+  socialClearImageSchema,
   socialGenerateCaptionSchema,
   socialGenerateImageSchema,
   socialGlobalSettingsSchema,
   socialRefineCaptionSchema,
   socialSaveCaptionSchema,
+  socialSetPublishedSchema,
   socialYearMonthSchema,
 } from "@/lib/validations/social-admin";
 
@@ -297,7 +299,7 @@ export async function generateSocialImageAction(
       channel: parsed.data.channel,
       imageDataUrl: dataUrl,
       lastImagePrompt: [
-        "— gpt-oss Szene —",
+        "— Gemini Szene —",
         sceneDescription,
         "",
         "— FLUX Prompt —",
@@ -317,6 +319,72 @@ export async function generateSocialImageAction(
         error instanceof Error
           ? error.message
           : "Bildgenerierung fehlgeschlagen.",
+    };
+  }
+}
+
+export async function clearSocialImageAction(
+  input: unknown,
+): Promise<ActionResult<{ post: SocialPost }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = socialClearImageSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const post = await upsertSocialPost({
+      yearMonth: parsed.data.yearMonth,
+      postDate: parsed.data.postDate,
+      channel: parsed.data.channel,
+      clearImage: true,
+    });
+    revalidateSocial();
+    return { success: true, data: { post } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Bild löschen fehlgeschlagen.",
+    };
+  }
+}
+
+export async function setSocialPostPublishedAction(
+  input: unknown,
+): Promise<ActionResult<{ post: SocialPost }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = socialSetPublishedSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const post = await upsertSocialPost({
+      yearMonth: parsed.data.yearMonth,
+      postDate: parsed.data.postDate,
+      channel: parsed.data.channel,
+      published: parsed.data.published,
+    });
+    revalidateSocial();
+    return { success: true, data: { post } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Veröffentlichungs-Status speichern fehlgeschlagen.",
     };
   }
 }

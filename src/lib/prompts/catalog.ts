@@ -38,23 +38,23 @@ export const FALLBACK_AI_MODELS: AiModelConfig[] = [
     id: "facts-default",
     label: "Faktenmodell Standard",
     provider: "gemini",
-    modelSlug: "gemini-3.6-flash",
+    modelSlug: "gemini-3.8-flash",
     supportsSystemPrompt: true,
     supportsJsonOutput: true,
     isActive: true,
     notes:
-      "Sammelt belastbare Fakten über Gemini. Später austauschbar gegen andere Provider.",
+      "Sammelt belastbare Fakten über Gemini 3.8 Flash.",
   },
   {
     id: "story-default",
     label: "Geschichtenmodell Standard",
     provider: "gemini",
-    modelSlug: "gemini-3.6-flash",
+    modelSlug: "gemini-3.8-flash",
     supportsSystemPrompt: true,
     supportsJsonOutput: false,
     isActive: true,
     notes:
-      "Formuliert aus Thema, Fakten und Auswahlfeldern die Geschichte als HTML.",
+      "Formuliert aus Thema, Fakten und Auswahlfeldern die Geschichte als HTML (Gemini 3.8 Flash).",
   },
   {
     id: "images-default",
@@ -99,6 +99,17 @@ export const FALLBACK_AI_MODELS: AiModelConfig[] = [
     isActive: true,
     notes:
       "Erklärt Fakt-Hintergründe und Vertiefungen über IONOS openai/gpt-oss-120b.",
+  },
+  {
+    id: "social-default",
+    label: "Social Media Text (Gemini)",
+    provider: "gemini",
+    modelSlug: "gemini-3.8-flash",
+    supportsSystemPrompt: true,
+    supportsJsonOutput: false,
+    isActive: true,
+    notes:
+      "Captions + FLUX-Szenenplanung für Admin Social Media (Gemini 3.8 Flash).",
   },
 ];
 

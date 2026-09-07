@@ -1,5 +1,5 @@
 /**
- * Canonical leseno visual system for social FLUX planning (gpt-oss style system).
+ * Canonical leseno visual system for social FLUX planning (Gemini style system).
  * Do NOT put website URLs here — models cannot see linked images; describe the look.
  */
 

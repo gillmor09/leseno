@@ -1,6 +1,6 @@
 /**
  * Social Media admin types.
- * Global CRAFT: storyline, role, format, action, imagePrompt (style for gpt-oss → FLUX).
+ * Global CRAFT: storyline, role, format, action, imagePrompt (style for Gemini → FLUX).
  * Posts: Instagram calendar only (channel column remains `instagram` in DB).
  */
 
@@ -28,6 +28,7 @@ export type SocialPost = {
   caption: string;
   imageDataUrl: string | null;
   lastImagePrompt: string | null;
+  published: boolean;
   updatedAt: string;
 };
 
