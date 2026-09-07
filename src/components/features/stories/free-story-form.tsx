@@ -436,7 +436,7 @@ export function FreeStoryForm({
   }
 
   return (
-    <div className="grid items-start gap-8">
+    <div className="grid min-w-0 max-w-full items-start gap-8">
       {childProfiles !== null && !trialMode && !selectionCollapsed ? (
         <ChildProfilePickerCard
           profiles={profiles ?? []}

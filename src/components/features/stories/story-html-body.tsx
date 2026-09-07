@@ -33,7 +33,7 @@ export function StoryHtmlBody({
       <div
         data-tts-root
         className={cn(
-          "mt-4 whitespace-pre-wrap text-zinc-700",
+          "mt-4 min-w-0 max-w-full whitespace-pre-wrap break-words text-zinc-700",
           !inheritTypography && "leading-relaxed",
           className,
         )}
@@ -47,7 +47,7 @@ export function StoryHtmlBody({
     <div
       data-tts-root
       className={cn(
-        "story-html mt-4 text-zinc-700",
+        "story-html mt-4 min-w-0 max-w-full text-zinc-700",
         !inheritTypography && "leading-relaxed",
         "[&_h1]:mt-0 [&_h1]:mb-4 [&_h1]:text-[1.25em] [&_h1]:font-extrabold [&_h1]:text-zinc-950",
         "[&_h2]:mt-6 [&_h2]:mb-3 [&_h2]:text-[1.1em] [&_h2]:font-extrabold [&_h2]:text-zinc-950",

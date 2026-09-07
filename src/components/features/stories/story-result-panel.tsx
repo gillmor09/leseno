@@ -458,7 +458,7 @@ export function StoryResultPanel({
   };
 
   return (
-    <div className="relative grid gap-6">
+    <div className="relative grid min-w-0 max-w-full gap-6">
       <BotGuardFields
         website={botGuard.website}
         onWebsiteChange={botGuard.setWebsite}
@@ -466,15 +466,15 @@ export function StoryResultPanel({
       />
       <section
         aria-label={eyebrow}
-        className="rounded-[1.75rem] bg-white p-6 text-zinc-800 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
+        className="min-w-0 max-w-full overflow-x-hidden rounded-[1.75rem] bg-white p-6 text-zinc-800 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
         style={cardStyle}
       >
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
             {eyebrow}
           </p>
-          <div className="flex flex-col items-end gap-3 self-end sm:self-auto">
-            <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-col items-stretch gap-3 self-stretch sm:items-end sm:self-auto">
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {allowContinue && libraryStoryId && lengthCatalog ? (
                 <button
                   type="button"
@@ -503,7 +503,7 @@ export function StoryResultPanel({
                 <>
                   <label
                     htmlFor="story-tts-speed"
-                    className="flex min-w-[9.5rem] flex-col gap-1"
+                    className="flex w-full min-w-0 flex-col gap-1 sm:w-[9.5rem]"
                   >
                     <span className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
                       Tempo{" "}
@@ -572,7 +572,7 @@ export function StoryResultPanel({
                     void handleExportPdf();
                   }}
                   disabled={isExporting}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-orange-700 px-4 py-2.5 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-orange-700 px-4 py-2.5 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
                 >
                   {isExporting ? (
                     <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -596,7 +596,7 @@ export function StoryResultPanel({
             </div>
           </div>
         </div>
-        <div ref={storyBodyRef}>
+        <div ref={storyBodyRef} className="min-w-0 max-w-full">
           <StoryHtmlBody
             key={storyHtml}
             content={storyHtml}

@@ -84,7 +84,7 @@ export async function MembershipStoryPage() {
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
       <main id="main" className="flex-1">
-        <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
+        <section className="mx-auto min-w-0 max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
           <GeschichteComposer
             packageLabel={packageLabel}
             initialCredits={initialCredits}

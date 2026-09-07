@@ -3,6 +3,13 @@
  * Imported from `StoryHtmlBody` so it is not on the marketing LCP critical path.
  */
 
+.story-html {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .story-html::after {
   content: "";
   display: table;
@@ -33,6 +40,18 @@
   float: right !important;
   margin-left: 1rem !important;
   margin-right: 0 !important;
+}
+
+/* Float + fixed illustration width blows past narrow viewports. */
+@media (max-width: 639px) {
+  .story-html img.story-illustration--left,
+  .story-html img.story-illustration--right {
+    float: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 .story-html p:has(> img.story-illustration:first-child) {
