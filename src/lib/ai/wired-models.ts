@@ -9,6 +9,7 @@ export type WiredAiEndpoint = {
   provider:
     | "gemini"
     | "gemini-image"
+    | "claude"
     | "openai-compatible"
     | "ionos-image"
     | "openai-tts";
@@ -34,6 +35,12 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     provider: "gemini",
     label: "Gemini 3.5 Flash-Lite",
     usage: "Text: günstig/schnell (hohe Volumen)",
+  },
+  {
+    modelSlug: "claude-sonnet-5",
+    provider: "claude",
+    label: "Claude Sonnet 5",
+    usage: "Text: Geschichten / Fakten (Anthropic)",
   },
   {
     modelSlug: "gemini-3.1-flash-image",

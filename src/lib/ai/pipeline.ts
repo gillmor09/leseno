@@ -9,6 +9,10 @@ import {
   type FluxIllustrationPlan,
 } from "@/lib/ai/flux-illustrations";
 import { generateImage } from "@/lib/ai/generate-image";
+import {
+  progressModelFromConfig,
+  type StoryPipelineProgressCallback,
+} from "@/lib/ai/pipeline-progress";
 import { generateText } from "@/lib/ai/provider";
 import {
   FALLBACK_PROMPT_ADMIN_CATALOG,
@@ -394,10 +398,13 @@ async function generateIllustrationPixels(
  * Runs facts, then story (+ optional FLUX images ∥ story), then optional layout.
  * `includeImages: true` enables illustration generation and Mistral embedding.
  * Default / omitted is text-only.
+ * Optional `onProgress` reports the active model(s) per stage (admin wait UI).
  */
 export async function generateStoryPipeline(
   input: StoryGenerateInput,
+  options?: { onProgress?: StoryPipelineProgressCallback },
 ): Promise<StoryGenerateResult> {
+  const onProgress = options?.onProgress;
   const [lengthCatalog, promptCatalog] = await Promise.all([
     loadStoryLengthCatalog(),
     loadPromptCatalogSafe(),
@@ -455,6 +462,12 @@ export async function generateStoryPipeline(
     ),
   };
 
+  onProgress?.({
+    stage: "facts",
+    label: "Fakten recherchieren",
+    models: [progressModelFromConfig("Fakten", factsModel)],
+  });
+
   const factsRaw = await generateText({
     model: factsModel,
     systemInstruction: fillPromptTemplate(
@@ -477,6 +490,12 @@ export async function generateStoryPipeline(
   };
 
   if (!includeImages) {
+    onProgress?.({
+      stage: "story",
+      label: "Geschichte schreiben",
+      models: [progressModelFromConfig("Geschichte", storyModel)],
+    });
+
     const storyHtmlRaw = stripCodeFence(
       await generateText({
         model: storyModel,
@@ -536,6 +555,15 @@ export async function generateStoryPipeline(
     friendNames: input.personal?.friendNames,
   });
 
+  onProgress?.({
+    stage: "story_and_images",
+    label: "Geschichte + Bilder parallel",
+    models: [
+      progressModelFromConfig("Geschichte", storyModel),
+      progressModelFromConfig("Bilder", imagesModel),
+    ],
+  });
+
   const [storyHtmlRaw, illustrations] = await Promise.all([
     generateText({
       model: storyModel,
@@ -563,6 +591,12 @@ export async function generateStoryPipeline(
     story_html: storyHtmlRaw,
     images_manifest: buildImagesManifest(illustrations),
   };
+
+  onProgress?.({
+    stage: "layout",
+    label: "Bilder einbetten",
+    models: [progressModelFromConfig("Layout", layoutModel)],
+  });
 
   const layoutRaw = await generateText({
     model: layoutModel,

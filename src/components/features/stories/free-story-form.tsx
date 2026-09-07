@@ -18,7 +18,8 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { generateFreeStoryAction } from "@/app/actions/story-generate";
+import { generateFreeStoryAction, pollFreeStoryGenerateJobAction, startFreeStoryGenerateJobAction } from "@/app/actions/story-generate";
+import type { StoryPipelineProgressEvent } from "@/lib/ai/pipeline-progress";
 import {
   BotGuardFields,
   useBotGuardFields,
@@ -74,6 +75,7 @@ export function FreeStoryForm({
   onCreditsChange,
   inviteUserId = null,
   initialUnlockedProfileIds = [],
+  isAdmin = false,
 }: {
   lengthCatalog: StoryLengthCatalog;
   typographyDefaults: ReadingTypographyDefaultsCatalog;
@@ -94,6 +96,8 @@ export function FreeStoryForm({
   inviteUserId?: string | null;
   /** Profile ids without PIN or already unlocked this session. */
   initialUnlockedProfileIds?: string[];
+  /** Admin wait overlay shows live pipeline model/stage. */
+  isAdmin?: boolean;
 }) {
   const canFeature = (feature: PackageFeatureId) =>
     !trialMode && featuresInclude(enabledFeatures, feature);
@@ -141,6 +145,8 @@ export function FreeStoryForm({
   const [storySchoolStage, setStorySchoolStage] =
     useState<StorySchoolStageId | null>(null);
   const [statusText, setStatusText] = useState<string | null>(null);
+  const [pipelineProgress, setPipelineProgress] =
+    useState<StoryPipelineProgressEvent | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [selectionExpanded, setSelectionExpanded] = useState(true);
   const [profileGapDialog, setProfileGapDialog] = useState<{
@@ -228,6 +234,7 @@ export function FreeStoryForm({
         ? "Ich hole spannendes Wissen aus deiner Welt …"
         : "Ich hole spannendes Wissen für dich …",
     );
+    setPipelineProgress(null);
 
     trackUserActivity({
       action: "story.generate_click",
@@ -242,44 +249,38 @@ export function FreeStoryForm({
       },
     });
 
-    startTransition(async () => {
-      setLibraryStoryId(null);
-      const result = await generateFreeStoryAction({
-        personalMode: trialMode ? false : personalMode,
-        profileId:
-          trialMode || !personalMode
-            ? undefined
-            : (activeProfileId ?? undefined),
-        syllableHelp,
-        includeImages,
-        trialMode,
-        topic: trialMode || !personalMode ? topic : undefined,
-        schoolStage,
-        lengthStep,
-        mood,
-        ...botGuard.getBotGuardPayload(),
-      });
+    const generatePayload = {
+      personalMode: trialMode ? false : personalMode,
+      profileId:
+        trialMode || !personalMode
+          ? undefined
+          : (activeProfileId ?? undefined),
+      syllableHelp,
+      includeImages,
+      trialMode,
+      topic: trialMode || !personalMode ? topic : undefined,
+      schoolStage,
+      lengthStep,
+      mood,
+      ...botGuard.getBotGuardPayload(),
+    };
 
-      if (!result.success || !result.data) {
-        setStatusText(null);
-        setFieldError(result.error ?? "Deine Geschichte konnte nicht entstehen.");
-        toast.error(result.error ?? "Deine Geschichte konnte nicht entstehen.");
-        setSelectionExpanded(true);
-        return;
-      }
-
+    function applySuccess(data: NonNullable<
+      Awaited<ReturnType<typeof generateFreeStoryAction>>["data"]
+    >) {
       setStatusText(null);
-      setOutput(result.data.story);
+      setPipelineProgress(null);
+      setOutput(data.story);
       setLearnedFacts(
-        result.data.facts
+        data.facts
           .map((fact) => (typeof fact === "string" ? fact.trim() : ""))
           .filter(Boolean),
       );
       setStorySchoolStage(schoolStage);
-      setLibraryStoryId(result.data.libraryStoryId ?? null);
+      setLibraryStoryId(data.libraryStoryId ?? null);
       setSelectionExpanded(false);
-      if (result.data.personalSeed) {
-        const seed = result.data.personalSeed;
+      if (data.personalSeed) {
+        const seed = data.personalSeed;
         const sourceLabel =
           seed.seedSource === "experience"
             ? "Erlebniswunsch"
@@ -290,12 +291,72 @@ export function FreeStoryForm({
       } else {
         toast.success("Geschichte ist da!");
       }
-      if (
-        typeof result.data.creditsRemaining === "number" &&
-        onCreditsChange
-      ) {
-        onCreditsChange(result.data.creditsRemaining);
+      if (typeof data.creditsRemaining === "number" && onCreditsChange) {
+        onCreditsChange(data.creditsRemaining);
       }
+    }
+
+    function applyFailure(message: string) {
+      setStatusText(null);
+      setPipelineProgress(null);
+      setFieldError(message);
+      toast.error(message);
+      setSelectionExpanded(true);
+    }
+
+    startTransition(async () => {
+      setLibraryStoryId(null);
+
+      if (isAdmin && !trialMode) {
+        const started = await startFreeStoryGenerateJobAction(generatePayload);
+        if (!started.success || !started.data?.jobId) {
+          applyFailure(
+            started.error ?? "Deine Geschichte konnte nicht entstehen.",
+          );
+          return;
+        }
+
+        const jobId = started.data.jobId;
+        while (true) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          const polled = await pollFreeStoryGenerateJobAction(jobId);
+          if (!polled.success || !polled.data) {
+            applyFailure(
+              polled.error ?? "Deine Geschichte konnte nicht entstehen.",
+            );
+            return;
+          }
+
+          if (polled.data.progress) {
+            setPipelineProgress(polled.data.progress);
+            setStatusText(polled.data.progress.label);
+          }
+
+          if (polled.data.status === "done" && polled.data.data) {
+            applySuccess(polled.data.data);
+            return;
+          }
+
+          if (polled.data.status === "error") {
+            applyFailure(
+              polled.data.error ??
+                "Deine Geschichte konnte nicht entstehen.",
+            );
+            return;
+          }
+        }
+      }
+
+      const result = await generateFreeStoryAction(generatePayload);
+
+      if (!result.success || !result.data) {
+        applyFailure(
+          result.error ?? "Deine Geschichte konnte nicht entstehen.",
+        );
+        return;
+      }
+
+      applySuccess(result.data);
     });
   }
 
@@ -755,6 +816,7 @@ export function FreeStoryForm({
         <StoryWaitOverlay
           statusText={statusText}
           includeImages={includeImages}
+          adminProgress={isAdmin ? pipelineProgress : null}
         />
       ) : null}
     </div>
@@ -764,13 +826,16 @@ export function FreeStoryForm({
 /**
  * Full-screen wait dialog. Only mounts while pending (client-only interaction),
  * so `document.body` exists without a portalReady effect.
+ * Admins additionally see the live pipeline model(s) for the current stage.
  */
 function StoryWaitOverlay({
   statusText,
   includeImages,
+  adminProgress,
 }: {
   statusText: string | null;
   includeImages: boolean;
+  adminProgress: StoryPipelineProgressEvent | null;
 }) {
   return createPortal(
     <div
@@ -800,11 +865,39 @@ function StoryWaitOverlay({
               ? "Ich schreibe und male für dich …"
               : "Ich schreibe deine Geschichte …")}
         </p>
-        <p className="mt-3 text-sm leading-relaxed text-zinc-600">
-          {includeImages
-            ? "Zuerst hole ich Neues zum Staunen. Danach entstehen Geschichte und Bilder parallel — zum Schluss fließt der Text um die Bilder. Das kann einen Moment dauern."
-            : "Zuerst hole ich Neues zum Staunen. Danach schreibe ich die Geschichte."}
-        </p>
+        {adminProgress ? (
+          <div className="mt-4 rounded-2xl bg-zinc-950/[0.04] px-4 py-3 text-left ring-1 ring-zinc-950/10">
+            <p className="text-[0.65rem] font-extrabold tracking-wide text-zinc-500 uppercase">
+              Admin · aktueller Schritt
+            </p>
+            <p className="mt-1 text-sm font-extrabold text-zinc-950">
+              {adminProgress.label}
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {adminProgress.models.map((model) => (
+                <li
+                  key={`${model.roleLabel}-${model.modelSlug}`}
+                  className="text-xs leading-snug text-zinc-700"
+                >
+                  <span className="font-bold text-zinc-900">
+                    {model.roleLabel}:
+                  </span>{" "}
+                  <span className="font-semibold">{model.modelSlug}</span>
+                  <span className="text-zinc-500">
+                    {" "}
+                    · {model.provider}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm leading-relaxed text-zinc-600">
+            {includeImages
+              ? "Zuerst hole ich Neues zum Staunen. Danach entstehen Geschichte und Bilder parallel — zum Schluss fließt der Text um die Bilder. Das kann einen Moment dauern."
+              : "Zuerst hole ich Neues zum Staunen. Danach schreibe ich die Geschichte."}
+          </p>
+        )}
       </div>
     </div>,
     document.body,

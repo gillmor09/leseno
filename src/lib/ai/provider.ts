@@ -1,9 +1,10 @@
 /**
  * Routes AI calls by provider from `leseno.ai_models`.
- * Supported: Gemini and OpenAI-compatible (IONOS AI Model Hub).
+ * Supported: Gemini, Claude, and OpenAI-compatible (IONOS AI Model Hub).
  */
 
 import type { AiModelConfig } from "@/lib/prompts/catalog";
+import { generateWithClaude } from "@/lib/ai/claude";
 import { generateWithGemini } from "@/lib/ai/gemini";
 import { generateWithOpenAiCompatible } from "@/lib/ai/openai-compatible";
 
@@ -51,6 +52,16 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
     return result.text;
   }
 
+  if (provider === "claude") {
+    const result = await generateWithClaude({
+      modelSlug: input.model.modelSlug,
+      systemInstruction: prompt.systemInstruction,
+      userText: prompt.userText,
+      jsonOutput,
+    });
+    return result.text;
+  }
+
   if (provider === "openai-compatible") {
     const result = await generateWithOpenAiCompatible({
       modelSlug: input.model.modelSlug,
@@ -62,6 +73,6 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
   }
 
   throw new Error(
-    `Provider „${input.model.provider}“ ist noch nicht angebunden. Bitte „gemini“ oder „openai-compatible“ wählen.`,
+    `Provider „${input.model.provider}“ ist noch nicht angebunden. Bitte „gemini“, „claude“ oder „openai-compatible“ wählen.`,
   );
 }

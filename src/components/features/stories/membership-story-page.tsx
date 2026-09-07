@@ -6,6 +6,7 @@
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { GeschichteComposer } from "@/components/features/stories/geschichte-composer";
+import { isAdminImpersonating } from "@/lib/auth/admin-impersonation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireAnyMembershipPage } from "@/lib/auth/require-membership";
 import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
@@ -23,6 +24,10 @@ export async function MembershipStoryPage() {
   await requireAnyMembershipPage();
 
   const user = await getCurrentUser();
+  const meta = (user?.app_metadata ?? {}) as Record<string, unknown>;
+  const isAdmin =
+    meta.role === "admin" && !isAdminImpersonating(meta);
+
   const [lengthCatalog, typographyDefaults] = await Promise.all([
     loadStoryLengthCatalog(),
     loadReadingTypographyDefaults(),
@@ -91,6 +96,7 @@ export async function MembershipStoryPage() {
             unlockedProfileIds={unlockedProfileIds}
             enabledFeatures={enabledFeatures}
             inviteUserId={user?.id ?? null}
+            isAdmin={isAdmin}
           />
         </section>
       </main>

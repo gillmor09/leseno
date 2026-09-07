@@ -5,11 +5,23 @@ import {
   generateStoryPipeline,
   type StoryGenerateResult,
 } from "@/lib/ai/pipeline";
+import type { StoryPipelineProgressCallback } from "@/lib/ai/pipeline-progress";
+import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import { getCurrentUser } from "@/lib/auth/session";
 import { toUserFacingMessage } from "@/lib/errors/user-facing";
 import { assertBotGuard } from "@/lib/security/bot-guard";
 import { storyCreditsForLength } from "@/lib/stories/credits-cost";
+import type { StoryLengthStepId } from "@/lib/stories/length";
+import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
 import { buildPersonalStoryContext } from "@/lib/stories/personal";
+import type { StoryGenerateActionData } from "@/lib/stories/story-generate-action-data";
+import {
+  completeStoryGenerateJob,
+  createStoryGenerateJob,
+  failStoryGenerateJob,
+  getStoryGenerateJobSnapshot,
+  updateStoryGenerateJobProgress,
+} from "@/lib/stories/story-generate-jobs";
 import {
   isTrialLengthStep,
   isTrialSchoolStage,
@@ -21,32 +33,37 @@ import { loadFeaturesForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
 import { storyGenerateSchema } from "@/lib/validations/story-generate";
 import { loadChildProfile } from "@/lib/world/repository";
+import type { StoryPipelineProgressEvent } from "@/lib/ai/pipeline-progress";
+
+export type { StoryGenerateActionData };
 
 const STORY_GENERATE_FALLBACK =
   "Die Geschichte konnte gerade nicht entstehen. Bitte versuche es gleich noch einmal.";
 
-export type StoryGenerateActionData = StoryGenerateResult & {
-  /** Remaining balance after a paid generation (omit in trial). */
+type PreparedStoryGenerate = {
+  topic: string;
+  schoolStage: StorySchoolStageId;
+  lengthStep: StoryLengthStepId;
+  mood: StoryMoodId;
+  personal: ReturnType<typeof buildPersonalStoryContext> | null;
+  syllableHelp: boolean;
+  includeImages: boolean;
+  trialMode: boolean;
+  personalMode: boolean;
+  profileId?: string;
+  packageFeatures: Awaited<ReturnType<typeof loadFeaturesForCurrentUser>>;
+  creditCost: number;
   creditsRemaining?: number;
-  /** Credits charged for this story (omit in trial). */
-  creditsCharged?: number;
-  /** Library id when auto-saved (`buecherei`). */
-  libraryStoryId?: string;
-  /** Personal seed chosen for this generation (Meine Welt). */
-  personalSeed?: {
-    topic: string;
-    seedSource: "interest" | "experience";
-    gentleFear: string | null;
-  };
+  chargedUserId: string | null;
 };
 
 /**
- * Starts the story pipeline: facts → story (+ optional images/layout).
- * Membership stories debit credits by length; trial (`/kostenlos`) is free.
+ * Validates input, applies package gates, and spends credits when needed.
+ * Shared by the sync action and the admin progress job.
  */
-export async function generateFreeStoryAction(
+async function prepareFreeStoryGenerate(
   input: unknown,
-): Promise<ActionResult<StoryGenerateActionData>> {
+): Promise<ActionResult<PreparedStoryGenerate>> {
   const botError = await assertBotGuard(input, {
     action: "story-generate",
     minFillMs: 2000,
@@ -187,9 +204,9 @@ export async function generateFreeStoryAction(
       }
     }
 
-    let result: StoryGenerateResult;
-    try {
-      result = await generateStoryPipeline({
+    return {
+      success: true,
+      data: {
         topic,
         schoolStage,
         lengthStep: parsed.data.lengthStep,
@@ -197,94 +214,146 @@ export async function generateFreeStoryAction(
         personal,
         syllableHelp,
         includeImages,
-      });
-    } catch (pipelineError) {
-      if (chargedUserId && creditCost > 0) {
-        try {
-          await addUserCredits(chargedUserId, creditCost);
-        } catch (refundError) {
-          console.error(
-            "[generateFreeStoryAction] credit refund failed",
-            refundError,
-          );
-        }
-      }
-      throw pipelineError;
-    }
-
-    const user = await getCurrentUser();
-    let libraryStoryId: string | undefined;
-    if (user) {
-      const { logUserActivity } = await import("@/lib/users/activity");
-      await logUserActivity({
-        action: "story.generate",
-        label: "Geschichte erzeugen",
-        userId: user.id,
-        metadata: {
-          personalMode: parsed.data.personalMode,
-          lengthStep: parsed.data.lengthStep,
-          mood: parsed.data.mood,
-          schoolStage,
-          includeImages,
-          topic,
-          seedSource: personal?.seedSource,
-          gentleFear: personal?.gentleFear ?? null,
-          creditsCharged: creditCost > 0 ? creditCost : undefined,
-        },
-      });
-
-      if (
-        !parsed.data.trialMode &&
-        featuresInclude(packageFeatures, "buecherei")
-      ) {
-        try {
-          const { titleFromStoryHtml } = await import(
-            "@/lib/stories/title-from-html"
-          );
-          const { saveMyStory } = await import(
-            "@/lib/stories/library-repository"
-          );
-          libraryStoryId = await saveMyStory({
-            title: titleFromStoryHtml(result.story),
-            storyHtml: result.story,
-            facts: result.facts,
-            schoolStage,
-            childProfileId: parsed.data.personalMode
-              ? (parsed.data.profileId ?? null)
-              : null,
-            lengthStep: parsed.data.lengthStep,
-            mood: parsed.data.mood,
-            topic,
-            personalMode: parsed.data.personalMode,
-            syllableHelp,
-            includeImages,
-            creditsCharged: creditCost > 0 ? creditCost : null,
-          });
-        } catch (saveError) {
-          console.error("[generateFreeStoryAction] library save", saveError);
-        }
-      }
-    }
-
-    return {
-      success: true,
-      data: {
-        ...result,
-        ...(libraryStoryId ? { libraryStoryId } : {}),
-        ...(personal
-          ? {
-              personalSeed: {
-                topic: personal.topic,
-                seedSource: personal.seedSource,
-                gentleFear: personal.gentleFear,
-              },
-            }
-          : {}),
-        ...(creditCost > 0
-          ? { creditsCharged: creditCost, creditsRemaining }
-          : {}),
+        trialMode: parsed.data.trialMode,
+        personalMode: parsed.data.personalMode,
+        profileId: parsed.data.profileId,
+        packageFeatures,
+        creditCost,
+        creditsRemaining,
+        chargedUserId,
       },
     };
+  } catch (error) {
+    console.error("[prepareFreeStoryGenerate]", error);
+    return {
+      success: false,
+      error: toUserFacingMessage(error, STORY_GENERATE_FALLBACK),
+    };
+  }
+}
+
+async function finishFreeStoryGenerate(
+  prepared: PreparedStoryGenerate,
+  onProgress?: StoryPipelineProgressCallback,
+): Promise<StoryGenerateActionData> {
+  let result: StoryGenerateResult;
+  try {
+    result = await generateStoryPipeline(
+      {
+        topic: prepared.topic,
+        schoolStage: prepared.schoolStage,
+        lengthStep: prepared.lengthStep,
+        mood: prepared.mood,
+        personal: prepared.personal,
+        syllableHelp: prepared.syllableHelp,
+        includeImages: prepared.includeImages,
+      },
+      { onProgress },
+    );
+  } catch (pipelineError) {
+    if (prepared.chargedUserId && prepared.creditCost > 0) {
+      try {
+        await addUserCredits(prepared.chargedUserId, prepared.creditCost);
+      } catch (refundError) {
+        console.error(
+          "[finishFreeStoryGenerate] credit refund failed",
+          refundError,
+        );
+      }
+    }
+    throw pipelineError;
+  }
+
+  const user = await getCurrentUser();
+  let libraryStoryId: string | undefined;
+  if (user) {
+    const { logUserActivity } = await import("@/lib/users/activity");
+    await logUserActivity({
+      action: "story.generate",
+      label: "Geschichte erzeugen",
+      userId: user.id,
+      metadata: {
+        personalMode: prepared.personalMode,
+        lengthStep: prepared.lengthStep,
+        mood: prepared.mood,
+        schoolStage: prepared.schoolStage,
+        includeImages: prepared.includeImages,
+        topic: prepared.topic,
+        seedSource: prepared.personal?.seedSource,
+        gentleFear: prepared.personal?.gentleFear ?? null,
+        creditsCharged:
+          prepared.creditCost > 0 ? prepared.creditCost : undefined,
+      },
+    });
+
+    if (
+      !prepared.trialMode &&
+      featuresInclude(prepared.packageFeatures, "buecherei")
+    ) {
+      try {
+        const { titleFromStoryHtml } = await import(
+          "@/lib/stories/title-from-html"
+        );
+        const { saveMyStory } = await import(
+          "@/lib/stories/library-repository"
+        );
+        libraryStoryId = await saveMyStory({
+          title: titleFromStoryHtml(result.story),
+          storyHtml: result.story,
+          facts: result.facts,
+          schoolStage: prepared.schoolStage,
+          childProfileId: prepared.personalMode
+            ? (prepared.profileId ?? null)
+            : null,
+          lengthStep: prepared.lengthStep,
+          mood: prepared.mood,
+          topic: prepared.topic,
+          personalMode: prepared.personalMode,
+          syllableHelp: prepared.syllableHelp,
+          includeImages: prepared.includeImages,
+          creditsCharged: prepared.creditCost > 0 ? prepared.creditCost : null,
+        });
+      } catch (saveError) {
+        console.error("[finishFreeStoryGenerate] library save", saveError);
+      }
+    }
+  }
+
+  return {
+    ...result,
+    ...(libraryStoryId ? { libraryStoryId } : {}),
+    ...(prepared.personal
+      ? {
+          personalSeed: {
+            topic: prepared.personal.topic,
+            seedSource: prepared.personal.seedSource,
+            gentleFear: prepared.personal.gentleFear,
+          },
+        }
+      : {}),
+    ...(prepared.creditCost > 0
+      ? {
+          creditsCharged: prepared.creditCost,
+          creditsRemaining: prepared.creditsRemaining,
+        }
+      : {}),
+  };
+}
+
+/**
+ * Starts the story pipeline: facts → story (+ optional images/layout).
+ * Membership stories debit credits by length; trial (`/kostenlos`) is free.
+ */
+export async function generateFreeStoryAction(
+  input: unknown,
+): Promise<ActionResult<StoryGenerateActionData>> {
+  try {
+    const prepared = await prepareFreeStoryGenerate(input);
+    if (!prepared.success || !prepared.data) {
+      return { success: false, error: prepared.error };
+    }
+    const data = await finishFreeStoryGenerate(prepared.data);
+    return { success: true, data };
   } catch (error) {
     console.error("[generateFreeStoryAction]", error);
     return {
@@ -292,4 +361,98 @@ export async function generateFreeStoryAction(
       error: toUserFacingMessage(error, STORY_GENERATE_FALLBACK),
     };
   }
+}
+
+/**
+ * Admin-only: starts generation as a background job and returns a pollable id.
+ * Wait overlay can show live model/stage via `pollFreeStoryGenerateJobAction`.
+ */
+export async function startFreeStoryGenerateJobAction(
+  input: unknown,
+): Promise<ActionResult<{ jobId: string }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) {
+    return { success: false, error: denied };
+  }
+
+  const user = await getCurrentUser();
+  if (!user) {
+    return { success: false, error: "Bitte melde dich an." };
+  }
+
+  try {
+    const prepared = await prepareFreeStoryGenerate(input);
+    if (!prepared.success || !prepared.data) {
+      return { success: false, error: prepared.error };
+    }
+
+    const jobId = createStoryGenerateJob(user.id);
+    const preparedData = prepared.data;
+
+    void (async () => {
+      try {
+        const data = await finishFreeStoryGenerate(preparedData, (progress) => {
+          updateStoryGenerateJobProgress(jobId, progress);
+        });
+        completeStoryGenerateJob(jobId, data);
+      } catch (error) {
+        console.error("[startFreeStoryGenerateJobAction] job", error);
+        failStoryGenerateJob(
+          jobId,
+          toUserFacingMessage(error, STORY_GENERATE_FALLBACK),
+        );
+      }
+    })();
+
+    return { success: true, data: { jobId } };
+  } catch (error) {
+    console.error("[startFreeStoryGenerateJobAction]", error);
+    return {
+      success: false,
+      error: toUserFacingMessage(error, STORY_GENERATE_FALLBACK),
+    };
+  }
+}
+
+/**
+ * Admin-only: polls a story generation job for progress and final result.
+ */
+export async function pollFreeStoryGenerateJobAction(
+  jobId: unknown,
+): Promise<
+  ActionResult<{
+    status: "running" | "done" | "error";
+    progress: StoryPipelineProgressEvent | null;
+    data?: StoryGenerateActionData;
+    error?: string;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) {
+    return { success: false, error: denied };
+  }
+
+  const user = await getCurrentUser();
+  if (!user) {
+    return { success: false, error: "Bitte melde dich an." };
+  }
+
+  if (typeof jobId !== "string" || !jobId.trim()) {
+    return { success: false, error: "Job-ID fehlt." };
+  }
+
+  const snapshot = getStoryGenerateJobSnapshot(jobId.trim(), user.id);
+  if (!snapshot) {
+    return { success: false, error: "Dieser Job wurde nicht gefunden." };
+  }
+
+  return {
+    success: true,
+    data: {
+      status: snapshot.status,
+      progress: snapshot.progress,
+      data: snapshot.data,
+      error: snapshot.error,
+    },
+  };
 }

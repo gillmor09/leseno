@@ -28,6 +28,7 @@ function GeschichteComposerBody({
   enabledFeatures,
   inviteUserId,
   fallbackCredits,
+  isAdmin,
 }: {
   allowMeineWelt: boolean;
   allowAdvent: boolean;
@@ -38,6 +39,7 @@ function GeschichteComposerBody({
   enabledFeatures: readonly PackageFeatureId[];
   inviteUserId: string | null;
   fallbackCredits: number;
+  isAdmin: boolean;
 }) {
   const creditsApi = useMembershipCredits();
   const credits = creditsApi?.credits ?? fallbackCredits;
@@ -80,6 +82,7 @@ function GeschichteComposerBody({
           initialCredits={credits}
           onCreditsChange={onCreditsChange}
           inviteUserId={inviteUserId}
+          isAdmin={isAdmin}
         />
       </div>
     </>
@@ -97,6 +100,7 @@ export function GeschichteComposer({
   unlockedProfileIds = [],
   enabledFeatures,
   inviteUserId = null,
+  isAdmin = false,
 }: {
   packageLabel: string;
   initialCredits: number;
@@ -108,6 +112,8 @@ export function GeschichteComposer({
   unlockedProfileIds?: string[];
   enabledFeatures: readonly PackageFeatureId[];
   inviteUserId?: string | null;
+  /** Live KI-Modell im Wartedialog (nur echte Admin-Session). */
+  isAdmin?: boolean;
 }) {
   const allowAdvent = featuresInclude(enabledFeatures, "adventskalender");
 
@@ -131,6 +137,7 @@ export function GeschichteComposer({
         enabledFeatures={enabledFeatures}
         inviteUserId={inviteUserId}
         fallbackCredits={initialCredits}
+        isAdmin={isAdmin}
       />
     </MembershipCreditsHeader>
   );
