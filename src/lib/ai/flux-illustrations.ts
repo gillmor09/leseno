@@ -7,6 +7,10 @@
  * FLUX treats prose/numbers as text to paint. Keep prompts purely visual.
  */
 
+import {
+  FLUX_NO_TEXT_BLOCK,
+  sanitizeFluxVisualCue,
+} from "@/lib/ai/flux-prompt-guards";
 import type { StoryMoodId } from "@/lib/stories/options";
 
 export type FluxIllustrationPlan = {
@@ -47,21 +51,6 @@ const STYLE_PREFIX =
   "Children's book illustration, warm soft lighting, clear shapes, friendly and safe for ages 5–10, purely pictorial artwork";
 
 /**
- * Repeated hard negatives — FLUX ignores soft wording; stack them around the scene.
- */
-const NO_TEXT_BLOCK = [
-  "CRITICAL: the image must contain ZERO text of any kind",
-  "no letters, no alphabet characters, no words, no writing, no typography, no calligraphy",
-  "no numbers, no digits, no numerals, no math symbols",
-  "no signs, no posters, no labels, no captions, no titles, no subtitles",
-  "no speech bubbles, no thought bubbles, no comics lettering",
-  "no book pages with writing, no notebooks with writing, no chalkboards with writing",
-  "no logos, no watermarks, no brand marks, no UI, no menus",
-  "blank empty surfaces only — skies, walls, ground, clothing without symbols",
-  "do not render any readable or unreadable glyphs",
-].join(". ");
-
-/**
  * Maps target word count to illustration count.
  * ≤300 → 1, ≤1000 → 2, otherwise → 3.
  */
@@ -75,12 +64,7 @@ export function illustrationCountForWordTarget(wordCount: number): number {
  * Soft visual theme words only — strips digits and quote marks that FLUX paints as text.
  */
 function visualThemeCue(topic: string): string {
-  return topic
-    .replace(/[0-9]+/g, " ")
-    .replace(/[„“”"«»'’]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 60);
+  return sanitizeFluxVisualCue(topic, 60);
 }
 
 type SceneSpec = {
@@ -149,7 +133,7 @@ export function buildFluxIllustrationPlans(
       floatClass: spec.floatClass,
       imagePrompt: [
         STYLE_PREFIX,
-        NO_TEXT_BLOCK,
+        FLUX_NO_TEXT_BLOCK,
         `Genre visual vibe (${context.moodLabel}): ${MOOD_VISUAL_CUES[context.moodId]}.`,
         ...castBits,
         spec.sceneLine(theme),
@@ -157,7 +141,7 @@ export function buildFluxIllustrationPlans(
           ? "Different camera angle and setting from previous illustration."
           : "",
         "Square composition, 256x256, illustration only.",
-        NO_TEXT_BLOCK,
+        FLUX_NO_TEXT_BLOCK,
         "Again: absolutely no text, letters, numbers, or signs in the picture.",
       ]
         .filter(Boolean)
