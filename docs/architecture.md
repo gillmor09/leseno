@@ -39,7 +39,7 @@ Table `leseno.child_profiles` (1:N per auth user); RPCs `list_my_child_profiles`
 
 ## Mein Buchclub
 
-Route `/mein-buchclub` (package feature `buchclub`, Plus+). Friendship code on `user_profiles`; confirmed friendships; email invite via SMTP; friends only see `user_stories.shared_to_book_club`. Likes/comments via RPCs — see migration `20260908090000_book_club.sql`.
+Route `/mein-buchclub` (package feature `buchclub`, Plus+). Friendship code on `user_profiles`; confirmed friendships; email invite via SMTP. Share level on `user_stories.book_club_share`: `none` (private), `friends`, `public` (visible in every Buchclub). Likes via RPCs — see migrations `20260908090000_book_club.sql` and `20260908150000_book_club_share_levels.sql`.
 
 ## Bot guard
 

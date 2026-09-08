@@ -10,7 +10,6 @@ import {
   BookCheck,
   GitBranch,
   Loader2,
-  Share2,
   Star,
   Trash2,
 } from "lucide-react";
@@ -22,9 +21,13 @@ import {
   setMyStoryFavoriteAction,
   setMyStoryReadAction,
 } from "@/app/actions/story-library";
-import { StoryCommentsSection } from "@/components/features/book-club/story-comments-section";
 import { StoryResultPanel } from "@/components/features/stories/story-result-panel";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import {
+  BOOK_CLUB_SHARE_LABELS,
+  BOOK_CLUB_SHARE_LEVELS,
+  type BookClubShareLevel,
+} from "@/lib/book-club/share";
 import type { StoryLengthCatalog } from "@/lib/stories/length";
 import type { AdventBookSummary } from "@/lib/stories/advent-repository";
 import type {
@@ -148,6 +151,7 @@ export function StoryLibraryBrowser({
   const allowReadingMode = featuresInclude(enabledFeatures, "lesemodus");
   const allowContinue = featuresInclude(enabledFeatures, "fortsetzen");
   const allowAdvent = featuresInclude(enabledFeatures, "adventskalender");
+  const allowBuchclub = featuresInclude(enabledFeatures, "buchclub");
 
   const filtered = useMemo(() => {
     if (filter === "all") return stories;
@@ -210,13 +214,16 @@ export function StoryLibraryBrowser({
     });
   }
 
-  function handleToggleBookClubShare(story: UserStorySummary) {
-    const next = !story.sharedToBookClub;
+  function handleBookClubShareChange(
+    story: UserStorySummary,
+    share: BookClubShareLevel,
+  ) {
+    if (story.bookClubShare === share) return;
     setSharePendingId(story.id);
     startTransition(async () => {
       const result = await setMyStoryBookClubShareAction({
         storyId: story.id,
-        shared: next,
+        share,
       });
       setSharePendingId(null);
       if (!result.success) {
@@ -225,16 +232,18 @@ export function StoryLibraryBrowser({
       }
       setStories((prev) =>
         prev.map((item) =>
-          item.id === story.id ? { ...item, sharedToBookClub: next } : item,
+          item.id === story.id ? { ...item, bookClubShare: share } : item,
         ),
       );
       if (expandedStory?.id === story.id) {
-        setExpandedStory({ ...expandedStory, sharedToBookClub: next });
+        setExpandedStory({ ...expandedStory, bookClubShare: share });
       }
       toast.success(
-        next
-          ? "Im Buchclub freigegeben."
-          : "Freigabe für den Buchclub beendet.",
+        share === "none"
+          ? "Geschichte ist wieder privat."
+          : share === "friends"
+            ? "Für Freunde freigegeben."
+            : "Öffentlich im Buchclub freigegeben.",
       );
     });
   }
@@ -401,7 +410,9 @@ export function StoryLibraryBrowser({
               stageLabel,
               formatStoryDate(story.createdAt),
               story.isRead ? "Gelesen" : null,
-              story.sharedToBookClub ? "Buchclub" : null,
+              story.bookClubShare !== "none"
+                ? BOOK_CLUB_SHARE_LABELS[story.bookClubShare]
+                : null,
             ]
               .filter(Boolean)
               .join(" · ");
@@ -448,30 +459,40 @@ export function StoryLibraryBrowser({
                         {meta}
                       </p>
                     </button>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={sharePendingId === story.id}
-                      onClick={() => handleToggleBookClubShare(story)}
-                      className={cn(
-                        "inline-flex size-10 shrink-0 items-center justify-center rounded-full transition-all duration-200 ease-in-out disabled:opacity-70",
-                        story.sharedToBookClub
-                          ? "bg-orange-700 text-white hover:bg-orange-800"
-                          : "bg-gray-100 text-zinc-500 hover:bg-gray-200",
-                      )}
-                      aria-label={
-                        story.sharedToBookClub
-                          ? "Buchclub-Freigabe beenden"
-                          : "Im Buchclub teilen"
-                      }
-                      title={
-                        story.sharedToBookClub
-                          ? "Buchclub-Freigabe beenden"
-                          : "Im Buchclub teilen"
-                      }
-                    >
-                      <Share2 className="size-5" aria-hidden />
-                    </button>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {allowBuchclub ? (
+                      <>
+                        <label
+                          className="sr-only"
+                          htmlFor={`share-${story.id}`}
+                        >
+                          Buchclub-Freigabe
+                        </label>
+                        <select
+                          id={`share-${story.id}`}
+                          disabled={sharePendingId === story.id}
+                          value={story.bookClubShare}
+                          onChange={(event) =>
+                            handleBookClubShareChange(
+                              story,
+                              event.target.value as BookClubShareLevel,
+                            )
+                          }
+                          className={cn(
+                            "h-10 max-w-[9.5rem] rounded-full bg-gray-100 px-3 text-xs font-bold text-zinc-700 outline-none ring-1 ring-zinc-950/10 transition disabled:opacity-70",
+                            story.bookClubShare !== "none" &&
+                              "bg-orange-700 text-white ring-orange-700",
+                          )}
+                          title="Buchclub-Freigabe"
+                        >
+                          {BOOK_CLUB_SHARE_LEVELS.map((level) => (
+                            <option key={level} value={level}>
+                              {BOOK_CLUB_SHARE_LABELS[level]}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    ) : null}
                     <button
                       type="button"
                       disabled={readPendingId === story.id}
@@ -587,7 +608,7 @@ export function StoryLibraryBrowser({
                           schoolStage: result.schoolStage,
                           personalMode: story.personalMode,
                           parentStoryId: story.id,
-                          sharedToBookClub: false,
+                          bookClubShare: "none",
                           createdAt: new Date().toISOString(),
                         };
                         setStories((prev) => [summary, ...prev]);
@@ -603,7 +624,6 @@ export function StoryLibraryBrowser({
                           includeImages: expandedStory.includeImages,
                           creditsCharged: null,
                           likeCount: 0,
-                          commentCount: 0,
                         });
                       }}
                       onReadingModePrefsChange={(prefs) => {
@@ -623,30 +643,15 @@ export function StoryLibraryBrowser({
                         setExpandedStory(null);
                       }}
                     />
-                    {expandedStory.sharedToBookClub ||
-                    expandedStory.commentCount > 0 ||
+                    {expandedStory.bookClubShare !== "none" ||
                     expandedStory.likeCount > 0 ? (
-                      <div className="space-y-3">
-                        {expandedStory.likeCount > 0 ||
-                        expandedStory.commentCount > 0 ? (
-                          <p className="rounded-[1.75rem] bg-white px-5 py-3 text-sm font-semibold text-zinc-600 shadow-xl ring-1 ring-zinc-950/10">
-                            {expandedStory.likeCount}{" "}
-                            {expandedStory.likeCount === 1 ? "Like" : "Likes"}
-                            {" · "}
-                            {expandedStory.commentCount}{" "}
-                            {expandedStory.commentCount === 1
-                              ? "Kommentar"
-                              : "Kommentare"}
-                            {expandedStory.sharedToBookClub
-                              ? " · im Buchclub freigegeben"
-                              : null}
-                          </p>
-                        ) : null}
-                        <StoryCommentsSection
-                          storyId={expandedStory.id}
-                          allowAdd={false}
-                        />
-                      </div>
+                      <p className="rounded-[1.75rem] bg-white px-5 py-3 text-sm font-semibold text-zinc-600 shadow-xl ring-1 ring-zinc-950/10">
+                        {expandedStory.likeCount}{" "}
+                        {expandedStory.likeCount === 1 ? "Like" : "Likes"}
+                        {expandedStory.bookClubShare !== "none"
+                          ? ` · ${BOOK_CLUB_SHARE_LABELS[expandedStory.bookClubShare]}`
+                          : null}
+                      </p>
                     ) : null}
                   </div>
                 ) : null}

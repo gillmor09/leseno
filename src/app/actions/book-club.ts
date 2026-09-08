@@ -11,13 +11,11 @@ import {
 } from "@/lib/auth/email-hook-security";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
-  addFriendStoryComment,
   cancelFriendshipRequest,
   getFriendSharedStory,
   getMyBookClubProfile,
   listFriendSharedStories,
   listMyFriendships,
-  listStoryComments,
   recordBookClubInvite,
   removeFriendship,
   requestFriendshipByCode,
@@ -27,18 +25,18 @@ import {
   type BookClubFriendship,
   type FriendSharedStoryDetail,
   type FriendSharedStorySummary,
-  type StoryComment,
 } from "@/lib/book-club/repository";
 import {
   buildSignupUrl,
   referralCodeFromUserId,
 } from "@/lib/marketing/referral";
 import { setMyStoryBookClubShare } from "@/lib/stories/library-repository";
+import type { BookClubShareLevel } from "@/lib/book-club/share";
 import type { ActionResult } from "@/lib/types/actions";
 import {
   bookClubInviteEmailSchema,
+  bookClubShareLevelSchema,
   friendshipCodeSchema,
-  storyCommentBodySchema,
 } from "@/lib/validations/book-club";
 import { currentUserHasFeature } from "@/lib/users/package-access";
 
@@ -282,68 +280,14 @@ export async function toggleFriendStoryLikeAction(input: {
   }
 }
 
-export async function listStoryCommentsAction(input: {
-  storyId: string;
-}): Promise<ActionResult<{ comments: StoryComment[] }>> {
-  const denied = await assertBuchclubAccess();
-  if (denied) return { success: false, error: denied };
-  if (!input.storyId?.trim()) {
-    return { success: false, error: "Geschichte fehlt." };
-  }
-  try {
-    const comments = await listStoryComments(input.storyId);
-    return { success: true, data: { comments } };
-  } catch (error) {
-    console.error("[listStoryCommentsAction]", error);
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Kommentare konnten nicht geladen werden.",
-    };
-  }
-}
-
-export async function addFriendStoryCommentAction(input: {
-  storyId: string;
-  body: string;
-}): Promise<ActionResult<{ commentId: string }>> {
-  const denied = await assertBuchclubAccess();
-  if (denied) return { success: false, error: denied };
-  if (!input.storyId?.trim()) {
-    return { success: false, error: "Geschichte fehlt." };
-  }
-  const parsed = storyCommentBodySchema.safeParse(input.body);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültiger Kommentar.",
-    };
-  }
-  try {
-    const commentId = await addFriendStoryComment(input.storyId, parsed.data);
-    return { success: true, data: { commentId } };
-  } catch (error) {
-    console.error("[addFriendStoryCommentAction]", error);
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Kommentar konnte nicht gespeichert werden.",
-    };
-  }
-}
-
 /**
- * Shares or unshares an owned library story with Buchclub friends.
+ * Sets Buchclub visibility for an owned library story (Privat / Freunde / Öffentlich).
  * Requires package feature `buecherei` (stories live in the library).
  */
 export async function setMyStoryBookClubShareAction(input: {
   storyId: string;
-  shared: boolean;
-}): Promise<ActionResult<{ shared: boolean }>> {
+  share: BookClubShareLevel;
+}): Promise<ActionResult<{ share: BookClubShareLevel }>> {
   const denied = await assertBuchclubAccess();
   if (denied) return { success: false, error: denied };
   if (!(await currentUserHasFeature("buecherei"))) {
@@ -355,9 +299,16 @@ export async function setMyStoryBookClubShareAction(input: {
   if (!input.storyId?.trim()) {
     return { success: false, error: "Geschichte fehlt." };
   }
+  const parsed = bookClubShareLevelSchema.safeParse(input.share);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültige Freigabe.",
+    };
+  }
   try {
-    await setMyStoryBookClubShare(input.storyId, Boolean(input.shared));
-    return { success: true, data: { shared: Boolean(input.shared) } };
+    await setMyStoryBookClubShare(input.storyId, parsed.data);
+    return { success: true, data: { share: parsed.data } };
   } catch (error) {
     console.error("[setMyStoryBookClubShareAction]", error);
     return {

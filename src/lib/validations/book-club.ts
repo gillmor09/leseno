@@ -1,9 +1,10 @@
 /**
- * Zod schemas for Mein Buchclub (friendship code, invites, comments).
+ * Zod schemas for Mein Buchclub (friendship code, invites, share level).
  */
 
 import "@/lib/validations/configure-zod";
 import { z } from "zod";
+import { BOOK_CLUB_SHARE_LEVELS } from "@/lib/book-club/share";
 
 export const friendshipCodeSchema = z
   .string()
@@ -20,8 +21,6 @@ export const bookClubInviteEmailSchema = z
   .email({ message: "Bitte eine gültige E-Mail-Adresse angeben." })
   .max(254, { message: "E-Mail ist zu lang." });
 
-export const storyCommentBodySchema = z
-  .string()
-  .trim()
-  .min(1, { message: "Kommentar fehlt." })
-  .max(2000, { message: "Kommentar ist zu lang (max. 2000 Zeichen)." });
+export const bookClubShareLevelSchema = z.enum(BOOK_CLUB_SHARE_LEVELS, {
+  message: "Bitte Privat, Freunde oder Öffentlich wählen.",
+});

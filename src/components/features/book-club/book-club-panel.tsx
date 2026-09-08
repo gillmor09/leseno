@@ -266,8 +266,8 @@ export function BookClubPanel({
           Geschichten von Freunden
         </h2>
         <p className="mt-2 mb-4 text-sm font-semibold text-zinc-600">
-          Nur freigegebene Geschichten. Du kannst liken, kommentieren und — je
-          nach Paket — als PDF exportieren.
+          Freunde-Geschichten und öffentliche Freigaben. Du kannst liken und —
+          je nach Paket — als PDF speichern.
         </p>
         <FriendStoriesBrowser
           initialStories={stories}

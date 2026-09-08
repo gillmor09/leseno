@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Freundes-Geschichten im Buchclub: Liste wie Bücherei, Like, Kommentar, PDF.
+ * Freundes- und öffentliche Geschichten im Buchclub: Liste, Like, PDF.
  */
 
 import { useEffect, useMemo, useState, useTransition } from "react";
@@ -11,8 +11,8 @@ import {
   getFriendSharedStoryAction,
   toggleFriendStoryLikeAction,
 } from "@/app/actions/book-club";
-import { StoryCommentsSection } from "@/components/features/book-club/story-comments-section";
 import { StoryResultPanel } from "@/components/features/stories/story-result-panel";
+import { BOOK_CLUB_SHARE_LABELS } from "@/lib/book-club/share";
 import type {
   BookClubFriendship,
   FriendSharedStoryDetail,
@@ -112,22 +112,22 @@ export function FriendStoriesBrowser({
     });
   }
 
-  if (acceptedFriends.length === 0) {
+  if (stories.length === 0) {
     return (
       <p className="rounded-[1.75rem] bg-white p-6 text-sm font-semibold text-zinc-600 shadow-xl ring-1 ring-zinc-950/10">
-        Sobald Freunde bestätigt sind und Geschichten freigeben, erscheinen sie
-        hier.
+        Noch keine freigegebenen Geschichten. Freunde können für dich teilen —
+        oder jemand gibt öffentlich frei.
       </p>
     );
   }
 
   return (
     <div className="space-y-4">
-      {acceptedFriends.length > 1 ? (
+      {acceptedFriends.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           <FilterChip
             active={filter === "all"}
-            label="Alle Freunde"
+            label="Alle"
             onClick={() => setFilter("all")}
           />
           {acceptedFriends.map((friend) => (
@@ -143,7 +143,7 @@ export function FriendStoriesBrowser({
 
       {filtered.length === 0 ? (
         <p className="rounded-[1.75rem] bg-white p-6 text-sm font-semibold text-zinc-600 shadow-xl ring-1 ring-zinc-950/10">
-          Noch keine freigegebenen Geschichten von Freunden.
+          Keine Geschichten für diesen Filter.
         </p>
       ) : (
         <ul className="space-y-3">
@@ -152,13 +152,11 @@ export function FriendStoriesBrowser({
               STORY_SCHOOL_STAGES.find((s) => s.id === story.schoolStage)
                 ?.label ?? story.schoolStage;
             const meta = [
-              story.ownerFriendshipCode ?? "Freund",
+              story.ownerFriendshipCode ?? "Mitglied",
+              BOOK_CLUB_SHARE_LABELS[story.bookClubShare],
               stageLabel,
               formatDate(story.createdAt),
               story.likeCount > 0 ? `${story.likeCount} Likes` : null,
-              story.commentCount > 0
-                ? `${story.commentCount} Kommentare`
-                : null,
             ]
               .filter(Boolean)
               .join(" · ");
@@ -218,25 +216,19 @@ export function FriendStoriesBrowser({
                 {isExpanded &&
                 expandedStory &&
                 expandedStory.id === story.id ? (
-                  <div className="space-y-3">
-                    <StoryResultPanel
-                      storyHtml={expandedStory.storyHtml}
-                      facts={expandedStory.facts}
-                      schoolStage={expandedStory.schoolStage}
-                      allowPdfExport={allowPdf}
-                      allowReadingMode={allowReadingMode}
-                      typographyDefaults={typographyDefaults}
-                      eyebrow={`Von ${expandedStory.ownerFriendshipCode ?? "Freund"}`}
-                      onClose={() => {
-                        setExpandedId(null);
-                        setExpandedStory(null);
-                      }}
-                    />
-                    <StoryCommentsSection
-                      storyId={expandedStory.id}
-                      allowAdd
-                    />
-                  </div>
+                  <StoryResultPanel
+                    storyHtml={expandedStory.storyHtml}
+                    facts={expandedStory.facts}
+                    schoolStage={expandedStory.schoolStage}
+                    allowPdfExport={allowPdf}
+                    allowReadingMode={allowReadingMode}
+                    typographyDefaults={typographyDefaults}
+                    eyebrow={`Von ${expandedStory.ownerFriendshipCode ?? "Mitglied"} · ${BOOK_CLUB_SHARE_LABELS[expandedStory.bookClubShare]}`}
+                    onClose={() => {
+                      setExpandedId(null);
+                      setExpandedStory(null);
+                    }}
+                  />
                 ) : null}
               </li>
             );

@@ -80,7 +80,8 @@ export default async function MeinBuchclubPage() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             Teile deine Freundschaftskennung, lade Freunde zu leseno ein und
-            lies Geschichten, die Freunde im Buchclub freigegeben haben.
+            lies Geschichten von Freunden und öffentlich freigegebene
+            Geschichten aus allen Buchclubs.
           </p>
 
           {loadError ? (

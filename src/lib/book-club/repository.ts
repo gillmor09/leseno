@@ -3,6 +3,10 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  asBookClubShareLevel,
+  type BookClubShareLevel,
+} from "@/lib/book-club/share";
 import type { StoryLengthStepId } from "@/lib/stories/length";
 import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
 import { STORY_MOODS, STORY_SCHOOL_STAGES } from "@/lib/stories/options";
@@ -33,8 +37,8 @@ export type FriendSharedStorySummary = {
   ownerFriendshipCode: string | null;
   schoolStage: StorySchoolStageId;
   parentStoryId: string | null;
+  bookClubShare: BookClubShareLevel;
   likeCount: number;
-  commentCount: number;
   likedByMe: boolean;
   createdAt: string;
 };
@@ -47,14 +51,6 @@ export type FriendSharedStoryDetail = FriendSharedStorySummary & {
   topic: string | null;
   syllableHelp: boolean;
   includeImages: boolean;
-};
-
-export type StoryComment = {
-  id: string;
-  body: string;
-  authorFriendshipCode: string | null;
-  createdAt: string;
-  isMine: boolean;
 };
 
 function asSchoolStage(value: unknown): StorySchoolStageId {
@@ -143,8 +139,8 @@ function mapFriendSummary(
     schoolStage: asSchoolStage(row.school_stage),
     parentStoryId:
       typeof row.parent_story_id === "string" ? row.parent_story_id : null,
+    bookClubShare: asBookClubShareLevel(row.book_club_share),
     likeCount: asCount(row.like_count),
-    commentCount: asCount(row.comment_count),
     likedByMe: Boolean(row.liked_by_me),
     createdAt: asIso(row.created_at),
   };
@@ -162,19 +158,6 @@ function mapFriendDetail(
     topic: typeof row.topic === "string" ? row.topic.trim() || null : null,
     syllableHelp: Boolean(row.syllable_help),
     includeImages: Boolean(row.include_images),
-  };
-}
-
-function mapComment(row: Record<string, unknown>): StoryComment {
-  return {
-    id: typeof row.id === "string" ? row.id : String(row.id ?? ""),
-    body: typeof row.body === "string" ? row.body : "",
-    authorFriendshipCode:
-      typeof row.author_friendship_code === "string"
-        ? row.author_friendship_code.trim() || null
-        : null,
-    createdAt: asIso(row.created_at),
-    isMine: Boolean(row.is_mine),
   };
 }
 
@@ -293,33 +276,6 @@ export async function toggleFriendStoryLike(
     liked: Boolean(row?.liked),
     likeCount: asCount(row?.like_count),
   };
-}
-
-export async function listStoryComments(
-  storyId: string,
-): Promise<StoryComment[]> {
-  const supabase = await createClient(null);
-  const { data, error } = await supabase.rpc("list_story_comments", {
-    p_story_id: storyId,
-  });
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as Record<string, unknown>[]).map(mapComment);
-}
-
-export async function addFriendStoryComment(
-  storyId: string,
-  body: string,
-): Promise<string> {
-  const supabase = await createClient(null);
-  const { data, error } = await supabase.rpc("add_friend_story_comment", {
-    p_story_id: storyId,
-    p_body: body,
-  });
-  if (error) throw new Error(error.message);
-  if (typeof data !== "string" || !data) {
-    throw new Error("Kommentar konnte nicht gespeichert werden.");
-  }
-  return data;
 }
 
 /** Records invite for rate-limit audit; call before/after SMTP send. */

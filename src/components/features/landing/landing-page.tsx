@@ -95,7 +95,7 @@ const strengths = [
   },
   {
     title: "Mein Buchclub",
-    text: "Freunde per Kennung verbinden, Geschichten freigeben, liken und kommentieren — ab Plus mit der Bücherei.",
+    text: "Freunde per Kennung verbinden, Geschichten freigeben und liken — ab Plus mit der Bücherei.",
     icon: Users,
   },
   {
@@ -128,7 +128,7 @@ const parentPoints = [
   "Neugier inklusive: echtes Wissen steckt mitten im Abenteuer; mit Pro gibt’s „Warum?“ zum Nachforschen.",
   "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits, Bücherei & Buchclub, Pro für Familie & Fortsetzen, Ultimate für Silbenhilfe, Vorlesen & Adventskalenderbuch.",
   "Meine Welt: ab Plus ein Kinderprofil (Interessen & Erlebnisse), mit Pro beliebig viele unter einem Konto.",
-  "Mein Buchclub: ab Plus Freunde per Kennung einladen, freigegebene Geschichten lesen, liken und kommentieren.",
+  "Mein Buchclub: ab Plus Freunde per Kennung einladen, freigegebene Geschichten lesen und liken.",
   "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden. Abo zum Periodenende kündbar.",
   "Weiterempfehlen leicht: Link teilen — Freundinnen starten kostenlos mit Basis.",
 ] as const;
