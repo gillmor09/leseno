@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Admin Social Media: collapsible global CRAFT + Instagram day calendar.
+ * Admin Social Media: CRAFT settings + single-post create (date + Winkel) and edit list.
  */
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
@@ -9,46 +9,46 @@ import { createPortal } from "react-dom";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  clearSocialImageAction,
   generateSocialCaptionAction,
   generateSocialImageAction,
-  loadSocialMonthAction,
-  refineSocialCaptionAction,
-  saveSocialCaptionAction,
+  loadSocialWorkspaceAction,
   saveSocialGlobalSettingsAction,
-  setSocialPostPublishedAction,
 } from "@/app/actions/social-admin";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
-import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
-  datesInYearMonth,
   emptyGlobalSettings,
   type SocialGlobalSettings,
   type SocialPost,
 } from "@/lib/social/types";
 import type { SocialAiModelInfo } from "@/lib/social/generate";
-import { pickMotivationAngle } from "@/lib/social/motivation";
+import {
+  getMotivationAngleById,
+  MOTIVATION_ANGLES,
+  MOTIVATION_THEME_LABELS,
+} from "@/lib/social/motivation";
 import { LESENO_SOCIAL_STYLE_GUIDE } from "@/lib/social/leseno-visual-style";
 import { cn } from "@/lib/utils";
 
 const CHANNEL = "instagram" as const;
 
 type GenerateConfirm =
-  | { kind: "batch-text" }
-  | { kind: "batch-image" }
-  | { kind: "day-text"; date: string }
-  | { kind: "day-image"; date: string };
+  | { kind: "text" }
+  | { kind: "image" };
 
 function formatModelLine(model: SocialAiModelInfo): string {
   return `${model.modelSlug} · ${model.label}`;
 }
 
-function hasCaption(post: SocialPost | undefined): boolean {
-  return Boolean(post?.caption?.trim());
+function todayIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
-function hasImage(post: SocialPost | undefined): boolean {
-  return Boolean(post?.imageDataUrl);
+function formatDeDate(iso: string): string {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("de-DE");
 }
 
 function StatusChip({
@@ -72,13 +72,14 @@ function StatusChip({
   );
 }
 
-function currentYearMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
 /** Blocking wait overlay while caption/image AI runs. */
 function SocialWaitOverlay({ message }: { message: string | null }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!message) return;
     const previous = document.body.style.overflow;
@@ -88,30 +89,30 @@ function SocialWaitOverlay({ message }: { message: string | null }) {
     };
   }, [message]);
 
-  if (!message || typeof document === "undefined") return null;
+  if (!mounted || !message) return null;
 
   return createPortal(
     <div
-      role="dialog"
+      role="alertdialog"
       aria-modal="true"
+      aria-busy="true"
       aria-labelledby="social-wait-title"
       aria-describedby="social-wait-desc"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/55 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-zinc-950/55 p-4 backdrop-blur-sm"
     >
       <div className="w-full max-w-md rounded-[1.75rem] bg-white p-8 text-center shadow-2xl ring-1 ring-zinc-950/10">
-        <Loader2
-          className="mx-auto size-10 animate-spin text-orange-700"
-          aria-hidden
-        />
+        <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-orange-50 text-orange-700 ring-1 ring-orange-700/15">
+          <Loader2 className="size-7 animate-spin" aria-hidden />
+        </span>
         <h2
           id="social-wait-title"
-          className="mt-4 text-xl font-extrabold text-zinc-950"
+          className="mt-5 text-xl font-extrabold text-zinc-950"
         >
           Bitte warten
         </h2>
         <p
           id="social-wait-desc"
-          className="mt-2 text-sm leading-relaxed text-zinc-600"
+          className="mt-2 text-sm font-semibold text-orange-900"
         >
           {message}
         </p>
@@ -130,52 +131,103 @@ export function SocialMediaAdminForm({
   textModel: SocialAiModelInfo;
   imageModel: SocialAiModelInfo;
 }) {
-  const [yearMonth, setYearMonth] = useState(currentYearMonth);
   const [global, setGlobal] = useState<SocialGlobalSettings>(emptyGlobalSettings);
-  const [postsByDate, setPostsByDate] = useState<Record<string, SocialPost>>({});
+  const [posts, setPosts] = useState<SocialPost[]>([]);
+  const [angleUsage, setAngleUsage] = useState<Record<string, number>>({});
   const [loadPending, setLoadPending] = useState(false);
   const [pending, startTransition] = useTransition();
   const [waitStatus, setWaitStatus] = useState<string | null>(null);
-  const [refineHints, setRefineHints] = useState<Record<string, string>>({});
-  const [imageHints, setImageHints] = useState<Record<string, string>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>(
-    {},
-  );
-  const [deleteImageDate, setDeleteImageDate] = useState<string | null>(null);
-  const [deleteImagePending, setDeleteImagePending] = useState(false);
+  const [postDate, setPostDate] = useState(todayIsoDate);
+  const [angleId, setAngleId] = useState(MOTIVATION_ANGLES[0]?.id ?? "");
+  const [captionDraft, setCaptionDraft] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [generateConfirm, setGenerateConfirm] =
     useState<GenerateConfirm | null>(null);
 
-  const dates = useMemo(() => datesInYearMonth(yearMonth), [yearMonth]);
+  const activePost = useMemo(
+    () => posts.find((post) => post.postDate === postDate) ?? null,
+    [posts, postDate],
+  );
+
+  const selectedAngle = useMemo(
+    () => getMotivationAngleById(angleId),
+    [angleId],
+  );
 
   const mergePost = useCallback((post: SocialPost) => {
-    setPostsByDate((prev) => ({
-      ...prev,
-      [post.postDate]: post,
-    }));
+    setPosts((prev) => {
+      const without = prev.filter(
+        (item) =>
+          !(item.postDate === post.postDate && item.channel === post.channel),
+      );
+      return [post, ...without].sort((a, b) =>
+        b.postDate.localeCompare(a.postDate),
+      );
+    });
   }, []);
 
-  const loadMonth = useCallback(async (ym: string) => {
+  const reloadWorkspace = useCallback(async () => {
     setLoadPending(true);
-    const result = await loadSocialMonthAction({ yearMonth: ym });
+    const result = await loadSocialWorkspaceAction();
     setLoadPending(false);
     if (!result.success || !result.data) {
-      toast.error(result.error ?? "Monat konnte nicht geladen werden.");
-      setPostsByDate({});
+      toast.error(result.error ?? "Workspace konnte nicht geladen werden.");
+      setPosts([]);
+      setAngleUsage({});
       return;
     }
     setGlobal(result.data.global);
-    const map: Record<string, SocialPost> = {};
-    for (const post of result.data.posts) {
-      map[post.postDate] = post;
-    }
-    setPostsByDate(map);
+    setPosts(result.data.posts);
+    setAngleUsage(result.data.angleUsage);
   }, []);
 
   useEffect(() => {
-    void loadMonth(yearMonth);
-  }, [yearMonth, loadMonth]);
+    void reloadWorkspace();
+  }, [reloadWorkspace]);
+
+  useEffect(() => {
+    if (activePost) {
+      setCaptionDraft(activePost.caption);
+      if (activePost.angleId) setAngleId(activePost.angleId);
+    } else {
+      setCaptionDraft("");
+    }
+  }, [activePost]);
+
+  const busy = pending || loadPending || Boolean(waitStatus);
+  const fieldClass =
+    "mt-1 w-full rounded-xl border border-zinc-950/10 bg-gray-100 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60";
+
+  const textModelLine = formatModelLine(textModel);
+  const imageModelLine = formatModelLine(imageModel);
+
+  const confirmCopy = useMemo(() => {
+    if (!generateConfirm) {
+      return { title: "", description: "", confirmLabel: "" };
+    }
+    const dateLabel = formatDeDate(postDate);
+    const angleLabel = selectedAngle?.title ?? angleId;
+    if (generateConfirm.kind === "text") {
+      return {
+        title: "Text erzeugen?",
+        description: `Caption für ${dateLabel}\nWinkel: ${angleLabel}\n\nKI-Modell: ${textModelLine}`,
+        confirmLabel: "Text erzeugen",
+      };
+    }
+    return {
+      title: "Bild erzeugen?",
+      description: `Bild für ${dateLabel}\nWinkel: ${angleLabel}\n\nSzenenplanung: ${textModelLine}\nBildpixel: ${imageModelLine}`,
+      confirmLabel: "Bild erzeugen",
+    };
+  }, [
+    generateConfirm,
+    postDate,
+    selectedAngle,
+    angleId,
+    textModelLine,
+    imageModelLine,
+  ]);
 
   function handleSaveGlobal() {
     if (!canSave) return;
@@ -198,135 +250,24 @@ export function SocialMediaAdminForm({
     return true;
   }
 
-  async function runBatchCaptions() {
-    if (!canSave) return;
-    if (!(await persistGlobal())) return;
-
-    const total = dates.length;
-    let done = 0;
-    setWaitStatus(`Texte 0 / ${total} …`);
-
-    try {
-      for (const date of dates) {
-        const result = await generateSocialCaptionAction({
-          yearMonth,
-          postDate: date,
-          channel: CHANNEL,
-        });
-        done += 1;
-        setWaitStatus(`Texte ${done} / ${total} …`);
-        if (!result.success || !result.data) {
-          toast.error(`${date}: ${result.error ?? "Fehler"}`);
-          continue;
-        }
-        mergePost(result.data.post);
-      }
-      toast.success("Text-Batch fertig.");
-    } finally {
-      setWaitStatus(null);
-    }
-  }
-
-  async function runBatchImages() {
-    if (!canSave) return;
-    if (!(await persistGlobal())) return;
-
-    const jobs = dates.filter((date) => postsByDate[date]?.caption?.trim());
-    if (jobs.length === 0) {
-      toast.error("Keine Texte vorhanden — zuerst Captions erzeugen.");
-      return;
-    }
-
-    let done = 0;
-    setWaitStatus(`Bilder 0 / ${jobs.length} …`);
-    try {
-      for (const date of jobs) {
-        const result = await generateSocialImageAction({
-          yearMonth,
-          postDate: date,
-          channel: CHANNEL,
-        });
-        done += 1;
-        setWaitStatus(`Bilder ${done} / ${jobs.length} …`);
-        if (!result.success || !result.data) {
-          toast.error(`${date}: ${result.error ?? "Fehler"}`);
-          continue;
-        }
-        mergePost(result.data.post);
-      }
-      toast.success("Bild-Batch fertig.");
-    } finally {
-      setWaitStatus(null);
-    }
-  }
-
-  const busy = pending || loadPending || Boolean(waitStatus);
-  const fieldClass =
-    "mt-1 w-full rounded-xl border border-zinc-950/10 bg-gray-100 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60";
-
-  const textModelLine = formatModelLine(textModel);
-  const imageModelLine = formatModelLine(imageModel);
-
-  const confirmCopy = useMemo(() => {
-    if (!generateConfirm) {
-      return { title: "", description: "", confirmLabel: "" };
-    }
-    if (generateConfirm.kind === "batch-text") {
-      return {
-        title: "Alle Texte erzeugen?",
-        description: `Für alle ${dates.length} Tage im Monat werden Captions erzeugt.\n\nKI-Modell: ${textModelLine}`,
-        confirmLabel: "Alle Texte erzeugen",
-      };
-    }
-    if (generateConfirm.kind === "batch-image") {
-      return {
-        title: "Alle Bilder erzeugen?",
-        description: `Für alle Tage mit vorhandenem Text werden Bilder erzeugt.\n\nSzenenplanung: ${textModelLine}\nBildpixel: ${imageModelLine}`,
-        confirmLabel: "Alle Bilder erzeugen",
-      };
-    }
-    if (generateConfirm.kind === "day-text") {
-      const label = new Date(
-        `${generateConfirm.date}T12:00:00`,
-      ).toLocaleDateString("de-DE");
-      return {
-        title: "Text erzeugen?",
-        description: `Caption für ${label} wird neu erzeugt.\n\nKI-Modell: ${textModelLine}`,
-        confirmLabel: "Text erzeugen",
-      };
-    }
-    const label = new Date(
-      `${generateConfirm.date}T12:00:00`,
-    ).toLocaleDateString("de-DE");
-    return {
-      title: "Bild erzeugen?",
-      description: `Bild für ${label} wird neu erzeugt.\n\nSzenenplanung: ${textModelLine}\nBildpixel: ${imageModelLine}`,
-      confirmLabel: "Bild erzeugen",
-    };
-  }, [generateConfirm, dates.length, textModelLine, imageModelLine]);
-
   function runConfirmedGenerate() {
     const job = generateConfirm;
     setGenerateConfirm(null);
     if (!job) return;
 
-    if (job.kind === "batch-text") {
-      void runBatchCaptions();
+    if (!angleId.trim()) {
+      toast.error("Bitte einen Winkel wählen.");
       return;
     }
-    if (job.kind === "batch-image") {
-      void runBatchImages();
-      return;
-    }
-    if (job.kind === "day-text") {
-      const date = job.date;
-      startTransition(async () => {
-        setWaitStatus("Text wird erzeugt …");
+
+    if (job.kind === "text") {
+      setWaitStatus("Text wird erzeugt …");
+      void (async () => {
         try {
           if (!(await persistGlobal())) return;
           const result = await generateSocialCaptionAction({
-            yearMonth,
-            postDate: date,
+            postDate,
+            angleId,
             channel: CHANNEL,
           });
           if (!result.success || !result.data) {
@@ -334,35 +275,36 @@ export function SocialMediaAdminForm({
             return;
           }
           mergePost(result.data.post);
-          toast.success(`Text erzeugt — ${result.data.angleTitle}`);
+          setCaptionDraft(result.data.post.caption);
+          await reloadWorkspace();
+          toast.success(`Text erzeugt und gespeichert — ${result.data.angleTitle}`);
         } finally {
           setWaitStatus(null);
         }
-      });
+      })();
       return;
     }
 
-    const date = job.date;
-    startTransition(async () => {
-      setWaitStatus("Bild wird erzeugt …");
+    setWaitStatus("Bild wird erzeugt …");
+    void (async () => {
       try {
         if (!(await persistGlobal())) return;
         const result = await generateSocialImageAction({
-          yearMonth,
-          postDate: date,
+          postDate,
+          angleId,
           channel: CHANNEL,
-          extraInstruction: imageHints[date]?.trim() || undefined,
         });
         if (!result.success || !result.data) {
           toast.error(result.error ?? "Fehler");
           return;
         }
         mergePost(result.data.post);
-        toast.success("Bild erzeugt.");
+        await reloadWorkspace();
+        toast.success("Bild erzeugt und gespeichert.");
       } finally {
         setWaitStatus(null);
       }
-    });
+    })();
   }
 
   return (
@@ -387,14 +329,14 @@ export function SocialMediaAdminForm({
               Übergreifende Einstellungen
             </h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Stimme & Bild-Stil. Inhaltliche Winkel kommen von{" "}
+              Stimme & Bild-Stil. Inhalt kommt vom gewählten Winkel auf{" "}
               <a
                 href="/motivation"
                 className="font-semibold text-orange-700 underline-offset-2 hover:underline"
               >
                 /motivation
-              </a>{" "}
-              (ein Winkel pro Tag).
+              </a>
+              .
             </p>
           </div>
           <ChevronDown
@@ -418,7 +360,7 @@ export function SocialMediaAdminForm({
                   setGlobal((g) => ({ ...g, storyline: e.target.value }))
                 }
                 className={fieldClass}
-                placeholder="Nur falls nötig — die Winkel-Bank steuert den Inhalt."
+                placeholder="Nur falls nötig — der Winkel steuert den Inhalt."
               />
             </label>
             <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
@@ -472,6 +414,10 @@ export function SocialMediaAdminForm({
                 className={fieldClass}
                 placeholder="Oder leer lassen → eingebauter leseno-Stil. Keine Bild-URLs."
               />
+              <span className="mt-1 block text-[11px] font-semibold normal-case tracking-normal text-zinc-500">
+                Bildmodelle malen keinen Text. Der Winkel-Titel wird danach
+                exakt in Nunito SemiBold (weiß) aufgelegt.
+              </span>
             </label>
             <button
               type="button"
@@ -500,319 +446,213 @@ export function SocialMediaAdminForm({
         ) : null}
       </section>
 
-      <div className="flex flex-wrap items-end gap-4">
-        <label className="block text-sm font-semibold text-zinc-700">
-          Monat (Instagram-Posts)
-          <input
-            type="month"
-            value={yearMonth}
-            disabled={busy}
-            onChange={(e) => {
-              if (e.target.value) setYearMonth(e.target.value);
-            }}
-            className="mt-1 block rounded-xl border border-zinc-950/10 bg-white px-3 py-2 text-sm"
-          />
-        </label>
-        {loadPending ? (
-          <p className="flex items-center gap-2 text-sm font-semibold text-zinc-600">
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-            Monat wird geladen …
+      <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-extrabold text-zinc-950">
+              Beitrag erstellen
+            </h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              Datum und Winkel wählen, dann Text und Bild einzeln erzeugen.
+            </p>
+          </div>
+          {loadPending ? (
+            <p className="flex items-center gap-2 text-sm font-semibold text-zinc-600">
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+              Lädt …
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
+            Datum
+            <input
+              type="date"
+              disabled={busy || !canSave}
+              value={postDate}
+              onChange={(e) => {
+                if (e.target.value) setPostDate(e.target.value);
+              }}
+              className={fieldClass}
+            />
+          </label>
+          <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
+            Winkel
+            <select
+              disabled={busy || !canSave}
+              value={angleId}
+              onChange={(e) => setAngleId(e.target.value)}
+              className={fieldClass}
+            >
+              {MOTIVATION_ANGLES.map((angle) => {
+                const count = angleUsage[angle.id] ?? 0;
+                return (
+                  <option key={angle.id} value={angle.id}>
+                    {angle.title} · {MOTIVATION_THEME_LABELS[angle.theme]} (
+                    {count}×)
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+        </div>
+
+        {selectedAngle ? (
+          <p className="mt-3 rounded-2xl bg-orange-50 px-4 py-3 text-sm leading-relaxed text-orange-950 ring-1 ring-orange-700/15">
+            <span className="font-extrabold">{selectedAngle.title}</span>
+            <span className="mt-1 block text-orange-900/90">
+              {selectedAngle.insight}
+            </span>
           </p>
         ) : null}
-      </div>
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={busy || !canSave}
-          onClick={() => setGenerateConfirm({ kind: "batch-text" })}
-          className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
-        >
-          Alle Texte erzeugen
-        </button>
-        <button
-          type="button"
-          disabled={busy || !canSave}
-          onClick={() => setGenerateConfirm({ kind: "batch-image" })}
-          className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
-        >
-          Alle Bilder erzeugen
-        </button>
-      </div>
+        {activePost ? (
+          <p className="mt-3 text-sm font-semibold text-zinc-600">
+            Für dieses Datum existiert bereits ein Beitrag — Erzeugen
+            überschreibt Text bzw. Bild.
+          </p>
+        ) : null}
 
-      <div className="space-y-3">
-        <h2 className="text-xl font-extrabold text-zinc-950">
-          Tage ({dates.length})
+        <div className="mt-5 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy || !canSave || !angleId}
+            onClick={() => setGenerateConfirm({ kind: "text" })}
+            className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
+          >
+            Text erzeugen
+          </button>
+          <button
+            type="button"
+            disabled={
+              busy || !canSave || !angleId || !captionDraft.trim()
+            }
+            onClick={() => setGenerateConfirm({ kind: "image" })}
+            className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
+            title={
+              !captionDraft.trim()
+                ? "Zuerst Text erzeugen"
+                : undefined
+            }
+          >
+            Bild erzeugen
+          </button>
+        </div>
+
+        <label className="mt-5 block text-xs font-bold tracking-wide text-zinc-500 uppercase">
+          Caption (wird beim Erzeugen gespeichert)
+          <textarea
+            rows={8}
+            readOnly
+            value={captionDraft}
+            className={cn(fieldClass, "cursor-default bg-zinc-50")}
+            placeholder="Noch kein Text — „Text erzeugen“ starten."
+          />
+        </label>
+
+        {activePost?.imageDataUrl ? (
+          <div className="mt-5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={activePost.imageDataUrl}
+              alt={`Social-Bild ${formatDeDate(postDate)}`}
+              className="mx-auto max-h-[28rem] w-auto max-w-full rounded-2xl ring-1 ring-zinc-950/10"
+            />
+          </div>
+        ) : null}
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-lg font-extrabold text-zinc-950">
+          Bestehende Beiträge ({posts.length})
         </h2>
-        {dates.map((date) => {
-          const post = postsByDate[date];
-          const angle = pickMotivationAngle(date);
-          const open = Boolean(expandedDates[date]);
-          const textOk = hasCaption(post);
-          const imageOk = hasImage(post);
-          const published = Boolean(post?.published);
-
-          return (
-            <article
-              key={date}
-              className="rounded-[1.75rem] bg-white shadow-xl ring-1 ring-zinc-950/10"
-            >
-              <button
-                type="button"
-                aria-expanded={open}
-                onClick={() =>
-                  setExpandedDates((prev) => ({
-                    ...prev,
-                    [date]: !prev[date],
-                  }))
-                }
-                className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left"
+        {posts.length === 0 ? (
+          <p className="rounded-2xl bg-white px-5 py-8 text-center text-sm font-semibold text-zinc-500 shadow-xl ring-1 ring-zinc-950/10">
+            Noch keine Beiträge — oben Datum und Winkel wählen.
+          </p>
+        ) : (
+          posts.map((post) => {
+            const angle = post.angleId
+              ? getMotivationAngleById(post.angleId)
+              : null;
+            const open = expandedId === post.id;
+            return (
+              <article
+                key={post.id}
+                className="rounded-[1.5rem] bg-white shadow-lg ring-1 ring-zinc-950/10"
               >
-                <div className="min-w-0">
-                  <h3 className="text-base font-extrabold text-zinc-950">
-                    {new Date(`${date}T12:00:00`).toLocaleDateString("de-DE", {
-                      weekday: "long",
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </h3>
-                  <p className="mt-1 truncate text-xs font-semibold text-orange-800">
-                    Winkel: {angle.title}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    <StatusChip active={textOk} label="Text" />
-                    <StatusChip active={imageOk} label="Bild" />
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => {
+                    setExpandedId(open ? null : post.id);
+                    setPostDate(post.postDate);
+                    if (post.angleId) setAngleId(post.angleId);
+                  }}
+                  className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+                >
+                  <div>
+                    <p className="font-extrabold text-zinc-950">
+                      {formatDeDate(post.postDate)}
+                    </p>
+                    <p className="mt-0.5 text-sm text-zinc-600">
+                      {angle?.title ?? post.angleId ?? "Ohne Winkel"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
                     <StatusChip
-                      active={published}
-                      label={published ? "Veröffentlicht" : "Entwurf"}
+                      active={Boolean(post.caption?.trim())}
+                      label="Text"
+                    />
+                    <StatusChip
+                      active={Boolean(post.imageDataUrl)}
+                      label="Bild"
+                    />
+                    <ChevronDown
+                      className={cn(
+                        "size-4 text-zinc-400 transition-transform",
+                        open && "rotate-180",
+                      )}
+                      aria-hidden
                     />
                   </div>
-                </div>
-                <ChevronDown
-                  className={cn(
-                    "mt-1 size-5 shrink-0 text-zinc-500 transition-transform",
-                    open && "rotate-180",
-                  )}
-                  aria-hidden
-                />
-              </button>
-
-              {open ? (
-                <div className="space-y-3 border-t border-zinc-950/10 px-5 pb-5 pt-4">
-                  <div className="flex items-center justify-between gap-3 rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-zinc-950/5">
-                    <div>
-                      <p className="text-sm font-extrabold text-zinc-950">
-                        Veröffentlicht
+                </button>
+                {open ? (
+                  <div className="space-y-3 border-t border-zinc-950/10 px-5 pb-5 pt-3">
+                    {post.caption?.trim() ? (
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+                        {post.caption}
                       </p>
-                      <p className="text-xs text-zinc-600">
-                        Merker, ob der Beitrag schon live ist.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={published}
-                      disabled={busy || !canSave}
-                      onClick={() => {
-                        startTransition(async () => {
-                          const next = !published;
-                          const result = await setSocialPostPublishedAction({
-                            yearMonth,
-                            postDate: date,
-                            channel: CHANNEL,
-                            published: next,
-                          });
-                          if (!result.success || !result.data) {
-                            toast.error(result.error ?? "Fehler");
-                            return;
-                          }
-                          mergePost(result.data.post);
-                          toast.success(
-                            next
-                              ? "Als veröffentlicht markiert."
-                              : "Als Entwurf markiert.",
-                          );
-                        });
-                      }}
-                      className={cn(
-                        "relative h-8 w-14 shrink-0 rounded-full transition-all duration-200 ease-in-out disabled:opacity-60",
-                        published ? "bg-orange-700" : "bg-zinc-300",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "absolute top-1 left-1 size-6 rounded-full bg-white shadow transition-all duration-200 ease-in-out",
-                          published && "translate-x-6",
-                        )}
-                      />
-                      <span className="sr-only">Veröffentlicht</span>
-                    </button>
-                  </div>
-
-                  <textarea
-                    rows={6}
-                    disabled={busy || !canSave}
-                    value={post?.caption ?? ""}
-                    onChange={(e) => {
-                      const caption = e.target.value;
-                      setPostsByDate((prev) => ({
-                        ...prev,
-                        [date]: {
-                          id: post?.id ?? "",
-                          yearMonth,
-                          postDate: date,
-                          channel: CHANNEL,
-                          caption,
-                          imageDataUrl: post?.imageDataUrl ?? null,
-                          lastImagePrompt: post?.lastImagePrompt ?? null,
-                          published: post?.published ?? false,
-                          updatedAt: post?.updatedAt ?? "",
-                        },
-                      }));
-                    }}
-                    className="w-full rounded-xl border border-zinc-950/10 bg-gray-50 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-orange-700"
-                    placeholder="Caption …"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={busy || !canSave}
-                      onClick={() =>
-                        setGenerateConfirm({ kind: "day-text", date })
-                      }
-                      className="rounded-full bg-zinc-800 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
-                    >
-                      Text erzeugen
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy || !canSave}
-                      onClick={() => {
-                        startTransition(async () => {
-                          const result = await saveSocialCaptionAction({
-                            yearMonth,
-                            postDate: date,
-                            channel: CHANNEL,
-                            caption: post?.caption ?? "",
-                          });
-                          if (!result.success || !result.data) {
-                            toast.error(result.error ?? "Fehler");
-                            return;
-                          }
-                          mergePost(result.data.post);
-                          toast.success("Text gespeichert.");
-                        });
-                      }}
-                      className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold ring-1 ring-zinc-950/10 disabled:opacity-60"
-                    >
-                      Speichern
-                    </button>
-                  </div>
-                  <label className="block text-xs font-bold text-zinc-500">
-                    Text nachbearbeiten (Prompt)
-                    <div className="mt-1 flex gap-2">
-                      <input
-                        disabled={busy || !canSave}
-                        value={refineHints[date] ?? ""}
-                        onChange={(e) =>
-                          setRefineHints((prev) => ({
-                            ...prev,
-                            [date]: e.target.value,
-                          }))
-                        }
-                        className="min-w-0 flex-1 rounded-xl border border-zinc-950/10 bg-white px-3 py-1.5 text-sm"
-                        placeholder="Kürzer, mehr CTA …"
-                      />
-                      <button
-                        type="button"
-                        disabled={busy || !canSave}
-                        onClick={() => {
-                          const hint = refineHints[date]?.trim();
-                          if (!hint) {
-                            toast.error("Hinweis eingeben.");
-                            return;
-                          }
-                          startTransition(async () => {
-                            setWaitStatus("Text wird überarbeitet …");
-                            try {
-                              const result = await refineSocialCaptionAction({
-                                yearMonth,
-                                postDate: date,
-                                channel: CHANNEL,
-                                refineInstruction: hint,
-                              });
-                              if (!result.success || !result.data) {
-                                toast.error(result.error ?? "Fehler");
-                                return;
-                              }
-                              mergePost(result.data.post);
-                              toast.success("Text überarbeitet.");
-                            } finally {
-                              setWaitStatus(null);
-                            }
-                          });
-                        }}
-                        className="shrink-0 rounded-full bg-orange-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
-                      >
-                        KI
-                      </button>
-                    </div>
-                  </label>
-
-                  {imageOk ? (
-                    <div className="space-y-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                    ) : (
+                      <p className="text-sm text-zinc-500">Kein Text.</p>
+                    )}
+                    {post.imageDataUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={post!.imageDataUrl!}
+                        src={post.imageDataUrl}
                         alt=""
-                        className="aspect-square w-full max-w-[220px] rounded-xl object-cover ring-1 ring-zinc-950/10"
+                        className="max-h-64 w-auto max-w-full rounded-xl ring-1 ring-zinc-950/10"
                       />
-                      <button
-                        type="button"
-                        disabled={busy || !canSave}
-                        onClick={() => setDeleteImageDate(date)}
-                        className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-800 ring-1 ring-red-700/20 hover:bg-red-100 disabled:opacity-60"
-                      >
-                        Bild löschen
-                      </button>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-zinc-500">Kein Bild</p>
-                  )}
-                  <label className="block text-xs font-bold text-zinc-500">
-                    Bild neu (optional Extra-Prompt)
-                    <div className="mt-1 flex gap-2">
-                      <input
-                        disabled={busy || !canSave}
-                        value={imageHints[date] ?? ""}
-                        onChange={(e) =>
-                          setImageHints((prev) => ({
-                            ...prev,
-                            [date]: e.target.value,
-                          }))
-                        }
-                        className="min-w-0 flex-1 rounded-xl border border-zinc-950/10 bg-white px-3 py-1.5 text-sm"
-                        placeholder="mehr Abendlicht …"
-                      />
-                      <button
-                        type="button"
-                        disabled={busy || !canSave}
-                        onClick={() =>
-                          setGenerateConfirm({ kind: "day-image", date })
-                        }
-                        className="shrink-0 rounded-full bg-orange-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
-                      >
-                        Bild erzeugen
-                      </button>
-                    </div>
-                  </label>
-                </div>
-              ) : null}
-            </article>
-          );
-        })}
-      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="text-sm font-bold text-orange-700 underline-offset-2 hover:underline"
+                      onClick={() => {
+                        setPostDate(post.postDate);
+                        if (post.angleId) setAngleId(post.angleId);
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      }}
+                    >
+                      Oben bearbeiten
+                    </button>
+                  </div>
+                ) : null}
+              </article>
+            );
+          })
+        )}
+      </section>
 
       <ConfirmActionDialog
         open={Boolean(generateConfirm)}
@@ -821,40 +661,6 @@ export function SocialMediaAdminForm({
         confirmLabel={confirmCopy.confirmLabel}
         onCancel={() => setGenerateConfirm(null)}
         onConfirm={runConfirmedGenerate}
-      />
-
-      <ConfirmDeleteDialog
-        open={Boolean(deleteImageDate)}
-        title="Bild löschen?"
-        description={
-          deleteImageDate
-            ? `Das Bild für ${new Date(`${deleteImageDate}T12:00:00`).toLocaleDateString("de-DE")} wird unwiderruflich aus dem Beitrag entfernt. Text und Veröffentlicht-Status bleiben erhalten.`
-            : ""
-        }
-        confirmLabel="Bild löschen"
-        pending={deleteImagePending}
-        onCancel={() => {
-          if (!deleteImagePending) setDeleteImageDate(null);
-        }}
-        onConfirm={() => {
-          if (!deleteImageDate) return;
-          setDeleteImagePending(true);
-          void (async () => {
-            const result = await clearSocialImageAction({
-              yearMonth,
-              postDate: deleteImageDate,
-              channel: CHANNEL,
-            });
-            setDeleteImagePending(false);
-            if (!result.success || !result.data) {
-              toast.error(result.error ?? "Löschen fehlgeschlagen.");
-              return;
-            }
-            mergePost(result.data.post);
-            setDeleteImageDate(null);
-            toast.success("Bild gelöscht.");
-          })();
-        }}
       />
     </div>
   );

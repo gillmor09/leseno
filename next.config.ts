@@ -9,6 +9,12 @@ const modernPolyfill = path.join(__dirname, "src/lib/modern-polyfill.js");
  *   that Lighthouse flags as unused on modern browsers (~13 KiB).
  */
 const nextConfig: NextConfig = {
+  // Native canvas must stay external for social image text overlay.
+  serverExternalPackages: ["@napi-rs/canvas", "sharp", "opentype.js"],
+  // Vendored Nunito TTF for exact social overlay typography.
+  outputFileTracingIncludes: {
+    "/*": ["./src/assets/fonts/Nunito-SemiBold.ttf"],
+  },
   experimental: {
     inlineCss: true,
     optimizePackageImports: ["lucide-react", "sonner"],

@@ -78,7 +78,7 @@ export function AiModelAdminForm({
       }
       setVoicesByProvider((current) => ({
         ...current,
-        [provider]: result.data.voices,
+        [provider]: result.data!.voices,
       }));
     }
 

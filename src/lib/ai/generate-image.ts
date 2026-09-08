@@ -15,6 +15,8 @@ export type GenerateImageInput = {
    * IONOS: exact size string; Gemini: mapped to 0.5K / 1K / 2K.
    */
   sizePx?: 256 | 512 | 1024 | 2048;
+  /** Prefer PNG for social overlays (avoids double JPEG softening). */
+  outputFormat?: "png" | "jpeg" | "webp";
 };
 
 export type GenerateImageResult = {
@@ -55,7 +57,9 @@ export async function generateImage(
       prompt: input.prompt,
       size: ionosSizeForPx(input.sizePx),
       modelSlug: input.model.modelSlug,
-      outputFormat: input.sizePx && input.sizePx >= 1024 ? "jpeg" : "png",
+      outputFormat:
+        input.outputFormat ??
+        (input.sizePx && input.sizePx >= 1024 ? "jpeg" : "png"),
     });
     return { dataUrl: result.dataUrl, modelSlug: result.modelSlug };
   }

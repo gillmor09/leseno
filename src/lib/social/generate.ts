@@ -16,10 +16,38 @@ import {
   buildSocialImageScenePlanPrompt,
 } from "@/lib/social/craft-prompt";
 import {
+  getMotivationAngleById,
   pickMotivationAngle,
   type MotivationAngle,
 } from "@/lib/social/motivation";
+import { overlayExactAngleTextOnImage } from "@/lib/social/overlay-angle-text";
 import type { SocialChannel, SocialChannelCraft } from "@/lib/social/types";
+
+function resolveAngle(
+  angleId: string | undefined,
+  postDate: string,
+): MotivationAngle {
+  if (angleId) {
+    const found = getMotivationAngleById(angleId);
+    if (!found) {
+      throw new Error(`Unbekannter Winkel „${angleId}“.`);
+    }
+    return found;
+  }
+  return pickMotivationAngle(postDate);
+}
+
+function dayMeta(postDate: string): { dayIndex: number; daysInMonth: number } {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(postDate);
+  if (!match) return { dayIndex: 1, daysInMonth: 31 };
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  return {
+    dayIndex: day,
+    daysInMonth: new Date(year, month, 0).getDate(),
+  };
+}
 
 /** Resolves text model for captions and scene briefs (`social-default`). */
 export async function resolveSocialTextModel(): Promise<AiModelConfig> {
@@ -99,12 +127,20 @@ export async function generateSocialCaption(input: {
   craft: SocialChannelCraft;
   channel: SocialChannel;
   postDate: string;
-  dayIndex: number;
-  daysInMonth: number;
+  angleId: string;
 }): Promise<{ caption: string; angle: MotivationAngle }> {
   const model = await resolveSocialTextModel();
-  const angle = pickMotivationAngle(input.postDate);
-  const prompt = buildCraftCaptionPrompt({ ...input, angle });
+  const angle = resolveAngle(input.angleId, input.postDate);
+  const { dayIndex, daysInMonth } = dayMeta(input.postDate);
+  const prompt = buildCraftCaptionPrompt({
+    storyline: input.storyline,
+    craft: input.craft,
+    channel: input.channel,
+    postDate: input.postDate,
+    dayIndex,
+    daysInMonth,
+    angle,
+  });
   const text = await generateText({
     model,
     systemInstruction: prompt.systemInstruction,
@@ -120,9 +156,10 @@ export async function refineSocialCaption(input: {
   currentCaption: string;
   refineInstruction: string;
   postDate: string;
+  angleId?: string | null;
 }): Promise<{ caption: string; angle: MotivationAngle }> {
   const model = await resolveSocialTextModel();
-  const angle = pickMotivationAngle(input.postDate);
+  const angle = resolveAngle(input.angleId ?? undefined, input.postDate);
   const prompt = buildCraftRefinePrompt({ ...input, angle });
   const text = await generateText({
     model,
@@ -133,25 +170,27 @@ export async function refineSocialCaption(input: {
 }
 
 /**
- * Text model invents a scene from the caption; `images-default` renders at ~1024²
- * (IONOS FLUX or Gemini Image — whatever Admin set).
+ * Text model invents a scene from the caption; `images-default` renders pixels.
+ * Winkel title is composited in Nunito afterwards.
  */
 export async function generateSocialImage(input: {
   imagePromptTemplate: string;
   caption: string;
   channel: SocialChannel;
   postDate: string;
+  angleId: string;
   extraInstruction?: string;
 }): Promise<{
   dataUrl: string;
   promptUsed: string;
   sceneDescription: string;
+  angle: MotivationAngle;
 }> {
   const [textModel, imagesModel] = await Promise.all([
     resolveSocialTextModel(),
     resolveSocialImagesModel(),
   ]);
-  const angle = pickMotivationAngle(input.postDate);
+  const angle = resolveAngle(input.angleId, input.postDate);
   const plan = buildSocialImageScenePlanPrompt({
     ...input,
     sceneHint: angle.sceneHint,
@@ -180,8 +219,16 @@ export async function generateSocialImage(input: {
   const result = await generateImage({
     model: imagesModel,
     prompt: promptUsed,
-    sizePx: 1024,
+    // 2K when the provider supports it (Gemini); IONOS still caps at 1024.
+    sizePx: 2048,
+    outputFormat: "png",
   });
 
-  return { dataUrl: result.dataUrl, promptUsed, sceneDescription };
+  // Exact Winkel title in Nunito (white) — image models cannot render this reliably.
+  const dataUrl = await overlayExactAngleTextOnImage({
+    imageDataUrl: result.dataUrl,
+    overlayText: angle.title,
+  });
+
+  return { dataUrl, promptUsed, sceneDescription, angle };
 }

@@ -1,6 +1,6 @@
 /**
  * Shared reading motivation content for /motivation and social caption generation.
- * Source of truth: manifesto + angle bank (one angle per Instagram day).
+ * Source of truth: manifesto + angle bank (admin picks one Winkel per post).
  */
 
 export type MotivationTheme =
@@ -17,7 +17,7 @@ export type MotivationAngle = {
   title: string;
   /** One crisp insight the post must land — not an essay. */
   insight: string;
-  /** Optional visual scene hint for image planning (no text to paint). */
+  /** Optional visual scene hint for image planning (mood only; Winkel title is painted separately). */
   sceneHint: string;
 };
 
@@ -311,6 +311,15 @@ export function pickMotivationAngle(postDate: string): MotivationAngle {
   }
   const index = Math.abs(seed) % MOTIVATION_ANGLES.length;
   return MOTIVATION_ANGLES[index]!;
+}
+
+/** Looks up a bank Winkel by stable `id` (admin selection). */
+export function getMotivationAngleById(
+  angleId: string,
+): MotivationAngle | null {
+  const id = angleId.trim();
+  if (!id) return null;
+  return MOTIVATION_ANGLES.find((angle) => angle.id === id) ?? null;
 }
 
 export function anglesByTheme(): Record<MotivationTheme, MotivationAngle[]> {

@@ -1,7 +1,7 @@
 /**
  * Social Media admin types.
  * Global CRAFT: storyline, role, format, action, imagePrompt (style for Gemini → FLUX).
- * Posts: Instagram calendar only (channel column remains `instagram` in DB).
+ * Posts: Instagram entries with chosen motivation Winkel (`angleId`).
  */
 
 export const SOCIAL_CHANNELS = ["instagram"] as const;
@@ -29,6 +29,8 @@ export type SocialPost = {
   imageDataUrl: string | null;
   lastImagePrompt: string | null;
   published: boolean;
+  /** Motivation bank id (`MOTIVATION_ANGLES[].id`). */
+  angleId: string | null;
   updatedAt: string;
 };
 
@@ -42,6 +44,11 @@ export type SocialChannelCraft = {
 
 export function isSocialChannel(value: string): value is SocialChannel {
   return (SOCIAL_CHANNELS as readonly string[]).includes(value);
+}
+
+/** Derives `YYYY-MM` from a `YYYY-MM-DD` post date for month_settings FK. */
+export function yearMonthFromPostDate(postDate: string): string {
+  return postDate.slice(0, 7);
 }
 
 export function datesInYearMonth(yearMonth: string): string[] {

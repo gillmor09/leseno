@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Admin Social Media: global CRAFT settings + monthly day posts (Gemini + FLUX.2).
+ * Admin Social Media: global CRAFT + single-post create/edit (date + Winkel).
  */
 
 import { revalidatePath } from "next/cache";
@@ -11,16 +11,17 @@ import {
   generateSocialImage,
   refineSocialCaption,
 } from "@/lib/social/generate";
+import { getMotivationAngleById } from "@/lib/social/motivation";
 import {
-  ensureSocialMonth,
+  getSocialAngleUsage,
   getSocialGlobalSettings,
-  listSocialPosts,
+  listAllSocialPosts,
   upsertSocialGlobalSettings,
   upsertSocialPost,
 } from "@/lib/social/repository";
 import {
   craftFromGlobal,
-  datesInYearMonth,
+  yearMonthFromPostDate,
   type SocialGlobalSettings,
   type SocialPost,
 } from "@/lib/social/types";
@@ -33,38 +34,39 @@ import {
   socialRefineCaptionSchema,
   socialSaveCaptionSchema,
   socialSetPublishedSchema,
-  socialYearMonthSchema,
 } from "@/lib/validations/social-admin";
 
 function revalidateSocial() {
   revalidatePath("/admin/social-media");
 }
 
-export async function loadSocialMonthAction(
-  input: unknown,
-): Promise<
+function findPost(
+  posts: SocialPost[],
+  postDate: string,
+  channel: string,
+): SocialPost | undefined {
+  return posts.find(
+    (post) => post.postDate === postDate && post.channel === channel,
+  );
+}
+
+export async function loadSocialWorkspaceAction(): Promise<
   ActionResult<{
     global: SocialGlobalSettings;
     posts: SocialPost[];
+    angleUsage: Record<string, number>;
   }>
 > {
   const denied = await denyUnlessAdmin();
   if (denied) return { success: false, error: denied };
 
-  const parsed = socialYearMonthSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültiger Monat.",
-    };
-  }
-
   try {
-    const [global, posts] = await Promise.all([
+    const [global, posts, angleUsage] = await Promise.all([
       getSocialGlobalSettings(),
-      listSocialPosts(parsed.data.yearMonth),
+      listAllSocialPosts(),
+      getSocialAngleUsage(),
     ]);
-    return { success: true, data: { global, posts } };
+    return { success: true, data: { global, posts, angleUsage } };
   } catch (error) {
     return {
       success: false,
@@ -120,30 +122,29 @@ export async function generateSocialCaptionAction(
     };
   }
 
-  const { yearMonth, postDate, channel } = parsed.data;
-  const dates = datesInYearMonth(yearMonth);
-  const dayIndex = dates.indexOf(postDate) + 1;
-  if (dayIndex < 1) {
-    return { success: false, error: "Datum passt nicht zum Monat." };
+  const { postDate, channel, angleId } = parsed.data;
+  if (!getMotivationAngleById(angleId)) {
+    return { success: false, error: "Unbekannter Winkel." };
   }
+
+  const yearMonth = yearMonthFromPostDate(postDate);
 
   try {
     const global = await getSocialGlobalSettings();
-    await ensureSocialMonth(yearMonth);
     const craft = craftFromGlobal(global);
     const { caption, angle } = await generateSocialCaption({
       storyline: global.storyline,
       craft,
       channel,
       postDate,
-      dayIndex,
-      daysInMonth: dates.length,
+      angleId,
     });
     const post = await upsertSocialPost({
       yearMonth,
       postDate,
       channel,
       caption,
+      angleId: angle.id,
     });
     revalidateSocial();
     return {
@@ -176,15 +177,17 @@ export async function refineSocialCaptionAction(
     };
   }
 
+  const yearMonth = yearMonthFromPostDate(parsed.data.postDate);
+
   try {
     const [global, posts] = await Promise.all([
       getSocialGlobalSettings(),
-      listSocialPosts(parsed.data.yearMonth),
+      listAllSocialPosts(),
     ]);
-    const existing = posts.find(
-      (p) =>
-        p.postDate === parsed.data.postDate &&
-        p.channel === parsed.data.channel,
+    const existing = findPost(
+      posts,
+      parsed.data.postDate,
+      parsed.data.channel,
     );
     const currentCaption = existing?.caption?.trim() ?? "";
     if (!currentCaption) {
@@ -202,9 +205,10 @@ export async function refineSocialCaptionAction(
       currentCaption,
       refineInstruction: parsed.data.refineInstruction,
       postDate: parsed.data.postDate,
+      angleId: existing?.angleId,
     });
     const post = await upsertSocialPost({
-      yearMonth: parsed.data.yearMonth,
+      yearMonth,
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       caption,
@@ -239,7 +243,7 @@ export async function saveSocialCaptionAction(
 
   try {
     const post = await upsertSocialPost({
-      yearMonth: parsed.data.yearMonth,
+      yearMonth: yearMonthFromPostDate(parsed.data.postDate),
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       caption: parsed.data.caption,
@@ -275,26 +279,38 @@ export async function generateSocialImageAction(
     };
   }
 
+  const yearMonth = yearMonthFromPostDate(parsed.data.postDate);
+
   try {
-    const global = await getSocialGlobalSettings();
-    const posts = await listSocialPosts(parsed.data.yearMonth);
-    const existing = posts.find(
-      (p) =>
-        p.postDate === parsed.data.postDate &&
-        p.channel === parsed.data.channel,
+    const [global, posts] = await Promise.all([
+      getSocialGlobalSettings(),
+      listAllSocialPosts(),
+    ]);
+    const existing = findPost(
+      posts,
+      parsed.data.postDate,
+      parsed.data.channel,
     );
+    const angleId = parsed.data.angleId ?? existing?.angleId ?? "";
+    if (!getMotivationAngleById(angleId)) {
+      return {
+        success: false,
+        error: "Winkel wählen (oder zuerst Text mit Winkel erzeugen).",
+      };
+    }
+
     const craft = craftFromGlobal(global);
-    const { dataUrl, promptUsed, sceneDescription } = await generateSocialImage(
-      {
+    const { dataUrl, promptUsed, sceneDescription, angle } =
+      await generateSocialImage({
         imagePromptTemplate: craft.imagePrompt,
         caption: existing?.caption ?? "",
         channel: parsed.data.channel,
         postDate: parsed.data.postDate,
+        angleId,
         extraInstruction: parsed.data.extraInstruction,
-      },
-    );
+      });
     const post = await upsertSocialPost({
-      yearMonth: parsed.data.yearMonth,
+      yearMonth,
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       imageDataUrl: dataUrl,
@@ -305,6 +321,7 @@ export async function generateSocialImageAction(
         "— FLUX Prompt —",
         promptUsed,
       ].join("\n"),
+      angleId: angle.id,
     });
     revalidateSocial();
     return {
@@ -339,7 +356,7 @@ export async function clearSocialImageAction(
 
   try {
     const post = await upsertSocialPost({
-      yearMonth: parsed.data.yearMonth,
+      yearMonth: yearMonthFromPostDate(parsed.data.postDate),
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       clearImage: true,
@@ -371,7 +388,7 @@ export async function setSocialPostPublishedAction(
 
   try {
     const post = await upsertSocialPost({
-      yearMonth: parsed.data.yearMonth,
+      yearMonth: yearMonthFromPostDate(parsed.data.postDate),
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       published: parsed.data.published,

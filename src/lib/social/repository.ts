@@ -29,7 +29,13 @@ type PostRow = {
   image_data_url: string | null;
   last_image_prompt: string | null;
   published: boolean | null;
+  angle_id: string | null;
   updated_at: string;
+};
+
+type AngleUsageRow = {
+  angle_id: string;
+  use_count: number | string;
 };
 
 function mapGlobal(row: GlobalRow): SocialGlobalSettings {
@@ -58,6 +64,7 @@ function mapPost(row: PostRow): SocialPost {
     imageDataUrl: row.image_data_url,
     lastImagePrompt: row.last_image_prompt,
     published: Boolean(row.published),
+    angleId: row.angle_id?.trim() || null,
     updatedAt: row.updated_at,
   };
 }
@@ -107,6 +114,30 @@ export async function listSocialPosts(
     .filter((post) => post.channel === "instagram");
 }
 
+/** All Instagram posts (newest dates first) for the sequential workspace. */
+export async function listAllSocialPosts(): Promise<SocialPost[]> {
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc("admin_list_all_social_posts");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as PostRow[])
+    .map(mapPost)
+    .filter((post) => post.channel === "instagram");
+}
+
+/** How often each Winkel id appears across all posts. */
+export async function getSocialAngleUsage(): Promise<Record<string, number>> {
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc("admin_social_angle_usage");
+  if (error) throw new Error(error.message);
+  const usage: Record<string, number> = {};
+  for (const row of (data ?? []) as AngleUsageRow[]) {
+    const id = row.angle_id?.trim();
+    if (!id) continue;
+    usage[id] = Number(row.use_count) || 0;
+  }
+  return usage;
+}
+
 export async function upsertSocialPost(input: {
   yearMonth: string;
   postDate: string;
@@ -116,6 +147,7 @@ export async function upsertSocialPost(input: {
   lastImagePrompt?: string | null;
   clearImage?: boolean;
   published?: boolean | null;
+  angleId?: string | null;
 }): Promise<SocialPost> {
   const supabase = createServiceClient(null);
   await ensureSocialMonth(input.yearMonth);
@@ -129,6 +161,8 @@ export async function upsertSocialPost(input: {
     p_clear_image: Boolean(input.clearImage),
     p_published:
       typeof input.published === "boolean" ? input.published : null,
+    p_angle_id:
+      typeof input.angleId === "string" ? input.angleId : null,
   });
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;

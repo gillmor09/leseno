@@ -1,12 +1,13 @@
 /**
- * Builds CRAFT-style prompts for social captions and FLUX image prompts.
- * Captions: manifesto + one motivation angle (not a long storyline essay).
- * Images: Gemini plans a lively full scene, then FLUX + no-text guards.
+ * Builds CRAFT-style prompts for social captions and social image prompts.
+ * Captions: manifesto + one motivation angle.
+ * Images: Gemini plans a lively scene with ZERO text; Winkel title is composited later
+ * in Nunito SemiBold (white) via `overlayExactAngleTextOnImage`.
  */
 
 import {
   FLUX_ILLUSTRATION_STYLE_LOCK,
-  FLUX_NO_TEXT_BLOCK,
+  FLUX_SOCIAL_NO_TEXT,
   fluxDayVisualVariation,
   sanitizeFluxVisualCue,
 } from "@/lib/ai/flux-prompt-guards";
@@ -121,7 +122,7 @@ ${input.currentCaption.trim()}`;
 }
 
 /**
- * Gemini plans a FLUX scene: brand style system + caption mood → lively full situation.
+ * Gemini plans a social scene (no on-image text — Winkel is composited later).
  */
 export function buildSocialImageScenePlanPrompt(input: {
   imagePromptTemplate: string;
@@ -132,10 +133,11 @@ export function buildSocialImageScenePlanPrompt(input: {
   sceneHint?: string;
 }): { systemInstruction: string; userText: string } {
   const channelLabel = SOCIAL_CHANNEL_LABELS[input.channel];
-  const styleGuide = input.imagePromptTemplate.trim() || LESENO_SOCIAL_STYLE_GUIDE;
+  const styleGuide =
+    input.imagePromptTemplate.trim() || LESENO_SOCIAL_STYLE_GUIDE;
 
   const systemInstruction = `You are the visual art director for leseno (reading joy for kids and families).
-Your job: turn a social-media caption into ONE detailed image brief for FLUX.
+Your job: turn a social-media caption into ONE detailed image brief for the pixel model.
 
 Brand / style system (follow literally — especially ART STYLE, COLOR PALETTE, SCENES):
 """
@@ -146,8 +148,9 @@ Hard rules:
 - English only; image brief only — no markdown, no quotes around the whole answer.
 - Describe a FULL lively situation (environment + action + relationships), not a portrait of a kid holding a book.
 - Name brand colors (warm orange, golden yellow, cream).
-- Purely visual — do not paint caption words.
-- ZERO text/letters/numbers/signs/logos/UI in the image.
+- Purely visual — do not paint caption words or any headline.
+- ZERO text/letters/numbers/signs/logos/UI in the image (typography is added later in code).
+- Leave a slightly calmer lower third for a later text overlay.
 - Illustrated 2D digital art unless style system asks for photo.
 - About 80–160 words.`;
 
@@ -160,13 +163,13 @@ ${input.caption.trim() || "(no caption — invent a warm leseno reading situatio
 
 ${hint ? `# Suggested situation direction\n${hint}\n` : ""}
 ${extra ? `# Extra visual direction from editor\n${extra}\n` : ""}
-Write the FLUX brief now: full scene, orange–gold–cream, illustrated not photo.`;
+Write the image brief now: full scene, orange–gold–cream, illustrated not photo, absolutely no text.`;
 
   return { systemInstruction, userText };
 }
 
 /**
- * Final FLUX pixel prompt from Gemini scene + shared guards.
+ * Final pixel prompt from Gemini scene + hard no-text (overlay added in code).
  */
 export function buildSocialFluxPromptFromScene(input: {
   sceneDescription: string;
@@ -174,23 +177,23 @@ export function buildSocialFluxPromptFromScene(input: {
   postDate: string;
   extraInstruction?: string;
 }): string {
-  const wantsPhoto = /\b(photo|fotorealist|photoreal|stock\s*photo|kamera|dslr)\b/i.test(
-    `${input.imagePromptTemplate} ${input.extraInstruction ?? ""}`,
-  );
+  const wantsPhoto =
+    /\b(photo|fotorealist|photoreal|stock\s*photo|kamera|dslr)\b/i.test(
+      `${input.imagePromptTemplate} ${input.extraInstruction ?? ""}`,
+    );
 
   const scene =
     sanitizeFluxVisualCue(input.sceneDescription, 900) ||
     "Lively family living-room reading adventure, warm orange glow, full environment";
 
+  // Style + palette first (long no-text blocks were drowning the warm leseno look).
   return [
     wantsPhoto ? null : FLUX_ILLUSTRATION_STYLE_LOCK,
     wantsPhoto ? null : LESENO_FLUX_PALETTE_LOCK,
-    FLUX_NO_TEXT_BLOCK,
     `Scene: ${scene}.`,
     fluxDayVisualVariation(input.postDate),
-    "Full situation with environment and action, square crop, illustration fills the frame.",
-    FLUX_NO_TEXT_BLOCK,
-    "Again: absolutely no text, letters, numbers, signs, or logos in the picture.",
+    "Full lively situation with environment and action, square crop, illustration fills the frame, slightly calmer lower third for overlay space.",
+    FLUX_SOCIAL_NO_TEXT,
   ]
     .filter(Boolean)
     .join(" ");

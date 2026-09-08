@@ -14,6 +14,18 @@ export type TtsVoiceOption = {
   description?: string;
 };
 
+function voiceOption(
+  id: string,
+  label: string,
+  description?: string,
+): TtsVoiceOption {
+  return description ? { id, label, description } : { id, label };
+}
+
+function notNull<T>(value: T | null): value is T {
+  return value !== null;
+}
+
 /** Built-in OpenAI voices for `tts-1` / `tts-1-hd`. */
 export const OPENAI_TTS_VOICE_OPTIONS: readonly TtsVoiceOption[] = [
   { id: "alloy", label: "Alloy" },
@@ -95,13 +107,9 @@ async function listElevenLabsVoices(): Promise<TtsVoiceOption[]> {
           const accent = voice.labels?.accent?.trim();
           const language = voice.labels?.language?.trim();
           const bits = [accent, language].filter(Boolean).join(", ");
-          return {
-            id,
-            label: voice.name?.trim() || id,
-            description: bits || undefined,
-          } satisfies TtsVoiceOption;
+          return voiceOption(id, voice.name?.trim() || id, bits || undefined);
         })
-        .filter((voice): voice is TtsVoiceOption => voice !== null);
+        .filter(notNull);
       if (fromApi.length > 0) {
         return sortVoices(uniqueById(fromApi));
       }
@@ -138,13 +146,13 @@ async function listInworldVoices(): Promise<TtsVoiceOption[]> {
     .map((voice) => {
       const id = (voice.voiceId ?? voice.name ?? "").trim();
       if (!id) return null;
-      return {
+      return voiceOption(
         id,
-        label: (voice.displayName ?? voice.name ?? id).trim(),
-        description: voice.description?.trim() || undefined,
-      } satisfies TtsVoiceOption;
+        (voice.displayName ?? voice.name ?? id).trim(),
+        voice.description?.trim() || undefined,
+      );
     })
-    .filter((voice): voice is TtsVoiceOption => voice !== null);
+    .filter(notNull);
   return sortVoices(uniqueById(voices));
 }
 
@@ -193,13 +201,13 @@ async function listFishVoices(): Promise<TtsVoiceOption[]> {
     .map((item) => {
       const id = (item._id ?? item.id ?? "").trim();
       if (!id) return null;
-      return {
+      return voiceOption(
         id,
-        label: item.title?.trim() || id,
-        description: item.description?.trim() || undefined,
-      } satisfies TtsVoiceOption;
+        item.title?.trim() || id,
+        item.description?.trim() || undefined,
+      );
     })
-    .filter((voice): voice is TtsVoiceOption => voice !== null);
+    .filter(notNull);
 
   return sortVoices(uniqueById(voices));
 }

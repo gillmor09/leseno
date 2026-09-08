@@ -1,7 +1,7 @@
 /**
  * Shared FLUX.2 prompt guards.
- * FLUX paints prose, digits, and soft "no text" as literal glyphs — stack hard negatives
- * and keep prompts visual-only (see story path in `flux-illustrations.ts`).
+ * Story + social pixels: hard no-text (FLUX paints prose as glyphs).
+ * Social Winkel typography is composited in code (`overlay-angle-text.ts`).
  */
 
 /** Hard no-text block — repeat before and after the scene. */
@@ -19,7 +19,11 @@ export const FLUX_NO_TEXT_BLOCK = [
 
 /** Default style lock so social posts stay illustrated, not stock-photo. */
 export const FLUX_ILLUSTRATION_STYLE_LOCK =
-  "Children's brand illustration, warm soft lighting, clear shapes, friendly pictorial artwork, illustrated not photographic, not photorealistic, not a stock photo, not CGI realism";
+  "Children's brand illustration, warm soft lighting, soft gradients, clear shapes, friendly pictorial artwork, high detail, clean edges, illustrated not photographic, not photorealistic, not a stock photo, not CGI realism, not pixelated, not low-res";
+
+/** Compact no-text guard for social (style stays primary; typography is composited). */
+export const FLUX_SOCIAL_NO_TEXT =
+  "No readable text, letters, numbers, signs, logos, watermarks, or UI anywhere in the image.";
 
 /**
  * Strips digits and quote marks that FLUX tends to paint as glyphs.

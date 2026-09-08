@@ -1,5 +1,6 @@
 /**
- * Canonical leseno visual system for social FLUX planning (Gemini style system).
+ * Canonical leseno visual system for social image planning (Gemini → FLUX/Gemini Image).
+ * Typography (Winkel title) is composited afterwards in Nunito — do NOT ask the model to paint text.
  * Do NOT put website URLs here — models cannot see linked images; describe the look.
  */
 
@@ -26,6 +27,7 @@ SCENES (critical — avoid boring book-portrait defaults)
 - Book is a PROP inside the scene, not the only subject
 - Prefer 2–4 figures or rich environment — not a lone kid staring at a closed book
 - Motion, expressions, lived-in details (cushions, toys, lamp, window, tea)
+- Leave a slightly calmer lower third (soft dark area / less busy) so a later text overlay can sit there
 
 CHARACTERS
 - Kids about 7–11; vary gender and appearance — do NOT always draw the same boy
@@ -42,9 +44,9 @@ MOTIFS (only when they fit — not every post)
 NEVER
 - Readable text, letters, numbers, book titles, signs, UI, watermarks, logos
 - Dark horror, school-drill classroom pressure as the main vibe
-- Static “kid holds book to camera” portrait as the whole idea
+- Static "kid holds book to camera" portrait as the whole idea
 - Dumping random blue/green worlds that fight the orange brand`;
 
-/** Short lock appended on the FLUX pixel prompt. */
+/** Short lock appended on the social pixel prompt — keep warm leseno.de look. */
 export const LESENO_FLUX_PALETTE_LOCK =
-  "Brand palette: warm orange and golden yellow on cream, soft glow, lively full situation, illustrated 2D digital art — not photorealistic, not a static book portrait.";
+  "leseno.de look: soft warm 2D digital illustration, gentle gradients and bloom, cream / warm off-white base, vivid warm orange and golden yellow highlights, cozy family energy, smooth shading — not photorealistic, not stock photo, not cool cyan/teal/purple, not muddy grey, not a static book portrait.";

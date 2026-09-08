@@ -9,11 +9,11 @@ import { hasServiceRoleConfig } from "@/lib/supabase/service";
 export const metadata: Metadata = {
   title: "Social Media — Leseno Admin",
   description:
-    "Monatsplanung für Instagram: Captions und Bilder über die KI-Modelle aus der Verwaltung.",
+    "Instagram-Beiträge einzeln erzeugen: Datum, Winkel, Caption und Bild.",
 };
 
 /**
- * Admin Social Media calendar: global CRAFT + Instagram day posts.
+ * Admin Social Media: global CRAFT + single-post create with chosen Winkel.
  */
 export default async function SocialMediaAdminPage() {
   const canSave = hasServiceRoleConfig();
@@ -72,15 +72,15 @@ export default async function SocialMediaAdminPage() {
             Social Media
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Jeder Tag greift einen Winkel aus der{" "}
+            Beiträge einzeln anlegen: Datum und einen Winkel aus der{" "}
             <a
               href="/motivation"
               className="font-semibold text-orange-700 underline-offset-2 hover:underline"
             >
               Motivations-Seite
             </a>{" "}
-            auf — knackig, mit Humor. Role/Format/Action und Bild-Stil steuern
-            Stimme und Look; Bilder sollen lebendige Situationen zeigen.
+            wählen — knackig, mit Humor. Role/Format/Action und Bild-Stil
+            steuern Stimme und Look.
           </p>
           <div className="mt-10">
             <SocialMediaAdminForm
