@@ -1,9 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
+import {
+  listTtsVoicesForProvider,
+  type TtsVoiceOption,
+} from "@/lib/ai/tts-voices";
 import { providerForWiredSlug } from "@/lib/ai/wired-models";
+import { toUserFacingMessage, UserFacingError } from "@/lib/errors/user-facing";
 import type { ActionResult } from "@/lib/types/actions";
 import {
   updateAiModels,
@@ -39,11 +45,9 @@ export async function saveAiModelsAction(
     const models = parsed.data.models.map((model) => {
       const provider = providerForWiredSlug(model.modelSlug);
       if (!provider) {
-        throw new Error(
-          `Modell „${model.modelSlug}“ ist nicht angebunden.`,
-        );
+        throw new Error(`Modell „${model.modelSlug}“ ist nicht angebunden.`);
       }
-      return { ...model, provider };
+      return { ...model, provider, ttsVoiceId: model.ttsVoiceId ?? null };
     });
     await updateAiModels(models);
     revalidatePath("/admin/ki-modelle");
@@ -56,6 +60,44 @@ export async function saveAiModelsAction(
       error:
         message ||
         "Speichern hat nicht geklappt. Läuft Supabase und ist die Migration da?",
+    };
+  }
+}
+
+const listTtsVoicesSchema = z.object({
+  provider: z.string().trim().min(1),
+});
+
+/**
+ * Loads selectable TTS voices for Admin KI-Modelle (German-first where possible).
+ */
+export async function listTtsVoicesAction(
+  input: unknown,
+): Promise<ActionResult<{ voices: TtsVoiceOption[] }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) {
+    return { success: false, error: denied };
+  }
+
+  const parsed = listTtsVoicesSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: "Provider fehlt." };
+  }
+
+  try {
+    const voices = await listTtsVoicesForProvider(parsed.data.provider);
+    return { success: true, data: { voices } };
+  } catch (error) {
+    if (error instanceof UserFacingError) {
+      return { success: false, error: error.message };
+    }
+    console.error("[listTtsVoicesAction]", error);
+    return {
+      success: false,
+      error: toUserFacingMessage(
+        error,
+        "Stimmen konnten nicht geladen werden.",
+      ),
     };
   }
 }

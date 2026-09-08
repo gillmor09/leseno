@@ -22,6 +22,7 @@ type ModelRow = {
   supports_json_output: boolean;
   is_active: boolean;
   notes: string | null;
+  tts_voice_id?: string | null;
 };
 
 type PromptRow = {
@@ -53,6 +54,7 @@ function toPromptAdminCatalog(
         supportsJsonOutput: model.supports_json_output,
         isActive: model.is_active,
         notes: model.notes,
+        ttsVoiceId: model.tts_voice_id?.trim() || null,
       }),
     ),
     prompts: [...prompts]
@@ -149,6 +151,7 @@ export async function updateAiModels(models: AiModelConfig[]): Promise<void> {
       p_supports_json_output: model.supportsJsonOutput,
       p_is_active: model.isActive,
       p_notes: model.notes,
+      p_tts_voice_id: model.ttsVoiceId,
     });
 
     if (error) {

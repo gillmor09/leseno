@@ -25,6 +25,8 @@ export type UserStorySummary = {
   personalMode: boolean;
   /** Null for root stories; set when this row continues another story. */
   parentStoryId: string | null;
+  /** Visible to accepted friends in Mein Buchclub. */
+  sharedToBookClub: boolean;
   createdAt: string;
 };
 
@@ -37,6 +39,8 @@ export type UserStoryDetail = UserStorySummary & {
   syllableHelp: boolean;
   includeImages: boolean;
   creditsCharged: number | null;
+  likeCount: number;
+  commentCount: number;
 };
 
 export type SaveUserStoryInput = {
@@ -102,11 +106,21 @@ function mapSummary(row: Record<string, unknown>): UserStorySummary {
     personalMode: Boolean(row.personal_mode),
     parentStoryId:
       typeof row.parent_story_id === "string" ? row.parent_story_id : null,
+    sharedToBookClub: Boolean(row.shared_to_book_club),
     createdAt:
       typeof row.created_at === "string"
         ? row.created_at
         : new Date().toISOString(),
   };
+}
+
+function asCount(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
 }
 
 function mapDetail(row: Record<string, unknown>): UserStoryDetail {
@@ -121,6 +135,8 @@ function mapDetail(row: Record<string, unknown>): UserStoryDetail {
     includeImages: Boolean(row.include_images),
     creditsCharged:
       typeof row.credits_charged === "number" ? row.credits_charged : null,
+    likeCount: asCount(row.like_count),
+    commentCount: asCount(row.comment_count),
   };
 }
 
@@ -214,6 +230,21 @@ export async function deleteMyStory(storyId: string): Promise<void> {
   const supabase = await createClient(null);
   const { error } = await supabase.rpc("delete_my_story", {
     p_id: storyId,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/** Toggles Buchclub visibility for an owned library story. */
+export async function setMyStoryBookClubShare(
+  storyId: string,
+  shared: boolean,
+): Promise<void> {
+  const supabase = await createClient(null);
+  const { error } = await supabase.rpc("set_my_story_book_club_share", {
+    p_id: storyId,
+    p_shared: shared,
   });
   if (error) {
     throw new Error(error.message);

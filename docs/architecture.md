@@ -37,6 +37,10 @@ Personal mode: topic/cast resolved **server-side** from the selected `child_prof
 
 Table `leseno.child_profiles` (1:N per auth user); RPCs `list_my_child_profiles` / `upsert_my_child_profile` / `delete_my_child_profile`.
 
+## Mein Buchclub
+
+Route `/mein-buchclub` (package feature `buchclub`, Plus+). Friendship code on `user_profiles`; confirmed friendships; email invite via SMTP; friends only see `user_stories.shared_to_book_club`. Likes/comments via RPCs — see migration `20260908090000_book_club.sql`.
+
 ## Bot guard
 
 `src/lib/security/bot-guard.ts`: honeypot + min fill time + **in-memory** IP rate limit (per Node process). Fine for one Coolify replica; scale-out needs Redis/edge (documented in that file).

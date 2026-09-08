@@ -12,6 +12,8 @@ export type AiModelConfig = {
   supportsJsonOutput: boolean;
   isActive: boolean;
   notes: string | null;
+  /** Optional TTS voice id (provider-specific); null for non-TTS roles. */
+  ttsVoiceId: string | null;
 };
 
 export type PromptTemplateConfig = {
@@ -36,80 +38,82 @@ export type PromptAdminCatalog = {
 export const FALLBACK_AI_MODELS: AiModelConfig[] = [
   {
     id: "facts-default",
-    label: "Faktenmodell Standard",
+    label: "Fakten",
     provider: "gemini",
     modelSlug: "gemini-3.8-flash",
     supportsSystemPrompt: true,
     supportsJsonOutput: true,
     isActive: true,
-    notes:
-      "Sammelt belastbare Fakten über Gemini 3.8 Flash.",
+    ttsVoiceId: null,
+    notes: "Recherche für kindgerechte, belastbare Fakten zur Geschichte.",
   },
   {
     id: "story-default",
-    label: "Geschichtenmodell Standard",
+    label: "Geschichte",
     provider: "gemini",
     modelSlug: "gemini-3.8-flash",
     supportsSystemPrompt: true,
     supportsJsonOutput: false,
     isActive: true,
+    ttsVoiceId: null,
     notes:
-      "Formuliert aus Thema, Fakten und Auswahlfeldern die Geschichte als HTML (Gemini 3.8 Flash).",
+      "Formuliert aus Thema, Fakten und Auswahlfeldern die Geschichte als HTML.",
   },
   {
     id: "images-default",
-    label: "Illustrationsmodell",
+    label: "Illustrationen",
     provider: "ionos-image",
     modelSlug: "black-forest-labs/FLUX.2-klein-4B",
     supportsSystemPrompt: false,
     supportsJsonOutput: false,
     isActive: true,
-    notes:
-      "Pixel für Geschichten + Social. Wechselbar auf Gemini 3.1 Flash Image oder 3 Pro Image (Admin).",
+    ttsVoiceId: null,
+    notes: "Pixelbilder für Geschichten und Social Media.",
   },
   {
     id: "layout-default",
-    label: "Layoutmodell (Mistral)",
+    label: "Layout",
     provider: "openai-compatible",
     modelSlug: "mistralai/Mistral-Small-24B-Instruct",
     supportsSystemPrompt: true,
     supportsJsonOutput: false,
     isActive: true,
+    ttsVoiceId: null,
     notes:
       "Betten Illustrationen ein; Text fließt mit 1rem Abstand um die Bilder.",
   },
   {
     id: "tts-default",
-    label: "Vorlesen (OpenAI TTS)",
-    provider: "openai-tts",
-    modelSlug: "tts-1",
+    label: "Vorlesen",
+    provider: "elevenlabs",
+    modelSlug: "eleven_v3",
     supportsSystemPrompt: false,
     supportsJsonOutput: false,
     isActive: true,
-    notes:
-      "Liest die Geschichte vor über OpenAI `/v1/audio/speech` (`OPENAI_API_KEY`, Stimme nova).",
+    ttsVoiceId: null,
+    notes: "Liest die Geschichte vor (Eleven v3, Deutsch).",
   },
   {
     id: "fact-why-default",
-    label: "Fakt-Hintergrund (GPT-OSS 120B)",
+    label: "Fakt-Hintergrund",
     provider: "openai-compatible",
     modelSlug: "openai/gpt-oss-120b",
     supportsSystemPrompt: true,
     supportsJsonOutput: false,
     isActive: true,
-    notes:
-      "Erklärt Fakt-Hintergründe und Vertiefungen über IONOS openai/gpt-oss-120b.",
+    ttsVoiceId: null,
+    notes: "Erklärt Fakt-Hintergründe und Vertiefungen („Warum?“ / mehr wissen).",
   },
   {
     id: "social-default",
-    label: "Social Media Text (Gemini)",
+    label: "Social Media",
     provider: "gemini",
     modelSlug: "gemini-3.8-flash",
     supportsSystemPrompt: true,
     supportsJsonOutput: false,
     isActive: true,
-    notes:
-      "Captions + FLUX-Szenenplanung für Admin Social Media (Gemini 3.8 Flash).",
+    ttsVoiceId: null,
+    notes: "Captions und Bildszenenplanung für Admin Social Media.",
   },
 ];
 
@@ -313,7 +317,7 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
       "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\n\nFakt:\n{{fact}}\n\nErkläre den Hintergrund: Warum ist das so? Was steckt dahinter? Kurz, präzise und kindgerecht.",
     placeholders: ["age_group", "school_stage", "fact"],
     assemblyNotes:
-      "Gestartet vom „Warum?“-Button. Unabhängig von Art der Geschichte. Modell: fact-why-default (gpt-oss-120b).",
+      "Gestartet vom „Warum?“-Button. Unabhängig von Art der Geschichte.",
     outputContract:
       "Kurzer, präziser Fließtext auf Deutsch (2–4 Absätze), kindgerecht, ohne Markdown-Überschriften.",
   },

@@ -1,15 +1,18 @@
 "use server";
 
 /**
- * Story read-aloud: plain story text → OpenAI TTS → Whisper word timestamps.
+ * Story read-aloud: catalog TTS model → audio → optional Whisper word timestamps.
  * Client highlights words via returned `words[]` (not page HTML / images).
  */
 
-import { synthesizeSpeechWithOpenAi } from "@/lib/ai/openai-tts";
+import {
+  resolveTtsModelConfig,
+  synthesizeSpeechChunk,
+} from "@/lib/ai/synthesize-speech";
 import { transcribeSpeechWordsWithWhisper } from "@/lib/ai/openai-whisper";
 import { toUserFacingMessage, UserFacingError } from "@/lib/errors/user-facing";
 import { assertBotGuard } from "@/lib/security/bot-guard";
-import { chunkTextForTts } from "@/lib/stories/plain-text-from-html";
+import { chunkTextForTts, ttsChunkMaxCharsForProvider } from "@/lib/stories/plain-text-from-html";
 import {
   alignWhisperWordsToCanonical,
   canonicalSliceForChunk,
@@ -93,14 +96,23 @@ export async function synthesizeStorySpeechAction(
     const wordHighlight =
       parsed.data.wordHighlight &&
       featuresInclude(packageFeatures, "markierung");
-    const textChunks = chunkTextForTts(plain);
+    const ttsModel = await resolveTtsModelConfig();
+    const textChunks = chunkTextForTts(
+      plain,
+      ttsChunkMaxCharsForProvider(ttsModel.provider),
+    );
     const fullTokens = wordHighlight ? tokenizeStoryWords(plain) : [];
     const audioChunks: StoryTtsChunk[] = [];
-    let modelSlug = "";
+    let modelSlug = ttsModel.modelSlug;
 
     for (const chunk of textChunks) {
       // Tempo is applied in the browser (playbackRate); synthesize at normal speed.
-      const result = await synthesizeSpeechWithOpenAi({ text: chunk });
+      const result = await synthesizeSpeechChunk({
+        text: chunk,
+        provider: ttsModel.provider,
+        modelSlug: ttsModel.modelSlug,
+        voiceId: ttsModel.voiceId,
+      });
       modelSlug = result.modelSlug;
 
       let words: StoryTtsWordTiming[] = [];

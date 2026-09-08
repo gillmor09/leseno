@@ -37,9 +37,10 @@ export default async function AiModelsAdminPage() {
             KI-Modelle
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Hier steuerst du, welches angebundene Modell je Rolle läuft
-            (Fakten, Geschichte, Social, Layout, Bilder, TTS). Die Prompt-Seite
-            wählt nur die Rolle — der Slug hier bestimmt API und Kosten.
+            Hier legst du fest, welches angebundene Modell je Rolle läuft
+            (Fakten, Geschichte, Social, Layout, Bilder, Vorlesen). Bei
+            Vorlesen kannst du die Stimme aus der jeweiligen TTS-API wählen.
+            Die Prompt-Seite wählt nur die Rolle.
           </p>
           <div className="mt-10">
             <AiModelAdminForm models={catalog.models} canSave={canSave} />

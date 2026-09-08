@@ -43,7 +43,7 @@ export default async function KostenlosPage() {
           </p>
           <p className="mt-3 max-w-2xl text-sm font-semibold text-zinc-500">
             Danach mit Konto: Basis starten — Extra-Funktionen (Bücherei,
-            Bilder, Silbenhilfe, Vorlesen) je nach Paket auf /preise.
+            Buchclub, Bilder, Silbenhilfe, Vorlesen) je nach Paket auf /preise.
           </p>
           <div className="mt-10">
             <FreeStoryForm

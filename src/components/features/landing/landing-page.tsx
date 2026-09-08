@@ -12,6 +12,7 @@ import {
   Smile,
   Sparkles,
   Target,
+  Users,
   Volume2,
   Zap,
 } from "lucide-react";
@@ -93,6 +94,11 @@ const strengths = [
     icon: Maximize2,
   },
   {
+    title: "Mein Buchclub",
+    text: "Freunde per Kennung verbinden, Geschichten freigeben, liken und kommentieren — ab Plus mit der Bücherei.",
+    icon: Users,
+  },
+  {
     title: "Bücherei & Fortsetzen",
     text: "Geschichten speichern und Favoriten setzen — und mit Pro fragen: „Wie könnte es weitergehen?“",
     icon: BookMarked,
@@ -120,8 +126,9 @@ const parentPoints = [
   "Passend zum Kind: Sprache und Länge fühlen sich gut an — ohne Test- oder Notenstimmung.",
   "Credits verfallen nie: Monatliche Gutschrift am Buchungstag; Rest bleibt fair in Folgemonaten liegen.",
   "Neugier inklusive: echtes Wissen steckt mitten im Abenteuer; mit Pro gibt’s „Warum?“ zum Nachforschen.",
-  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits & Bücherei, Pro für Familie & Fortsetzen, Ultimate für Silbenhilfe, Vorlesen & Adventskalenderbuch.",
+  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits, Bücherei & Buchclub, Pro für Familie & Fortsetzen, Ultimate für Silbenhilfe, Vorlesen & Adventskalenderbuch.",
   "Meine Welt: ab Plus ein Kinderprofil (Interessen & Erlebnisse), mit Pro beliebig viele unter einem Konto.",
+  "Mein Buchclub: ab Plus Freunde per Kennung einladen, freigegebene Geschichten lesen, liken und kommentieren.",
   "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden. Abo zum Periodenende kündbar.",
   "Weiterempfehlen leicht: Link teilen — Freundinnen starten kostenlos mit Basis.",
 ] as const;
@@ -140,7 +147,7 @@ const trySteps = [
   {
     number: "3",
     title: "Dann mit Konto weiter",
-    text: "Mit Basis starten; mit Plus Credits, Meine Bücherei und PDF — Bilder, Silbenhilfe und Vorlesen in den höheren Paketen.",
+    text: "Mit Basis starten; mit Plus Credits, Meine Bücherei, Buchclub und PDF — Bilder, Silbenhilfe und Vorlesen in den höheren Paketen.",
   },
 ] as const;
 
@@ -201,7 +208,7 @@ function HeroSection() {
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
             {withLesenoBrand(
-              "leseno macht eigene Geschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Was dabei hängen bleibt, kommt nebenbei. Kostenlos mit Basis starten; Bücherei, Silbenhilfe, Vorlesen und Bilder freischalten, wenn ihr wollt.",
+              "leseno macht eigene Geschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Was dabei hängen bleibt, kommt nebenbei. Kostenlos mit Basis starten; Bücherei, Buchclub, Silbenhilfe, Vorlesen und Bilder freischalten, wenn ihr wollt.",
             )}
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -219,8 +226,8 @@ function HeroSection() {
             </a>
           </div>
           <p className="mt-5 text-sm font-semibold text-zinc-600">
-            Spaß · Neugier · Bücherei · Pakete für Bilder, Silbenhilfe &amp;
-            Vorlesen
+            Spaß · Neugier · Bücherei · Buchclub · Pakete für Bilder,
+            Silbenhilfe &amp; Vorlesen
           </p>
         </div>
 
@@ -317,12 +324,12 @@ function StrengthsSection() {
           Deine Superkräfte
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Sechs Dinge, die Lesen leichter machen.
+          Sieben Dinge, die Lesen leichter machen.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Die Highlights, die zählen: eigene Geschichten, Lesemodus, Bücherei mit
-          Fortsetzen, Vorlesen, Bilder und das Adventskalenderbuch — je nach
-          Paket freischaltbar.
+          Die Highlights, die zählen: eigene Geschichten, Lesemodus, Buchclub,
+          Bücherei mit Fortsetzen, Vorlesen, Bilder und das Adventskalenderbuch
+          — je nach Paket freischaltbar.
         </p>
         <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {strengths.map((item) => {
@@ -499,7 +506,7 @@ function TrySection() {
                   "Kurze Geschichten zum Eintauchen",
                   "Sofort loslegen — ohne Registrierung",
                   "Danach: Konto mit Basis — Pakete nach Bedarf",
-                  "Plus mit Bücherei, Credits und PDF",
+                  "Plus mit Bücherei, Buchclub, Credits und PDF",
                 ].map((line) => (
                   <li
                     key={line}
@@ -549,7 +556,7 @@ function ParentsSection() {
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
             {withLesenoBrand(
-              "Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und Bewertung. leseno setzt genau da an: eigene Geschichten, die man freiwillig liest. Was an Lesefertigkeit und Wissen hängen bleibt, kommt nebenbei. Mit Plus speichert ihr in der Bücherei, mit Pro mehrere Kinder-Profile, mit Ultimate Silbenhilfe und Vorlesen.",
+              "Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und Bewertung. leseno setzt genau da an: eigene Geschichten, die man freiwillig liest. Was an Lesefertigkeit und Wissen hängen bleibt, kommt nebenbei. Mit Plus speichert ihr in der Bücherei und teilt im Buchclub, mit Pro mehrere Kinder-Profile, mit Ultimate Silbenhilfe und Vorlesen.",
             )}
           </p>
           <ul className="mt-6 space-y-3">
@@ -583,7 +590,7 @@ function PricingSection() {
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
           {withLesenoBrand(
-            "Probier leseno ohne Druck. Wenn Lesen zum Ritual wird, bringt Plus Credits, Meine Bücherei, Meine Welt und PDF — Vorlesen und Silbenhilfe erst mit Ultimate.",
+            "Probier leseno ohne Druck. Wenn Lesen zum Ritual wird, bringt Plus Credits, Meine Bücherei, Buchclub, Meine Welt und PDF — Vorlesen und Silbenhilfe erst mit Ultimate.",
           )}
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-2">
@@ -640,7 +647,7 @@ function PricingSection() {
             </p>
             <p className="mt-1 text-sm text-zinc-300">
               {withLesenoBrand(
-                "Monatliche Credits, die nie verfallen — plus Bücherei, Meine Welt und PDF",
+                "Monatliche Credits, die nie verfallen — plus Bücherei, Meine Welt, PDF und Buchclub",
               )}
             </p>
             <ul className="mt-6 space-y-3 text-sm text-zinc-200">
@@ -664,6 +671,13 @@ function PricingSection() {
                   aria-hidden
                 />
                 Meine Welt für ein Kind · PDF-Export
+              </li>
+              <li className="flex gap-2">
+                <Check
+                  className="mt-0.5 size-4 shrink-0 text-yellow-400"
+                  aria-hidden
+                />
+                Mein Buchclub für Freunde und geteilte Geschichten
               </li>
             </ul>
             <a

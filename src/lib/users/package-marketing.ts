@@ -13,6 +13,7 @@ import {
 /** Feature rows for the comparison matrix (order = scan order for parents). */
 export const PACKAGE_COMPARE_FEATURE_IDS: PackageFeatureId[] = [
   "lesemodus",
+  "buchclub",
   "meine_welt",
   "meine_welt_familie",
   "buecherei",
@@ -31,6 +32,7 @@ export const PACKAGE_COMPARE_FEATURE_HINTS: Partial<
   Record<PackageFeatureId, string>
 > = {
   lesemodus: "Vollbild mit Schrift & Abständen",
+  buchclub: "Freunde, Likes & geteilte Geschichten",
   meine_welt: "Persönliches Kinderprofil",
   meine_welt_familie: "Mehrere Kinder-Profile",
   buecherei: "Geschichten speichern & erneut lesen",
@@ -52,8 +54,8 @@ const PAID_TAGLINES: Record<Exclude<UserPackageId, "basis">, string> = {
 };
 
 const PAID_BLURBS: Record<Exclude<UserPackageId, "basis">, string> = {
-  plus: "Jeden Monat Credits zum Buchungstag — und sie verfallen nie. Dazu Meine Bücherei, ein Kinderprofil und PDF-Export.",
-  pro: "Mehrere Kinder-Profile, Bücherei, Bilder, „Warum?“ und Fortsetzungen — wenn leseno zum Familien-Ritual wird.",
+  plus: "Jeden Monat Credits zum Buchungstag — und sie verfallen nie. Dazu Meine Bücherei, ein Kinderprofil, PDF-Export und der Buchclub.",
+  pro: "Mehrere Kinder-Profile, Bücherei, Buchclub, Bilder, „Warum?“ und Fortsetzungen — wenn leseno zum Familien-Ritual wird.",
   ultimate:
     "Alles aus Pro plus Silbenhilfe, Vorlesen mit Wort-Markierung, PDF-Export, tieferes Hintergrundwissen und das Adventskalenderbuch.",
 };
@@ -67,6 +69,7 @@ export type MarketingBullet = {
 
 const FEATURE_BULLET_ORDER: PackageFeatureId[] = [
   "lesemodus",
+  "buchclub",
   "meine_welt",
   "meine_welt_familie",
   "buecherei",
@@ -88,6 +91,8 @@ function featureBulletText(
   switch (feature) {
     case "lesemodus":
       return "Lesemodus: Vollbild mit Schrift & Abständen";
+    case "buchclub":
+      return "Mein Buchclub: Freunde einladen und Geschichten teilen";
     case "meine_welt_familie":
       return "Meine Welt für beliebig viele Kinder";
     case "meine_welt":

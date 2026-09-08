@@ -106,7 +106,8 @@ export default async function MeineBuechereiPage() {
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             Hier liegen alle Geschichten, die du erzeugt hast — automatisch
             gespeichert. Tippe auf den Titel zum Lesen; markiere Favoriten und
-            Gelesen mit den Buttons rechts.
+            Gelesen mit den Buttons rechts. Mit dem Teilen-Button gibst du eine
+            Geschichte für Freundinnen und Freunde im Buchclub frei.
           </p>
 
           {loadError ? (

@@ -13,7 +13,7 @@ import { featuresInclude } from "@/lib/users/packages";
 
 /**
  * Server wrapper: marketing header when signed out; member chrome when signed in
- * (Bücherei / Geschichte / Meine Welt / Abmelden + optional admin cog).
+ * (Bücherei / Geschichte / Meine Welt / Buchclub / Abmelden + optional admin cog).
  */
 export async function AppHeader() {
   const user = await getCurrentUser();
@@ -49,6 +49,7 @@ export async function AppHeader() {
   const features = access?.features ?? [];
   const showMeineWelt = featuresInclude(features, "meine_welt");
   const showMeineBuecherei = featuresInclude(features, "buecherei");
+  const showMeinBuchclub = featuresInclude(features, "buchclub");
 
   return (
     <LandingHeader
@@ -59,6 +60,7 @@ export async function AppHeader() {
       storyHref={storyPathForRole(role)}
       showMeineWelt={showMeineWelt}
       showMeineBuecherei={showMeineBuecherei}
+      showMeinBuchclub={showMeinBuchclub}
     />
   );
 }

@@ -18,6 +18,7 @@ import {
   saveSocialGlobalSettingsAction,
   setSocialPostPublishedAction,
 } from "@/app/actions/social-admin";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   datesInYearMonth,
@@ -25,11 +26,22 @@ import {
   type SocialGlobalSettings,
   type SocialPost,
 } from "@/lib/social/types";
+import type { SocialAiModelInfo } from "@/lib/social/generate";
 import { pickMotivationAngle } from "@/lib/social/motivation";
 import { LESENO_SOCIAL_STYLE_GUIDE } from "@/lib/social/leseno-visual-style";
 import { cn } from "@/lib/utils";
 
 const CHANNEL = "instagram" as const;
+
+type GenerateConfirm =
+  | { kind: "batch-text" }
+  | { kind: "batch-image" }
+  | { kind: "day-text"; date: string }
+  | { kind: "day-image"; date: string };
+
+function formatModelLine(model: SocialAiModelInfo): string {
+  return `${model.modelSlug} · ${model.label}`;
+}
 
 function hasCaption(post: SocialPost | undefined): boolean {
   return Boolean(post?.caption?.trim());
@@ -109,7 +121,15 @@ function SocialWaitOverlay({ message }: { message: string | null }) {
   );
 }
 
-export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
+export function SocialMediaAdminForm({
+  canSave,
+  textModel,
+  imageModel,
+}: {
+  canSave: boolean;
+  textModel: SocialAiModelInfo;
+  imageModel: SocialAiModelInfo;
+}) {
   const [yearMonth, setYearMonth] = useState(currentYearMonth);
   const [global, setGlobal] = useState<SocialGlobalSettings>(emptyGlobalSettings);
   const [postsByDate, setPostsByDate] = useState<Record<string, SocialPost>>({});
@@ -124,6 +144,8 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
   );
   const [deleteImageDate, setDeleteImageDate] = useState<string | null>(null);
   const [deleteImagePending, setDeleteImagePending] = useState(false);
+  const [generateConfirm, setGenerateConfirm] =
+    useState<GenerateConfirm | null>(null);
 
   const dates = useMemo(() => datesInYearMonth(yearMonth), [yearMonth]);
 
@@ -242,6 +264,107 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
   const fieldClass =
     "mt-1 w-full rounded-xl border border-zinc-950/10 bg-gray-100 px-3 py-2 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-60";
 
+  const textModelLine = formatModelLine(textModel);
+  const imageModelLine = formatModelLine(imageModel);
+
+  const confirmCopy = useMemo(() => {
+    if (!generateConfirm) {
+      return { title: "", description: "", confirmLabel: "" };
+    }
+    if (generateConfirm.kind === "batch-text") {
+      return {
+        title: "Alle Texte erzeugen?",
+        description: `Für alle ${dates.length} Tage im Monat werden Captions erzeugt.\n\nKI-Modell: ${textModelLine}`,
+        confirmLabel: "Alle Texte erzeugen",
+      };
+    }
+    if (generateConfirm.kind === "batch-image") {
+      return {
+        title: "Alle Bilder erzeugen?",
+        description: `Für alle Tage mit vorhandenem Text werden Bilder erzeugt.\n\nSzenenplanung: ${textModelLine}\nBildpixel: ${imageModelLine}`,
+        confirmLabel: "Alle Bilder erzeugen",
+      };
+    }
+    if (generateConfirm.kind === "day-text") {
+      const label = new Date(
+        `${generateConfirm.date}T12:00:00`,
+      ).toLocaleDateString("de-DE");
+      return {
+        title: "Text erzeugen?",
+        description: `Caption für ${label} wird neu erzeugt.\n\nKI-Modell: ${textModelLine}`,
+        confirmLabel: "Text erzeugen",
+      };
+    }
+    const label = new Date(
+      `${generateConfirm.date}T12:00:00`,
+    ).toLocaleDateString("de-DE");
+    return {
+      title: "Bild erzeugen?",
+      description: `Bild für ${label} wird neu erzeugt.\n\nSzenenplanung: ${textModelLine}\nBildpixel: ${imageModelLine}`,
+      confirmLabel: "Bild erzeugen",
+    };
+  }, [generateConfirm, dates.length, textModelLine, imageModelLine]);
+
+  function runConfirmedGenerate() {
+    const job = generateConfirm;
+    setGenerateConfirm(null);
+    if (!job) return;
+
+    if (job.kind === "batch-text") {
+      void runBatchCaptions();
+      return;
+    }
+    if (job.kind === "batch-image") {
+      void runBatchImages();
+      return;
+    }
+    if (job.kind === "day-text") {
+      const date = job.date;
+      startTransition(async () => {
+        setWaitStatus("Text wird erzeugt …");
+        try {
+          if (!(await persistGlobal())) return;
+          const result = await generateSocialCaptionAction({
+            yearMonth,
+            postDate: date,
+            channel: CHANNEL,
+          });
+          if (!result.success || !result.data) {
+            toast.error(result.error ?? "Fehler");
+            return;
+          }
+          mergePost(result.data.post);
+          toast.success(`Text erzeugt — ${result.data.angleTitle}`);
+        } finally {
+          setWaitStatus(null);
+        }
+      });
+      return;
+    }
+
+    const date = job.date;
+    startTransition(async () => {
+      setWaitStatus("Bild wird erzeugt …");
+      try {
+        if (!(await persistGlobal())) return;
+        const result = await generateSocialImageAction({
+          yearMonth,
+          postDate: date,
+          channel: CHANNEL,
+          extraInstruction: imageHints[date]?.trim() || undefined,
+        });
+        if (!result.success || !result.data) {
+          toast.error(result.error ?? "Fehler");
+          return;
+        }
+        mergePost(result.data.post);
+        toast.success("Bild erzeugt.");
+      } finally {
+        setWaitStatus(null);
+      }
+    });
+  }
+
   return (
     <div className="space-y-10">
       <SocialWaitOverlay message={waitStatus} />
@@ -338,7 +461,7 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
               />
             </label>
             <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
-              Bild-Stil (System für Gemini → FLUX)
+              Bild-Stil (System für Szenenplanung → Bildmodell)
               <textarea
                 rows={6}
                 disabled={busy || !canSave}
@@ -402,18 +525,18 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
         <button
           type="button"
           disabled={busy || !canSave}
-          onClick={() => void runBatchCaptions()}
+          onClick={() => setGenerateConfirm({ kind: "batch-text" })}
           className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
         >
-          Alle Texte erzeugen (Gemini)
+          Alle Texte erzeugen
         </button>
         <button
           type="button"
           disabled={busy || !canSave}
-          onClick={() => void runBatchImages()}
+          onClick={() => setGenerateConfirm({ kind: "batch-image" })}
           className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
         >
-          Alle Bilder erzeugen (FLUX.2)
+          Alle Bilder erzeugen
         </button>
       </div>
 
@@ -555,29 +678,9 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
                     <button
                       type="button"
                       disabled={busy || !canSave}
-                      onClick={() => {
-                        startTransition(async () => {
-                          setWaitStatus("Text wird erzeugt (Gemini) …");
-                          try {
-                            if (!(await persistGlobal())) return;
-                            const result = await generateSocialCaptionAction({
-                              yearMonth,
-                              postDate: date,
-                              channel: CHANNEL,
-                            });
-                            if (!result.success || !result.data) {
-                              toast.error(result.error ?? "Fehler");
-                              return;
-                            }
-                            mergePost(result.data.post);
-                            toast.success(
-                              `Text erzeugt — ${result.data.angleTitle}`,
-                            );
-                          } finally {
-                            setWaitStatus(null);
-                          }
-                        });
-                      }}
+                      onClick={() =>
+                        setGenerateConfirm({ kind: "day-text", date })
+                      }
                       className="rounded-full bg-zinc-800 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
                     >
                       Text erzeugen
@@ -695,34 +798,12 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
                       <button
                         type="button"
                         disabled={busy || !canSave}
-                        onClick={() => {
-                          startTransition(async () => {
-                            setWaitStatus(
-                              "Bild: Gemini plant Szene, dann FLUX …",
-                            );
-                            try {
-                              if (!(await persistGlobal())) return;
-                              const result = await generateSocialImageAction({
-                                yearMonth,
-                                postDate: date,
-                                channel: CHANNEL,
-                                extraInstruction:
-                                  imageHints[date]?.trim() || undefined,
-                              });
-                              if (!result.success || !result.data) {
-                                toast.error(result.error ?? "Fehler");
-                                return;
-                              }
-                              mergePost(result.data.post);
-                              toast.success("Bild erzeugt.");
-                            } finally {
-                              setWaitStatus(null);
-                            }
-                          });
-                        }}
+                        onClick={() =>
+                          setGenerateConfirm({ kind: "day-image", date })
+                        }
                         className="shrink-0 rounded-full bg-orange-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
                       >
-                        FLUX
+                        Bild erzeugen
                       </button>
                     </div>
                   </label>
@@ -732,6 +813,15 @@ export function SocialMediaAdminForm({ canSave }: { canSave: boolean }) {
           );
         })}
       </div>
+
+      <ConfirmActionDialog
+        open={Boolean(generateConfirm)}
+        title={confirmCopy.title}
+        description={confirmCopy.description}
+        confirmLabel={confirmCopy.confirmLabel}
+        onCancel={() => setGenerateConfirm(null)}
+        onConfirm={runConfirmedGenerate}
+      />
 
       <ConfirmDeleteDialog
         open={Boolean(deleteImageDate)}

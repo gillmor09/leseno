@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = buildPageMetadata({
   title: "Preise: Plus, Pro & Ultimate im Vergleich",
   description:
-    "leseno-Pakete: Credits verfallen nie, Fortsetzen, Adventskalenderbuch, Bücherei und Vorlesen. Abrechnung am Buchungstag — zum Periodenende kündbar.",
+    "leseno-Pakete: Buchclub ab Plus, Credits verfallen nie, Fortsetzen, Adventskalenderbuch, Bücherei und Vorlesen. Abrechnung am Buchungstag — zum Periodenende kündbar.",
   path: "/preise",
 });
 
@@ -57,10 +57,11 @@ export default async function PreisePage() {
             Pakete für Kinder, die gerne Geschichten lesen.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Plus für monatliche Credits (verfallen nie), Bücherei und PDF, Pro
-            für Familie, Bilder und Fortsetzen, Ultimate für Silbenhilfe,
-            Vorlesen und Adventskalenderbuch. Abrechnung am Buchungstag —
-            kündbar zum Periodenende. Zahlung per Karte oder PayPal.
+            Plus für monatliche Credits (verfallen nie), Bücherei, Buchclub und
+            PDF, Pro für Familie, Bilder und Fortsetzen, Ultimate für
+            Silbenhilfe, Vorlesen und Adventskalenderbuch. Abrechnung am
+            Buchungstag — kündbar zum Periodenende. Zahlung per Karte oder
+            PayPal.
           </p>
 
           <div className="mt-10 grid gap-6 lg:grid-cols-3">

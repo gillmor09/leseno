@@ -2,7 +2,36 @@
  * Plain text for TTS: strip story HTML (incl. silbe spans) to readable German.
  */
 
-const MAX_TTS_CHARS = 3500;
+/** OpenAI `/audio/speech` input is ~4096; keep margin. */
+export const MAX_TTS_CHARS_OPENAI = 3500;
+
+/** Inworld sync TTS rejects text over 2000 characters. */
+export const MAX_TTS_CHARS_INWORLD = 1900;
+
+/** Fish Audio handles longer text; keep same margin as OpenAI. */
+export const MAX_TTS_CHARS_FISH = 3500;
+
+/** Eleven v3 sync TTS max is 5000 characters; keep margin. */
+export const MAX_TTS_CHARS_ELEVENLABS = 4800;
+
+const MAX_TTS_CHARS = MAX_TTS_CHARS_OPENAI;
+
+/**
+ * Max characters per synthesis request for the active TTS provider.
+ */
+export function ttsChunkMaxCharsForProvider(provider: string): number {
+  switch (provider) {
+    case "inworld":
+      return MAX_TTS_CHARS_INWORLD;
+    case "fish-audio":
+      return MAX_TTS_CHARS_FISH;
+    case "elevenlabs":
+      return MAX_TTS_CHARS_ELEVENLABS;
+    case "openai-tts":
+    default:
+      return MAX_TTS_CHARS_OPENAI;
+  }
+}
 
 /**
  * Converts sanitized story HTML to spoken plain text.
@@ -26,7 +55,7 @@ export function plainTextFromStoryHtml(html: string): string {
 }
 
 /**
- * Splits long text into chunks under OpenAI TTS input limits (sentence-aware).
+ * Splits long text into chunks under provider TTS input limits (sentence-aware).
  */
 export function chunkTextForTts(
   text: string,

@@ -17,6 +17,13 @@ export const promptModelSchema = z
     supportsJsonOutput: z.boolean(),
     isActive: z.boolean(),
     notes: z.string().trim().nullable(),
+    ttsVoiceId: z
+      .string()
+      .trim()
+      .max(200, { message: "Stimmen-ID ist zu lang." })
+      .nullable()
+      .optional()
+      .transform((value) => value?.trim() || null),
   })
   .superRefine((model, ctx) => {
     const provider = providerForWiredSlug(model.modelSlug);

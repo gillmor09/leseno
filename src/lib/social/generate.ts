@@ -22,7 +22,7 @@ import {
 import type { SocialChannel, SocialChannelCraft } from "@/lib/social/types";
 
 /** Resolves text model for captions and scene briefs (`social-default`). */
-async function resolveSocialTextModel(): Promise<AiModelConfig> {
+export async function resolveSocialTextModel(): Promise<AiModelConfig> {
   try {
     const catalog = await loadPromptAdminCatalog({ mergeFallback: true });
     const model =
@@ -51,7 +51,7 @@ async function resolveSocialTextModel(): Promise<AiModelConfig> {
  * Pixel model for Social images — same catalog row as story illustrations
  * (`images-default`: FLUX or Gemini Image).
  */
-async function resolveSocialImagesModel(): Promise<AiModelConfig> {
+export async function resolveSocialImagesModel(): Promise<AiModelConfig> {
   try {
     const catalog = await loadPromptAdminCatalog({ mergeFallback: true });
     const model = catalog.models.find((m) => m.id === "images-default");
@@ -64,6 +64,34 @@ async function resolveSocialImagesModel(): Promise<AiModelConfig> {
     throw new Error("Illustrationsmodell (images-default) fehlt im Katalog.");
   }
   return fallback;
+}
+
+export type SocialAiModelInfo = {
+  id: string;
+  label: string;
+  modelSlug: string;
+  provider: string;
+};
+
+function toModelInfo(model: AiModelConfig): SocialAiModelInfo {
+  return {
+    id: model.id,
+    label: model.label,
+    modelSlug: model.modelSlug,
+    provider: model.provider,
+  };
+}
+
+/** Admin UI: which catalog models Social text / image generation will use. */
+export async function getSocialAiModels(): Promise<{
+  text: SocialAiModelInfo;
+  images: SocialAiModelInfo;
+}> {
+  const [text, images] = await Promise.all([
+    resolveSocialTextModel(),
+    resolveSocialImagesModel(),
+  ]);
+  return { text: toModelInfo(text), images: toModelInfo(images) };
 }
 
 export async function generateSocialCaption(input: {

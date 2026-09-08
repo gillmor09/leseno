@@ -51,7 +51,7 @@ function goToSection(href: string) {
 
 /**
  * Shared chrome for marketing pages. Hash links stay on `/`; other routes go home first.
- * Signed-in users: Bücherei + Geschichte + Meine Welt + Abmelden (desktop);
+ * Signed-in users: Bücherei + Geschichte + Meine Welt + Buchclub + Abmelden (desktop);
  * on small screens those links move into the hamburger panel.
  * Admins: cog with admin areas + temporary membership-role testing (lazy chunk).
  */
@@ -63,6 +63,7 @@ export function LandingHeader({
   storyHref = null,
   showMeineWelt = true,
   showMeineBuecherei = true,
+  showMeinBuchclub = true,
 }: {
   isAdmin?: boolean;
   /** Admin temporarily using a membership role; cog stays for restore. */
@@ -75,6 +76,8 @@ export function LandingHeader({
   showMeineWelt?: boolean;
   /** Package `buecherei`: show Meine-Bücherei nav link. */
   showMeineBuecherei?: boolean;
+  /** Package `buchclub`: show Mein-Buchclub nav link. */
+  showMeinBuchclub?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -127,6 +130,7 @@ export function LandingHeader({
   const storyActive = pathname === storyPath;
   const libraryActive = pathname === "/meine-buecherei";
   const worldActive = pathname === "/meine-welt";
+  const bookClubActive = pathname === "/mein-buchclub";
   const registerActive = pathname === "/registrieren";
   const signInActive =
     pathname === "/anmelden" ||
@@ -207,6 +211,17 @@ export function LandingHeader({
                     )}
                   >
                     Meine Welt
+                  </a>
+                ) : null}
+                {showMeinBuchclub ? (
+                  <a
+                    href="/mein-buchclub"
+                    className={cn(
+                      headerBtnBase,
+                      bookClubActive ? headerBtnActive : headerBtnIdle,
+                    )}
+                  >
+                    Mein Buchclub
                   </a>
                 ) : null}
                 <button
@@ -319,6 +334,18 @@ export function LandingHeader({
                   )}
                 >
                   Meine Welt
+                </a>
+              ) : null}
+              {showMeinBuchclub ? (
+                <a
+                  href="/mein-buchclub"
+                  onClick={closeMobileNav}
+                  className={cn(
+                    "rounded-full px-4 py-2.5 text-center text-sm font-bold text-white transition-all duration-200 ease-in-out",
+                    bookClubActive ? headerBtnActive : headerBtnIdle,
+                  )}
+                >
+                  Mein Buchclub
                 </a>
               ) : null}
               <button

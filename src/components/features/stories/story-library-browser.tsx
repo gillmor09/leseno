@@ -6,14 +6,23 @@
  */
 
 import { useMemo, useState, useTransition } from "react";
-import { BookCheck, GitBranch, Loader2, Star, Trash2 } from "lucide-react";
+import {
+  BookCheck,
+  GitBranch,
+  Loader2,
+  Share2,
+  Star,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
+import { setMyStoryBookClubShareAction } from "@/app/actions/book-club";
 import {
   deleteMyStoryAction,
   getMyStoryAction,
   setMyStoryFavoriteAction,
   setMyStoryReadAction,
 } from "@/app/actions/story-library";
+import { StoryCommentsSection } from "@/components/features/book-club/story-comments-section";
 import { StoryResultPanel } from "@/components/features/stories/story-result-panel";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import type { StoryLengthCatalog } from "@/lib/stories/length";
@@ -124,6 +133,7 @@ export function StoryLibraryBrowser({
     null,
   );
   const [readPendingId, setReadPendingId] = useState<string | null>(null);
+  const [sharePendingId, setSharePendingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserStorySummary | null>(
     null,
   );
@@ -197,6 +207,35 @@ export function StoryLibraryBrowser({
       if (expandedStory?.id === story.id) {
         setExpandedStory({ ...expandedStory, isRead: next });
       }
+    });
+  }
+
+  function handleToggleBookClubShare(story: UserStorySummary) {
+    const next = !story.sharedToBookClub;
+    setSharePendingId(story.id);
+    startTransition(async () => {
+      const result = await setMyStoryBookClubShareAction({
+        storyId: story.id,
+        shared: next,
+      });
+      setSharePendingId(null);
+      if (!result.success) {
+        toast.error(result.error ?? "Freigabe speichern fehlgeschlagen.");
+        return;
+      }
+      setStories((prev) =>
+        prev.map((item) =>
+          item.id === story.id ? { ...item, sharedToBookClub: next } : item,
+        ),
+      );
+      if (expandedStory?.id === story.id) {
+        setExpandedStory({ ...expandedStory, sharedToBookClub: next });
+      }
+      toast.success(
+        next
+          ? "Im Buchclub freigegeben."
+          : "Freigabe für den Buchclub beendet.",
+      );
     });
   }
 
@@ -362,6 +401,7 @@ export function StoryLibraryBrowser({
               stageLabel,
               formatStoryDate(story.createdAt),
               story.isRead ? "Gelesen" : null,
+              story.sharedToBookClub ? "Buchclub" : null,
             ]
               .filter(Boolean)
               .join(" · ");
@@ -384,7 +424,7 @@ export function StoryLibraryBrowser({
                     depth > 0 && "border-l-4 border-orange-400",
                   )}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex flex-wrap items-start gap-3">
                     <button
                       type="button"
                       onClick={() => handleToggleExpand(story)}
@@ -407,6 +447,30 @@ export function StoryLibraryBrowser({
                       <p className="mt-1 text-xs font-semibold text-zinc-500">
                         {meta}
                       </p>
+                    </button>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={sharePendingId === story.id}
+                      onClick={() => handleToggleBookClubShare(story)}
+                      className={cn(
+                        "inline-flex size-10 shrink-0 items-center justify-center rounded-full transition-all duration-200 ease-in-out disabled:opacity-70",
+                        story.sharedToBookClub
+                          ? "bg-orange-700 text-white hover:bg-orange-800"
+                          : "bg-gray-100 text-zinc-500 hover:bg-gray-200",
+                      )}
+                      aria-label={
+                        story.sharedToBookClub
+                          ? "Buchclub-Freigabe beenden"
+                          : "Im Buchclub teilen"
+                      }
+                      title={
+                        story.sharedToBookClub
+                          ? "Buchclub-Freigabe beenden"
+                          : "Im Buchclub teilen"
+                      }
+                    >
+                      <Share2 className="size-5" aria-hidden />
                     </button>
                     <button
                       type="button"
@@ -469,6 +533,7 @@ export function StoryLibraryBrowser({
                     >
                       <Trash2 className="size-5" aria-hidden />
                     </button>
+                    </div>
                   </div>
                 </article>
 
@@ -482,78 +547,108 @@ export function StoryLibraryBrowser({
                 {isExpanded &&
                 expandedStory &&
                 expandedStory.id === story.id ? (
-                  <StoryResultPanel
-                    storyHtml={expandedStory.storyHtml}
-                    facts={expandedStory.facts}
-                    schoolStage={expandedStory.schoolStage}
-                    readableAloud={
-                      allowVorlesen &&
-                      (storyProfile?.readableAloud ??
-                        FREE_READING_EXTRAS.readableAloud)
-                    }
-                    wordHighlight={
-                      allowMarkierung &&
-                      (storyProfile?.wordHighlight ??
-                        FREE_READING_EXTRAS.wordHighlight)
-                    }
-                    allowPdfExport={allowPdf}
-                    allowFactWhy={allowFactWhy}
-                    allowFactWhyMore={allowFactWhyMore}
-                    allowReadingMode={allowReadingMode}
-                    readingProfileId={story.childProfileId}
-                    readingModePrefs={storyProfile?.readingModePrefs ?? null}
-                    typographyDefaults={typographyDefaults}
-                    allowContinue={allowContinue}
-                    libraryStoryId={expandedStory.id}
-                    lengthCatalog={lengthCatalog}
-                    continueLengthStep={
-                      expandedStory.lengthStep ?? "mittel"
-                    }
-                    continueMood={expandedStory.mood ?? "spannend"}
-                    onContinued={(result) => {
-                      const summary: UserStorySummary = {
-                        id: result.libraryStoryId,
-                        title: titleFromHtmlHint(result.storyHtml),
-                        childProfileId: story.childProfileId,
-                        profileDisplayName: story.profileDisplayName,
-                        isFavorite: false,
-                        isRead: false,
-                        schoolStage: result.schoolStage,
-                        personalMode: story.personalMode,
-                        parentStoryId: story.id,
-                        createdAt: new Date().toISOString(),
-                      };
-                      setStories((prev) => [summary, ...prev]);
-                      setExpandedId(result.libraryStoryId);
-                      setExpandedStory({
-                        ...summary,
-                        storyHtml: result.storyHtml,
-                        facts: result.facts,
-                        lengthStep: expandedStory.lengthStep,
-                        mood: expandedStory.mood,
-                        topic: expandedStory.topic,
-                        syllableHelp: expandedStory.syllableHelp,
-                        includeImages: expandedStory.includeImages,
-                        creditsCharged: null,
-                      });
-                    }}
-                    onReadingModePrefsChange={(prefs) => {
-                      if (!story.childProfileId) return;
-                      const profileId = story.childProfileId;
-                      setProfiles((current) =>
-                        current.map((profile) =>
-                          profile.id === profileId
-                            ? { ...profile, readingModePrefs: prefs }
-                            : profile,
-                        ),
-                      );
-                    }}
-                    eyebrow="Aus der Bücherei"
-                    onClose={() => {
-                      setExpandedId(null);
-                      setExpandedStory(null);
-                    }}
-                  />
+                  <div className="space-y-3">
+                    <StoryResultPanel
+                      storyHtml={expandedStory.storyHtml}
+                      facts={expandedStory.facts}
+                      schoolStage={expandedStory.schoolStage}
+                      readableAloud={
+                        allowVorlesen &&
+                        (storyProfile?.readableAloud ??
+                          FREE_READING_EXTRAS.readableAloud)
+                      }
+                      wordHighlight={
+                        allowMarkierung &&
+                        (storyProfile?.wordHighlight ??
+                          FREE_READING_EXTRAS.wordHighlight)
+                      }
+                      allowPdfExport={allowPdf}
+                      allowFactWhy={allowFactWhy}
+                      allowFactWhyMore={allowFactWhyMore}
+                      allowReadingMode={allowReadingMode}
+                      readingProfileId={story.childProfileId}
+                      readingModePrefs={storyProfile?.readingModePrefs ?? null}
+                      typographyDefaults={typographyDefaults}
+                      allowContinue={allowContinue}
+                      libraryStoryId={expandedStory.id}
+                      lengthCatalog={lengthCatalog}
+                      continueLengthStep={
+                        expandedStory.lengthStep ?? "mittel"
+                      }
+                      continueMood={expandedStory.mood ?? "spannend"}
+                      onContinued={(result) => {
+                        const summary: UserStorySummary = {
+                          id: result.libraryStoryId,
+                          title: titleFromHtmlHint(result.storyHtml),
+                          childProfileId: story.childProfileId,
+                          profileDisplayName: story.profileDisplayName,
+                          isFavorite: false,
+                          isRead: false,
+                          schoolStage: result.schoolStage,
+                          personalMode: story.personalMode,
+                          parentStoryId: story.id,
+                          sharedToBookClub: false,
+                          createdAt: new Date().toISOString(),
+                        };
+                        setStories((prev) => [summary, ...prev]);
+                        setExpandedId(result.libraryStoryId);
+                        setExpandedStory({
+                          ...summary,
+                          storyHtml: result.storyHtml,
+                          facts: result.facts,
+                          lengthStep: expandedStory.lengthStep,
+                          mood: expandedStory.mood,
+                          topic: expandedStory.topic,
+                          syllableHelp: expandedStory.syllableHelp,
+                          includeImages: expandedStory.includeImages,
+                          creditsCharged: null,
+                          likeCount: 0,
+                          commentCount: 0,
+                        });
+                      }}
+                      onReadingModePrefsChange={(prefs) => {
+                        if (!story.childProfileId) return;
+                        const profileId = story.childProfileId;
+                        setProfiles((current) =>
+                          current.map((profile) =>
+                            profile.id === profileId
+                              ? { ...profile, readingModePrefs: prefs }
+                              : profile,
+                          ),
+                        );
+                      }}
+                      eyebrow="Aus der Bücherei"
+                      onClose={() => {
+                        setExpandedId(null);
+                        setExpandedStory(null);
+                      }}
+                    />
+                    {expandedStory.sharedToBookClub ||
+                    expandedStory.commentCount > 0 ||
+                    expandedStory.likeCount > 0 ? (
+                      <div className="space-y-3">
+                        {expandedStory.likeCount > 0 ||
+                        expandedStory.commentCount > 0 ? (
+                          <p className="rounded-[1.75rem] bg-white px-5 py-3 text-sm font-semibold text-zinc-600 shadow-xl ring-1 ring-zinc-950/10">
+                            {expandedStory.likeCount}{" "}
+                            {expandedStory.likeCount === 1 ? "Like" : "Likes"}
+                            {" · "}
+                            {expandedStory.commentCount}{" "}
+                            {expandedStory.commentCount === 1
+                              ? "Kommentar"
+                              : "Kommentare"}
+                            {expandedStory.sharedToBookClub
+                              ? " · im Buchclub freigegeben"
+                              : null}
+                          </p>
+                        ) : null}
+                        <StoryCommentsSection
+                          storyId={expandedStory.id}
+                          allowAdd={false}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
               </li>
             );

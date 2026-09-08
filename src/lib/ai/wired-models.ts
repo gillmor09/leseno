@@ -12,7 +12,10 @@ export type WiredAiEndpoint = {
     | "claude"
     | "openai-compatible"
     | "ionos-image"
-    | "openai-tts";
+    | "openai-tts"
+    | "fish-audio"
+    | "inworld"
+    | "elevenlabs";
   /** Short German label for the dropdown. */
   label: string;
   /** Where this endpoint is used in the product. */
@@ -73,6 +76,30 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     usage: "Bilder: Illustrationen / Social (IONOS)",
   },
   {
+    modelSlug: "eleven_v3",
+    provider: "elevenlabs",
+    label: "ElevenLabs Eleven v3",
+    usage: "Vorlesen (aktuellstes Modell, Deutsch)",
+  },
+  {
+    modelSlug: "inworld-tts-2-flash",
+    provider: "inworld",
+    label: "Inworld TTS 2 Flash",
+    usage: "Vorlesen",
+  },
+  {
+    modelSlug: "s2.1-pro-free",
+    provider: "fish-audio",
+    label: "Fish Audio S2.1 Pro Free",
+    usage: "Vorlesen (Test / Free)",
+  },
+  {
+    modelSlug: "s2.1-pro",
+    provider: "fish-audio",
+    label: "Fish Audio S2.1 Pro",
+    usage: "Vorlesen",
+  },
+  {
     modelSlug: "tts-1",
     provider: "openai-tts",
     label: "OpenAI TTS-1",
@@ -103,4 +130,16 @@ export function findWiredAiEndpoint(
  */
 export function providerForWiredSlug(modelSlug: string): string | null {
   return findWiredAiEndpoint(modelSlug)?.provider ?? null;
+}
+
+const TTS_PROVIDERS = new Set([
+  "elevenlabs",
+  "inworld",
+  "fish-audio",
+  "openai-tts",
+]);
+
+/** True when the wired provider is a Vorlesen / TTS endpoint. */
+export function isTtsProvider(provider: string): boolean {
+  return TTS_PROVIDERS.has(provider.trim());
 }

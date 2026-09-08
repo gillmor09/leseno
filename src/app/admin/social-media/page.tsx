@@ -2,19 +2,63 @@ import type { Metadata } from "next";
 import { SocialMediaAdminForm } from "@/components/features/admin/social-media-admin-form";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import { FALLBACK_AI_MODELS } from "@/lib/prompts/catalog";
+import { getSocialAiModels } from "@/lib/social/generate";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
   title: "Social Media — Leseno Admin",
   description:
-    "Monatsplanung für Instagram: CRAFT-Texte (Gemini) und FLUX.2-Bilder.",
+    "Monatsplanung für Instagram: Captions und Bilder über die KI-Modelle aus der Verwaltung.",
 };
 
 /**
  * Admin Social Media calendar: global CRAFT + Instagram day posts.
  */
-export default function SocialMediaAdminPage() {
+export default async function SocialMediaAdminPage() {
   const canSave = hasServiceRoleConfig();
+
+  let textModel = {
+    id: "social-default",
+    label: "Social Media",
+    modelSlug: "gemini-3.8-flash",
+    provider: "gemini",
+  };
+  let imageModel = {
+    id: "images-default",
+    label: "Illustrationen",
+    modelSlug: "black-forest-labs/FLUX.2-klein-4B",
+    provider: "ionos-image",
+  };
+
+  try {
+    const models = await getSocialAiModels();
+    textModel = models.text;
+    imageModel = models.images;
+  } catch {
+    const textFallback =
+      FALLBACK_AI_MODELS.find((m) => m.id === "social-default") ??
+      FALLBACK_AI_MODELS.find((m) => m.id === "story-default");
+    const imageFallback = FALLBACK_AI_MODELS.find(
+      (m) => m.id === "images-default",
+    );
+    if (textFallback) {
+      textModel = {
+        id: textFallback.id,
+        label: textFallback.label,
+        modelSlug: textFallback.modelSlug,
+        provider: textFallback.provider,
+      };
+    }
+    if (imageFallback) {
+      imageModel = {
+        id: imageFallback.id,
+        label: imageFallback.label,
+        modelSlug: imageFallback.modelSlug,
+        provider: imageFallback.provider,
+      };
+    }
+  }
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -39,7 +83,11 @@ export default function SocialMediaAdminPage() {
             Stimme und Look; Bilder sollen lebendige Situationen zeigen.
           </p>
           <div className="mt-10">
-            <SocialMediaAdminForm canSave={canSave} />
+            <SocialMediaAdminForm
+              canSave={canSave}
+              textModel={textModel}
+              imageModel={imageModel}
+            />
           </div>
         </section>
       </main>
