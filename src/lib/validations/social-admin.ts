@@ -30,6 +30,7 @@ export const socialGenerateCaptionSchema = z.object({
 
 export const socialRefineCaptionSchema = z.object({
   postDate: postDateSchema,
+  angleId: angleIdSchema,
   channel: channelSchema.default("instagram"),
   refineInstruction: z
     .string()
@@ -40,24 +41,27 @@ export const socialRefineCaptionSchema = z.object({
 
 export const socialSaveCaptionSchema = z.object({
   postDate: postDateSchema,
+  angleId: angleIdSchema,
   channel: channelSchema.default("instagram"),
   caption: z.string().max(8000),
 });
 
 export const socialGenerateImageSchema = z.object({
   postDate: postDateSchema,
-  angleId: angleIdSchema.optional(),
+  angleId: angleIdSchema,
   channel: channelSchema.default("instagram"),
   extraInstruction: z.string().trim().max(2000).optional(),
 });
 
 export const socialClearImageSchema = z.object({
   postDate: postDateSchema,
+  angleId: angleIdSchema,
   channel: channelSchema.default("instagram"),
 });
 
 export const socialSetPublishedSchema = z.object({
   postDate: postDateSchema,
+  angleId: angleIdSchema,
   channel: channelSchema.default("instagram"),
   published: z.boolean(),
 });

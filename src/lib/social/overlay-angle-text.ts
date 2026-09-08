@@ -1,8 +1,7 @@
 /**
  * Overlays exact Winkel title on a social image in real Nunito SemiBold (white).
  * Glyph outlines come from the vendored Nunito SemiBold TTF via opentype.js (per-glyph paths).
- * We avoid canvas `ctx.font` — Skia silently falls back to Arial when the family
- * does not resolve, which breaks leseno’s recognition typeface.
+ * Placement: top or bottom band — whichever is darker for white-text contrast.
  */
 
 import { readFileSync } from "node:fs";
@@ -95,6 +94,41 @@ function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } {
 }
 
 /**
+ * Mean relative luminance (0–255) of a horizontal band. Sampled for speed.
+ */
+function meanBandLuminance(
+  ctx: {
+    getImageData: (
+      sx: number,
+      sy: number,
+      sw: number,
+      sh: number,
+    ) => { data: Uint8ClampedArray; width: number };
+  },
+  width: number,
+  y0: number,
+  bandHeight: number,
+): number {
+  const y = Math.max(0, Math.floor(y0));
+  const h = Math.max(1, Math.floor(bandHeight));
+  const { data, width: rowW } = ctx.getImageData(0, y, width, h);
+  const step = Math.max(1, Math.floor(Math.min(width, h) / 48));
+  let sum = 0;
+  let count = 0;
+  for (let row = 0; row < h; row += step) {
+    for (let col = 0; col < width; col += step) {
+      const i = (row * rowW + col) * 4;
+      const r = data[i] ?? 0;
+      const g = data[i + 1] ?? 0;
+      const b = data[i + 2] ?? 0;
+      sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      count += 1;
+    }
+  }
+  return count > 0 ? sum / count : 128;
+}
+
+/**
  * Fills one centered line using per-glyph Nunito outlines (no GSUB / no ctx.font).
  */
 function fillNunitoLine(
@@ -165,14 +199,27 @@ export async function overlayExactAngleTextOnImage(input: {
 
   ctx.drawImage(image, 0, 0, width, height);
 
-  // Light bottom scrim — enough for white type, without cooling the brand palette.
-  const scrimH = Math.round(height * 0.3);
-  const gradient = ctx.createLinearGradient(0, height - scrimH, 0, height);
-  gradient.addColorStop(0, "rgba(0,0,0,0)");
-  gradient.addColorStop(0.5, "rgba(0,0,0,0.16)");
-  gradient.addColorStop(1, "rgba(0,0,0,0.38)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, height - scrimH, width, scrimH);
+  // Compare top vs bottom band — white type reads better on the darker edge.
+  const bandH = Math.round(height * 0.3);
+  const topLuma = meanBandLuminance(ctx, width, 0, bandH);
+  const bottomLuma = meanBandLuminance(ctx, width, height - bandH, bandH);
+  const placeTop = topLuma < bottomLuma - 4; // slight bias to bottom on ties
+
+  if (placeTop) {
+    const gradient = ctx.createLinearGradient(0, 0, 0, bandH);
+    gradient.addColorStop(0, "rgba(0,0,0,0.38)");
+    gradient.addColorStop(0.5, "rgba(0,0,0,0.16)");
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, bandH);
+  } else {
+    const gradient = ctx.createLinearGradient(0, height - bandH, 0, height);
+    gradient.addColorStop(0, "rgba(0,0,0,0)");
+    gradient.addColorStop(0.5, "rgba(0,0,0,0.16)");
+    gradient.addColorStop(1, "rgba(0,0,0,0.38)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, height - bandH, width, bandH);
+  }
 
   const padX = Math.round(width * 0.06);
   const maxTextWidth = width - padX * 2;
@@ -188,9 +235,11 @@ export async function overlayExactAngleTextOnImage(input: {
 
   const lineHeight = Math.round(fontSize * 1.18);
   const blockHeight = lines.length * lineHeight;
+  const edgePad = Math.round(height * 0.075);
   // Baseline for first line (opentype y is baseline, not middle).
-  const firstBaseline =
-    height - Math.round(height * 0.075) - blockHeight / 2 + fontSize * 0.35;
+  const firstBaseline = placeTop
+    ? edgePad + fontSize * 0.85
+    : height - edgePad - blockHeight / 2 + fontSize * 0.35;
 
   ctx.fillStyle = "#ffffff";
   ctx.shadowColor = "rgba(0,0,0,0.4)";

@@ -44,10 +44,14 @@ function findPost(
   posts: SocialPost[],
   postDate: string,
   channel: string,
+  angleId?: string | null,
 ): SocialPost | undefined {
-  return posts.find(
-    (post) => post.postDate === postDate && post.channel === channel,
-  );
+  const angle = angleId?.trim();
+  return posts.find((post) => {
+    if (post.postDate !== postDate || post.channel !== channel) return false;
+    if (angle) return post.angleId === angle;
+    return true;
+  });
 }
 
 export async function loadSocialWorkspaceAction(): Promise<
@@ -188,6 +192,7 @@ export async function refineSocialCaptionAction(
       posts,
       parsed.data.postDate,
       parsed.data.channel,
+      parsed.data.angleId,
     );
     const currentCaption = existing?.caption?.trim() ?? "";
     if (!currentCaption) {
@@ -205,13 +210,14 @@ export async function refineSocialCaptionAction(
       currentCaption,
       refineInstruction: parsed.data.refineInstruction,
       postDate: parsed.data.postDate,
-      angleId: existing?.angleId,
+      angleId: parsed.data.angleId,
     });
     const post = await upsertSocialPost({
       yearMonth,
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       caption,
+      angleId: parsed.data.angleId,
     });
     revalidateSocial();
     return { success: true, data: { post } };
@@ -247,6 +253,7 @@ export async function saveSocialCaptionAction(
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       caption: parsed.data.caption,
+      angleId: parsed.data.angleId,
     });
     revalidateSocial();
     return { success: true, data: { post } };
@@ -290,8 +297,9 @@ export async function generateSocialImageAction(
       posts,
       parsed.data.postDate,
       parsed.data.channel,
+      parsed.data.angleId,
     );
-    const angleId = parsed.data.angleId ?? existing?.angleId ?? "";
+    const angleId = parsed.data.angleId;
     if (!getMotivationAngleById(angleId)) {
       return {
         success: false,
@@ -360,6 +368,7 @@ export async function clearSocialImageAction(
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       clearImage: true,
+      angleId: parsed.data.angleId,
     });
     revalidateSocial();
     return { success: true, data: { post } };
@@ -392,6 +401,7 @@ export async function setSocialPostPublishedAction(
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       published: parsed.data.published,
+      angleId: parsed.data.angleId,
     });
     revalidateSocial();
     return { success: true, data: { post } };

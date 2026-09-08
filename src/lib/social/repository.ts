@@ -147,7 +147,7 @@ export async function upsertSocialPost(input: {
   lastImagePrompt?: string | null;
   clearImage?: boolean;
   published?: boolean | null;
-  angleId?: string | null;
+  angleId: string;
 }): Promise<SocialPost> {
   const supabase = createServiceClient(null);
   await ensureSocialMonth(input.yearMonth);
@@ -161,8 +161,7 @@ export async function upsertSocialPost(input: {
     p_clear_image: Boolean(input.clearImage),
     p_published:
       typeof input.published === "boolean" ? input.published : null,
-    p_angle_id:
-      typeof input.angleId === "string" ? input.angleId : null,
+    p_angle_id: input.angleId,
   });
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;

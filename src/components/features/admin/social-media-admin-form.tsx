@@ -190,6 +190,7 @@ export function SocialMediaAdminForm({
   const [pending, startTransition] = useTransition();
   const [waitStatus, setWaitStatus] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [postDate, setPostDate] = useState(todayIsoDate);
   const [angleId, setAngleId] = useState(MOTIVATION_ANGLES[0]?.id ?? "");
   const [captionDraft, setCaptionDraft] = useState("");
@@ -198,9 +199,25 @@ export function SocialMediaAdminForm({
     useState<GenerateConfirm | null>(null);
 
   const activePost = useMemo(
-    () => posts.find((post) => post.postDate === postDate) ?? null,
-    [posts, postDate],
+    () =>
+      posts.find(
+        (post) =>
+          post.postDate === postDate &&
+          post.channel === CHANNEL &&
+          post.angleId === angleId,
+      ) ?? null,
+    [posts, postDate, angleId],
   );
+
+  const anglesUsedToday = useMemo(() => {
+    const used = new Set<string>();
+    for (const post of posts) {
+      if (post.postDate === postDate && post.angleId) {
+        used.add(post.angleId);
+      }
+    }
+    return used;
+  }, [posts, postDate]);
 
   const selectedAngle = useMemo(
     () => getMotivationAngleById(angleId),
@@ -209,13 +226,12 @@ export function SocialMediaAdminForm({
 
   const mergePost = useCallback((post: SocialPost) => {
     setPosts((prev) => {
-      const without = prev.filter(
-        (item) =>
-          !(item.postDate === post.postDate && item.channel === post.channel),
-      );
-      return [post, ...without].sort((a, b) =>
-        b.postDate.localeCompare(a.postDate),
-      );
+      const without = prev.filter((item) => item.id !== post.id);
+      return [post, ...without].sort((a, b) => {
+        const byDate = b.postDate.localeCompare(a.postDate);
+        if (byDate !== 0) return byDate;
+        return b.updatedAt.localeCompare(a.updatedAt);
+      });
     });
   }, []);
 
@@ -239,12 +255,7 @@ export function SocialMediaAdminForm({
   }, [reloadWorkspace]);
 
   useEffect(() => {
-    if (activePost) {
-      setCaptionDraft(activePost.caption);
-      if (activePost.angleId) setAngleId(activePost.angleId);
-    } else {
-      setCaptionDraft("");
-    }
+    setCaptionDraft(activePost?.caption ?? "");
   }, [activePost]);
 
   const busy = pending || loadPending || Boolean(waitStatus);
@@ -302,6 +313,20 @@ export function SocialMediaAdminForm({
     return true;
   }
 
+  /** Collapse create form, clear drafts, expand & scroll to the saved post. */
+  function focusCreatedPost(post: SocialPost) {
+    setCreateOpen(false);
+    setCaptionDraft("");
+    setPostDate(todayIsoDate());
+    setAngleId(MOTIVATION_ANGLES[0]?.id ?? "");
+    setExpandedId(post.id);
+    window.setTimeout(() => {
+      document
+        .getElementById(`social-post-${post.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  }
+
   function runConfirmedGenerate() {
     const job = generateConfirm;
     setGenerateConfirm(null);
@@ -327,9 +352,11 @@ export function SocialMediaAdminForm({
             return;
           }
           mergePost(result.data.post);
-          setCaptionDraft(result.data.post.caption);
           await reloadWorkspace();
-          toast.success(`Text erzeugt und gespeichert — ${result.data.angleTitle}`);
+          setCaptionDraft(result.data.post.caption);
+          toast.success(
+            `Text erzeugt und gespeichert — ${result.data.angleTitle}`,
+          );
         } finally {
           setWaitStatus(null);
         }
@@ -498,119 +525,163 @@ export function SocialMediaAdminForm({
         ) : null}
       </section>
 
-      <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <section
+        id="social-create-card"
+        className="scroll-mt-6 rounded-[1.75rem] bg-white shadow-xl ring-1 ring-zinc-950/10"
+      >
+        <button
+          type="button"
+          aria-expanded={createOpen}
+          onClick={() => setCreateOpen((open) => !open)}
+          className="flex w-full items-center justify-between gap-3 px-6 py-5 text-left"
+        >
           <div>
             <h2 className="text-lg font-extrabold text-zinc-950">
               Beitrag erstellen
             </h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Datum und Winkel wählen, dann Text und Bild einzeln erzeugen.
+              Datum und Winkel wählen — mehrere Beiträge pro Tag möglich, solange
+              der Winkel anders ist.
             </p>
           </div>
-          {loadPending ? (
-            <p className="flex items-center gap-2 text-sm font-semibold text-zinc-600">
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-              Lädt …
-            </p>
-          ) : null}
-        </div>
-
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
-            Datum
-            <input
-              type="date"
-              disabled={busy || !canSave}
-              value={postDate}
-              onChange={(e) => {
-                if (e.target.value) setPostDate(e.target.value);
-              }}
-              className={fieldClass}
+          <div className="flex shrink-0 items-center gap-3">
+            {loadPending ? (
+              <Loader2
+                className="size-4 animate-spin text-zinc-500"
+                aria-hidden
+              />
+            ) : null}
+            <ChevronDown
+              className={cn(
+                "size-5 text-zinc-500 transition-transform",
+                createOpen && "rotate-180",
+              )}
+              aria-hidden
             />
-          </label>
-          <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
-            Winkel
-            <select
-              disabled={busy || !canSave}
-              value={angleId}
-              onChange={(e) => setAngleId(e.target.value)}
-              className={fieldClass}
-            >
-              {MOTIVATION_ANGLES.map((angle) => {
-                const count = angleUsage[angle.id] ?? 0;
-                return (
-                  <option key={angle.id} value={angle.id}>
-                    {angle.title} · {MOTIVATION_THEME_LABELS[angle.theme]} (
-                    {count}×)
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-        </div>
+          </div>
+        </button>
 
-        {selectedAngle ? (
-          <p className="mt-3 rounded-2xl bg-orange-50 px-4 py-3 text-sm leading-relaxed text-orange-950 ring-1 ring-orange-700/15">
-            <span className="font-extrabold">{selectedAngle.title}</span>
-            <span className="mt-1 block text-orange-900/90">
-              {selectedAngle.insight}
-            </span>
-          </p>
-        ) : null}
+        {createOpen ? (
+          <div className="border-t border-zinc-950/10 px-6 pb-6 pt-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                Datum
+                <input
+                  type="date"
+                  disabled={busy || !canSave}
+                  value={postDate}
+                  onChange={(e) => {
+                    if (e.target.value) setPostDate(e.target.value);
+                  }}
+                  className={fieldClass}
+                />
+              </label>
+              <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                Winkel
+                <select
+                  disabled={busy || !canSave}
+                  value={angleId}
+                  onChange={(e) => setAngleId(e.target.value)}
+                  className={fieldClass}
+                >
+                  {MOTIVATION_ANGLES.map((angle) => {
+                    const count = angleUsage[angle.id] ?? 0;
+                    const usedToday = anglesUsedToday.has(angle.id);
+                    return (
+                      <option key={angle.id} value={angle.id}>
+                        {angle.title} · {MOTIVATION_THEME_LABELS[angle.theme]} (
+                        {count}×)
+                        {usedToday ? " · heute schon" : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            </div>
 
-        {activePost ? (
-          <p className="mt-3 text-sm font-semibold text-zinc-600">
-            Für dieses Datum existiert bereits ein Beitrag — Erzeugen
-            überschreibt Text bzw. Bild.
-          </p>
-        ) : null}
+            {selectedAngle ? (
+              <p className="mt-3 rounded-2xl bg-orange-50 px-4 py-3 text-sm leading-relaxed text-orange-950 ring-1 ring-orange-700/15">
+                <span className="font-extrabold">{selectedAngle.title}</span>
+                <span className="mt-1 block text-orange-900/90">
+                  {selectedAngle.insight}
+                </span>
+              </p>
+            ) : null}
 
-        <div className="mt-5 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={busy || !canSave || !angleId}
-            onClick={() => setGenerateConfirm({ kind: "text" })}
-            className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
-          >
-            Text erzeugen
-          </button>
-          <button
-            type="button"
-            disabled={
-              busy || !canSave || !angleId || !captionDraft.trim()
-            }
-            onClick={() => setGenerateConfirm({ kind: "image" })}
-            className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
-            title={
-              !captionDraft.trim()
-                ? "Zuerst Text erzeugen"
-                : undefined
-            }
-          >
-            Bild erzeugen
-          </button>
-        </div>
+            {activePost ? (
+              <p className="mt-3 text-sm font-semibold text-zinc-600">
+                Dieser Winkel existiert an diesem Tag schon — Erzeugen
+                überschreibt Text bzw. Bild. Andere Winkel sind am gleichen Tag
+                möglich.
+              </p>
+            ) : null}
 
-        <div className="mt-5">
-          <p className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
-            Caption
-          </p>
-          <CopyableCaption
-            text={captionDraft}
-            emptyHint="Noch kein Text — „Text erzeugen“ starten."
-            className="mt-1 min-h-[8rem] rounded-xl border border-zinc-950/10 bg-zinc-50 px-3 py-2"
-          />
-        </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy || !canSave || !angleId}
+                onClick={() => setGenerateConfirm({ kind: "text" })}
+                className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
+              >
+                Text erzeugen
+              </button>
+              <button
+                type="button"
+                disabled={
+                  busy ||
+                  !canSave ||
+                  !angleId ||
+                  !(captionDraft.trim() || activePost?.caption?.trim())
+                }
+                onClick={() => setGenerateConfirm({ kind: "image" })}
+                className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
+                title={
+                  !(captionDraft.trim() || activePost?.caption?.trim())
+                    ? "Zuerst Text erzeugen"
+                    : undefined
+                }
+              >
+                Bild erzeugen
+              </button>
+            </div>
 
-        {activePost?.imageDataUrl ? (
-          <div className="mt-5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={activePost.imageDataUrl}
-              alt={`Social-Bild ${formatDeDate(postDate)}`}
-              className="mx-auto max-h-[28rem] w-auto max-w-full rounded-2xl ring-1 ring-zinc-950/10"
-            />
+            <div className="mt-5">
+              <p className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                Caption
+              </p>
+              <CopyableCaption
+                text={captionDraft}
+                emptyHint="Noch kein Text — „Text erzeugen“ starten."
+                className="mt-1 min-h-[8rem] rounded-xl border border-zinc-950/10 bg-zinc-50 px-3 py-2"
+              />
+            </div>
+
+            {activePost?.imageDataUrl ? (
+              <div className="mt-5">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={activePost.imageDataUrl}
+                  alt={`Social-Bild ${formatDeDate(postDate)}`}
+                  className="mx-auto max-h-[28rem] w-auto max-w-full rounded-2xl ring-1 ring-zinc-950/10"
+                />
+              </div>
+            ) : null}
+
+            {activePost ? (
+              <div className="mt-6">
+                <div className="border-t border-zinc-950/10" role="separator" />
+                <div className="mt-5 flex justify-center">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => focusCreatedPost(activePost)}
+                    className="rounded-full bg-zinc-800 px-5 py-2.5 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-60"
+                  >
+                    Übernehmen und zurücksetzen
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>
@@ -621,7 +692,7 @@ export function SocialMediaAdminForm({
         </h2>
         {posts.length === 0 ? (
           <p className="rounded-2xl bg-white px-5 py-8 text-center text-sm font-semibold text-zinc-500 shadow-xl ring-1 ring-zinc-950/10">
-            Noch keine Beiträge — oben Datum und Winkel wählen.
+            Noch keine Beiträge — „Beitrag erstellen“ aufklappen.
           </p>
         ) : (
           posts.map((post) => {
@@ -632,7 +703,8 @@ export function SocialMediaAdminForm({
             return (
               <article
                 key={post.id}
-                className="rounded-[1.5rem] bg-white shadow-lg ring-1 ring-zinc-950/10"
+                id={`social-post-${post.id}`}
+                className="scroll-mt-6 rounded-[1.5rem] bg-white shadow-lg ring-1 ring-zinc-950/10"
               >
                 <button
                   type="button"
@@ -690,7 +762,15 @@ export function SocialMediaAdminForm({
                       onClick={() => {
                         setPostDate(post.postDate);
                         if (post.angleId) setAngleId(post.angleId);
-                        window.scrollTo({ top: 0, behavior: "smooth" });
+                        setCreateOpen(true);
+                        window.setTimeout(() => {
+                          document
+                            .getElementById("social-create-card")
+                            ?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "start",
+                            });
+                        }, 50);
                       }}
                     >
                       Oben bearbeiten
