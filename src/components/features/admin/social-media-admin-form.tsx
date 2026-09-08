@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown, Copy, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   generateSocialCaptionAction,
@@ -34,6 +34,58 @@ const CHANNEL = "instagram" as const;
 type GenerateConfirm =
   | { kind: "text" }
   | { kind: "image" };
+
+async function copyCaptionText(text: string): Promise<void> {
+  const value = text.trim();
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success("Text kopiert", { duration: 1600 });
+  } catch {
+    toast.error("Kopieren fehlgeschlagen.");
+  }
+}
+
+/** Click-to-copy caption — quiet affordance, no loud chrome. */
+function CopyableCaption({
+  text,
+  emptyHint,
+  className,
+}: {
+  text: string;
+  emptyHint?: string;
+  className?: string;
+}) {
+  const value = text.trim();
+  if (!value) {
+    return (
+      <p className={cn("text-sm text-zinc-500", className)}>
+        {emptyHint ?? "Kein Text."}
+      </p>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void copyCaptionText(value)}
+      title="Klicken zum Kopieren"
+      className={cn(
+        "group relative w-full rounded-xl text-left transition-colors",
+        "hover:bg-zinc-950/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-700/40",
+        className,
+      )}
+    >
+      <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
+        {value}
+      </p>
+      <span className="pointer-events-none absolute top-2 right-2 inline-flex items-center gap-1 rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-zinc-400 uppercase opacity-0 shadow-sm ring-1 ring-zinc-950/5 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+        <Copy className="size-3" aria-hidden />
+        Kopieren
+      </span>
+    </button>
+  );
+}
 
 function formatModelLine(model: SocialAiModelInfo): string {
   return `${model.modelSlug} · ${model.label}`;
@@ -540,16 +592,16 @@ export function SocialMediaAdminForm({
           </button>
         </div>
 
-        <label className="mt-5 block text-xs font-bold tracking-wide text-zinc-500 uppercase">
-          Caption (wird beim Erzeugen gespeichert)
-          <textarea
-            rows={8}
-            readOnly
-            value={captionDraft}
-            className={cn(fieldClass, "cursor-default bg-zinc-50")}
-            placeholder="Noch kein Text — „Text erzeugen“ starten."
+        <div className="mt-5">
+          <p className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+            Caption
+          </p>
+          <CopyableCaption
+            text={captionDraft}
+            emptyHint="Noch kein Text — „Text erzeugen“ starten."
+            className="mt-1 min-h-[8rem] rounded-xl border border-zinc-950/10 bg-zinc-50 px-3 py-2"
           />
-        </label>
+        </div>
 
         {activePost?.imageDataUrl ? (
           <div className="mt-5">
@@ -620,13 +672,10 @@ export function SocialMediaAdminForm({
                 </button>
                 {open ? (
                   <div className="space-y-3 border-t border-zinc-950/10 px-5 pb-5 pt-3">
-                    {post.caption?.trim() ? (
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-700">
-                        {post.caption}
-                      </p>
-                    ) : (
-                      <p className="text-sm text-zinc-500">Kein Text.</p>
-                    )}
+                    <CopyableCaption
+                      text={post.caption}
+                      className="px-1 py-1"
+                    />
                     {post.imageDataUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
