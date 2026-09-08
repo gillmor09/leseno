@@ -11,8 +11,14 @@ export const MAX_TTS_CHARS_INWORLD = 1900;
 /** Fish Audio handles longer text; keep same margin as OpenAI. */
 export const MAX_TTS_CHARS_FISH = 3500;
 
-/** Eleven v3 sync TTS max is 5000 characters; keep margin. */
-export const MAX_TTS_CHARS_ELEVENLABS = 4800;
+/**
+ * Eleven v3 sync TTS max is 5000 characters.
+ * Stay well under the limit: mid-length stories otherwise hit timeouts / concurrent caps.
+ */
+export const MAX_TTS_CHARS_ELEVENLABS = 3200;
+
+/** Prefer Storage upload once story plain text exceeds this many words. */
+export const TTS_STORAGE_PREFERRED_WORD_COUNT = 5000;
 
 const MAX_TTS_CHARS = MAX_TTS_CHARS_OPENAI;
 
@@ -88,4 +94,11 @@ export function chunkTextForTts(
   }
 
   return chunks.filter(Boolean);
+}
+
+/** Whitespace-separated word count for Storage / size heuristics. */
+export function countPlainTextWords(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).filter(Boolean).length;
 }

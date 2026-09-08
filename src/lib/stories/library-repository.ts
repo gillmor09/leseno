@@ -2,6 +2,7 @@
  * Persisted membership stories (`leseno.user_stories`) via public RPCs.
  */
 
+import { getCurrentUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import {
   asBookClubShareLevel,
@@ -11,6 +12,7 @@ import type { StoryLengthStepId } from "@/lib/stories/length";
 import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
 import { STORY_MOODS, STORY_SCHOOL_STAGES } from "@/lib/stories/options";
 import { STORY_LENGTH_STEP_IDS } from "@/lib/stories/length";
+import { deleteStoryTtsObject } from "@/lib/stories/tts-storage";
 
 const SCHOOL_STAGE_IDS = new Set(
   STORY_SCHOOL_STAGES.map((stage) => stage.id),
@@ -31,6 +33,8 @@ export type UserStorySummary = {
   parentStoryId: string | null;
   /** Privat / Freunde / Öffentlich (Mein Buchclub). */
   bookClubShare: BookClubShareLevel;
+  /** True when `tts_storage_path` is set (Vorlesen already generated). */
+  hasTtsAudio: boolean;
   createdAt: string;
 };
 
@@ -112,6 +116,7 @@ function mapSummary(row: Record<string, unknown>): UserStorySummary {
     bookClubShare: asBookClubShareLevel(
       row.book_club_share ?? row.shared_to_book_club,
     ),
+    hasTtsAudio: Boolean(row.has_tts_audio),
     createdAt:
       typeof row.created_at === "string"
         ? row.created_at
@@ -231,12 +236,20 @@ export async function setMyStoryRead(
 
 /** Deletes one owned library story. Continuations keep their rows (parent cleared). */
 export async function deleteMyStory(storyId: string): Promise<void> {
+  const user = await getCurrentUser();
   const supabase = await createClient(null);
   const { error } = await supabase.rpc("delete_my_story", {
     p_id: storyId,
   });
   if (error) {
     throw new Error(error.message);
+  }
+  if (user) {
+    try {
+      await deleteStoryTtsObject(user.id, storyId);
+    } catch (storageError) {
+      console.error("[deleteMyStory] tts storage", storageError);
+    }
   }
 }
 

@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
-import { FileDown, GitBranchPlus, Loader2, Maximize2, Pause, Play, X } from "lucide-react";
+import { FileDown, GitBranchPlus, Headphones, Loader2, Maximize2, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   synthesizeStorySpeechAction,
@@ -36,15 +36,13 @@ import {
   typographyDefaultsForStage,
   type ReadingTypographyDefaultsCatalog,
 } from "@/lib/stories/reading-typography-defaults";
+import { titleFromStoryHtml } from "@/lib/stories/title-from-html";
+import { storyTtsPlayPath } from "@/lib/stories/tts-download-name";
 import {
   clearActiveTtsWord,
-  createTtsMediaClock,
   findActiveWordIndex,
-  readTtsMediaClock,
-  reanchorTtsMediaClock,
   setActiveTtsWord,
   wrapStoryWordsForTts,
-  type TtsMediaClock,
 } from "@/lib/stories/tts-dom-highlight";
 
 const StoryPdfPreviewDialog = dynamic(
@@ -83,10 +81,12 @@ export function StoryResultPanel({
   typographyDefaults,
   allowContinue = false,
   libraryStoryId = null,
+  hasStoredTts = false,
   lengthCatalog = null,
   continueLengthStep = "mittel",
   continueMood = "spannend",
   onContinued,
+  onTtsPersisted,
   eyebrow = "Deine Geschichte",
   inviteUserId = null,
   onClose,
@@ -111,6 +111,8 @@ export function StoryResultPanel({
   /** Package `fortsetzen`: show continue control when library id is known. */
   allowContinue?: boolean;
   libraryStoryId?: string | null;
+  /** Library already has TTS in Storage — show player without generating first. */
+  hasStoredTts?: boolean;
   lengthCatalog?: StoryLengthCatalog | null;
   continueLengthStep?: StoryLengthStepId;
   continueMood?: StoryMoodId;
@@ -121,6 +123,8 @@ export function StoryResultPanel({
     libraryStoryId: string;
     creditsRemaining?: number;
   }) => void;
+  /** Fired when Vorlesen was saved to Storage (for library card audio). */
+  onTtsPersisted?: () => void;
   eyebrow?: string;
   /** When set, invite link includes a personal `?ref=` code. */
   inviteUserId?: string | null;
@@ -136,22 +140,25 @@ export function StoryResultPanel({
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [isTtsLoading, setIsTtsLoading] = useState(false);
   const [isTtsPlaying, setIsTtsPlaying] = useState(false);
-  const [ttsSpeed, setTtsSpeed] = useState(1);
+  const [storedTtsReady, setStoredTtsReady] = useState(hasStoredTts);
+  /** Seekable merged MP3 (app proxy URL or blob). */
+  const [ttsAudioSrc, setTtsAudioSrc] = useState<string | null>(() => {
+    if (hasStoredTts && libraryStoryId && readableAloud) {
+      return storyTtsPlayPath(libraryStoryId, titleFromStoryHtml(storyHtml));
+    }
+    return null;
+  });
 
   const storyBodyRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const ttsQueueRef = useRef<{ url: string; words: StoryTtsWordTiming[] }[]>(
-    [],
-  );
-  const ttsObjectUrlsRef = useRef<string[]>([]);
-  const ttsChunkWordsRef = useRef<StoryTtsWordTiming[]>([]);
+  const ttsObjectUrlRef = useRef<string | null>(null);
+  const ttsWordsRef = useRef<StoryTtsWordTiming[]>([]);
   const ttsLastHighlightAtRef = useRef(0);
-  const ttsMediaClockRef = useRef<TtsMediaClock>(createTtsMediaClock(1));
   const ttsRafRef = useRef<number | null>(null);
-  const ttsSpeedRef = useRef(ttsSpeed);
-  ttsSpeedRef.current = ttsSpeed;
   const wordHighlightRef = useRef(wordHighlight);
   wordHighlightRef.current = wordHighlight;
+  const libraryStoryIdRef = useRef(libraryStoryId);
+  libraryStoryIdRef.current = libraryStoryId;
 
   function getTtsRoot(): HTMLElement | null {
     return (
@@ -171,155 +178,71 @@ export function StoryResultPanel({
     }
   }
 
-  function syncTtsHighlightFromClock() {
+  function syncTtsHighlightFromAudio() {
     const now = performance.now();
     if (now - ttsLastHighlightAtRef.current < 40) return;
     ttsLastHighlightAtRef.current = now;
-    const mediaSec = readTtsMediaClock(ttsMediaClockRef.current);
-    const index = findActiveWordIndex(ttsChunkWordsRef.current, mediaSec);
+    const audio = audioRef.current;
+    if (!audio) return;
+    const index = findActiveWordIndex(ttsWordsRef.current, audio.currentTime);
     setActiveTtsWord(getTtsRoot(), index);
   }
 
   function startTtsHighlightLoop() {
     stopTtsHighlightLoop();
-    if (ttsChunkWordsRef.current.length === 0) return;
+    if (ttsWordsRef.current.length === 0) return;
 
     const tick = () => {
-      syncTtsHighlightFromClock();
+      syncTtsHighlightFromAudio();
       ttsRafRef.current = requestAnimationFrame(tick);
     };
     ttsRafRef.current = requestAnimationFrame(tick);
   }
 
-  function applyTtsPlaybackRate(rate = ttsSpeedRef.current) {
-    const audio = audioRef.current;
-    const clock = ttsMediaClockRef.current;
-    const mediaSec = readTtsMediaClock(clock);
-    if (audio) {
-      audio.playbackRate = rate;
+  function revokeTtsObjectUrl() {
+    if (ttsObjectUrlRef.current) {
+      URL.revokeObjectURL(ttsObjectUrlRef.current);
+      ttsObjectUrlRef.current = null;
     }
-    reanchorTtsMediaClock(
-      clock,
-      mediaSec,
-      rate,
-      Boolean(audio && !audio.paused),
-    );
+  }
+
+  function resolveStoredTtsUrl(): string | null {
+    if (!storedTtsReady || !libraryStoryId || !readableAloud) return null;
+    return storyTtsPlayPath(libraryStoryId, titleFromStoryHtml(storyHtml));
+  }
+
+  function resetTtsToStoredOrClear() {
+    stopTtsHighlightLoop();
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+    }
+    ttsWordsRef.current = [];
+    revokeTtsObjectUrl();
+    clearTtsHighlight();
+    setIsTtsPlaying(false);
+    setTtsAudioSrc(resolveStoredTtsUrl());
   }
 
   function stopTtsPlayback() {
     stopTtsHighlightLoop();
+    setTtsAudioSrc(null);
     const audio = audioRef.current;
     if (audio) {
-      audio.onended = null;
-      audio.onerror = null;
-      audio.onplay = null;
-      audio.onpause = null;
       audio.pause();
       audio.removeAttribute("src");
       audio.load();
     }
-    audioRef.current = null;
-    ttsQueueRef.current = [];
-    ttsChunkWordsRef.current = [];
-    reanchorTtsMediaClock(
-      ttsMediaClockRef.current,
-      0,
-      ttsSpeedRef.current,
-      false,
-    );
-    for (const url of ttsObjectUrlsRef.current) {
-      URL.revokeObjectURL(url);
-    }
-    ttsObjectUrlsRef.current = [];
+    ttsWordsRef.current = [];
+    revokeTtsObjectUrl();
     clearTtsHighlight();
     setIsTtsPlaying(false);
   }
 
-  function playNextTtsChunk() {
-    const next = ttsQueueRef.current.shift();
-    if (!next) {
-      stopTtsPlayback();
-      return;
-    }
-
-    ttsChunkWordsRef.current = next.words;
-    clearTtsHighlight();
-    stopTtsHighlightLoop();
-
-    const audio = audioRef.current ?? new Audio();
-    audioRef.current = audio;
-    audio.onended = () => {
-      stopTtsHighlightLoop();
-      reanchorTtsMediaClock(
-        ttsMediaClockRef.current,
-        readTtsMediaClock(ttsMediaClockRef.current),
-        ttsSpeedRef.current,
-        false,
-      );
-      clearTtsHighlight();
-      playNextTtsChunk();
-    };
-    audio.onerror = () => {
-      stopTtsPlayback();
-      toast.error("Abspielen hat nicht geklappt.");
-    };
-    audio.onplay = () => {
-      const clock = ttsMediaClockRef.current;
-      const startingFresh = audio.currentTime < 0.05;
-      reanchorTtsMediaClock(
-        clock,
-        startingFresh ? 0 : readTtsMediaClock(clock),
-        ttsSpeedRef.current,
-        true,
-      );
-      startTtsHighlightLoop();
-    };
-    audio.onpause = () => {
-      reanchorTtsMediaClock(
-        ttsMediaClockRef.current,
-        readTtsMediaClock(ttsMediaClockRef.current),
-        ttsSpeedRef.current,
-        false,
-      );
-      stopTtsHighlightLoop();
-    };
-    audio.src = next.url;
-    audio.playbackRate = ttsSpeedRef.current;
-    reanchorTtsMediaClock(
-      ttsMediaClockRef.current,
-      0,
-      ttsSpeedRef.current,
-      false,
-    );
-    void audio.play().then(
-      () => setIsTtsPlaying(true),
-      () => {
-        stopTtsPlayback();
-        toast.error("Abspielen wurde blockiert. Bitte erneut versuchen.");
-      },
-    );
-  }
-
-  async function handleToggleTts() {
+  async function handlePrepareTts() {
     if (isTtsLoading) return;
     if (!readableAloud) return;
-
-    if (isTtsPlaying && audioRef.current && !audioRef.current.paused) {
-      audioRef.current.pause();
-      clearTtsHighlight();
-      setIsTtsPlaying(false);
-      return;
-    }
-
-    if (audioRef.current && audioRef.current.paused && audioRef.current.src) {
-      audioRef.current.playbackRate = ttsSpeedRef.current;
-      void audioRef.current.play().then(
-        () => setIsTtsPlaying(true),
-        () => toast.error("Abspielen wurde blockiert."),
-      );
-      return;
-    }
-
+    if (ttsAudioSrc) return;
     if (!storyHtml) return;
 
     const storyText = plainTextFromStoryHtml(storyHtml);
@@ -335,42 +258,54 @@ export function StoryResultPanel({
       const result = await synthesizeStorySpeechAction({
         storyText,
         wordHighlight: wordHighlightRef.current,
+        libraryStoryId: libraryStoryIdRef.current,
         ...botGuard.getBotGuardPayload(),
       });
 
-      if (!result.success || !result.data?.chunks.length) {
+      if (!result.success || !result.data) {
         toast.error(result.error ?? "Vorlesen hat nicht geklappt.");
         return;
       }
 
-      const queue = result.data.chunks.map((chunk) => {
-        const binary = atob(chunk.audioBase64);
+      let src = result.data.audioUrl?.trim() || "";
+      if (!src && result.data.audioBase64) {
+        const binary = atob(result.data.audioBase64);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i += 1) {
           bytes[i] = binary.charCodeAt(i);
         }
-        const blob = new Blob([bytes], { type: chunk.mimeType });
-        return {
-          url: URL.createObjectURL(blob),
-          words: wordHighlightRef.current ? (chunk.words ?? []) : [],
-        };
-      });
+        const fileName =
+          result.data.downloadFileName?.trim() || "Geschichte.mp3";
+        const file = new File([bytes], fileName, {
+          type: result.data.mimeType,
+        });
+        src = URL.createObjectURL(file);
+        ttsObjectUrlRef.current = src;
+      }
 
-      ttsObjectUrlsRef.current = queue.map((item) => item.url);
-      ttsQueueRef.current = queue;
+      if (!src) {
+        toast.error("Vorlesen hat kein Audio geliefert.");
+        return;
+      }
+
+      const words = wordHighlightRef.current ? (result.data.words ?? []) : [];
+      ttsWordsRef.current = words;
+      setTtsAudioSrc(src);
+
+      if (result.data.persisted) {
+        setStoredTtsReady(true);
+        onTtsPersisted?.();
+      }
 
       if (wordHighlightRef.current) {
         const root = getTtsRoot();
         if (root) {
           wrapStoryWordsForTts(root);
         }
-        const anyWords = queue.some((item) => item.words.length > 0);
-        if (!anyWords) {
-          toast.message("Vorlesen startet ohne Wort-Markierung.");
+        if (words.length === 0) {
+          toast.message("Vorlesen ist bereit ohne Wort-Markierung.");
         }
       }
-
-      playNextTtsChunk();
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -426,14 +361,20 @@ export function StoryResultPanel({
   }, [isTtsLoading]);
 
   useEffect(() => {
-    if (!readableAloud) {
-      stopTtsPlayback();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- stop when Vorlesbar off
-  }, [readableAloud]);
+    setStoredTtsReady(hasStoredTts);
+  }, [hasStoredTts]);
 
   useEffect(() => {
-    stopTtsPlayback();
+    if (!readableAloud) {
+      stopTtsPlayback();
+      return;
+    }
+    resetTtsToStoredOrClear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when Vorlesbar / stored flag changes
+  }, [readableAloud, hasStoredTts, libraryStoryId]);
+
+  useEffect(() => {
+    resetTtsToStoredOrClear();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset audio when story changes
   }, [storyHtml]);
 
@@ -499,71 +440,31 @@ export function StoryResultPanel({
                   <Maximize2 className="size-5" aria-hidden />
                 </button>
               ) : null}
-              {readableAloud ? (
-                <>
-                  <label
-                    htmlFor="story-tts-speed"
-                    className="flex w-full min-w-0 flex-col gap-1 sm:w-[9.5rem]"
-                  >
-                    <span className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
-                      Tempo{" "}
-                      <span className="tabular-nums text-orange-700">
-                        {ttsSpeed.toFixed(1).replace(".", ",")}×
-                      </span>
-                    </span>
-                    <input
-                      id="story-tts-speed"
-                      type="range"
-                      min={0.8}
-                      max={1.1}
-                      step={0.1}
-                      value={ttsSpeed}
-                      disabled={isTtsLoading}
-                      aria-valuetext={`${ttsSpeed.toFixed(1).replace(".", ",")} mal`}
-                      onChange={(event) => {
-                        const next = Number(event.target.value);
-                        setTtsSpeed(next);
-                        ttsSpeedRef.current = next;
-                        applyTtsPlaybackRate(next);
-                      }}
-                      className="h-2 w-full cursor-pointer appearance-none rounded-full bg-gray-100 ring-1 ring-zinc-950/10 disabled:cursor-not-allowed disabled:opacity-70 [&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-yellow-400 [&::-moz-range-thumb]:shadow-sm [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-yellow-400 [&::-webkit-slider-thumb]:shadow-sm"
-                    />
-                    <span className="flex justify-between text-[0.65rem] font-semibold text-zinc-500">
-                      <span>Langsamer</span>
-                      <span>Schneller</span>
-                    </span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleToggleTts();
-                    }}
-                    disabled={isTtsLoading || !storyHtml}
-                    aria-label={
-                      isTtsLoading
-                        ? "Vorlesen wird vorbereitet"
-                        : isTtsPlaying
-                          ? "Vorlesen pausieren"
-                          : "Geschichte vorlesen"
-                    }
-                    title={
-                      isTtsLoading
-                        ? "Vorlesen wird vorbereitet …"
-                        : isTtsPlaying
-                          ? "Pausieren"
-                          : "Vorlesen"
-                    }
-                    className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-orange-700 text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
-                  >
-                    {isTtsLoading ? (
-                      <Loader2 className="size-5 animate-spin" aria-hidden />
-                    ) : isTtsPlaying ? (
-                      <Pause className="size-5" aria-hidden />
-                    ) : (
-                      <Play className="size-5 translate-x-px" aria-hidden />
-                    )}
-                  </button>
-                </>
+              {readableAloud && !ttsAudioSrc ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handlePrepareTts();
+                  }}
+                  disabled={isTtsLoading || !storyHtml}
+                  aria-label={
+                    isTtsLoading
+                      ? "Vorlesen wird vorbereitet"
+                      : "Vorlesen erzeugen"
+                  }
+                  title={
+                    isTtsLoading
+                      ? "Vorlesen wird vorbereitet …"
+                      : "Vorlesen erzeugen"
+                  }
+                  className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-orange-700 text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
+                >
+                  {isTtsLoading ? (
+                    <Loader2 className="size-5 animate-spin" aria-hidden />
+                  ) : (
+                    <Headphones className="size-5" aria-hidden />
+                  )}
+                </button>
               ) : null}
               {allowPdfExport ? (
                 <button
@@ -571,15 +472,20 @@ export function StoryResultPanel({
                   onClick={() => {
                     void handleExportPdf();
                   }}
-                  disabled={isExporting}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-orange-700 px-4 py-2.5 text-sm font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
+                  disabled={isExporting || !storyHtml}
+                  aria-label={
+                    isExporting ? "PDF wird vorbereitet" : "Als PDF speichern"
+                  }
+                  title={
+                    isExporting ? "PDF wird vorbereitet …" : "Als PDF"
+                  }
+                  className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-orange-700 text-white transition-all duration-200 ease-in-out hover:bg-orange-800 disabled:opacity-70"
                 >
                   {isExporting ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                    <Loader2 className="size-5 animate-spin" aria-hidden />
                   ) : (
-                    <FileDown className="size-4" aria-hidden />
+                    <FileDown className="size-5" aria-hidden />
                   )}
-                  {isExporting ? "PDF wird vorbereitet …" : "Als PDF"}
                 </button>
               ) : null}
               {onClose ? (
@@ -596,6 +502,39 @@ export function StoryResultPanel({
             </div>
           </div>
         </div>
+        {readableAloud && ttsAudioSrc ? (
+          <audio
+            ref={(el) => {
+              audioRef.current = el;
+            }}
+            src={ttsAudioSrc}
+            controls
+            preload="metadata"
+            className="mt-2 w-full max-w-full"
+            onPlay={() => {
+              setIsTtsPlaying(true);
+              startTtsHighlightLoop();
+            }}
+            onPause={() => {
+              stopTtsHighlightLoop();
+              setIsTtsPlaying(false);
+            }}
+            onEnded={() => {
+              stopTtsHighlightLoop();
+              clearTtsHighlight();
+              setIsTtsPlaying(false);
+            }}
+            onSeeked={() => {
+              syncTtsHighlightFromAudio();
+            }}
+            onError={() => {
+              if (!ttsAudioSrc) return;
+              toast.error("Abspielen hat nicht geklappt.");
+            }}
+          >
+            Dein Browser kann Vorlesen nicht abspielen.
+          </audio>
+        ) : null}
         <div ref={storyBodyRef} className="min-w-0 max-w-full">
           <StoryHtmlBody
             key={storyHtml}

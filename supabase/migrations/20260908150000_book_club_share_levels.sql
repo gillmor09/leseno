@@ -249,9 +249,7 @@ begin
   end if;
 
   update leseno.user_stories
-  set
-    book_club_share = v_share,
-    shared_to_book_club = (v_share <> 'none')
+  set book_club_share = v_share
   where id = p_id
     and user_id = uid;
 

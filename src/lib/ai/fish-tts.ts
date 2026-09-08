@@ -44,7 +44,8 @@ export async function synthesizeSpeechWithFish(
     text,
     reference_id: referenceId,
     format: "mp3",
-    mp3_bitrate: 128,
+    // Smaller files / faster transfer; speech stays clear at 64 kbps.
+    mp3_bitrate: 64,
     normalize: true,
     latency: "normal",
   };

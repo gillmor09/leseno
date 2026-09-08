@@ -79,7 +79,13 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     modelSlug: "eleven_v3",
     provider: "elevenlabs",
     label: "ElevenLabs Eleven v3",
-    usage: "Vorlesen (aktuellstes Modell, Deutsch)",
+    usage: "Vorlesen (höchste Qualität, Deutsch)",
+  },
+  {
+    modelSlug: "eleven_flash_v2_5",
+    provider: "elevenlabs",
+    label: "ElevenLabs Flash v2.5",
+    usage: "Vorlesen (schnell / günstiger, Deutsch)",
   },
   {
     modelSlug: "inworld-tts-2-flash",

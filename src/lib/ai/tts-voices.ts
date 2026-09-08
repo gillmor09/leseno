@@ -40,7 +40,7 @@ export const OPENAI_TTS_VOICE_OPTIONS: readonly TtsVoiceOption[] = [
 ] as const;
 
 /**
- * Premade ElevenLabs voices known to work with free API keys + `eleven_v3`.
+ * Premade ElevenLabs voices known to work with free API keys + Eleven TTS models.
  * Full library listing needs `voices_read` (often missing on restricted keys).
  */
 export const ELEVENLABS_CURATED_VOICE_OPTIONS: readonly TtsVoiceOption[] = [

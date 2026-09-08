@@ -53,8 +53,8 @@ export async function synthesizeSpeechWithInworld(
       language: INWORLD_TTS_LANGUAGE,
       audioConfig: {
         audioEncoding: "MP3",
-        sampleRateHertz: 24000,
-        bitrate: 128000,
+        sampleRateHertz: 22050,
+        bitrate: 64000,
       },
     }),
   });

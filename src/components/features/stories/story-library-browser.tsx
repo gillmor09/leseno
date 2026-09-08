@@ -5,13 +5,18 @@
  * Continuations (`parent_story_id`) render indented under their predecessor.
  */
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   BookCheck,
   GitBranch,
+  Globe2,
+  Headphones,
   Loader2,
+  Lock,
+  Pause,
   Star,
   Trash2,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { setMyStoryBookClubShareAction } from "@/app/actions/book-club";
@@ -37,12 +42,26 @@ import type {
 import type { ReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
 import type { ReadingTypographyDefaultsCatalog } from "@/lib/stories/reading-typography-defaults";
 import { STORY_SCHOOL_STAGES } from "@/lib/stories/options";
+import { storyTtsPlayPath } from "@/lib/stories/tts-download-name";
 import {
   featuresInclude,
   type PackageFeatureId,
 } from "@/lib/users/packages";
 import { FREE_READING_EXTRAS } from "@/lib/world/catalog";
 import { cn } from "@/lib/utils";
+
+/** Quiet icon actions on library cards (less dominant than story toolbars). */
+const CARD_ICON_BTN =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors duration-150 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50";
+
+const BOOK_CLUB_SHARE_ICONS = {
+  none: Lock,
+  friends: Users,
+  public: Globe2,
+} as const satisfies Record<
+  BookClubShareLevel,
+  typeof Lock | typeof Users | typeof Globe2
+>;
 
 type ProfileFilter = "all" | "free" | string;
 
@@ -137,11 +156,36 @@ export function StoryLibraryBrowser({
   );
   const [readPendingId, setReadPendingId] = useState<string | null>(null);
   const [sharePendingId, setSharePendingId] = useState<string | null>(null);
+  const [shareMenuId, setShareMenuId] = useState<string | null>(null);
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const cardAudioRef = useRef<HTMLAudioElement | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserStorySummary | null>(
     null,
   );
   const [deletePending, setDeletePending] = useState(false);
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!shareMenuId) return;
+    function onPointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest(`[data-share-menu="${shareMenuId}"]`)) return;
+      setShareMenuId(null);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [shareMenuId]);
+
+  useEffect(() => {
+    return () => {
+      const audio = cardAudioRef.current;
+      if (audio) {
+        audio.pause();
+        cardAudioRef.current = null;
+      }
+    };
+  }, []);
 
   const allowVorlesen = featuresInclude(enabledFeatures, "vorlesen");
   const allowMarkierung = featuresInclude(enabledFeatures, "markierung");
@@ -218,6 +262,7 @@ export function StoryLibraryBrowser({
     story: UserStorySummary,
     share: BookClubShareLevel,
   ) {
+    setShareMenuId(null);
     if (story.bookClubShare === share) return;
     setSharePendingId(story.id);
     startTransition(async () => {
@@ -246,6 +291,34 @@ export function StoryLibraryBrowser({
             : "Öffentlich im Buchclub freigegeben.",
       );
     });
+  }
+
+  function handleToggleCardAudio(story: UserStorySummary) {
+    const existing = cardAudioRef.current;
+    if (playingAudioId === story.id && existing && !existing.paused) {
+      existing.pause();
+      setPlayingAudioId(null);
+      return;
+    }
+    if (existing) {
+      existing.pause();
+      existing.onended = null;
+      existing.onerror = null;
+    }
+    const audio = new Audio(storyTtsPlayPath(story.id, story.title));
+    cardAudioRef.current = audio;
+    audio.onended = () => setPlayingAudioId(null);
+    audio.onerror = () => {
+      setPlayingAudioId(null);
+      toast.error("Abspielen hat nicht geklappt.");
+    };
+    void audio.play().then(
+      () => setPlayingAudioId(story.id),
+      () => {
+        setPlayingAudioId(null);
+        toast.error("Abspielen wurde blockiert.");
+      },
+    );
   }
 
   function handleToggleExpand(story: UserStorySummary) {
@@ -410,13 +483,13 @@ export function StoryLibraryBrowser({
               stageLabel,
               formatStoryDate(story.createdAt),
               story.isRead ? "Gelesen" : null,
-              story.bookClubShare !== "none"
-                ? BOOK_CLUB_SHARE_LABELS[story.bookClubShare]
-                : null,
             ]
               .filter(Boolean)
               .join(" · ");
             const isExpanded = expandedId === story.id;
+            const ShareIcon = BOOK_CLUB_SHARE_ICONS[story.bookClubShare];
+            const shareOpen = shareMenuId === story.id;
+            const audioPlaying = playingAudioId === story.id;
 
             return (
               <li
@@ -459,101 +532,160 @@ export function StoryLibraryBrowser({
                         {meta}
                       </p>
                     </button>
-                    <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    {allowBuchclub ? (
-                      <>
-                        <label
-                          className="sr-only"
-                          htmlFor={`share-${story.id}`}
-                        >
-                          Buchclub-Freigabe
-                        </label>
-                        <select
-                          id={`share-${story.id}`}
-                          disabled={sharePendingId === story.id}
-                          value={story.bookClubShare}
-                          onChange={(event) =>
-                            handleBookClubShareChange(
-                              story,
-                              event.target.value as BookClubShareLevel,
-                            )
-                          }
+                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                      {allowVorlesen && story.hasTtsAudio ? (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleCardAudio(story)}
                           className={cn(
-                            "h-10 max-w-[9.5rem] rounded-full bg-gray-100 px-3 text-xs font-bold text-zinc-700 outline-none ring-1 ring-zinc-950/10 transition disabled:opacity-70",
-                            story.bookClubShare !== "none" &&
-                              "bg-orange-700 text-white ring-orange-700",
+                            CARD_ICON_BTN,
+                            "text-orange-600 hover:bg-orange-50 hover:text-orange-700",
                           )}
-                          title="Buchclub-Freigabe"
+                          aria-label={
+                            audioPlaying
+                              ? "Vorlesen pausieren"
+                              : "Vorlesen abspielen"
+                          }
+                          title={
+                            audioPlaying
+                              ? "Vorlesen pausieren"
+                              : "Vorlesen abspielen"
+                          }
                         >
-                          {BOOK_CLUB_SHARE_LEVELS.map((level) => (
-                            <option key={level} value={level}>
-                              {BOOK_CLUB_SHARE_LABELS[level]}
-                            </option>
-                          ))}
-                        </select>
-                      </>
-                    ) : null}
-                    <button
-                      type="button"
-                      disabled={readPendingId === story.id}
-                      onClick={() => handleToggleRead(story)}
-                      className={cn(
-                        "inline-flex size-10 shrink-0 items-center justify-center rounded-full transition-all duration-200 ease-in-out disabled:opacity-70",
-                        story.isRead
-                          ? "bg-orange-700 text-white hover:bg-orange-800"
-                          : "bg-gray-100 text-zinc-500 hover:bg-gray-200",
-                      )}
-                      aria-label={
-                        story.isRead
-                          ? "Als ungelesen markieren"
-                          : "Als gelesen markieren"
-                      }
-                      title={
-                        story.isRead
-                          ? "Als ungelesen markieren"
-                          : "Als gelesen markieren"
-                      }
-                    >
-                      <BookCheck className="size-5" aria-hidden />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={favoritePendingId === story.id}
-                      onClick={() => handleToggleFavorite(story)}
-                      className={cn(
-                        "inline-flex size-10 shrink-0 items-center justify-center rounded-full transition-all duration-200 ease-in-out disabled:opacity-70",
-                        story.isFavorite
-                          ? "bg-yellow-400 text-zinc-950 hover:bg-yellow-300"
-                          : "bg-gray-100 text-zinc-500 hover:bg-gray-200",
-                      )}
-                      aria-label={
-                        story.isFavorite
-                          ? "Favorit entfernen"
-                          : "Als Favorit markieren"
-                      }
-                      title={
-                        story.isFavorite
-                          ? "Favorit entfernen"
-                          : "Als Favorit markieren"
-                      }
-                    >
-                      <Star
+                          {audioPlaying ? (
+                            <Pause className="size-4" aria-hidden />
+                          ) : (
+                            <Headphones className="size-4" aria-hidden />
+                          )}
+                        </button>
+                      ) : null}
+                      {allowBuchclub ? (
+                        <div
+                          className="relative"
+                          data-share-menu={story.id}
+                        >
+                          <button
+                            type="button"
+                            disabled={sharePendingId === story.id}
+                            onClick={() =>
+                              setShareMenuId(shareOpen ? null : story.id)
+                            }
+                            className={cn(
+                              CARD_ICON_BTN,
+                              story.bookClubShare !== "none" &&
+                                "text-orange-600 hover:text-orange-700",
+                            )}
+                            aria-label={`Buchclub-Freigabe: ${BOOK_CLUB_SHARE_LABELS[story.bookClubShare]}`}
+                            title={`Freigabe: ${BOOK_CLUB_SHARE_LABELS[story.bookClubShare]}`}
+                            aria-expanded={shareOpen}
+                            aria-haspopup="menu"
+                          >
+                            {sharePendingId === story.id ? (
+                              <Loader2
+                                className="size-4 animate-spin"
+                                aria-hidden
+                              />
+                            ) : (
+                              <ShareIcon className="size-4" aria-hidden />
+                            )}
+                          </button>
+                          {shareOpen ? (
+                            <div
+                              role="menu"
+                              className="absolute top-full right-0 z-20 mt-1 flex gap-0.5 rounded-xl bg-white p-1 shadow-lg ring-1 ring-zinc-950/10"
+                            >
+                              {BOOK_CLUB_SHARE_LEVELS.map((level) => {
+                                const OptionIcon = BOOK_CLUB_SHARE_ICONS[level];
+                                const selected = story.bookClubShare === level;
+                                return (
+                                  <button
+                                    key={level}
+                                    type="button"
+                                    role="menuitemradio"
+                                    aria-checked={selected}
+                                    aria-label={BOOK_CLUB_SHARE_LABELS[level]}
+                                    title={BOOK_CLUB_SHARE_LABELS[level]}
+                                    onClick={() =>
+                                      handleBookClubShareChange(story, level)
+                                    }
+                                    className={cn(
+                                      CARD_ICON_BTN,
+                                      selected &&
+                                        "bg-orange-50 text-orange-700 hover:bg-orange-50 hover:text-orange-700",
+                                    )}
+                                  >
+                                    <OptionIcon
+                                      className="size-4"
+                                      aria-hidden
+                                    />
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        disabled={readPendingId === story.id}
+                        onClick={() => handleToggleRead(story)}
                         className={cn(
-                          "size-5",
-                          story.isFavorite && "fill-current",
+                          CARD_ICON_BTN,
+                          story.isRead && "text-orange-600 hover:text-orange-700",
                         )}
-                        aria-hidden
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDeleteTarget(story)}
-                      className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-zinc-500 transition-all duration-200 ease-in-out hover:bg-orange-100 hover:text-orange-800"
-                      aria-label="Geschichte löschen"
-                      title="Geschichte löschen"
-                    >
-                      <Trash2 className="size-5" aria-hidden />
-                    </button>
+                        aria-label={
+                          story.isRead
+                            ? "Als ungelesen markieren"
+                            : "Als gelesen markieren"
+                        }
+                        title={
+                          story.isRead
+                            ? "Als ungelesen markieren"
+                            : "Als gelesen markieren"
+                        }
+                      >
+                        <BookCheck className="size-4" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={favoritePendingId === story.id}
+                        onClick={() => handleToggleFavorite(story)}
+                        className={cn(
+                          CARD_ICON_BTN,
+                          story.isFavorite &&
+                            "text-amber-500 hover:text-amber-600",
+                        )}
+                        aria-label={
+                          story.isFavorite
+                            ? "Favorit entfernen"
+                            : "Als Favorit markieren"
+                        }
+                        title={
+                          story.isFavorite
+                            ? "Favorit entfernen"
+                            : "Als Favorit markieren"
+                        }
+                      >
+                        <Star
+                          className={cn(
+                            "size-4",
+                            story.isFavorite && "fill-current",
+                          )}
+                          aria-hidden
+                        />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteTarget(story)}
+                        className={cn(
+                          CARD_ICON_BTN,
+                          "hover:bg-orange-50 hover:text-orange-700",
+                        )}
+                        aria-label="Geschichte löschen"
+                        title="Geschichte löschen"
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                      </button>
                     </div>
                   </div>
                 </article>
@@ -592,11 +724,21 @@ export function StoryLibraryBrowser({
                       typographyDefaults={typographyDefaults}
                       allowContinue={allowContinue}
                       libraryStoryId={expandedStory.id}
+                      hasStoredTts={story.hasTtsAudio}
                       lengthCatalog={lengthCatalog}
                       continueLengthStep={
                         expandedStory.lengthStep ?? "mittel"
                       }
                       continueMood={expandedStory.mood ?? "spannend"}
+                      onTtsPersisted={() => {
+                        setStories((prev) =>
+                          prev.map((item) =>
+                            item.id === story.id
+                              ? { ...item, hasTtsAudio: true }
+                              : item,
+                          ),
+                        );
+                      }}
                       onContinued={(result) => {
                         const summary: UserStorySummary = {
                           id: result.libraryStoryId,
@@ -609,6 +751,7 @@ export function StoryLibraryBrowser({
                           personalMode: story.personalMode,
                           parentStoryId: story.id,
                           bookClubShare: "none",
+                          hasTtsAudio: false,
                           createdAt: new Date().toISOString(),
                         };
                         setStories((prev) => [summary, ...prev]);
