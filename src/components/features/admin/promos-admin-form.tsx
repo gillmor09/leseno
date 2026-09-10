@@ -20,8 +20,8 @@ import { cn } from "@/lib/utils";
 const PACKAGE_LABELS: Record<(typeof PAID_MEMBERSHIP_PACKAGE_IDS)[number], string> =
   {
     plus: "Plus",
-    pro: "Pro",
-    ultimate: "Ultimate",
+    pro: "Familie",
+    ultimate: "Komplett",
   };
 
 function toLocalInput(iso: string | null): string {

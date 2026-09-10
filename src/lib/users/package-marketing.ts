@@ -59,7 +59,7 @@ const PAID_BLURBS: Record<Exclude<UserPackageId, "basis">, string> = {
   plus: "Jeden Monat Credits zum Buchungstag — und sie verfallen nie. Dazu Meine Bücherei, ein Kinderprofil, PDF-Export und der Buchclub.",
   pro: "Mehrere Kinder-Profile, Bücherei, Buchclub, Bilder, „Warum?“, Fortsetzungen und Mehr Tiefgang — wenn leseno zum Familien-Ritual wird.",
   ultimate:
-    "Alles aus Pro plus Silbenhilfe, Vorlesen mit Wort-Markierung, PDF-Export, tieferes Hintergrundwissen und das Adventskalenderbuch.",
+    "Alles aus Familie plus Silbenhilfe, Vorlesen mit Wort-Markierung, PDF-Export, tieferes Hintergrundwissen und das Adventskalenderbuch.",
 };
 
 /** Pricing-card bullet: inherited tier vs. incremental extras. */
@@ -148,7 +148,7 @@ function previousPackageInCatalog(
 /**
  * Pricing-card bullets.
  * - Plus: flat checklist (check icons), credits first — no „Alles von Basis“.
- * - Pro / Ultimate: „Alles von …“ (check) + only incremental extras (plus).
+ * - Familie / Komplett: „Alles von …“ (check) + only incremental extras (plus).
  */
 export function marketingBulletsForPackage(
   pkg: MembershipPackage,
@@ -206,7 +206,7 @@ export function marketingTaglineForPackage(pkg: MembershipPackage): string {
 
 export function marketingBlurbForPackage(pkg: MembershipPackage): string {
   if (pkg.id === "basis") {
-    return "Konto anlegen, Geschichten erzeugen und im Lesemodus fullscreen lesen — weitere Extras mit Plus, Pro oder Ultimate.";
+    return "Konto anlegen, Geschichten erzeugen und im Lesemodus fullscreen lesen — weitere Extras mit Plus, Familie oder Komplett.";
   }
   return PAID_BLURBS[pkg.id];
 }
@@ -237,8 +237,8 @@ export const FEATURE_FROM_PACKAGE: Record<PackageFeatureId, UserPackageId> = {
 const FROM_PACKAGE_BADGE: Record<UserPackageId, string> = {
   basis: "ab Basis",
   plus: "ab Plus",
-  pro: "ab Pro",
-  ultimate: "ab Ultimate",
+  pro: "ab Familie",
+  ultimate: "ab Komplett",
 };
 
 /** Longer parent-facing blurbs for the landing feature gallery. */

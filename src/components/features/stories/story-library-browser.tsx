@@ -133,13 +133,13 @@ export function StoryLibraryBrowser({
   lengthCatalog,
 }: {
   initialStories: UserStorySummary[];
-  /** Ultimate Advent books shown above the story list. */
+  /** Komplett Advent books shown above the story list. */
   initialAdventBooks?: AdventBookSummary[];
   /** Child profiles for filter chips + Lesemodus prefs. */
   profileOptions: LibraryProfileOption[];
   enabledFeatures: readonly PackageFeatureId[];
   typographyDefaults: ReadingTypographyDefaultsCatalog;
-  /** Needed for „Wie könnte es weitergehen?“ (Pro+). */
+  /** Needed for „Wie könnte es weitergehen?“ (Familie+). */
   lengthCatalog: StoryLengthCatalog;
 }) {
   const [stories, setStories] = useState(initialStories);

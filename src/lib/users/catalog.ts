@@ -9,8 +9,8 @@ export const USER_ROLE_OPTIONS = [
   { id: "admin", label: "Admin" },
   { id: "basis", label: "Basis", path: STORY_PATH },
   { id: "paket1", label: "Plus", path: STORY_PATH },
-  { id: "paket2", label: "Pro", path: STORY_PATH },
-  { id: "paket3", label: "Ultimate", path: STORY_PATH },
+  { id: "paket2", label: "Familie", path: STORY_PATH },
+  { id: "paket3", label: "Komplett", path: STORY_PATH },
 ] as const;
 
 export type UserRoleId = (typeof USER_ROLE_OPTIONS)[number]["id"];
@@ -18,8 +18,8 @@ export type UserRoleId = (typeof USER_ROLE_OPTIONS)[number]["id"];
 export const MEMBERSHIP_ROLE_OPTIONS = [
   { id: "basis", label: "Basis", path: STORY_PATH },
   { id: "paket1", label: "Plus", path: STORY_PATH },
-  { id: "paket2", label: "Pro", path: STORY_PATH },
-  { id: "paket3", label: "Ultimate", path: STORY_PATH },
+  { id: "paket2", label: "Familie", path: STORY_PATH },
+  { id: "paket3", label: "Komplett", path: STORY_PATH },
 ] as const;
 
 export type MembershipRoleId = (typeof MEMBERSHIP_ROLE_OPTIONS)[number]["id"];

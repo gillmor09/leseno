@@ -117,7 +117,7 @@ export default function WiderrufPage() {
               </p>
               <p>
                 Das betrifft bei Leseno typischerweise den sofortigen Zugang zu
-                digitalen Mitgliedschaften (Plus, Pro, Ultimate), die sofortige
+                digitalen Mitgliedschaften (Plus, Familie, Komplett), die sofortige
                 Gutschrift und Nutzung von Credits sowie die Nutzung der
                 KI-gestützten Geschichtenfunktionen nach Freischaltung.
               </p>

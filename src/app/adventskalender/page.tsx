@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * Ultimate Advent calendar: create a new book or jump to existing ones.
+ * Komplett Advent calendar: create a new book or jump to existing ones.
  */
 export default async function AdventskalenderPage() {
   await requireAnyMembershipPage("/adventskalender");
@@ -50,7 +50,7 @@ export default async function AdventskalenderPage() {
           <MembershipCreditsHeader
             badge={
               <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-                Ultimate
+                Komplett
               </p>
             }
             initialCredits={initialCredits}

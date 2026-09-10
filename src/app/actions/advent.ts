@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Advent calendar book (Ultimate): create, generate days 1–24, PIN preview, gated read.
+ * Advent calendar book (Komplett): create, generate days 1–24, PIN preview, gated read.
  */
 
 import type { ActionResult } from "@/lib/types/actions";
@@ -58,7 +58,7 @@ const ADVENT_FALLBACK =
 async function assertAdventFeature(): Promise<string | null> {
   const features = await loadFeaturesForCurrentUser();
   if (!featuresInclude(features, "adventskalender")) {
-    return "Das Adventskalenderbuch gehört nur zum Paket Ultimate.";
+    return "Das Adventskalenderbuch gehört nur zum Paket Komplett.";
   }
   return null;
 }

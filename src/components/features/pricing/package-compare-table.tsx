@@ -1,5 +1,5 @@
 /**
- * Feature matrix: Basis / Plus / Pro / Ultimate from `membership_packages`.
+ * Feature matrix: Basis / Plus / Familie / Komplett from `membership_packages`.
  */
 
 import { Check, Minus } from "lucide-react";

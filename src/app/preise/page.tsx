@@ -26,7 +26,7 @@ import type { PaidMembershipPackageId } from "@/lib/stripe/config";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Preise: Plus, Pro & Ultimate im Vergleich",
+  title: "Preise: Plus, Familie & Komplett im Vergleich",
   description:
     "leseno-Pakete: Buchclub ab Plus, Credits verfallen nie, Fortsetzen, Adventskalenderbuch, Bücherei und Vorlesen. Abrechnung am Buchungstag — zum Periodenende kündbar.",
   path: "/preise",
@@ -58,7 +58,7 @@ export default async function PreisePage() {
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             Plus für monatliche Credits (verfallen nie), Bücherei, Buchclub und
-            PDF, Pro für Familie, Bilder und Fortsetzen, Ultimate für
+            PDF, Familie für Bilder und Fortsetzen, Komplett für
             Silbenhilfe, Vorlesen und Adventskalenderbuch. Abrechnung am
             Buchungstag — kündbar zum Periodenende. Zahlung per Karte oder
             PayPal.
@@ -154,7 +154,7 @@ export default async function PreisePage() {
               Paket-Credits kommen jeden Monat am Buchungstag dazu — und
               verfallen nie. Rest vom Vormonat bleibt liegen. Wenn das
               Kontingent trotzdem nicht reicht: Credits nachladen, ohne
-              Paketwechsel. Pro und Ultimate bringen von Haus aus oft keine
+              Paketwechsel. Familie und Komplett bringen von Haus aus oft keine
               Credits mit; dann reicht ein Nachkauf.
             </p>
             <div className="mt-6 flex flex-wrap items-baseline gap-x-2 gap-y-1">

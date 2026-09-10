@@ -56,12 +56,12 @@ function GeschichteComposerBody({
         {allowMeineWelt
           ? childSessionLockedProfileId
             ? "Deine Geschichte startet mit deinem Profil. Länge und Art kannst du grob anpassen — dann lies und staune."
-            : "Nimm ein Hauptthema — ab Pro mit Mehr Tiefgang (Nebenthema & realistische Konflikte) — oder schalte „Ganz persönlich“ ein. Dann stell Lesestufe und Textlänge ein."
-          : "Nimm ein Hauptthema — ab Pro mit Mehr Tiefgang (Nebenthema & realistische Konflikte). Dann stell Lesestufe und Textlänge ein."}
+            : "Nimm ein Hauptthema — ab Familie mit Mehr Tiefgang (Nebenthema & realistische Konflikte) — oder schalte „Ganz persönlich“ ein. Dann stell Lesestufe und Textlänge ein."
+          : "Nimm ein Hauptthema — ab Familie mit Mehr Tiefgang (Nebenthema & realistische Konflikte). Dann stell Lesestufe und Textlänge ein."}
       </p>
       {allowAdvent && !childSessionLockedProfileId ? (
         <p className="mt-4 max-w-2xl text-sm font-semibold text-zinc-700">
-          Ultimate:{" "}
+          Komplett:{" "}
           <a
             href="/adventskalender"
             className="font-extrabold text-orange-700 underline-offset-2 hover:underline"

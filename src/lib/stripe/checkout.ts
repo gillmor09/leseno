@@ -79,7 +79,7 @@ async function ensureStripeCustomer(input: {
 }
 
 /**
- * Monthly package Checkout (Plus / Pro / Ultimate).
+ * Monthly package Checkout (Plus / Familie / Komplett).
  * Returns the hosted Checkout URL. Caller must have collected withdrawal consent.
  */
 export async function createMembershipCheckoutUrl(input: {

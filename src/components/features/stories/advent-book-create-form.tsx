@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Ultimate: create Advent calendar book + sequential day generation with progress.
+ * Komplett: create Advent calendar book + sequential day generation with progress.
  * Confirm before charging credits; blocking wait dialog while 24 days generate.
  */
 
@@ -225,7 +225,7 @@ export function AdventBookCreateForm({
       />
 
       <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-        Ultimate · Adventskalenderbuch
+        Komplett · Adventskalenderbuch
       </p>
       <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-zinc-950">
         24 Tage, eine Geschichte

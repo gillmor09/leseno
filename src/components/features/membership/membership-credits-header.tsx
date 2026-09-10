@@ -33,7 +33,7 @@ export function MembershipCreditsHeader({
   checkoutEnabled,
   children,
 }: {
-  /** Left-side pill (e.g. „Ultimate“, „Bücherei“). */
+  /** Left-side pill (e.g. „Komplett“, „Bücherei“). */
   badge: ReactNode;
   initialCredits: number;
   checkoutEnabled: boolean;

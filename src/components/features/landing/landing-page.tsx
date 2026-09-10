@@ -106,17 +106,17 @@ const strengths = [
   },
   {
     title: "Mehr Tiefgang",
-    text: "Ab Pro: realistische Konflikte und optional ein Nebenthema — Geschichten mit mehr Gefühl und Twists.",
+    text: "Ab Familie: realistische Konflikte und optional ein Nebenthema — Geschichten mit mehr Gefühl und Twists.",
     icon: Layers,
   },
   {
     title: "Bücherei & Buchclub",
-    text: "Ab Plus speichern und Favoriten setzen — Freunde einladen, teilen und liken. Mit Pro: „Wie könnte es weitergehen?“",
+    text: "Ab Plus speichern und Favoriten setzen — Freunde einladen, teilen und liken. Mit Familie: „Wie könnte es weitergehen?“",
     icon: BookMarked,
   },
   {
     title: "Vorlesen, Silben & Advent",
-    text: "Ultimate: Vorlesen mit Markierung, Silbenhilfe — und 24 Tage Adventskalenderbuch.",
+    text: "Komplett: Vorlesen mit Markierung, Silbenhilfe — und 24 Tage Adventskalenderbuch.",
     icon: CalendarDays,
   },
 ] as const;
@@ -144,10 +144,10 @@ const parentPoints = [
   "Kein Schulgefühl: eigene Abenteuer statt starrer Lesebücher oder Übungsblätter.",
   "Passend zum Kind: Sprache und Länge fühlen sich gut an — ohne Test- oder Notenstimmung.",
   "Credits verfallen nie: Monatliche Gutschrift am Buchungstag; Rest bleibt fair in Folgemonaten liegen.",
-  "Neugier inklusive: echtes Wissen steckt mitten im Abenteuer; mit Pro gibt’s „Warum?“ zum Nachforschen.",
-  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits, Bücherei, Buchclub & Kind-Login, Pro für Familie, Mehr Tiefgang & Fortsetzen, Ultimate für Silbenhilfe, Vorlesen & Adventskalenderbuch.",
-  "Meine Welt: ab Plus ein Kinderprofil (Interessen & Erlebnisse) mit eigenem Kind-Login; mit Pro beliebig viele unter einem Konto.",
-  "Mehr Tiefgang ab Pro: realistische Konflikte und optional Nebenthema — ohne Schul- oder Moralton.",
+  "Neugier inklusive: echtes Wissen steckt mitten im Abenteuer; mit Familie gibt’s „Warum?“ zum Nachforschen.",
+  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits, Bücherei, Buchclub & Kind-Login, Familie für Mehr Tiefgang & Fortsetzen, Komplett für Silbenhilfe, Vorlesen & Adventskalenderbuch.",
+  "Meine Welt: ab Plus ein Kinderprofil (Interessen & Erlebnisse) mit eigenem Kind-Login; mit Familie beliebig viele unter einem Konto.",
+  "Mehr Tiefgang ab Familie: realistische Konflikte und optional Nebenthema — ohne Schul- oder Moralton.",
   "Mein Buchclub: ab Plus Freunde per Kennung einladen, freigegebene Geschichten lesen und liken.",
   "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden. Abo zum Periodenende kündbar.",
   "Weiterempfehlen leicht: Link teilen — Freundinnen starten kostenlos mit Basis.",
@@ -281,8 +281,8 @@ function HeroSection() {
               </span>
             </div>
             <p className="mt-3 rounded-xl bg-orange-50 px-3 py-2 text-xs leading-relaxed font-semibold text-orange-900">
-              Mitten im Abenteuer: Lava ist oft über 700 °C heiß. Mit Pro fragst
-              du „Warum?“ — mit Ultimate lässt du vorlesen.
+              Mitten im Abenteuer: Lava ist oft über 700 °C heiß. Mit Familie fragst
+              du „Warum?“ — mit Komplett lässt du vorlesen.
             </p>
           </div>
         </div>
@@ -518,7 +518,7 @@ function FactsSection() {
           <p className="mt-4 text-base leading-relaxed text-zinc-300">
             Jede Geschichte trägt echte Aha-Momente mit — ohne Test, ohne
             Bewertung. Du liest, weil’s dich packt; was hängen bleibt, kommt
-            nebenbei. Mit Pro kannst du bei „Warum?“ tiefer nachfragen.
+            nebenbei. Mit Familie kannst du bei „Warum?“ tiefer nachfragen.
           </p>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2" aria-label="Beispiel-Fakten">
@@ -641,7 +641,7 @@ function ParentsSection() {
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
             {withLesenoBrand(
-              "Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und Bewertung. leseno setzt genau da an: eigene Geschichten, die man freiwillig liest. Was an Lesefertigkeit und Wissen hängen bleibt, kommt nebenbei. Mit Plus speichert ihr in der Bücherei, teilt im Buchclub und richtet Kind-Login ein; mit Pro mehrere Profile und Mehr Tiefgang; mit Ultimate Silbenhilfe und Vorlesen.",
+              "Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und Bewertung. leseno setzt genau da an: eigene Geschichten, die man freiwillig liest. Was an Lesefertigkeit und Wissen hängen bleibt, kommt nebenbei. Mit Plus speichert ihr in der Bücherei, teilt im Buchclub und richtet Kind-Login ein; mit Familie mehrere Profile und Mehr Tiefgang; mit Komplett Silbenhilfe und Vorlesen.",
             )}
           </p>
           <ul className="mt-6 space-y-3">
@@ -675,7 +675,7 @@ function PricingSection() {
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
           {withLesenoBrand(
-            "Probier leseno ohne Druck. Wenn Lesen zum Ritual wird, bringt Plus Credits, Meine Bücherei, Buchclub, Meine Welt mit Kind-Login und PDF — Mehr Tiefgang ab Pro; Vorlesen und Silbenhilfe mit Ultimate.",
+            "Probier leseno ohne Druck. Wenn Lesen zum Ritual wird, bringt Plus Credits, Meine Bücherei, Buchclub, Meine Welt mit Kind-Login und PDF — Mehr Tiefgang ab Familie; Vorlesen und Silbenhilfe mit Komplett.",
           )}
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-2">

@@ -67,15 +67,15 @@ export const FALLBACK_MEMBERSHIP_PACKAGES: MembershipPackage[] = [
   {
     id: "plus",
     label: "Plus",
-    priceEur: 5,
+    priceEur: 4,
     credits: 500,
     features: ["lesemodus", "buchclub", "export", "meine_welt", "buecherei"],
     sortOrder: 1,
   },
   {
     id: "pro",
-    label: "Pro",
-    priceEur: 10,
+    label: "Familie",
+    priceEur: 9,
     credits: 0,
     features: [
       "lesemodus",
@@ -92,8 +92,8 @@ export const FALLBACK_MEMBERSHIP_PACKAGES: MembershipPackage[] = [
   },
   {
     id: "ultimate",
-    label: "Ultimate",
-    priceEur: 15,
+    label: "Komplett",
+    priceEur: 14,
     credits: 0,
     features: [
       "lesemodus",

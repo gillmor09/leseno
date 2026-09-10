@@ -97,7 +97,7 @@ export function homeJsonLd() {
       "@type": "Offer",
       price: "0",
       priceCurrency: "EUR",
-      description: "Basis kostenlos starten; Plus, Pro und Ultimate optional.",
+      description: "Basis kostenlos starten; Plus, Familie und Komplett optional.",
     },
     audience: {
       "@type": "PeopleAudience",

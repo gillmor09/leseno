@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * Admin for membership packages (Basis / Plus / Pro / Ultimate).
+ * Admin for membership packages (Basis / Plus / Familie / Komplett).
  * Guarded by admin layout.
  */
 export default async function PackagesAdminPage() {

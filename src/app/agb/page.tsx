@@ -120,7 +120,7 @@ export default function AgbPage() {
                 </li>
                 <li>
                   <strong className="text-zinc-950">Mitgliedschaften</strong>{" "}
-                  (z. B. Plus, Pro, Ultimate) als wiederkehrende
+                  (z. B. Plus, Familie, Komplett) als wiederkehrende
                   Monatsabonnements mit den jeweils ausgewiesenen Funktionen und
                   ggf. enthaltenen Credits;
                 </li>

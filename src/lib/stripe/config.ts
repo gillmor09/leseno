@@ -72,7 +72,7 @@ export function getStripeWebhookSecret(): string {
   return secret;
 }
 
-/** Recurring price id for Plus / Pro / Ultimate. */
+/** Recurring price id for Plus / Familie / Komplett. */
 export function getStripePriceIdForPackage(
   packageId: PaidMembershipPackageId,
 ): string | null {

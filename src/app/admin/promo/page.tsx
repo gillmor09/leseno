@@ -9,7 +9,7 @@ import { hasStripeSecretConfig } from "@/lib/stripe/config";
 export const metadata: Metadata = {
   title: "Promo-Codes — Leseno Admin",
   description:
-    "Promo-Codes für günstigere oder kostenlose Plus/Pro/Ultimate-Zeiträume.",
+    "Promo-Codes für günstigere oder kostenlose Plus/Familie/Komplett-Zeiträume.",
 };
 
 /**
@@ -51,7 +51,7 @@ export default async function PromosAdminPage() {
             Promo-Codes
           </h1>
           <p className="mt-3 text-base leading-relaxed text-zinc-600">
-            Codes und personalisierte Links für Plus, Pro und Ultimate —
+            Codes und personalisierte Links für Plus, Familie und Komplett —
             günstiger oder gratis für einen definierten Zeitraum. Rabatte laufen
             über Stripe; Leseno speichert Regeln und Einlösungen.
           </p>

@@ -300,7 +300,7 @@ export function UsersAdminForm({
           <div className="border-b border-zinc-950/10 bg-gray-100 px-6 py-4">
             <h2 className="text-lg font-extrabold text-zinc-950">User</h2>
             <p className="text-sm text-zinc-600">
-              Rolle = Paket (Basis / Plus / Pro / Ultimate) oder Admin. Beim
+              Rolle = Paket (Basis / Plus / Familie / Komplett) oder Admin. Beim
               Speichern wird ein Rollenwechsel in der Buchungs-Historie
               festgehalten. Admins haben keine Credits und liegen außerhalb der
               Bezahlung.

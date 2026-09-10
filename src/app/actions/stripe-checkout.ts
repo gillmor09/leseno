@@ -22,7 +22,7 @@ function requireWithdrawalConsent(consent: unknown): string | null {
 }
 
 /**
- * Starts Stripe Checkout for Plus / Pro / Ultimate (card + PayPal).
+ * Starts Stripe Checkout for Plus / Familie / Komplett (card + PayPal).
  * Requires explicit withdrawal waiver consent before new Checkout sessions.
  */
 export async function startMembershipCheckoutAction(input: {
