@@ -78,7 +78,10 @@ function mapRow(row: Record<string, unknown>): ChildProfile {
     readingModePrefs: hasCustomReadingModePrefs(row.reading_mode_prefs)
       ? normalizeReadingModePrefs(row.reading_mode_prefs)
       : null,
-    hasPin: asBool(row.has_pin, false),
+    hasPin: false,
+    loginCode:
+      typeof row.login_code === "string" ? row.login_code.trim() || null : null,
+    hasPassword: asBool(row.has_password, false),
     sortOrder:
       typeof row.sort_order === "number"
         ? row.sort_order
@@ -87,7 +90,8 @@ function mapRow(row: Record<string, unknown>): ChildProfile {
 }
 
 /**
- * Lists all child profiles for the signed-in user (may be empty).
+ * Lists all child profiles for the signed-in parent (may be empty).
+ * Child cookie sessions cannot list — use `loadChildProfile` instead.
  */
 export async function listMyChildProfiles(): Promise<ChildProfile[]> {
   const supabase = await createClient(null);
@@ -102,11 +106,61 @@ export async function listMyChildProfiles(): Promise<ChildProfile[]> {
 }
 
 /**
+ * Service-role load by id (optional parent ownership check).
+ * Used for child cookie sessions and login-adjacent paths.
+ */
+export async function loadChildProfileByIdService(
+  profileId: string,
+  expectedParentUserId?: string,
+): Promise<ChildProfile | null> {
+  const { createServiceClient } = await import("@/lib/supabase/service");
+  const supabase = createServiceClient();
+  const { data, error } = await supabase
+    .from("child_profiles")
+    .select(
+      "id, user_id, display_name, school_stage, friends, interests, experiences, fears, include_images, syllable_help, word_highlight, readable_aloud, length_step, mood, is_default, sort_order, reading_mode_prefs, fears_gentle, login_code, password_hash",
+    )
+    .eq("id", profileId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (!data || typeof data !== "object") return null;
+
+  const row = data as Record<string, unknown>;
+  if (
+    expectedParentUserId &&
+    typeof row.user_id === "string" &&
+    row.user_id !== expectedParentUserId
+  ) {
+    return null;
+  }
+
+  return mapRow({
+    ...row,
+    has_password:
+      typeof row.password_hash === "string" &&
+      row.password_hash.trim().length > 0,
+  });
+}
+
+/**
  * Loads one owned profile by id, or null when missing / not owned.
+ * Supports parent Auth and matching child cookie session.
  */
 export async function loadChildProfile(
   profileId: string,
 ): Promise<ChildProfile | null> {
+  const { getAppSession } = await import("@/lib/auth/app-session");
+  const session = await getAppSession();
+  if (!session) return null;
+
+  if (session.kind === "child") {
+    if (session.profileId !== profileId) return null;
+    return loadChildProfileByIdService(profileId, session.parentUserId);
+  }
+
   const profiles = await listMyChildProfiles();
   return profiles.find((profile) => profile.id === profileId) ?? null;
 }
@@ -203,6 +257,106 @@ export async function clearChildProfilePinHash(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+/** True when Kennung is unused (parent session). Optionally ignore one profile. */
+export async function isChildLoginCodeAvailable(
+  loginCode: string,
+  excludeProfileId?: string | null,
+): Promise<boolean> {
+  const supabase = await createClient(null);
+  const { data, error } = await supabase.rpc("is_child_login_code_available", {
+    p_code: loginCode,
+    p_exclude_id: excludeProfileId ?? null,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data === true;
+}
+
+/** Sets child login Kennung (parent session). */
+export async function setChildLoginCode(
+  profileId: string,
+  loginCode: string,
+): Promise<void> {
+  const supabase = await createClient(null);
+  const { error } = await supabase.rpc("set_my_child_login_code", {
+    p_id: profileId,
+    p_code: loginCode,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/** Sets child login password hash (parent session). */
+export async function setChildLoginPasswordHash(
+  profileId: string,
+  passwordHash: string,
+): Promise<void> {
+  const supabase = await createClient(null);
+  const { error } = await supabase.rpc("set_my_child_login_password", {
+    p_id: profileId,
+    p_password_hash: passwordHash,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+/** Clears child login password (parent session). */
+export async function clearChildLoginPasswordHash(
+  profileId: string,
+): Promise<void> {
+  const supabase = await createClient(null);
+  const { error } = await supabase.rpc("clear_my_child_login_password", {
+    p_id: profileId,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export type ChildLoginLookup = {
+  profileId: string;
+  parentUserId: string;
+  displayName: string;
+  loginCode: string;
+  passwordHash: string;
+};
+
+/** Service-role lookup by Kennung for child login. */
+export async function lookupChildLoginByCode(
+  code: string,
+): Promise<ChildLoginLookup | null> {
+  const { createServiceClient } = await import("@/lib/supabase/service");
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc("lookup_child_login_by_code", {
+    p_code: code.trim().toLowerCase(),
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") return null;
+  const record = row as Record<string, unknown>;
+  if (
+    typeof record.profile_id !== "string" ||
+    typeof record.parent_user_id !== "string" ||
+    typeof record.login_code !== "string" ||
+    typeof record.password_hash !== "string"
+  ) {
+    return null;
+  }
+  return {
+    profileId: record.profile_id,
+    parentUserId: record.parent_user_id,
+    displayName:
+      typeof record.display_name === "string" ? record.display_name.trim() : "",
+    loginCode: record.login_code,
+    passwordHash: record.password_hash,
+  };
 }
 
 /**

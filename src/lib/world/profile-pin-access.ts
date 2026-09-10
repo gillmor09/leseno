@@ -1,51 +1,31 @@
 /**
- * Parent-PIN gate for Meine-Welt profiles (cookie unlock after verify).
+ * Profile access gate. Eltern-PIN soft-lock removed — child login is separate.
+ * Kept so existing call sites keep compiling; always allows when authenticated
+ * as parent or as the matching child session.
  */
 
-import { getCurrentUser } from "@/lib/auth/session";
-import {
-  hasChildProfileUnlockCookie,
-} from "@/lib/world/profile-pin-cookie";
-import { getChildProfilePinHash } from "@/lib/world/repository";
+import { getAppSession } from "@/lib/auth/app-session";
 
 /**
- * Ensures a locked profile is unlocked for this session.
- * Profiles without a PIN always pass.
+ * Ensures the actor may use this profile for personal stories / edits.
  */
 export async function assertChildProfileUnlocked(
   profileId: string,
 ): Promise<string | null> {
-  const user = await getCurrentUser();
-  if (!user) {
+  const session = await getAppSession();
+  if (!session) {
     return "Bitte melde dich an.";
   }
-
-  const pinHash = await getChildProfilePinHash(profileId);
-  if (!pinHash) {
-    return null;
-  }
-
-  const unlocked = await hasChildProfileUnlockCookie(user.id, profileId);
-  if (!unlocked) {
-    return "Dieses Profil ist mit einer Eltern-PIN geschützt. Bitte zuerst entsperren.";
+  if (session.kind === "child" && session.profileId !== profileId) {
+    return "Dieses Profil gehört nicht zu deiner Anmeldung.";
   }
   return null;
 }
 
-/** Profile ids that currently have a valid unlock cookie. */
+/** All profile ids are usable (PIN gate removed). */
 export async function listUnlockedChildProfileIds(
-  userId: string,
-  profiles: readonly { id: string; hasPin: boolean }[],
+  _userId: string,
+  profiles: readonly { id: string; hasPin?: boolean }[],
 ): Promise<string[]> {
-  const unlocked: string[] = [];
-  for (const profile of profiles) {
-    if (!profile.hasPin) {
-      unlocked.push(profile.id);
-      continue;
-    }
-    if (await hasChildProfileUnlockCookie(userId, profile.id)) {
-      unlocked.push(profile.id);
-    }
-  }
-  return unlocked;
+  return profiles.map((profile) => profile.id);
 }

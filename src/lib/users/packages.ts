@@ -22,6 +22,7 @@ export const PACKAGE_FEATURE_IDS = [
   "warum",
   "hintergrund",
   "fortsetzen",
+  "mehr_tiefgang",
   "adventskalender",
 ] as const;
 
@@ -41,6 +42,7 @@ export const PACKAGE_FEATURE_LABELS: Record<PackageFeatureId, string> = {
   warum: "Warum",
   hintergrund: "Hintergrund",
   fortsetzen: "Fortsetzen",
+  mehr_tiefgang: "Mehr Tiefgang",
   adventskalender: "Adventskalenderbuch",
 };
 
@@ -84,6 +86,7 @@ export const FALLBACK_MEMBERSHIP_PACKAGES: MembershipPackage[] = [
       "bilder",
       "warum",
       "fortsetzen",
+      "mehr_tiefgang",
     ],
     sortOrder: 2,
   },
@@ -106,6 +109,7 @@ export const FALLBACK_MEMBERSHIP_PACKAGES: MembershipPackage[] = [
       "vorlesen",
       "hintergrund",
       "fortsetzen",
+      "mehr_tiefgang",
       "adventskalender",
     ],
     sortOrder: 3,

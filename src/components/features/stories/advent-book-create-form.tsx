@@ -21,16 +21,23 @@ import {
 import { useMembershipCredits } from "@/components/features/membership/membership-credits-header";
 import { StoryLengthSlider } from "@/components/features/stories/story-length-slider";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import { ChildProfilePinUnlockDialog } from "@/components/features/world/child-profile-pin-unlock-dialog";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { ADVENT_DAY_COUNT } from "@/lib/stories/advent";
 import { adventBookCreditsForLength } from "@/lib/stories/credits-cost";
 import type { StoryLengthCatalog, StoryLengthStepId } from "@/lib/stories/length";
 import {
   STORY_MOODS,
   STORY_SCHOOL_STAGES,
-  STORY_TOP_TOPICS,
+  STORY_TOPIC_MIX_PATTERNS,
+  STORY_TOPIC_VISIBLE_COUNT,
+  coerceStoryTopicForSchoolStage,
+  defaultStoryTopicForSchoolStage,
+  storyTopicsForSchoolStage,
+  visibleStoryTopicsForSchoolStage,
   type StoryMoodId,
   type StorySchoolStageId,
+  type StoryTopTopic,
+  type StoryTopicMixPatternId,
 } from "@/lib/stories/options";
 import {
   featuresInclude,
@@ -57,12 +64,24 @@ export function AdventBookCreateForm({
   const allowMeineWelt = featuresInclude(enabledFeatures, "meine_welt");
   const allowBilder = featuresInclude(enabledFeatures, "bilder");
   const allowSilben = featuresInclude(enabledFeatures, "silbenmethode");
+  const allowMehrTiefgang = featuresInclude(enabledFeatures, "mehr_tiefgang");
 
   const [personalMode, setPersonalMode] = useState(false);
   const [profileId, setProfileId] = useState<string | null>(
     childProfiles?.[0]?.id ?? null,
   );
-  const [topic, setTopic] = useState<string>(STORY_TOP_TOPICS[0] ?? "");
+  const [topic, setTopic] = useState<StoryTopTopic>(() =>
+    defaultStoryTopicForSchoolStage("klasse_3"),
+  );
+  const [topicsExpanded, setTopicsExpanded] = useState(false);
+  const [topicsSecondaryExpanded, setTopicsSecondaryExpanded] =
+    useState(false);
+  const [topicSecondary, setTopicSecondary] = useState<StoryTopTopic | null>(
+    null,
+  );
+  const [topicMixPattern, setTopicMixPattern] =
+    useState<StoryTopicMixPatternId | null>(null);
+  const [mehrTiefgang, setMehrTiefgang] = useState(false);
   const [schoolStage, setSchoolStage] =
     useState<StorySchoolStageId>("klasse_3");
   const [lengthStep, setLengthStep] =
@@ -76,23 +95,18 @@ export function AdventBookCreateForm({
   const [waitingOpen, setWaitingOpen] = useState(false);
   const [progressDay, setProgressDay] = useState(0);
   const [isPending, startTransition] = useTransition();
-  const [unlockedIds, setUnlockedIds] = useState(() => {
-    const ids = new Set<string>();
-    for (const profile of childProfiles ?? []) {
-      if (!profile.hasPin) ids.add(profile.id);
-    }
-    return ids;
-  });
-  const [pendingUnlock, setPendingUnlock] = useState<{
-    profileId: string;
-    profileName: string;
-    after?: "confirm";
-  } | null>(null);
 
   const creditCost = useMemo(
     () => adventBookCreditsForLength(lengthStep),
     [lengthStep],
   );
+
+  useEffect(() => {
+    if (topicSecondary && topicSecondary === topic) {
+      setTopicSecondary(null);
+      setTopicMixPattern(null);
+    }
+  }, [topic, topicSecondary]);
 
   function validateBeforeConfirm(): string | null {
     if (!/^\d{4,8}$/.test(pin.trim())) {
@@ -107,6 +121,14 @@ export function AdventBookCreateForm({
     if (!personalMode && !topic) {
       return "Bitte wähl ein Thema.";
     }
+    if (!personalMode && mehrTiefgang && topicSecondary) {
+      if (topicSecondary === topic) {
+        return "Haupt- und Nebenthema müssen verschieden sein.";
+      }
+      if (!topicMixPattern) {
+        return "Bitte wähl, wie die Themen gemischt werden.";
+      }
+    }
     return null;
   }
 
@@ -114,20 +136,6 @@ export function AdventBookCreateForm({
     const error = validateBeforeConfirm();
     if (error) {
       toast.error(error);
-      return;
-    }
-    if (
-      personalMode &&
-      allowMeineWelt &&
-      profileId &&
-      !unlockedIds.has(profileId)
-    ) {
-      const profile = childProfiles?.find((row) => row.id === profileId);
-      setPendingUnlock({
-        profileId,
-        profileName: profile?.displayName || "Ohne Namen",
-        after: "confirm",
-      });
       return;
     }
     setConfirmOpen(true);
@@ -145,11 +153,23 @@ export function AdventBookCreateForm({
             ? (profileId ?? undefined)
             : undefined,
         topic: personalMode ? undefined : topic,
+        topicSecondary:
+          personalMode || !mehrTiefgang || !topicSecondary
+            ? undefined
+            : topicSecondary,
+        topicMixPattern:
+          personalMode ||
+          !mehrTiefgang ||
+          !topicSecondary ||
+          !topicMixPattern
+            ? undefined
+            : topicMixPattern,
         schoolStage,
         lengthStep,
         mood,
         includeImages: allowBilder && includeImages,
         syllableHelp: allowSilben && syllableHelp,
+        conflictDepth: allowMehrTiefgang && mehrTiefgang,
         pin,
         pinConfirm,
         ...botGuard.getBotGuardPayload(),
@@ -233,7 +253,11 @@ export function AdventBookCreateForm({
             </button>
             <button
               type="button"
-              onClick={() => setPersonalMode(true)}
+              onClick={() => {
+                setPersonalMode(true);
+                setTopicSecondary(null);
+                setTopicMixPattern(null);
+              }}
               className={cn(
                 "rounded-full px-3.5 py-2 text-sm font-bold ring-1",
                 personalMode
@@ -246,69 +270,26 @@ export function AdventBookCreateForm({
           </div>
         ) : null}
 
-        {personalMode && childProfiles ? (
-          <label className="block space-y-1.5">
-            <span className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
-              Kinder-Profil
-            </span>
-            <select
-              value={profileId ?? ""}
-              onChange={(event) => {
-                const nextId = event.target.value || null;
-                if (!nextId) {
-                  setProfileId(null);
-                  return;
-                }
-                const profile = childProfiles?.find((row) => row.id === nextId);
-                if (profile?.hasPin && !unlockedIds.has(nextId)) {
-                  setPendingUnlock({
-                    profileId: nextId,
-                    profileName: profile.displayName || "Ohne Namen",
-                  });
-                  return;
-                }
-                setProfileId(nextId);
-              }}
-              className="w-full rounded-2xl border-0 bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-900 ring-1 ring-zinc-950/10"
-            >
-              {childProfiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.displayName || "Ohne Namen"}
-                  {profile.hasPin && !unlockedIds.has(profile.id)
-                    ? " (PIN)"
-                    : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <label className="block space-y-1.5">
-            <span className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
-              Thema
-            </span>
-            <select
-              value={topic}
-              onChange={(event) => setTopic(event.target.value)}
-              className="w-full rounded-2xl border-0 bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-900 ring-1 ring-zinc-950/10"
-            >
-              {STORY_TOP_TOPICS.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
         <label className="block space-y-1.5">
           <span className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
             Schulstufe
           </span>
           <select
             value={schoolStage}
-            onChange={(event) =>
-              setSchoolStage(event.target.value as StorySchoolStageId)
-            }
+            onChange={(event) => {
+              const next = event.target.value as StorySchoolStageId;
+              setSchoolStage(next);
+              setTopic((current) =>
+                coerceStoryTopicForSchoolStage(current, next),
+              );
+              setTopicSecondary((current) =>
+                current
+                  ? coerceStoryTopicForSchoolStage(current, next)
+                  : null,
+              );
+              setTopicsExpanded(false);
+              setTopicsSecondaryExpanded(false);
+            }}
             disabled={personalMode}
             className="w-full rounded-2xl border-0 bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-900 ring-1 ring-zinc-950/10 disabled:opacity-60"
           >
@@ -319,6 +300,218 @@ export function AdventBookCreateForm({
             ))}
           </select>
         </label>
+
+        {personalMode && childProfiles ? (
+          <label className="block space-y-1.5">
+            <span className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
+              Kinder-Profil
+            </span>
+            <select
+              value={profileId ?? ""}
+              onChange={(event) =>
+                setProfileId(event.target.value || null)
+              }
+              className="w-full rounded-2xl border-0 bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-900 ring-1 ring-zinc-950/10"
+            >
+              {childProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.displayName || "Ohne Namen"}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
+                Hauptthema
+              </p>
+              <p className="mt-1 text-sm text-zinc-600">
+                Schauplatz oder Plot für alle 24 Tage.
+              </p>
+              <div
+                className="mt-3 flex flex-wrap gap-2"
+                role="group"
+                aria-label="Hauptthema"
+              >
+                {visibleStoryTopicsForSchoolStage(schoolStage, {
+                  expanded: topicsExpanded,
+                  selected: topic,
+                }).map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => {
+                      setTopic(item);
+                      if (topicSecondary === item) {
+                        setTopicSecondary(null);
+                        setTopicMixPattern(null);
+                      }
+                    }}
+                    className={cn(
+                      "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
+                      topic === item
+                        ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                        : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
+                    )}
+                  >
+                    {item}
+                  </button>
+                ))}
+                {storyTopicsForSchoolStage(schoolStage).length >
+                STORY_TOPIC_VISIBLE_COUNT ? (
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={() => setTopicsExpanded((open) => !open)}
+                    className="rounded-full px-3 py-1.5 text-sm font-bold text-orange-800 ring-1 ring-orange-700/20 transition-all duration-200 ease-in-out hover:bg-orange-50"
+                    aria-expanded={topicsExpanded}
+                  >
+                    {topicsExpanded ? "Weniger" : "Mehr"}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {allowMehrTiefgang ? (
+              <div className="rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-zinc-950/5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
+                      Mehr Tiefgang
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      Realistische Konflikte und optional ein Nebenthema für alle
+                      24 Tage.
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={mehrTiefgang}
+                    onCheckedChange={(checked) => {
+                      setMehrTiefgang(checked);
+                      if (!checked) {
+                        setTopicSecondary(null);
+                        setTopicMixPattern(null);
+                        setTopicsSecondaryExpanded(false);
+                      }
+                    }}
+                    disabled={isPending}
+                    aria-label="Mehr Tiefgang"
+                  />
+                </div>
+
+                {mehrTiefgang ? (
+                  <div className="mt-4 space-y-3 border-t border-zinc-200/80 pt-4">
+                    <div>
+                      <p className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
+                        Nebenthema
+                      </p>
+                      <div
+                        className="mt-3 flex flex-wrap gap-2"
+                        role="group"
+                        aria-label="Nebenthema"
+                      >
+                        {visibleStoryTopicsForSchoolStage(schoolStage, {
+                          expanded: topicsSecondaryExpanded,
+                          selected: topicSecondary ?? undefined,
+                        })
+                          .filter((item) => item !== topic)
+                          .map((item) => (
+                            <button
+                              key={item}
+                              type="button"
+                              disabled={isPending}
+                              onClick={() => {
+                                setTopicSecondary((current) => {
+                                  if (current === item) {
+                                    setTopicMixPattern(null);
+                                    return null;
+                                  }
+                                  if (!topicMixPattern) {
+                                    setTopicMixPattern("crossover");
+                                  }
+                                  return item;
+                                });
+                              }}
+                              className={cn(
+                                "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
+                                topicSecondary === item
+                                  ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                                  : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
+                              )}
+                            >
+                              {item}
+                            </button>
+                          ))}
+                        {storyTopicsForSchoolStage(schoolStage).length >
+                        STORY_TOPIC_VISIBLE_COUNT ? (
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={() =>
+                              setTopicsSecondaryExpanded((open) => !open)
+                            }
+                            className="rounded-full px-3 py-1.5 text-sm font-bold text-orange-800 ring-1 ring-orange-700/20 transition-all duration-200 ease-in-out hover:bg-orange-50"
+                            aria-expanded={topicsSecondaryExpanded}
+                          >
+                            {topicsSecondaryExpanded ? "Weniger" : "Mehr"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {topicSecondary ? (
+                      <div>
+                        <p className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
+                          So mischen
+                        </p>
+                        <p className="mt-1 text-sm text-zinc-600">
+                          Wie sollen die beiden Themen in allen 24 Tagen
+                          zusammenkommen?
+                        </p>
+                        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          {STORY_TOPIC_MIX_PATTERNS.map((pattern) => {
+                            const active = topicMixPattern === pattern.id;
+                            return (
+                              <button
+                                key={pattern.id}
+                                type="button"
+                                disabled={isPending}
+                                onClick={() => setTopicMixPattern(pattern.id)}
+                                className={cn(
+                                  "rounded-xl px-3 py-2.5 text-left ring-1 transition-all duration-200 ease-in-out",
+                                  active
+                                    ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                                    : "bg-gray-100 text-zinc-950 ring-zinc-950/10 hover:bg-white",
+                                )}
+                              >
+                                <span className="block text-xs font-extrabold">
+                                  {pattern.label}
+                                  <span className="ml-1 font-semibold opacity-70">
+                                    · {pattern.shortLabel}
+                                  </span>
+                                </span>
+                                <span
+                                  className={cn(
+                                    "mt-1 block text-[11px] leading-snug font-medium",
+                                    active ? "text-zinc-800" : "text-zinc-600",
+                                  )}
+                                >
+                                  {pattern.principle}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        )}
 
         <div>
           <p className="mb-2 text-xs font-bold tracking-wide text-zinc-600 uppercase">
@@ -379,6 +572,26 @@ export function AdventBookCreateForm({
           </label>
         </div>
 
+        {allowMehrTiefgang && personalMode ? (
+          <div className="flex items-start justify-between gap-4 rounded-2xl bg-gray-50 px-4 py-3 ring-1 ring-zinc-950/5">
+            <div className="min-w-0">
+              <p className="text-xs font-bold tracking-wide text-zinc-600 uppercase">
+                Mehr Tiefgang
+              </p>
+              <p className="mt-1 text-sm text-zinc-600">
+                Realistische Konflikte — Emotionen und Kompromisse bleiben über
+                die 24 Tage spürbar.
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={mehrTiefgang}
+              onCheckedChange={setMehrTiefgang}
+              disabled={isPending}
+              aria-label="Mehr Tiefgang"
+            />
+          </div>
+        ) : null}
+
         {(allowBilder || allowSilben) && (
           <div className="flex flex-wrap gap-4 text-sm font-semibold text-zinc-700">
             {allowBilder ? (
@@ -431,25 +644,6 @@ export function AdventBookCreateForm({
         onCancel={() => setConfirmOpen(false)}
         onConfirm={handleConfirmCreate}
       />
-
-      {pendingUnlock ? (
-        <ChildProfilePinUnlockDialog
-          open
-          profileId={pendingUnlock.profileId}
-          profileName={pendingUnlock.profileName}
-          onCancel={() => setPendingUnlock(null)}
-          onUnlocked={() => {
-            const id = pendingUnlock.profileId;
-            const after = pendingUnlock.after;
-            setUnlockedIds((current) => new Set(current).add(id));
-            setProfileId(id);
-            setPendingUnlock(null);
-            if (after === "confirm") {
-              setConfirmOpen(true);
-            }
-          }}
-        />
-      ) : null}
 
       <AdventWaitingDialog open={waitingOpen} progressDay={progressDay} />
     </div>

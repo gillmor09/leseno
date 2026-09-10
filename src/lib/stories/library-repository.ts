@@ -178,6 +178,41 @@ export async function saveMyStory(
   return data;
 }
 
+/**
+ * Service-role save under a parent account (child cookie session).
+ * See `save_story_for_user` in child-login migration.
+ */
+export async function saveStoryForUser(
+  userId: string,
+  input: SaveUserStoryInput,
+): Promise<string> {
+  const { createServiceClient } = await import("@/lib/supabase/service");
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc("save_story_for_user", {
+    p_user_id: userId,
+    p_title: input.title,
+    p_story_html: input.storyHtml,
+    p_facts: input.facts,
+    p_school_stage: input.schoolStage,
+    p_child_profile_id: input.childProfileId ?? null,
+    p_length_step: input.lengthStep ?? null,
+    p_mood: input.mood ?? null,
+    p_topic: input.topic ?? null,
+    p_personal_mode: input.personalMode ?? false,
+    p_syllable_help: input.syllableHelp ?? false,
+    p_include_images: input.includeImages ?? false,
+    p_credits_charged: input.creditsCharged ?? null,
+    p_parent_story_id: input.parentStoryId ?? null,
+  });
+  if (error) {
+    throw new Error(error.message);
+  }
+  if (typeof data !== "string" || !data) {
+    throw new Error("Speichern der Geschichte fehlgeschlagen.");
+  }
+  return data;
+}
+
 /** Lists library summaries (favorites first, then newest). */
 export async function listMyStories(): Promise<UserStorySummary[]> {
   const supabase = await createClient(null);

@@ -36,6 +36,7 @@ import {
   type AdventDayMeta,
 } from "@/lib/stories/advent-repository";
 import { adventBookCreditsForLength } from "@/lib/stories/credits-cost";
+import { formatStoryTopicMixLabel } from "@/lib/stories/options";
 import { buildPersonalStoryContext } from "@/lib/stories/personal";
 import { titleFromStoryHtml } from "@/lib/stories/title-from-html";
 import { addUserCredits } from "@/lib/stripe/billing-sync";
@@ -99,11 +100,23 @@ export async function createAdventBookAction(
 
   try {
     let topic = parsed.data.topic?.trim() ?? "";
+    let topicSecondary: string | null =
+      parsed.data.topicSecondary?.trim() || null;
+    let topicMixPattern = parsed.data.topicMixPattern ?? null;
     let schoolStage = parsed.data.schoolStage;
     let includeImages = parsed.data.includeImages;
     let syllableHelp = parsed.data.syllableHelp;
+    let conflictDepth = parsed.data.conflictDepth;
     let childProfileId: string | null = null;
     let personalMode = parsed.data.personalMode;
+
+    if (!featuresInclude(packageFeatures, "mehr_tiefgang")) {
+      conflictDepth = false;
+      if (!personalMode) {
+        topicSecondary = null;
+        topicMixPattern = null;
+      }
+    }
 
     if (personalMode) {
       if (!featuresInclude(packageFeatures, "meine_welt")) {
@@ -126,6 +139,8 @@ export async function createAdventBookAction(
       childProfileId = profile.id;
       schoolStage = profile.schoolStage;
       topic = `Advent mit ${profile.displayName || "Kind"}`;
+      topicSecondary = null;
+      topicMixPattern = null;
       includeImages =
         featuresInclude(packageFeatures, "bilder") && profile.includeImages;
       syllableHelp =
@@ -161,6 +176,8 @@ export async function createAdventBookAction(
         title,
         year,
         topic: topic || "Adventsabenteuer",
+        topicSecondary,
+        topicMixPattern,
         schoolStage,
         lengthStep: parsed.data.lengthStep,
         mood: parsed.data.mood,
@@ -169,6 +186,7 @@ export async function createAdventBookAction(
         personalMode,
         syllableHelp,
         includeImages,
+        conflictDepth,
         creditsCharged: creditCost > 0 ? creditCost : null,
       });
 
@@ -181,6 +199,9 @@ export async function createAdventBookAction(
           bookId,
           year,
           lengthStep: parsed.data.lengthStep,
+          topic,
+          topicSecondary,
+          topicMixPattern,
           creditsCharged: creditCost > 0 ? creditCost : undefined,
         },
       });
@@ -305,12 +326,15 @@ export async function generateAdventDayAction(
         adventYear: book.year,
         previousStoryHtml: previousHtml,
         topic,
+        topicSecondary: book.personalMode ? null : book.topicSecondary,
+        topicMixPattern: book.personalMode ? null : book.topicMixPattern,
         schoolStage: book.schoolStage,
         lengthStep: book.lengthStep,
         mood: book.mood,
         personal,
         syllableHelp: book.syllableHelp,
         includeImages: book.includeImages,
+        conflictDepth: book.conflictDepth,
       });
     } catch (pipelineError) {
       if (dayCredit > 0) {
@@ -490,7 +514,10 @@ export async function getAdventDayAction(
         childProfileId: book.childProfileId,
         lengthStep: book.lengthStep,
         mood: book.mood,
-        topic: book.topic,
+        topic:
+          book.topic && book.topicSecondary
+            ? formatStoryTopicMixLabel(book.topic, book.topicSecondary)
+            : book.topic,
         personalMode: book.personalMode,
         syllableHelp: book.syllableHelp,
         includeImages: book.includeImages,

@@ -4,7 +4,7 @@ import { ForgotPasswordForm } from "@/components/features/auth/forgot-password-f
 
 export const metadata: Metadata = {
   title: "Passwort vergessen — Leseno",
-  description: "Passwort per E-Mail-Link zurücksetzen.",
+  description: "Eltern-Konto-Passwort per E-Mail-Link zurücksetzen.",
 };
 
 export default function ForgotPasswordPage() {
@@ -12,7 +12,7 @@ export default function ForgotPasswordPage() {
     <AuthShell
       eyebrow="Konto"
       title="Passwort vergessen"
-      description="Gib die E-Mail-Adresse deines Kontos an. Wir senden dir einen Link, mit dem du ein neues Passwort setzen kannst."
+      description="Gib die E-Mail-Adresse deines Eltern-Kontos an. Wir senden einen Link zum neuen Passwort. Profilkennungen können hier nicht zurückgesetzt werden."
     >
       <ForgotPasswordForm />
     </AuthShell>

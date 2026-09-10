@@ -29,6 +29,7 @@ function GeschichteComposerBody({
   inviteUserId,
   fallbackCredits,
   isAdmin,
+  childSessionLockedProfileId,
 }: {
   allowMeineWelt: boolean;
   allowAdvent: boolean;
@@ -40,6 +41,7 @@ function GeschichteComposerBody({
   inviteUserId: string | null;
   fallbackCredits: number;
   isAdmin: boolean;
+  childSessionLockedProfileId: string | null;
 }) {
   const creditsApi = useMembershipCredits();
   const credits = creditsApi?.credits ?? fallbackCredits;
@@ -52,10 +54,12 @@ function GeschichteComposerBody({
       </h1>
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
         {allowMeineWelt
-          ? "Nimm ein Top-Thema oder schalte „Ganz persönlich“ ein. Dann stell Lesestufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."
-          : "Nimm ein Top-Thema und stell Lesestufe und Textlänge ein — als Komödie, Detektivgeschichte oder Motivationsgeschichte."}
+          ? childSessionLockedProfileId
+            ? "Deine Geschichte startet mit deinem Profil. Länge und Art kannst du grob anpassen — dann lies und staune."
+            : "Nimm ein Hauptthema — ab Pro mit Mehr Tiefgang (Nebenthema & realistische Konflikte) — oder schalte „Ganz persönlich“ ein. Dann stell Lesestufe und Textlänge ein."
+          : "Nimm ein Hauptthema — ab Pro mit Mehr Tiefgang (Nebenthema & realistische Konflikte). Dann stell Lesestufe und Textlänge ein."}
       </p>
-      {allowAdvent ? (
+      {allowAdvent && !childSessionLockedProfileId ? (
         <p className="mt-4 max-w-2xl text-sm font-semibold text-zinc-700">
           Ultimate:{" "}
           <a
@@ -83,6 +87,7 @@ function GeschichteComposerBody({
           onCreditsChange={onCreditsChange}
           inviteUserId={inviteUserId}
           isAdmin={isAdmin}
+          childSessionLockedProfileId={childSessionLockedProfileId}
         />
       </div>
     </>
@@ -101,6 +106,7 @@ export function GeschichteComposer({
   enabledFeatures,
   inviteUserId = null,
   isAdmin = false,
+  childSessionLockedProfileId = null,
 }: {
   packageLabel: string;
   initialCredits: number;
@@ -114,6 +120,8 @@ export function GeschichteComposer({
   inviteUserId?: string | null;
   /** Live KI-Modell im Wartedialog (nur echte Admin-Session). */
   isAdmin?: boolean;
+  /** Child cookie login: lock composer to this profile. */
+  childSessionLockedProfileId?: string | null;
 }) {
   const allowAdvent = featuresInclude(enabledFeatures, "adventskalender");
 
@@ -138,6 +146,7 @@ export function GeschichteComposer({
         inviteUserId={inviteUserId}
         fallbackCredits={initialCredits}
         isAdmin={isAdmin}
+        childSessionLockedProfileId={childSessionLockedProfileId}
       />
     </MembershipCreditsHeader>
   );

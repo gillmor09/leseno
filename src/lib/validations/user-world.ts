@@ -113,5 +113,83 @@ export const removeChildProfilePinSchema = z.object({
   currentPin: pinSchema,
 });
 
+const childPasswordSchema = z
+  .string()
+  .trim()
+  .min(8, { message: "Das Passwort muss mindestens 8 Zeichen lang sein." })
+  .max(64, { message: "Passwort: maximal 64 Zeichen." });
+
+export const setChildLoginPasswordSchema = z
+  .object({
+    profileId: z.string().uuid({ message: "Ungültige Profil-ID." }),
+    password: childPasswordSchema,
+    passwordConfirm: childPasswordSchema,
+  })
+  .superRefine((value, ctx) => {
+    if (value.password !== value.passwordConfirm) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["passwordConfirm"],
+        message: "Die Passwort-Wiederholung stimmt nicht.",
+      });
+    }
+  });
+
+export const clearChildLoginPasswordSchema = z.object({
+  profileId: z.string().uuid({ message: "Ungültige Profil-ID." }),
+});
+
+const childLoginCodeSchema = z
+  .string()
+  .trim()
+  .min(4, { message: "Bitte Kennung eingeben." })
+  .max(24, { message: "Kennung ist zu lang." })
+  .regex(/^[a-zA-Z0-9_-]+$/, {
+    message: "Kennung: nur Buchstaben, Zahlen, _ und -.",
+  })
+  .transform((value) => value.toLowerCase());
+
+export const setChildLoginCodeSchema = z.object({
+  profileId: z.string().uuid({ message: "Ungültige Profil-ID." }),
+  loginCode: childLoginCodeSchema,
+});
+
+export const checkChildLoginCodeSchema = z.object({
+  loginCode: childLoginCodeSchema,
+  /** When editing an existing profile, that id is allowed to keep its code. */
+  excludeProfileId: z.string().uuid().optional().nullable(),
+});
+
+export const childSignInSchema = z.object({
+  loginCode: childLoginCodeSchema,
+  password: childPasswordSchema,
+});
+
+/** Two-step Meine-Welt onboarding: name/stage + Kennung/password. */
+export const createChildOnboardingSchema = z
+  .object({
+    displayName: z
+      .string()
+      .trim()
+      .min(1, "Bitte gib den Namen des Kindes ein.")
+      .max(80, "Name ist zu lang (max. 80 Zeichen)."),
+    schoolStage: z.enum(schoolStageIds, {
+      message: "Bitte eine gültige Schulstufe wählen.",
+    }),
+    loginCode: childLoginCodeSchema,
+    password: childPasswordSchema,
+    passwordConfirm: childPasswordSchema,
+    isDefault: z.boolean(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.password !== value.passwordConfirm) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["passwordConfirm"],
+        message: "Die Passwort-Wiederholung stimmt nicht.",
+      });
+    }
+  });
+
 /** @deprecated Use childProfileFieldsSchema */
 export const userWorldSchema = childProfileFieldsSchema;

@@ -4,7 +4,7 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { MembershipCreditsHeader } from "@/components/features/membership/membership-credits-header";
 import { MyWorldManager } from "@/components/features/world/my-world-manager";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getAppSession } from "@/lib/auth/app-session";
 import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
 import { loadReadingTypographyDefaults } from "@/lib/stories/reading-typography-repository";
 import { loadMyCredits } from "@/lib/users/billing";
@@ -12,7 +12,6 @@ import { STORY_PATH } from "@/lib/users/catalog";
 import { loadPackageAccessForCurrentUser } from "@/lib/users/package-access";
 import { featuresInclude } from "@/lib/users/packages";
 import { listMyChildProfiles } from "@/lib/world/repository";
-import { listUnlockedChildProfileIds } from "@/lib/world/profile-pin-access";
 
 export const metadata: Metadata = {
   title: "Meine Welt — Leseno",
@@ -23,11 +22,15 @@ export const metadata: Metadata = {
 /**
  * Signed-in personal hub for one or more child profiles.
  * Requires package feature `meine_welt`; family add-ons need `meine_welt_familie`.
+ * Child cookie sessions are redirected (Meine Welt is parent-only).
  */
 export default async function MeineWeltPage() {
-  const user = await getCurrentUser();
-  if (!user) {
+  const session = await getAppSession();
+  if (!session) {
     redirect("/anmelden?next=/meine-welt");
+  }
+  if (session.kind === "child") {
+    redirect(STORY_PATH);
   }
 
   const access = await loadPackageAccessForCurrentUser();
@@ -47,12 +50,10 @@ export default async function MeineWeltPage() {
   }
 
   let profiles: Awaited<ReturnType<typeof listMyChildProfiles>> = [];
-  let unlockedProfileIds: string[] = [];
   let loadError: string | null = null;
 
   try {
     profiles = await listMyChildProfiles();
-    unlockedProfileIds = await listUnlockedChildProfileIds(user.id, profiles);
   } catch (error) {
     console.error("[MeineWeltPage]", error);
     const detail =
@@ -79,8 +80,8 @@ export default async function MeineWeltPage() {
           </h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
             {allowFamily
-              ? "Lege für jedes Kind ein eigenes Profil an — mit Namen, Freunden, Interessen und Wünschen. Optional mit Eltern-PIN absichern."
-              : "Lege ein Profil für dein Kind an — mit Namen, Freunden, Interessen und Wünschen. Optional mit Eltern-PIN absichern."}
+              ? "Lege für jedes Kind ein eigenes Profil an — mit Namen, Freunden, Interessen und Wünschen. Mit Kennung und Passwort kann sich dein Kind selbst anmelden."
+              : "Lege ein Profil für dein Kind an — mit Namen, Freunden, Interessen und Wünschen. Mit Kennung und Passwort kann sich dein Kind selbst anmelden."}
           </p>
 
           {loadError ? (
@@ -91,7 +92,6 @@ export default async function MeineWeltPage() {
             <div className="mt-10">
               <MyWorldManager
                 initialProfiles={profiles}
-                initialUnlockedProfileIds={unlockedProfileIds}
                 allowFamily={allowFamily}
                 enabledFeatures={features}
                 typographyDefaults={typographyDefaults}

@@ -2,7 +2,7 @@
  * Resolve package features for the current session (story UI + Server Actions).
  */
 
-import { getCurrentUser } from "@/lib/auth/session";
+import { getAppSession, getSessionMembershipRole } from "@/lib/auth/app-session";
 import { loadMembershipPackages } from "@/lib/users/package-repository";
 import {
   featuresInclude,
@@ -19,13 +19,14 @@ export type PackageAccess = {
 
 /** Load catalog + map the signed-in user's role to features. Guests → empty. */
 export async function loadPackageAccessForCurrentUser(): Promise<PackageAccess | null> {
-  const user = await getCurrentUser();
-  if (!user) return null;
+  const { getAppSession, getSessionMembershipRole } = await import(
+    "@/lib/auth/app-session"
+  );
+  const session = await getAppSession();
+  if (!session) return null;
 
-  const role =
-    typeof user.app_metadata?.role === "string"
-      ? user.app_metadata.role
-      : "";
+  const role = await getSessionMembershipRole();
+  if (!role) return null;
 
   const packages = await loadMembershipPackages();
   const resolved = resolvePackageAccessForRole(role, packages);

@@ -4,7 +4,7 @@ import { SignInForm } from "@/components/features/auth/sign-in-form";
 
 export const metadata: Metadata = {
   title: "Anmelden — Leseno",
-  description: "Mit E-Mail und Passwort bei Leseno anmelden.",
+  description: "Mit E-Mail oder Kennung bei Leseno anmelden.",
 };
 
 function safeEmailQuery(raw: string | undefined): string {
@@ -34,7 +34,7 @@ export default async function SignInPage({
     <AuthShell
       eyebrow="Konto"
       title="Anmelden"
-      description="Melde dich mit deiner E-Mail-Adresse und deinem Passwort an, um weiterzulesen und später Geschichten zu verwalten."
+      description="Melde dich mit E-Mail und Passwort an — oder mit der Kennung aus Meine Welt."
     >
       <SignInForm
         emailConfirmed={params.bestaetigt === "1"}

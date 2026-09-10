@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { signInAction } from "@/app/actions/auth";
+import { unifiedSignInAction } from "@/app/actions/auth";
 import {
   authInputClassName,
   authLabelClassName,
@@ -26,7 +26,7 @@ export function SignInForm({
   initialEmail?: string;
   nextPath?: string;
 }) {
-  const [email, setEmail] = useState(initialEmail);
+  const [identifier, setIdentifier] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -41,8 +41,8 @@ export function SignInForm({
     setFieldError(null);
 
     startTransition(async () => {
-      const result = await signInAction({
-        email,
+      const result = await unifiedSignInAction({
+        identifier,
         password,
         ...botGuard.getBotGuardPayload(),
       });
@@ -54,6 +54,10 @@ export function SignInForm({
       }
 
       toast.success("Du bist jetzt angemeldet.");
+      if (result.data?.kind === "child") {
+        window.location.href = "/geschichte";
+        return;
+      }
       window.location.href = nextPath.startsWith("/")
         ? nextPath
         : "/geschichte";
@@ -84,15 +88,17 @@ export function SignInForm({
             noch einmal öffnen oder dich neu registrieren.
           </p>
         ) : null}
+
         <label className="block">
-          <span className={authLabelClassName}>E-Mail</span>
+          <span className={authLabelClassName}>E-Mail oder Kennung</span>
           <input
-            key={`${fieldKey}-email`}
-            type="email"
-            name="email"
-            autoComplete={emailConfirmed ? "username" : "email"}
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            key={`${fieldKey}-identifier`}
+            type="text"
+            name="identifier"
+            autoComplete="username"
+            spellCheck={false}
+            value={identifier}
+            onChange={(event) => setIdentifier(event.target.value)}
             className={authInputClassName}
           />
         </label>
@@ -126,12 +132,9 @@ export function SignInForm({
         </button>
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-zinc-600">
+      <div className="mt-6 text-sm font-semibold text-zinc-600">
         <Link href="/passwort-vergessen" className="hover:text-orange-700">
           Passwort vergessen
-        </Link>
-        <Link href="/email-vergessen" className="hover:text-orange-700">
-          E-Mail vergessen
         </Link>
       </div>
     </form>

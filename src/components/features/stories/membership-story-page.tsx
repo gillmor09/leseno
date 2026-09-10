@@ -7,7 +7,7 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { GeschichteComposer } from "@/components/features/stories/geschichte-composer";
 import { isAdminImpersonating } from "@/lib/auth/admin-impersonation";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getAppSession } from "@/lib/auth/app-session";
 import { requireAnyMembershipPage } from "@/lib/auth/require-membership";
 import { hasStripeCheckoutConfig } from "@/lib/stripe/config";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
@@ -23,10 +23,15 @@ import { loadChildProfileOptionsForUser } from "@/lib/world/story-options";
 export async function MembershipStoryPage() {
   await requireAnyMembershipPage();
 
-  const user = await getCurrentUser();
-  const meta = (user?.app_metadata ?? {}) as Record<string, unknown>;
+  const session = await getAppSession();
+  const isChild = session?.kind === "child";
+  const parentUser =
+    session?.kind === "parent" ? session.user : null;
+  const meta = (parentUser?.app_metadata ?? {}) as Record<string, unknown>;
   const isAdmin =
-    meta.role === "admin" && !isAdminImpersonating(meta);
+    Boolean(parentUser) &&
+    meta.role === "admin" &&
+    !isAdminImpersonating(meta);
 
   const [lengthCatalog, typographyDefaults] = await Promise.all([
     loadStoryLengthCatalog(),
@@ -41,18 +46,8 @@ export async function MembershipStoryPage() {
     : null;
 
   let unlockedProfileIds: string[] = [];
-  if (user?.id && childProfiles && childProfiles.length > 0) {
-    try {
-      const { listUnlockedChildProfileIds } = await import(
-        "@/lib/world/profile-pin-access"
-      );
-      unlockedProfileIds = await listUnlockedChildProfileIds(
-        user.id,
-        childProfiles,
-      );
-    } catch (error) {
-      console.warn("[MembershipStoryPage] profile unlock", error);
-    }
+  if (childProfiles && childProfiles.length > 0) {
+    unlockedProfileIds = childProfiles.map((profile) => profile.id);
   }
 
   let initialCredits = 0;
@@ -62,8 +57,8 @@ export async function MembershipStoryPage() {
     console.error("[MembershipStoryPage] credits", error);
   }
 
-  // Catch-up: grant any paid months missed while the app was unused.
-  if (user?.id && hasStripeCheckoutConfig()) {
+  // Catch-up: grant any paid months missed while the app was unused (parent only).
+  if (parentUser?.id && hasStripeCheckoutConfig()) {
     try {
       const { reconcileSubscriptionCreditGrants } = await import(
         "@/lib/stripe/credit-grants"
@@ -71,7 +66,7 @@ export async function MembershipStoryPage() {
       const { loadMyCredits: reloadCredits } = await import(
         "@/lib/users/billing"
       );
-      const catchUp = await reconcileSubscriptionCreditGrants(user.id);
+      const catchUp = await reconcileSubscriptionCreditGrants(parentUser.id);
       if (catchUp.creditsGranted > 0) {
         initialCredits = await reloadCredits();
       }
@@ -95,8 +90,11 @@ export async function MembershipStoryPage() {
             childProfiles={childProfiles}
             unlockedProfileIds={unlockedProfileIds}
             enabledFeatures={enabledFeatures}
-            inviteUserId={user?.id ?? null}
+            inviteUserId={isChild ? null : (parentUser?.id ?? null)}
             isAdmin={isAdmin}
+            childSessionLockedProfileId={
+              isChild ? session.profileId : null
+            }
           />
         </section>
       </main>

@@ -12,7 +12,12 @@ import { toUserFacingMessage } from "@/lib/errors/user-facing";
 import { assertBotGuard } from "@/lib/security/bot-guard";
 import { storyCreditsForLength } from "@/lib/stories/credits-cost";
 import type { StoryLengthStepId } from "@/lib/stories/length";
-import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
+import {
+  formatStoryTopicMixLabel,
+  type StoryMoodId,
+  type StorySchoolStageId,
+  type StoryTopicMixPatternId,
+} from "@/lib/stories/options";
 import { buildPersonalStoryContext } from "@/lib/stories/personal";
 import type { StoryGenerateActionData } from "@/lib/stories/story-generate-action-data";
 import {
@@ -41,13 +46,19 @@ const STORY_GENERATE_FALLBACK =
   "Die Geschichte konnte gerade nicht entstehen. Bitte versuche es gleich noch einmal.";
 
 type PreparedStoryGenerate = {
+  /** Library / activity topic label (may be „A + B“ when mixing). */
   topic: string;
+  /** Hauptthema keyword for the pipeline (unchanged when mixing). */
+  topicMain: string;
+  topicSecondary: string | null;
+  topicMixPattern: StoryTopicMixPatternId | null;
   schoolStage: StorySchoolStageId;
   lengthStep: StoryLengthStepId;
   mood: StoryMoodId;
   personal: ReturnType<typeof buildPersonalStoryContext> | null;
   syllableHelp: boolean;
   includeImages: boolean;
+  conflictDepth: boolean;
   trialMode: boolean;
   personalMode: boolean;
   profileId?: string;
@@ -118,14 +129,27 @@ async function prepareFreeStoryGenerate(
 
   try {
     let personal = null as ReturnType<typeof buildPersonalStoryContext> | null;
-    let topic = parsed.data.topic?.trim() ?? "";
+    let topicMain = parsed.data.topic?.trim() ?? "";
+    let topicSecondary: string | null =
+      parsed.data.topicSecondary?.trim() || null;
+    let topicMixPattern: StoryTopicMixPatternId | null =
+      parsed.data.topicMixPattern ?? null;
     let schoolStage = parsed.data.schoolStage;
     let includeImages = parsed.data.includeImages;
     let syllableHelp = parsed.data.syllableHelp;
+    let conflictDepth = parsed.data.conflictDepth;
 
     const packageFeatures = parsed.data.trialMode
       ? []
       : await loadFeaturesForCurrentUser();
+
+    if (!featuresInclude(packageFeatures, "mehr_tiefgang")) {
+      conflictDepth = false;
+      if (!parsed.data.personalMode) {
+        topicSecondary = null;
+        topicMixPattern = null;
+      }
+    }
 
     if (parsed.data.personalMode) {
       if (!featuresInclude(packageFeatures, "meine_welt")) {
@@ -135,8 +159,9 @@ async function prepareFreeStoryGenerate(
             "Persönliche Geschichten gehören nicht zu deinem Paket. Bitte wähl Freies lesen oder upgrade.",
         };
       }
-      const user = await getCurrentUser();
-      if (!user) {
+      const { getAppSession } = await import("@/lib/auth/app-session");
+      const session = await getAppSession();
+      if (!session) {
         return {
           success: false,
           error: "Für eine persönliche Geschichte melde dich bitte zuerst an.",
@@ -146,6 +171,15 @@ async function prepareFreeStoryGenerate(
         return {
           success: false,
           error: "Bitte wähl ein Kinder-Profil.",
+        };
+      }
+      if (
+        session.kind === "child" &&
+        session.profileId !== parsed.data.profileId
+      ) {
+        return {
+          success: false,
+          error: "Dieses Profil gehört nicht zu deiner Anmeldung.",
         };
       }
       const profile = await loadChildProfile(parsed.data.profileId);
@@ -165,7 +199,9 @@ async function prepareFreeStoryGenerate(
       personal = buildPersonalStoryContext(profile, {
         mood: parsed.data.mood,
       });
-      topic = personal.topic;
+      topicMain = personal.topic;
+      topicSecondary = null;
+      topicMixPattern = null;
       schoolStage = profile.schoolStage;
       includeImages = profile.includeImages;
       syllableHelp = profile.syllableHelp;
@@ -182,8 +218,9 @@ async function prepareFreeStoryGenerate(
         syllableHelp = false;
       }
 
-      const user = await getCurrentUser();
-      if (!user) {
+      const { getBillingUserId } = await import("@/lib/auth/app-session");
+      const billingUserId = await getBillingUserId();
+      if (!billingUserId) {
         return {
           success: false,
           error: "Bitte melde dich an, um eine Geschichte zu erzeugen.",
@@ -192,7 +229,7 @@ async function prepareFreeStoryGenerate(
 
       try {
         creditsRemaining = await spendMyCredits(creditCost);
-        chargedUserId = user.id;
+        chargedUserId = billingUserId;
       } catch (creditError) {
         return {
           success: false,
@@ -204,16 +241,25 @@ async function prepareFreeStoryGenerate(
       }
     }
 
+    const topic =
+      topicSecondary && topicMixPattern
+        ? formatStoryTopicMixLabel(topicMain, topicSecondary)
+        : topicMain;
+
     return {
       success: true,
       data: {
         topic,
+        topicMain,
+        topicSecondary,
+        topicMixPattern,
         schoolStage,
         lengthStep: parsed.data.lengthStep,
         mood: parsed.data.mood,
         personal,
         syllableHelp,
         includeImages,
+        conflictDepth,
         trialMode: parsed.data.trialMode,
         personalMode: parsed.data.personalMode,
         profileId: parsed.data.profileId,
@@ -240,13 +286,16 @@ async function finishFreeStoryGenerate(
   try {
     result = await generateStoryPipeline(
       {
-        topic: prepared.topic,
+        topic: prepared.topicMain,
+        topicSecondary: prepared.topicSecondary,
+        topicMixPattern: prepared.topicMixPattern,
         schoolStage: prepared.schoolStage,
         lengthStep: prepared.lengthStep,
         mood: prepared.mood,
         personal: prepared.personal,
         syllableHelp: prepared.syllableHelp,
         includeImages: prepared.includeImages,
+        conflictDepth: prepared.conflictDepth,
       },
       { onProgress },
     );
@@ -264,14 +313,18 @@ async function finishFreeStoryGenerate(
     throw pipelineError;
   }
 
-  const user = await getCurrentUser();
+  const { getAppSession, getBillingUserId } = await import(
+    "@/lib/auth/app-session"
+  );
+  const session = await getAppSession();
+  const billingUserId = await getBillingUserId();
   let libraryStoryId: string | undefined;
-  if (user) {
+  if (session && billingUserId) {
     const { logUserActivity } = await import("@/lib/users/activity");
     await logUserActivity({
       action: "story.generate",
       label: "Geschichte erzeugen",
-      userId: user.id,
+      userId: billingUserId,
       metadata: {
         personalMode: prepared.personalMode,
         lengthStep: prepared.lengthStep,
@@ -279,8 +332,12 @@ async function finishFreeStoryGenerate(
         schoolStage: prepared.schoolStage,
         includeImages: prepared.includeImages,
         topic: prepared.topic,
+        topicSecondary: prepared.topicSecondary,
+        topicMixPattern: prepared.topicMixPattern,
+        conflictDepth: prepared.conflictDepth,
         seedSource: prepared.personal?.seedSource,
         gentleFear: prepared.personal?.gentleFear ?? null,
+        childSession: session.kind === "child",
         creditsCharged:
           prepared.creditCost > 0 ? prepared.creditCost : undefined,
       },
@@ -294,11 +351,9 @@ async function finishFreeStoryGenerate(
         const { titleFromStoryHtml } = await import(
           "@/lib/stories/title-from-html"
         );
-        const { saveMyStory } = await import(
-          "@/lib/stories/library-repository"
-        );
-        libraryStoryId = await saveMyStory({
-          title: titleFromStoryHtml(result.story),
+        const title = titleFromStoryHtml(result.story);
+        const saveInput = {
+          title,
           storyHtml: result.story,
           facts: result.facts,
           schoolStage: prepared.schoolStage,
@@ -312,7 +367,18 @@ async function finishFreeStoryGenerate(
           syllableHelp: prepared.syllableHelp,
           includeImages: prepared.includeImages,
           creditsCharged: prepared.creditCost > 0 ? prepared.creditCost : null,
-        });
+        };
+        if (session.kind === "child") {
+          const { saveStoryForUser } = await import(
+            "@/lib/stories/library-repository"
+          );
+          libraryStoryId = await saveStoryForUser(billingUserId, saveInput);
+        } else {
+          const { saveMyStory } = await import(
+            "@/lib/stories/library-repository"
+          );
+          libraryStoryId = await saveMyStory(saveInput);
+        }
       } catch (saveError) {
         console.error("[finishFreeStoryGenerate] library save", saveError);
       }

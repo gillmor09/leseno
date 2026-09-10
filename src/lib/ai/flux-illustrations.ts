@@ -25,7 +25,7 @@ export type FluxIllustrationPlan = {
 export type FluxIllustrationContext = {
   topic: string;
   schoolStageLabel: string;
-  /** Short UI label (Lustig / Spannend / Motivierend). */
+  /** Short UI genre label (Lustig / Abenteuer / Motivierend). */
   moodLabel: string;
   /** Genre id — drives visual vibe without dumping German prose into FLUX. */
   moodId: StoryMoodId;
@@ -42,9 +42,9 @@ const MOOD_VISUAL_CUES: Record<StoryMoodId, string> = {
   lustig:
     "Comedy slapstick vibe: funny mishaps, playful exaggerated expressions, lighthearted clowning around.",
   spannend:
-    "Kid-safe detective mystery vibe: clues, searching, suspenseful investigation energy, no scary violence.",
+    "Kid-safe adventure vibe: journey, obstacles, determined exploring, optional light mystery clues, no scary violence.",
   motivierend:
-    "Motivational coach vibe: determined child overcoming a challenge, triumphant confident energy, can-do spirit.",
+    "Growth and courage vibe: determined child practicing through a challenge, hopeful breakthrough, can-do spirit — not a lecture.",
 };
 
 const STYLE_PREFIX =

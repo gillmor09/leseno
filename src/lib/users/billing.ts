@@ -54,8 +54,14 @@ export async function getUserCredits(userId: string): Promise<number> {
   return typeof data === "number" ? data : 0;
 }
 
-/** Own credits via session RPC (`get_my_credits`). */
+/** Own credits via session RPC (`get_my_credits`), or parent balance for child login. */
 export async function loadMyCredits(): Promise<number> {
+  const { getAppSession } = await import("@/lib/auth/app-session");
+  const session = await getAppSession();
+  if (session?.kind === "child") {
+    return getUserCredits(session.parentUserId);
+  }
+
   const { createClient } = await import("@/lib/supabase/server");
   const supabase = await createClient(null);
   const { data, error } = await supabase.rpc("get_my_credits");
@@ -75,10 +81,32 @@ export async function spendMyCredits(amount: number): Promise<number> {
     throw new Error("Credit-Betrag ungültig.");
   }
 
-  const { getCurrentUser } = await import("@/lib/auth/session");
-  const user = await getCurrentUser();
-  if (user?.app_metadata?.role === "admin") {
+  const { getAppSession } = await import("@/lib/auth/app-session");
+  const session = await getAppSession();
+  if (!session) {
+    throw new Error("Bitte melde dich an.");
+  }
+
+  if (session.kind === "parent" && session.user.app_metadata?.role === "admin") {
     return loadMyCredits().catch(() => 0);
+  }
+
+  if (session.kind === "child") {
+    const supabase = createServiceClient(null);
+    const { data, error } = await supabase.rpc("spend_credits_for_user", {
+      p_user_id: session.parentUserId,
+      p_amount: amount,
+    });
+    if (error) {
+      const message = error.message ?? "";
+      if (/Nicht genug Credits/i.test(message)) {
+        throw new Error(
+          "Du hast nicht genug Credits für diese Geschichtenlänge. Bitte Credits nachladen oder eine kürzere Länge wählen.",
+        );
+      }
+      throw new Error(message || "Credits konnten nicht abgebucht werden.");
+    }
+    return typeof data === "number" ? data : 0;
   }
 
   const { createClient } = await import("@/lib/supabase/server");

@@ -6,7 +6,6 @@ import {
   Check,
   BicepsFlexed,
   CalendarDays,
-  ImageIcon,
   Lightbulb,
   Maximize2,
   Smile,
@@ -65,8 +64,8 @@ const moods = [
     icon: Smile,
   },
   {
-    title: "Spannend",
-    text: "Detektivgeschichte mit Rätsel, Spuren und Auflösung — kindgerecht spannend, mit echten Fakten im Gepäck.",
+    title: "Abenteuer",
+    text: "Hindernis, Plan, Höhepunkt: echte Abenteuer-Spannung — optional mit Rätsel, kindgerecht und ohne Angstmachen.",
     image: "/landing/mood-spannend.webp",
     imageAlt:
       "Kind liest gebannt, während der Leseno-Vogel und ein Blitz aus dem Buch aufsteigen",
@@ -74,7 +73,7 @@ const moods = [
   },
   {
     title: "Motivierend",
-    text: "Mut und Durchhalten im Abenteuer — und danach das Gefühl: Wenn ich will, schaff ich das.",
+    text: "Wachstum und Mut: üben, Rückschlag, Durchbruch — danach das Gefühl: Wenn ich will, schaff ich das.",
     image: "/landing/mood-motivierend.webp",
     imageAlt:
       "Kind betrachtet zuversichtlich ein Buch, aus dem der leuchtende Leseno-Vogel steigt",
@@ -104,14 +103,9 @@ const strengths = [
     icon: BookMarked,
   },
   {
-    title: "Vorlesen & Silbenhilfe",
-    text: "Müde oder stecken geblieben? Vorlesen mit Tempo — und Silbenhilfe, damit der Fluss bleibt.",
+    title: "Vorlesen, Silben & Bilder",
+    text: "Vorlesen mit Tempo, Silbenhilfe für den Fluss — und Illustrationen, die dich mittendrin im Abenteuer halten.",
     icon: Volume2,
-  },
-  {
-    title: "Mit Bildern mittendrin",
-    text: "Illustrationen zur Geschichte: Du siehst, was du liest — und bleibst mittendrin im Abenteuer.",
-    icon: ImageIcon,
   },
   {
     title: "Adventskalenderbuch",
@@ -256,7 +250,7 @@ function HeroSection() {
                 Vulkane
               </span>
               <span className="rounded-full bg-yellow-400 px-2.5 py-0.5 text-xs font-extrabold text-zinc-950">
-                Spannend
+                Abenteuer
               </span>
             </div>
             <p className="mt-3 rounded-xl bg-orange-50 px-3 py-2 text-xs leading-relaxed font-semibold text-orange-900">
@@ -324,12 +318,12 @@ function StrengthsSection() {
           Deine Superkräfte
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Sieben Dinge, die Lesen leichter machen.
+          Sechs Dinge, die Lesen leichter machen.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
           Die Highlights, die zählen: eigene Geschichten, Lesemodus, Buchclub,
-          Bücherei mit Fortsetzen, Vorlesen, Bilder und das Adventskalenderbuch
-          — je nach Paket freischaltbar.
+          Bücherei mit Fortsetzen, Vorlesen mit Silben und Bildern sowie das
+          Adventskalenderbuch — je nach Paket freischaltbar.
         </p>
         <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {strengths.map((item) => {

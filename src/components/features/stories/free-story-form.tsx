@@ -31,16 +31,23 @@ import type { StoryLengthCatalog, StoryLengthStepId } from "@/lib/stories/length
 import type { ReadingTypographyDefaultsCatalog } from "@/lib/stories/reading-typography-defaults";
 import { StoryResultPanel } from "@/components/features/stories/story-result-panel";
 import { ChildProfilePickerCard } from "@/components/features/stories/child-profile-picker-card";
-import { ChildProfilePinUnlockDialog } from "@/components/features/world/child-profile-pin-unlock-dialog";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import type { ChildProfileOption } from "@/lib/world/catalog";
 import { FREE_READING_EXTRAS } from "@/lib/world/catalog";
 import {
   STORY_SCHOOL_STAGES,
   STORY_MOODS,
-  STORY_TOP_TOPICS,
+  STORY_TOPIC_MIX_PATTERNS,
+  STORY_TOPIC_VISIBLE_COUNT,
+  coerceStoryTopicForSchoolStage,
+  defaultStoryTopicForSchoolStage,
+  formatStoryTopicMixLabel,
+  storyTopicsForSchoolStage,
+  visibleStoryTopicsForSchoolStage,
   type StoryMoodId,
   type StorySchoolStageId,
   type StoryTopTopic,
+  type StoryTopicMixPatternId,
 } from "@/lib/stories/options";
 import {
   TRIAL_ALLOWED_SCHOOL_STAGES,
@@ -76,6 +83,7 @@ export function FreeStoryForm({
   inviteUserId = null,
   initialUnlockedProfileIds = [],
   isAdmin = false,
+  childSessionLockedProfileId = null,
 }: {
   lengthCatalog: StoryLengthCatalog;
   typographyDefaults: ReadingTypographyDefaultsCatalog;
@@ -94,42 +102,61 @@ export function FreeStoryForm({
   onCreditsChange?: (credits: number) => void;
   /** Personal invite `?ref=` after a story (membership). */
   inviteUserId?: string | null;
-  /** Profile ids without PIN or already unlocked this session. */
+  /** @deprecated PIN unlock removed; all ids are usable. */
   initialUnlockedProfileIds?: string[];
   /** Admin wait overlay shows live pipeline model/stage. */
   isAdmin?: boolean;
+  /**
+   * When set (child cookie login), only this profile may be used — no Freies
+   * lesen switch, no Meine-Welt editing.
+   */
+  childSessionLockedProfileId?: string | null;
 }) {
   const canFeature = (feature: PackageFeatureId) =>
     !trialMode && featuresInclude(enabledFeatures, feature);
 
-  const unlockedAtStart = new Set(initialUnlockedProfileIds);
+  const lockedChildProfile =
+    childSessionLockedProfileId && childProfiles
+      ? (childProfiles.find(
+          (profile) => profile.id === childSessionLockedProfileId,
+        ) ?? null)
+      : null;
+
   const startupProfile = trialMode
     ? null
-    : (childProfiles?.find(
-        (profile) =>
-          profile.isDefault &&
-          profile.personalReady &&
-          (!profile.hasPin || unlockedAtStart.has(profile.id)),
-      ) ?? null);
+    : (lockedChildProfile ??
+      childProfiles?.find(
+        (profile) => profile.isDefault && profile.personalReady,
+      ) ??
+      null);
 
-  const [topic, setTopic] = useState<StoryTopTopic | "">(
-    STORY_TOP_TOPICS[0],
-  );
-  /** `null` = Freies lesen (fallback). Default profile wins when ready. */
-  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
-    startupProfile?.id ?? null,
-  );
-  const [unlockedIds, setUnlockedIds] = useState(
-    () => new Set(initialUnlockedProfileIds),
-  );
-  const [pendingUnlock, setPendingUnlock] = useState<{
-    profileId: string;
-    profileName: string;
-  } | null>(null);
   const [schoolStage, setSchoolStage] = useState<StorySchoolStageId>(
     trialMode
       ? TRIAL_DEFAULT_SCHOOL_STAGE
       : (startupProfile?.schoolStage ?? "klasse_3"),
+  );
+  const [topic, setTopic] = useState<StoryTopTopic>(() =>
+    defaultStoryTopicForSchoolStage(
+      trialMode
+        ? TRIAL_DEFAULT_SCHOOL_STAGE
+        : (startupProfile?.schoolStage ?? "klasse_3"),
+    ),
+  );
+  const [mehrTiefgang, setMehrTiefgang] = useState(false);
+  const [topicSecondary, setTopicSecondary] = useState<StoryTopTopic | null>(
+    null,
+  );
+  const [topicMixPattern, setTopicMixPattern] =
+    useState<StoryTopicMixPatternId | null>(null);
+  const [topicsExpanded, setTopicsExpanded] = useState(false);
+  const [topicsSecondaryExpanded, setTopicsSecondaryExpanded] = useState(false);
+  /** Optional Nebenthema; when set, a mix pattern is required. */
+  /** `null` = Freies lesen (fallback). Default profile wins when ready. */
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
+    startupProfile?.id ?? lockedChildProfile?.id ?? null,
+  );
+  const [unlockedIds] = useState(
+    () => new Set(initialUnlockedProfileIds),
   );
   const [lengthStep, setLengthStep] = useState<StoryLengthStepId>(
     trialMode
@@ -164,6 +191,13 @@ export function FreeStoryForm({
     setProfiles(childProfiles);
   }, [childProfiles]);
 
+  useEffect(() => {
+    if (topicSecondary && topicSecondary === topic) {
+      setTopicSecondary(null);
+      setTopicMixPattern(null);
+    }
+  }, [topic, topicSecondary]);
+
   const selectedProfile =
     selectedProfileId == null
       ? null
@@ -184,6 +218,7 @@ export function FreeStoryForm({
   const readableAloud =
     canFeature("vorlesen") &&
     (selectedProfile?.readableAloud ?? FREE_READING_EXTRAS.readableAloud);
+  const allowMehrTiefgang = canFeature("mehr_tiefgang");
   const allowPdfExport = canFeature("export");
   const allowFactWhy = canFeature("warum");
   const allowFactWhyMore = canFeature("hintergrund");
@@ -221,6 +256,19 @@ export function FreeStoryForm({
       return;
     }
 
+    if (!personalMode && mehrTiefgang && topicSecondary) {
+      if (topicSecondary === topic) {
+        setFieldError("Haupt- und Nebenthema müssen verschieden sein.");
+        toast.error("Haupt- und Nebenthema müssen verschieden sein.");
+        return;
+      }
+      if (!topicMixPattern) {
+        setFieldError("Bitte wähl, wie die Themen gemischt werden.");
+        toast.error("Bitte wähl, wie die Themen gemischt werden.");
+        return;
+      }
+    }
+
     if (!trialMode && !hasEnoughCredits) {
       setFieldError(
         `Für diese Länge brauchst du ${storyCreditCost} Credits. Du hast ${initialCredits.toLocaleString("de-DE")}.`,
@@ -242,6 +290,10 @@ export function FreeStoryForm({
       metadata: {
         personalMode,
         topic: personalMode ? null : topic,
+        topicSecondary:
+          personalMode || !mehrTiefgang ? null : topicSecondary,
+        topicMixPattern:
+          personalMode || !mehrTiefgang ? null : topicMixPattern,
         profileId: activeProfileId,
         lengthStep,
         mood,
@@ -258,7 +310,20 @@ export function FreeStoryForm({
       syllableHelp,
       includeImages,
       trialMode,
+      conflictDepth: allowMehrTiefgang && mehrTiefgang,
       topic: trialMode || !personalMode ? topic : undefined,
+      topicSecondary:
+        trialMode || !personalMode
+          ? mehrTiefgang && topicSecondary
+            ? topicSecondary
+            : undefined
+          : undefined,
+      topicMixPattern:
+        trialMode || !personalMode
+          ? mehrTiefgang && topicSecondary && topicMixPattern
+            ? topicMixPattern
+            : undefined
+          : undefined,
       schoolStage,
       lengthStep,
       mood,
@@ -364,7 +429,9 @@ export function FreeStoryForm({
   const selectionCollapsed = hasStory && !selectionExpanded;
   const summaryTopic = personalMode
     ? `Persönlich (${selectedProfile?.displayName ?? "Profil"})`
-    : topic || "Thema";
+    : mehrTiefgang && topicSecondary
+      ? formatStoryTopicMixLabel(topic, topicSecondary)
+      : topic || "Thema";
   const summaryStage =
     STORY_SCHOOL_STAGES.find((stage) => stage.id === schoolStage)?.label ??
     schoolStage;
@@ -379,6 +446,7 @@ export function FreeStoryForm({
     summaryStage,
     summaryMood,
     includeImages ? "Mit Bildern" : null,
+    mehrTiefgang ? "Mehr Tiefgang" : null,
     syllableHelp ? "Silbenhilfe" : null,
     wordHighlight ? "Wort-Markierung" : null,
   ]
@@ -412,10 +480,13 @@ export function FreeStoryForm({
   }
 
   function handleProfileSelect(profileId: string | null) {
+    if (childSessionLockedProfileId) {
+      return;
+    }
     if (profileId === null) {
       setSelectedProfileId(null);
       setLengthMoodOpen(false);
-      if (!topic) setTopic(STORY_TOP_TOPICS[0]);
+      if (!topic) setTopic(defaultStoryTopicForSchoolStage(schoolStage));
       trackUserActivity({
         action: "story.profile_select",
         label: "Leser: Freies lesen",
@@ -425,13 +496,6 @@ export function FreeStoryForm({
     }
     const next = profiles?.find((profile) => profile.id === profileId);
     if (!next) return;
-    if (next.hasPin && !unlockedIds.has(profileId)) {
-      setPendingUnlock({
-        profileId,
-        profileName: next.displayName,
-      });
-      return;
-    }
     applyProfileSelect(profileId);
   }
 
@@ -439,11 +503,16 @@ export function FreeStoryForm({
     <div className="grid min-w-0 max-w-full items-start gap-8">
       {childProfiles !== null && !trialMode && !selectionCollapsed ? (
         <ChildProfilePickerCard
-          profiles={profiles ?? []}
+          profiles={
+            lockedChildProfile
+              ? [lockedChildProfile]
+              : (profiles ?? [])
+          }
           selectedId={selectedProfileId}
           unlockedIds={unlockedIds}
           onSelect={handleProfileSelect}
-          disabled={isPending}
+          disabled={isPending || Boolean(childSessionLockedProfileId)}
+          hideFreeReading={Boolean(childSessionLockedProfileId)}
           lengthLabel={
             personalMode
               ? (lengthCatalog.steps.find((step) => step.id === lengthStep)
@@ -461,21 +530,6 @@ export function FreeStoryForm({
               ? () => setLengthMoodOpen((open) => !open)
               : undefined
           }
-        />
-      ) : null}
-
-      {pendingUnlock ? (
-        <ChildProfilePinUnlockDialog
-          open
-          profileId={pendingUnlock.profileId}
-          profileName={pendingUnlock.profileName}
-          onCancel={() => setPendingUnlock(null)}
-          onUnlocked={() => {
-            const id = pendingUnlock.profileId;
-            setUnlockedIds((current) => new Set(current).add(id));
-            setPendingUnlock(null);
-            applyProfileSelect(id);
-          }}
         />
       ) : null}
 
@@ -595,46 +649,6 @@ export function FreeStoryForm({
             {!personalMode ? (
               <section className={selectionCardClass}>
                 <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                  Thema
-                </p>
-                <p className="mt-1 text-sm text-zinc-600">
-                  Wähl eines der Top-Themen für freies Lesen.
-                </p>
-                <div
-                  className="mt-3 flex flex-wrap gap-2"
-                  role="group"
-                  aria-label="Thema"
-                >
-                  {STORY_TOP_TOPICS.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => {
-                        setTopic(item);
-                        trackUserActivity({
-                          action: "story.topic_select",
-                          label: "Thema gewählt",
-                          metadata: { topic: item },
-                        });
-                      }}
-                      className={cn(
-                        "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
-                        topic === item
-                          ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
-                          : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
-                      )}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            ) : null}
-
-            {!personalMode ? (
-              <section className={selectionCardClass}>
-                <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
                   Schulstufe
                 </p>
                 <p className="mt-1 text-sm text-zinc-600">
@@ -657,12 +671,248 @@ export function FreeStoryForm({
                         key={stage.id}
                         active={schoolStage === stage.id}
                         disabled={!allowed}
-                        onClick={() => setSchoolStage(stage.id)}
+                        onClick={() => {
+                          setSchoolStage(stage.id);
+                          setTopic((current) =>
+                            coerceStoryTopicForSchoolStage(current, stage.id),
+                          );
+                          setTopicSecondary((current) => {
+                            if (!current) return null;
+                            const next = coerceStoryTopicForSchoolStage(
+                              current,
+                              stage.id,
+                            );
+                            return next;
+                          });
+                          setTopicsExpanded(false);
+                          setTopicsSecondaryExpanded(false);
+                        }}
                         label={stage.label}
                       />
                     );
                   })}
                 </div>
+              </section>
+            ) : null}
+
+            {!personalMode ? (
+              <section className={selectionCardClass}>
+                <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+                  Hauptthema
+                </p>
+                <p className="mt-1 text-sm text-zinc-600">
+                  Schauplatz oder Plot für deine Geschichte.
+                </p>
+                <div
+                  className="mt-3 flex flex-wrap gap-2"
+                  role="group"
+                  aria-label="Hauptthema"
+                >
+                  {visibleStoryTopicsForSchoolStage(schoolStage, {
+                    expanded: topicsExpanded,
+                    selected: topic,
+                  }).map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => {
+                        setTopic(item);
+                        if (topicSecondary === item) {
+                          setTopicSecondary(null);
+                          setTopicMixPattern(null);
+                        }
+                        trackUserActivity({
+                          action: "story.topic_select",
+                          label: "Hauptthema gewählt",
+                          metadata: { topic: item, schoolStage },
+                        });
+                      }}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
+                        topic === item
+                          ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                          : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
+                      )}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                  {storyTopicsForSchoolStage(schoolStage).length >
+                  STORY_TOPIC_VISIBLE_COUNT ? (
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => setTopicsExpanded((open) => !open)}
+                      className="rounded-full px-3 py-1.5 text-sm font-bold text-orange-800 ring-1 ring-orange-700/20 transition-all duration-200 ease-in-out hover:bg-orange-50"
+                      aria-expanded={topicsExpanded}
+                    >
+                      {topicsExpanded ? "Weniger" : "Mehr"}
+                    </button>
+                  ) : null}
+                </div>
+
+                {allowMehrTiefgang ? (
+                  <div className="mt-5 border-t border-zinc-100 pt-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+                          Mehr Tiefgang
+                        </p>
+                        <p className="mt-1 text-sm text-zinc-600">
+                          Realistische Konflikte und optional ein Nebenthema —
+                          Figuren vertragen sich nicht sofort, Emotionen bleiben
+                          spürbar.
+                        </p>
+                      </div>
+                      <ToggleSwitch
+                        checked={mehrTiefgang}
+                        onCheckedChange={(checked) => {
+                          setMehrTiefgang(checked);
+                          if (!checked) {
+                            setTopicSecondary(null);
+                            setTopicMixPattern(null);
+                            setTopicsSecondaryExpanded(false);
+                          }
+                        }}
+                        disabled={isPending}
+                        aria-label="Mehr Tiefgang"
+                      />
+                    </div>
+
+                    {mehrTiefgang ? (
+                      <>
+                        <p className="mt-4 text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+                          Nebenthema
+                        </p>
+                        <p className="mt-1 text-sm text-zinc-600">
+                          Optional: Figur, Fähigkeit oder Konflikt — maximal zwei
+                          Themen.
+                        </p>
+                        <div
+                          className="mt-3 flex flex-wrap gap-2"
+                          role="group"
+                          aria-label="Nebenthema"
+                        >
+                          {visibleStoryTopicsForSchoolStage(schoolStage, {
+                            expanded: topicsSecondaryExpanded,
+                            selected: topicSecondary ?? undefined,
+                          })
+                            .filter((item) => item !== topic)
+                            .map((item) => (
+                              <button
+                                key={item}
+                                type="button"
+                                disabled={isPending}
+                                onClick={() => {
+                                  setTopicSecondary((current) => {
+                                    if (current === item) {
+                                      setTopicMixPattern(null);
+                                      return null;
+                                    }
+                                    if (!topicMixPattern) {
+                                      setTopicMixPattern("crossover");
+                                    }
+                                    return item;
+                                  });
+                                  trackUserActivity({
+                                    action: "story.topic_secondary_select",
+                                    label: "Nebenthema gewählt",
+                                    metadata: {
+                                      topic,
+                                      topicSecondary: item,
+                                      schoolStage,
+                                    },
+                                  });
+                                }}
+                                className={cn(
+                                  "rounded-full px-3 py-1.5 text-sm font-bold ring-1 transition-all duration-200 ease-in-out",
+                                  topicSecondary === item
+                                    ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                                    : "bg-gray-100 text-zinc-700 ring-zinc-950/10 hover:bg-white",
+                                )}
+                              >
+                                {item}
+                              </button>
+                            ))}
+                          {storyTopicsForSchoolStage(schoolStage).length >
+                          STORY_TOPIC_VISIBLE_COUNT ? (
+                            <button
+                              type="button"
+                              disabled={isPending}
+                              onClick={() =>
+                                setTopicsSecondaryExpanded((open) => !open)
+                              }
+                              className="rounded-full px-3 py-1.5 text-sm font-bold text-orange-800 ring-1 ring-orange-700/20 transition-all duration-200 ease-in-out hover:bg-orange-50"
+                              aria-expanded={topicsSecondaryExpanded}
+                            >
+                              {topicsSecondaryExpanded ? "Weniger" : "Mehr"}
+                            </button>
+                          ) : null}
+                        </div>
+
+                        {topicSecondary ? (
+                          <div className="mt-5">
+                            <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+                              So mischen
+                            </p>
+                            <p className="mt-1 text-sm text-zinc-600">
+                              Wie sollen die beiden Themen in der Geschichte
+                              zusammenkommen?
+                            </p>
+                            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              {STORY_TOPIC_MIX_PATTERNS.map((pattern) => {
+                                const active = topicMixPattern === pattern.id;
+                                return (
+                                  <button
+                                    key={pattern.id}
+                                    type="button"
+                                    disabled={isPending}
+                                    onClick={() => {
+                                      setTopicMixPattern(pattern.id);
+                                      trackUserActivity({
+                                        action: "story.topic_mix_pattern",
+                                        label: "Mix-Muster gewählt",
+                                        metadata: {
+                                          pattern: pattern.id,
+                                          topic,
+                                          topicSecondary,
+                                        },
+                                      });
+                                    }}
+                                    className={cn(
+                                      "rounded-xl px-3 py-2.5 text-left ring-1 transition-all duration-200 ease-in-out",
+                                      active
+                                        ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+                                        : "bg-gray-100 text-zinc-950 ring-zinc-950/10 hover:bg-white",
+                                    )}
+                                  >
+                                    <span className="block text-xs font-extrabold">
+                                      {pattern.label}
+                                      <span className="ml-1 font-semibold opacity-70">
+                                        · {pattern.shortLabel}
+                                      </span>
+                                    </span>
+                                    <span
+                                      className={cn(
+                                        "mt-1 block text-[11px] leading-snug font-medium",
+                                        active
+                                          ? "text-zinc-800"
+                                          : "text-zinc-600",
+                                      )}
+                                    >
+                                      {pattern.principle}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -715,6 +965,28 @@ export function FreeStoryForm({
                     })}
                   </div>
                 </section>
+
+                {allowMehrTiefgang && personalMode ? (
+                  <section className={selectionCardClass}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+                          Mehr Tiefgang
+                        </p>
+                        <p className="mt-1 text-sm text-zinc-600">
+                          Realistische Konflikte: Figuren vertragen sich nicht
+                          sofort — Emotionen bleiben spürbar.
+                        </p>
+                      </div>
+                      <ToggleSwitch
+                        checked={mehrTiefgang}
+                        onCheckedChange={setMehrTiefgang}
+                        disabled={isPending}
+                        aria-label="Mehr Tiefgang"
+                      />
+                    </div>
+                  </section>
+                ) : null}
               </>
             ) : null}
 

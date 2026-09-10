@@ -9,11 +9,11 @@ import {
 import { assertBotGuard } from "@/lib/security/bot-guard";
 import type { ActionResult } from "@/lib/types/actions";
 import {
-  forgotEmailSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
   signInSchema,
   signUpSchema,
+  unifiedSignInSchema,
 } from "@/lib/validations/auth";
 
 /**
@@ -92,6 +92,9 @@ export async function signInAction(input: unknown): Promise<ActionResult> {
     return { success: false, error: "Anmeldung fehlgeschlagen. Bitte prüfe E-Mail und Passwort." };
   }
 
+  const { clearChildSessionCookie } = await import("@/lib/auth/child-session");
+  await clearChildSessionCookie();
+
   const { logUserActivity } = await import("@/lib/users/activity");
   await logUserActivity({
     action: "auth.sign_in",
@@ -102,6 +105,121 @@ export async function signInAction(input: unknown): Promise<ActionResult> {
   });
 
   return { success: true };
+}
+
+/**
+ * Single login entry: E-Mail → Eltern (Supabase Auth), Kennung → Kind (cookie).
+ * Detected by whether the identifier contains `@`. No registration/invite side effects.
+ */
+export async function unifiedSignInAction(
+  input: unknown,
+): Promise<ActionResult<{ kind: "parent" | "child" }>> {
+  const botError = await assertBotGuard(input, {
+    action: "sign-in",
+    minFillMs: 1200,
+    maxRequests: 12,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (botError) {
+    return { success: false, error: botError };
+  }
+
+  const parsed = unifiedSignInSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Die Anmeldung ist ungültig.",
+    };
+  }
+
+  const { identifier, password } = parsed.data;
+  const looksLikeEmail = identifier.includes("@");
+
+  if (looksLikeEmail) {
+    const emailParsed = signInSchema.safeParse({
+      email: identifier,
+      password,
+    });
+    if (!emailParsed.success) {
+      return {
+        success: false,
+        error:
+          emailParsed.error.issues[0]?.message ??
+          "Anmeldung fehlgeschlagen. Bitte prüfe deine Angaben.",
+      };
+    }
+
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.signInWithPassword(
+      emailParsed.data,
+    );
+    if (error) {
+      return {
+        success: false,
+        error: "Anmeldung fehlgeschlagen. Bitte prüfe deine Angaben.",
+      };
+    }
+
+    const { clearChildSessionCookie } = await import("@/lib/auth/child-session");
+    await clearChildSessionCookie();
+
+    const { logUserActivity } = await import("@/lib/users/activity");
+    await logUserActivity({
+      action: "auth.sign_in",
+      label: "Anmeldung",
+      path: "/anmelden",
+      userId: data.user?.id ?? null,
+      metadata: { email: emailParsed.data.email, kind: "parent" },
+    });
+
+    return { success: true, data: { kind: "parent" } };
+  }
+
+  const { childSignInSchema } = await import("@/lib/validations/user-world");
+  const childParsed = childSignInSchema.safeParse({
+    loginCode: identifier,
+    password,
+  });
+  if (!childParsed.success) {
+    return {
+      success: false,
+      error:
+        childParsed.error.issues[0]?.message ??
+        "Anmeldung fehlgeschlagen. Bitte prüfe deine Angaben.",
+    };
+  }
+
+  try {
+    const { lookupChildLoginByCode } = await import("@/lib/world/repository");
+    const { verifyPassword } = await import("@/lib/security/pin");
+    const { setChildSessionCookie } = await import("@/lib/auth/child-session");
+
+    const supabase = await createClient();
+    await supabase.auth.signOut();
+
+    const row = await lookupChildLoginByCode(childParsed.data.loginCode);
+    if (!row || !verifyPassword(childParsed.data.password, row.passwordHash)) {
+      return {
+        success: false,
+        error: "Anmeldung fehlgeschlagen. Bitte prüfe deine Angaben.",
+      };
+    }
+
+    await setChildSessionCookie({
+      parentUserId: row.parentUserId,
+      profileId: row.profileId,
+      displayName: row.displayName || "Kind",
+      loginCode: row.loginCode,
+    });
+
+    return { success: true, data: { kind: "child" } };
+  } catch (error) {
+    console.error("[unifiedSignInAction] child", error);
+    return {
+      success: false,
+      error: "Anmeldung hat nicht geklappt. Bitte später erneut versuchen.",
+    };
+  }
 }
 
 /**
@@ -418,56 +536,12 @@ export async function resetPasswordAction(
 }
 
 /**
- * Stores a manual recovery request for people who forgot their signup email.
- */
-export async function requestEmailReminderAction(
-  input: unknown,
-): Promise<ActionResult> {
-  const botError = await assertBotGuard(input, {
-    action: "email-reminder",
-    minFillMs: 2000,
-    maxRequests: 5,
-    windowMs: 15 * 60 * 1000,
-  });
-  if (botError) {
-    return { success: false, error: botError };
-  }
-
-  const parsed = forgotEmailSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error:
-        parsed.error.issues[0]?.message ??
-        "Die Angaben für die E-Mail-Hilfe sind ungültig.",
-    };
-  }
-
-  const supabase = createServiceClient();
-  const { error } = await supabase.from("email_recovery_requests").insert({
-    contact_email: parsed.data.contactEmail,
-    remembered_name: parsed.data.rememberedName,
-    guessed_email: parsed.data.guessedEmail,
-    notes: parsed.data.notes,
-  });
-
-  if (error) {
-    return {
-      success: false,
-      error: "Die Anfrage konnte nicht gespeichert werden.",
-    };
-  }
-
-  return {
-    success: true,
-    data: "Deine Anfrage wurde gespeichert. Wir melden uns an die angegebene E-Mail-Adresse.",
-  };
-}
-
-/**
  * Ends the current Auth session and clears cookies.
  */
 export async function signOutAction(): Promise<ActionResult> {
+  const { clearChildSessionCookie } = await import("@/lib/auth/child-session");
+  await clearChildSessionCookie();
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -489,5 +563,65 @@ export async function signOutAction(): Promise<ActionResult> {
   }
 
   return { success: true };
+}
+
+/**
+ * Child login via Kennung + password (cookie session, no Supabase Auth user).
+ * Does not trigger registration or invites.
+ */
+export async function childSignInAction(
+  input: unknown,
+): Promise<ActionResult> {
+  const botError = await assertBotGuard(input, {
+    action: "child-sign-in",
+    minFillMs: 1200,
+    maxRequests: 12,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (botError) {
+    return { success: false, error: botError };
+  }
+
+  const { childSignInSchema } = await import("@/lib/validations/user-world");
+  const parsed = childSignInSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Anmeldung ungültig.",
+    };
+  }
+
+  try {
+    const { lookupChildLoginByCode } = await import("@/lib/world/repository");
+    const { verifyPassword } = await import("@/lib/security/pin");
+    const { setChildSessionCookie } = await import("@/lib/auth/child-session");
+
+    // Clear any parent Auth session so identities don't mix.
+    const supabase = await createClient();
+    await supabase.auth.signOut();
+
+    const row = await lookupChildLoginByCode(parsed.data.loginCode);
+    if (!row || !verifyPassword(parsed.data.password, row.passwordHash)) {
+      return {
+        success: false,
+        error: "Kennung oder Passwort stimmt nicht.",
+      };
+    }
+
+    await setChildSessionCookie({
+      parentUserId: row.parentUserId,
+      profileId: row.profileId,
+      displayName: row.displayName || "Kind",
+      loginCode: row.loginCode,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("[childSignInAction]", error);
+    return {
+      success: false,
+      error: "Anmeldung hat nicht geklappt. Bitte später erneut versuchen.",
+    };
+  }
 }
 

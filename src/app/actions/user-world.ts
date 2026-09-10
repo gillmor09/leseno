@@ -13,23 +13,36 @@ import {
   setChildProfileUnlockCookie,
 } from "@/lib/world/profile-pin-cookie";
 import {
+  clearChildLoginPasswordHash,
   clearChildProfilePinHash,
   deleteChildProfile,
   getChildProfilePinHash,
   listMyChildProfiles,
+  loadChildProfile,
   saveChildProfile,
   saveChildReadingModePrefs,
+  isChildLoginCodeAvailable,
+  setChildLoginCode,
+  setChildLoginPasswordHash,
   setChildProfilePinHash,
 } from "@/lib/world/repository";
 import {
+  clearChildLoginPasswordSchema,
+  checkChildLoginCodeSchema,
+  createChildOnboardingSchema,
   deleteChildProfileSchema,
   lockChildProfilePinSchema,
   removeChildProfilePinSchema,
   saveChildProfileSchema,
   saveChildReadingModePrefsSchema,
+  setChildLoginCodeSchema,
+  setChildLoginPasswordSchema,
   setChildProfilePinSchema,
   unlockChildProfilePinSchema,
 } from "@/lib/validations/user-world";
+import { hashPassword } from "@/lib/security/pin";
+import { EMPTY_CHILD_PROFILE_FIELDS } from "@/lib/world/catalog";
+import type { ChildProfile } from "@/lib/world/catalog";
 
 function revalidateWorldPaths() {
   revalidatePath("/meine-welt");
@@ -37,6 +50,11 @@ function revalidateWorldPaths() {
 }
 
 async function assertMeineWeltFeature(): Promise<string | null> {
+  const { getAppSession } = await import("@/lib/auth/app-session");
+  const session = await getAppSession();
+  if (session?.kind === "child") {
+    return "Meine Welt ist nur für Eltern-Zugänge.";
+  }
   const features = await loadFeaturesForCurrentUser();
   if (!featuresInclude(features, "meine_welt")) {
     return "Meine Welt gehört nicht zu deinem Paket.";
@@ -50,7 +68,9 @@ async function assertMeineWeltFeature(): Promise<string | null> {
  */
 export async function saveChildProfileAction(
   input: unknown,
-): Promise<ActionResult<{ id: string }>> {
+): Promise<
+  ActionResult<{ id: string; loginCode: string | null; hasPassword: boolean }>
+> {
   const parsed = saveChildProfileSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -109,8 +129,16 @@ export async function saveChildProfileAction(
         isDefault: parsed.data.isDefault,
       },
     });
+    const saved = await loadChildProfile(id);
     revalidateWorldPaths();
-    return { success: true, data: { id } };
+    return {
+      success: true,
+      data: {
+        id,
+        loginCode: saved?.loginCode ?? null,
+        hasPassword: saved?.hasPassword ?? false,
+      },
+    };
   } catch (error) {
     console.error("[saveChildProfileAction]", error);
     return {
@@ -392,4 +420,225 @@ export async function saveMyWorldAction(
     return { success: false, error: result.error };
   }
   return { success: true };
+}
+
+/** Sets or changes the child login password (Kennung stays as assigned). */
+export async function setChildLoginPasswordAction(
+  input: unknown,
+): Promise<ActionResult<{ hasPassword: true }>> {
+  const parsed = setChildLoginPasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültiges Passwort.",
+    };
+  }
+
+  try {
+    const featureError = await assertMeineWeltFeature();
+    if (featureError) {
+      return { success: false, error: featureError };
+    }
+
+    await setChildLoginPasswordHash(
+      parsed.data.profileId,
+      hashPassword(parsed.data.password),
+    );
+    revalidateWorldPaths();
+    return { success: true, data: { hasPassword: true } };
+  } catch (error) {
+    console.error("[setChildLoginPasswordAction]", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Passwort speichern fehlgeschlagen.",
+    };
+  }
+}
+
+/** Removes child login password (Kennung remains). */
+export async function clearChildLoginPasswordAction(
+  input: unknown,
+): Promise<ActionResult<{ hasPassword: false }>> {
+  const parsed = clearChildLoginPasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültige Profil-ID.",
+    };
+  }
+
+  try {
+    const featureError = await assertMeineWeltFeature();
+    if (featureError) {
+      return { success: false, error: featureError };
+    }
+
+    await clearChildLoginPasswordHash(parsed.data.profileId);
+    revalidateWorldPaths();
+    return { success: true, data: { hasPassword: false } };
+  } catch (error) {
+    console.error("[clearChildLoginPasswordAction]", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Passwort entfernen fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Blur-check: whether a Kennung can be used for a new or edited child login.
+ */
+export async function checkChildLoginCodeAction(
+  input: unknown,
+): Promise<ActionResult<{ available: boolean }>> {
+  const parsed = checkChildLoginCodeSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültige Kennung.",
+    };
+  }
+
+  try {
+    const featureError = await assertMeineWeltFeature();
+    if (featureError) {
+      return { success: false, error: featureError };
+    }
+
+    const available = await isChildLoginCodeAvailable(
+      parsed.data.loginCode,
+      parsed.data.excludeProfileId,
+    );
+    return { success: true, data: { available } };
+  } catch (error) {
+    console.error("[checkChildLoginCodeAction]", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Kennung konnte nicht geprüft werden.",
+    };
+  }
+}
+
+/** Sets or changes the child Kennung on an owned profile. */
+export async function setChildLoginCodeAction(
+  input: unknown,
+): Promise<ActionResult<{ loginCode: string }>> {
+  const parsed = setChildLoginCodeSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültige Kennung.",
+    };
+  }
+
+  try {
+    const featureError = await assertMeineWeltFeature();
+    if (featureError) {
+      return { success: false, error: featureError };
+    }
+
+    await setChildLoginCode(parsed.data.profileId, parsed.data.loginCode);
+    revalidateWorldPaths();
+    return { success: true, data: { loginCode: parsed.data.loginCode } };
+  } catch (error) {
+    console.error("[setChildLoginCodeAction]", error);
+    const message =
+      error instanceof Error ? error.message : "Kennung speichern fehlgeschlagen.";
+    if (/schon vergeben|bereits vergeben/i.test(message)) {
+      return { success: false, error: "Diese Kennung ist schon vergeben." };
+    }
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Creates a child profile from the onboarding dialog (name, stage, Kennung, password).
+ * Returns the full profile so the editor can open immediately.
+ */
+export async function createChildProfileOnboardingAction(
+  input: unknown,
+): Promise<ActionResult<{ profile: ChildProfile }>> {
+  const parsed = createChildOnboardingSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Die Angaben sind ungültig.",
+    };
+  }
+
+  try {
+    const featureError = await assertMeineWeltFeature();
+    if (featureError) {
+      return { success: false, error: featureError };
+    }
+
+    const features = await loadFeaturesForCurrentUser();
+    if (!featuresInclude(features, "meine_welt_familie")) {
+      const existing = await listMyChildProfiles();
+      if (existing.length >= 1) {
+        return {
+          success: false,
+          error:
+            "In deinem Paket ist nur ein Kinder-Profil möglich. Upgrade für die Familien-Funktion.",
+        };
+      }
+    }
+
+    const id = await saveChildProfile({
+      id: null,
+      fields: {
+        ...EMPTY_CHILD_PROFILE_FIELDS,
+        displayName: parsed.data.displayName,
+        schoolStage: parsed.data.schoolStage,
+        isDefault: parsed.data.isDefault,
+        includeImages: false,
+        syllableHelp: false,
+        wordHighlight: false,
+        readableAloud: featuresInclude(features, "vorlesen"),
+      },
+    });
+
+    try {
+      await setChildLoginCode(id, parsed.data.loginCode);
+      await setChildLoginPasswordHash(id, hashPassword(parsed.data.password));
+    } catch (loginError) {
+      try {
+        await deleteChildProfile(id);
+      } catch (cleanupError) {
+        console.error(
+          "[createChildProfileOnboardingAction] cleanup",
+          cleanupError,
+        );
+      }
+      throw loginError;
+    }
+
+    const profile = await loadChildProfile(id);
+    if (!profile) {
+      return {
+        success: false,
+        error: "Profil wurde angelegt, konnte aber nicht geladen werden.",
+      };
+    }
+
+    revalidateWorldPaths();
+    return { success: true, data: { profile } };
+  } catch (error) {
+    console.error("[createChildProfileOnboardingAction]", error);
+    const message =
+      error instanceof Error ? error.message : "Anlegen hat nicht geklappt.";
+    if (/schon vergeben|bereits vergeben/i.test(message)) {
+      return { success: false, error: "Diese Kennung ist schon vergeben." };
+    }
+    return { success: false, error: message };
+  }
 }

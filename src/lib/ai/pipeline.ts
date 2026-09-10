@@ -29,12 +29,16 @@ import {
   STORY_LENGTH_STEPS,
 } from "@/lib/stories/length";
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
+import { buildConflictDepthPromptBlock } from "@/lib/stories/conflict-depth";
 import {
   promptValueForMood,
+  promptValueForTopic,
+  promptValueForTopicMix,
   STORY_MOODS,
   STORY_SCHOOL_STAGES,
   type StoryMoodId,
   type StorySchoolStageId,
+  type StoryTopicMixPatternId,
 } from "@/lib/stories/options";
 import type { PersonalStoryContext } from "@/lib/stories/personal";
 import { buildPersonalPromptBlock } from "@/lib/stories/personal";
@@ -44,6 +48,9 @@ import { UserFacingError } from "@/lib/errors/user-facing";
 
 export type StoryGenerateInput = {
   topic: string;
+  /** Optional Nebenthema; only with `topicMixPattern` (free topic mode). */
+  topicSecondary?: string | null;
+  topicMixPattern?: StoryTopicMixPatternId | null;
   schoolStage: StorySchoolStageId;
   lengthStep: StoryLengthStepId;
   mood: StoryMoodId;
@@ -53,7 +60,29 @@ export type StoryGenerateInput = {
   syllableHelp?: boolean;
   /** When false, skip FLUX pixels and Mistral layout (story HTML only). */
   includeImages?: boolean;
+  /** Realistic conflict depth (lingering emotions, compromise). */
+  conflictDepth?: boolean;
 };
+
+/** Resolves `{{topic}}` for free mode (single or mix) and personal seeds. */
+function resolveTopicPromptValue(
+  input: Pick<
+    StoryGenerateInput,
+    "topic" | "topicSecondary" | "topicMixPattern" | "schoolStage" | "personal"
+  >,
+): string {
+  const secondary = input.topicSecondary?.trim() ?? "";
+  const pattern = input.topicMixPattern ?? null;
+  if (!input.personal && secondary && pattern) {
+    return promptValueForTopicMix({
+      main: input.topic,
+      secondary,
+      patternId: pattern,
+      schoolStage: input.schoolStage,
+    });
+  }
+  return promptValueForTopic(input.topic, input.schoolStage);
+}
 
 /** Continuation of an existing story (skips facts research). */
 export type StoryContinueInput = {
@@ -65,6 +94,7 @@ export type StoryContinueInput = {
   personal?: PersonalStoryContext | null;
   syllableHelp?: boolean;
   includeImages?: boolean;
+  conflictDepth?: boolean;
 };
 
 /** One Advent calendar day (1–24), chained via previous day HTML. */
@@ -73,12 +103,15 @@ export type StoryAdventDayInput = {
   adventYear: number;
   previousStoryHtml: string;
   topic: string;
+  topicSecondary?: string | null;
+  topicMixPattern?: StoryTopicMixPatternId | null;
   schoolStage: StorySchoolStageId;
   lengthStep: StoryLengthStepId;
   mood: StoryMoodId;
   personal?: PersonalStoryContext | null;
   syllableHelp?: boolean;
   includeImages?: boolean;
+  conflictDepth?: boolean;
 };
 
 export type StoryGenerateResult = {
@@ -445,7 +478,7 @@ export async function generateStoryPipeline(
   );
 
   const sharedValues = {
-    topic: input.topic,
+    topic: resolveTopicPromptValue(input),
     school_stage: labelForSchoolStage(input.schoolStage),
     story_mood: moodPromptValue(input.mood),
     length_step: labelForLengthStep(input.lengthStep),
@@ -459,6 +492,10 @@ export async function generateStoryPipeline(
       input.personal?.friendNames.join(", ") ?? "",
     syllable_help_block: buildSyllableHelpPromptBlock(
       Boolean(input.syllableHelp),
+    ),
+    conflict_depth_block: buildConflictDepthPromptBlock(
+      Boolean(input.conflictDepth),
+      input.schoolStage,
     ),
   };
 
@@ -661,7 +698,7 @@ export async function generateContinuationPipeline(
   );
 
   const sharedValues = {
-    topic: input.topic,
+    topic: resolveTopicPromptValue(input),
     school_stage: labelForSchoolStage(input.schoolStage),
     story_mood: moodPromptValue(input.mood),
     length_step: labelForLengthStep(input.lengthStep),
@@ -675,6 +712,10 @@ export async function generateContinuationPipeline(
     friends_list: input.personal?.friendNames.join(", ") ?? "",
     syllable_help_block: buildSyllableHelpPromptBlock(
       Boolean(input.syllableHelp),
+    ),
+    conflict_depth_block: buildConflictDepthPromptBlock(
+      Boolean(input.conflictDepth),
+      input.schoolStage,
     ),
   };
 
@@ -833,7 +874,7 @@ export async function generateAdventDayPipeline(
   const sharedValues = {
     advent_day: String(input.adventDay),
     advent_year: String(input.adventYear),
-    topic: input.topic,
+    topic: resolveTopicPromptValue(input),
     school_stage: labelForSchoolStage(input.schoolStage),
     story_mood: moodPromptValue(input.mood),
     length_step: labelForLengthStep(input.lengthStep),
@@ -847,6 +888,10 @@ export async function generateAdventDayPipeline(
     friends_list: input.personal?.friendNames.join(", ") ?? "",
     syllable_help_block: buildSyllableHelpPromptBlock(
       Boolean(input.syllableHelp),
+    ),
+    conflict_depth_block: buildConflictDepthPromptBlock(
+      Boolean(input.conflictDepth),
+      input.schoolStage,
     ),
   };
 

@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { LandingHeader } from "@/components/features/landing/landing-header";
 import { LandingMarketingHeader } from "@/components/features/landing/landing-marketing-header";
 import { isAdminImpersonating } from "@/lib/auth/admin-impersonation";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getAppSession } from "@/lib/auth/app-session";
 import {
   isMembershipRoleId,
   storyPathForRole,
@@ -14,26 +14,43 @@ import { featuresInclude } from "@/lib/users/packages";
 /**
  * Server wrapper: marketing header when signed out; member chrome when signed in
  * (Bücherei / Geschichte / Meine Welt / Buchclub / Abmelden + optional admin cog).
+ * Child sessions get member chrome without Meine Welt / Buchclub / admin.
  */
 export async function AppHeader() {
-  const user = await getCurrentUser();
+  const session = await getAppSession();
   const headerList = await headers();
   const pathname = headerList.get("x-pathname") ?? "";
 
-  if (!user) {
+  if (!session) {
     return (
       <LandingMarketingHeader
         registerActive={pathname === "/registrieren"}
         signInActive={
           pathname === "/anmelden" ||
           pathname === "/passwort-vergessen" ||
-          pathname === "/passwort-zuruecksetzen" ||
-          pathname === "/email-vergessen"
+          pathname === "/passwort-zuruecksetzen"
         }
       />
     );
   }
 
+  const access = await loadPackageAccessForCurrentUser();
+  const features = access?.features ?? [];
+  const isChild = session.kind === "child";
+
+  if (isChild) {
+    return (
+      <LandingHeader
+        isSignedIn
+        storyHref="/geschichte"
+        showMeineWelt={false}
+        showMeineBuecherei={false}
+        showMeinBuchclub={false}
+      />
+    );
+  }
+
+  const user = session.user;
   const role =
     typeof user.app_metadata?.role === "string"
       ? user.app_metadata.role
@@ -45,8 +62,6 @@ export async function AppHeader() {
   const testRole: MembershipRoleId | null =
     adminImpersonating && role && isMembershipRoleId(role) ? role : null;
 
-  const access = await loadPackageAccessForCurrentUser();
-  const features = access?.features ?? [];
   const showMeineWelt = featuresInclude(features, "meine_welt");
   const showMeineBuecherei = featuresInclude(features, "buecherei");
   const showMeinBuchclub = featuresInclude(features, "buchclub");

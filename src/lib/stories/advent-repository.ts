@@ -5,8 +5,16 @@
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import type { StoryLengthStepId } from "@/lib/stories/length";
-import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
-import { STORY_MOODS, STORY_SCHOOL_STAGES } from "@/lib/stories/options";
+import type {
+  StoryMoodId,
+  StorySchoolStageId,
+  StoryTopicMixPatternId,
+} from "@/lib/stories/options";
+import {
+  STORY_MOODS,
+  STORY_SCHOOL_STAGES,
+  isStoryTopicMixPatternId,
+} from "@/lib/stories/options";
 import { STORY_LENGTH_STEP_IDS } from "@/lib/stories/length";
 
 const SCHOOL_STAGE_IDS = new Set(
@@ -22,6 +30,8 @@ export type AdventBookSummary = {
   title: string;
   year: number;
   topic: string | null;
+  topicSecondary: string | null;
+  topicMixPattern: StoryTopicMixPatternId | null;
   schoolStage: StorySchoolStageId;
   lengthStep: StoryLengthStepId;
   mood: StoryMoodId;
@@ -36,6 +46,7 @@ export type AdventBookSummary = {
 export type AdventBookDetail = AdventBookSummary & {
   syllableHelp: boolean;
   includeImages: boolean;
+  conflictDepth: boolean;
   pinHash: string;
 };
 
@@ -95,11 +106,21 @@ function asFacts(value: unknown): string[] {
 }
 
 function mapSummary(row: Record<string, unknown>): AdventBookSummary {
+  const topicSecondary =
+    typeof row.topic_secondary === "string"
+      ? row.topic_secondary.trim() || null
+      : null;
+  const patternRaw =
+    typeof row.topic_mix_pattern === "string"
+      ? row.topic_mix_pattern.trim()
+      : "";
   return {
     id: typeof row.id === "string" ? row.id : String(row.id ?? ""),
     title: typeof row.title === "string" ? row.title.trim() : "Adventskalenderbuch",
     year: typeof row.year === "number" ? row.year : Number(row.year) || 2026,
     topic: typeof row.topic === "string" ? row.topic.trim() || null : null,
+    topicSecondary,
+    topicMixPattern: isStoryTopicMixPatternId(patternRaw) ? patternRaw : null,
     schoolStage: asSchoolStage(row.school_stage),
     lengthStep: asLengthStep(row.length_step),
     mood: asMood(row.mood),
@@ -124,6 +145,8 @@ export type CreateAdventBookInput = {
   title: string;
   year: number;
   topic: string | null;
+  topicSecondary?: string | null;
+  topicMixPattern?: StoryTopicMixPatternId | null;
   schoolStage: StorySchoolStageId;
   lengthStep: StoryLengthStepId;
   mood: StoryMoodId;
@@ -132,6 +155,7 @@ export type CreateAdventBookInput = {
   personalMode?: boolean;
   syllableHelp?: boolean;
   includeImages?: boolean;
+  conflictDepth?: boolean;
   creditsCharged?: number | null;
 };
 
@@ -143,6 +167,8 @@ export async function createMyAdventBook(
     p_title: input.title,
     p_year: input.year,
     p_topic: input.topic,
+    p_topic_secondary: input.topicSecondary ?? null,
+    p_topic_mix_pattern: input.topicMixPattern ?? null,
     p_school_stage: input.schoolStage,
     p_length_step: input.lengthStep,
     p_mood: input.mood,
@@ -151,6 +177,7 @@ export async function createMyAdventBook(
     p_personal_mode: input.personalMode ?? false,
     p_syllable_help: input.syllableHelp ?? false,
     p_include_images: input.includeImages ?? false,
+    p_conflict_depth: input.conflictDepth ?? false,
     p_credits_charged: input.creditsCharged ?? null,
   });
   if (error) throw new Error(error.message);
@@ -215,6 +242,7 @@ export async function getMyAdventBook(
     ...mapSummary(record),
     syllableHelp: Boolean(record.syllable_help),
     includeImages: Boolean(record.include_images),
+    conflictDepth: Boolean(record.conflict_depth),
     pinHash: typeof record.pin_hash === "string" ? record.pin_hash : "",
   };
 }

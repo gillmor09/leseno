@@ -5,7 +5,7 @@
  * With a profile selected: shows length/mood defaults + link to edit them.
  */
 
-import { Users, Lock } from "lucide-react";
+import { Users } from "lucide-react";
 import type { ChildProfileOption } from "@/lib/world/catalog";
 import { cn } from "@/lib/utils";
 
@@ -13,10 +13,12 @@ type ChildProfilePickerCardProps = {
   profiles: ChildProfileOption[];
   /** `null` = Freies lesen (no profile). */
   selectedId: string | null;
-  /** Profile ids currently unlocked (or without PIN). */
+  /** @deprecated PIN unlock removed. */
   unlockedIds?: ReadonlySet<string>;
   onSelect: (profileId: string | null) => void;
   disabled?: boolean;
+  /** Hide Freies-lesen tab (child cookie session). */
+  hideFreeReading?: boolean;
   /** Current length label when a profile is selected. */
   lengthLabel?: string | null;
   /** Current mood label when a profile is selected. */
@@ -32,9 +34,9 @@ type ChildProfilePickerCardProps = {
 export function ChildProfilePickerCard({
   profiles,
   selectedId,
-  unlockedIds,
   onSelect,
   disabled = false,
+  hideFreeReading = false,
   lengthLabel = null,
   moodLabel = null,
   lengthMoodOpen = false,
@@ -86,7 +88,7 @@ export function ChildProfilePickerCard({
             Für wen?
           </p>
           <h2 className="mt-1 text-xl font-extrabold text-zinc-950">
-            Leser auswählen
+            {hideFreeReading ? "Dein Profil" : "Leser auswählen"}
           </h2>
 
           <div
@@ -94,25 +96,25 @@ export function ChildProfilePickerCard({
             aria-label="Leser"
             className="mt-4 flex flex-wrap gap-2"
           >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={freeReading}
-              disabled={disabled}
-              onClick={() => onSelect(null)}
-              className={cn(
-                "rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out disabled:opacity-50",
-                freeReading
-                  ? "bg-yellow-400 text-zinc-950 ring-1 ring-yellow-400"
-                  : "bg-gray-100 text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-white",
-              )}
-            >
-              Freies lesen
-            </button>
+            {hideFreeReading ? null : (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={freeReading}
+                disabled={disabled}
+                onClick={() => onSelect(null)}
+                className={cn(
+                  "rounded-full px-4 py-2 text-sm font-bold transition-all duration-200 ease-in-out disabled:opacity-50",
+                  freeReading
+                    ? "bg-yellow-400 text-zinc-950 ring-1 ring-yellow-400"
+                    : "bg-gray-100 text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-white",
+                )}
+              >
+                Freies lesen
+              </button>
+            )}
             {profiles.map((profile) => {
               const selected = selectedId === profile.id;
-              const locked =
-                profile.hasPin && !(unlockedIds?.has(profile.id) ?? false);
               return (
                 <button
                   key={profile.id}
@@ -128,9 +130,8 @@ export function ChildProfilePickerCard({
                       : "bg-gray-100 text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-white",
                   )}
                 >
-                  {locked ? <Lock className="size-3.5" aria-hidden /> : null}
                   {profile.displayName}
-                  {profile.isDefault ? " · Standard" : ""}
+                  {profile.isDefault && !hideFreeReading ? " · Standard" : ""}
                 </button>
               );
             })}

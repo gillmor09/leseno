@@ -14,6 +14,10 @@ import {
 } from "@/components/features/security/bot-guard-fields";
 import { cn } from "@/lib/utils";
 
+/**
+ * Parent-account password reset only (E-Mail).
+ * Child Kennung / Profilpasswort cannot be reset here.
+ */
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -59,8 +63,13 @@ export function ForgotPasswordForm() {
         formStartedAt={botGuard.formStartedAt}
       />
       <div className="grid gap-5">
+        <p className="text-sm leading-relaxed text-zinc-600">
+          Nur für Eltern-Konten mit E-Mail. Ein Profilpasswort (Kennung) kann
+          hier nicht zurückgesetzt werden — das ändert ein Elternteil in Meine
+          Welt.
+        </p>
         <label className="block">
-          <span className={authLabelClassName}>E-Mail</span>
+          <span className={authLabelClassName}>E-Mail (Eltern-Konto)</span>
           <input
             type="email"
             autoComplete="email"
@@ -91,12 +100,9 @@ export function ForgotPasswordForm() {
         </button>
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-zinc-600">
+      <div className="mt-6 text-sm font-semibold text-zinc-600">
         <Link href="/anmelden" className="hover:text-orange-700">
           Zur Anmeldung
-        </Link>
-        <Link href="/email-vergessen" className="hover:text-orange-700">
-          E-Mail vergessen
         </Link>
       </div>
     </form>

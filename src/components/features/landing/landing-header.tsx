@@ -135,8 +135,7 @@ export function LandingHeader({
   const signInActive =
     pathname === "/anmelden" ||
     pathname === "/passwort-vergessen" ||
-    pathname === "/passwort-zuruecksetzen" ||
-    pathname === "/email-vergessen";
+    pathname === "/passwort-zuruecksetzen";
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-950/10 bg-white/95 backdrop-blur-md">

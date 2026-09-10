@@ -18,6 +18,7 @@ export const PACKAGE_COMPARE_FEATURE_IDS: PackageFeatureId[] = [
   "meine_welt_familie",
   "buecherei",
   "fortsetzen",
+  "mehr_tiefgang",
   "adventskalender",
   "export",
   "bilder",
@@ -37,6 +38,7 @@ export const PACKAGE_COMPARE_FEATURE_HINTS: Partial<
   meine_welt_familie: "Mehrere Kinder-Profile",
   buecherei: "Geschichten speichern & erneut lesen",
   fortsetzen: "„Wie könnte es weitergehen?“",
+  mehr_tiefgang: "Nebenthema-Mix & realistische Konflikte",
   adventskalender: "24 Tage, tagesweise öffnen",
   export: "Als PDF speichern",
   bilder: "Illustrationen in der Geschichte",
@@ -55,7 +57,7 @@ const PAID_TAGLINES: Record<Exclude<UserPackageId, "basis">, string> = {
 
 const PAID_BLURBS: Record<Exclude<UserPackageId, "basis">, string> = {
   plus: "Jeden Monat Credits zum Buchungstag — und sie verfallen nie. Dazu Meine Bücherei, ein Kinderprofil, PDF-Export und der Buchclub.",
-  pro: "Mehrere Kinder-Profile, Bücherei, Buchclub, Bilder, „Warum?“ und Fortsetzungen — wenn leseno zum Familien-Ritual wird.",
+  pro: "Mehrere Kinder-Profile, Bücherei, Buchclub, Bilder, „Warum?“, Fortsetzungen und Mehr Tiefgang — wenn leseno zum Familien-Ritual wird.",
   ultimate:
     "Alles aus Pro plus Silbenhilfe, Vorlesen mit Wort-Markierung, PDF-Export, tieferes Hintergrundwissen und das Adventskalenderbuch.",
 };
@@ -74,6 +76,7 @@ const FEATURE_BULLET_ORDER: PackageFeatureId[] = [
   "meine_welt_familie",
   "buecherei",
   "fortsetzen",
+  "mehr_tiefgang",
   "adventskalender",
   "export",
   "bilder",
@@ -103,6 +106,8 @@ function featureBulletText(
       return "Meine Bücherei: Geschichten speichern und erneut lesen";
     case "fortsetzen":
       return "Geschichten fortsetzen („Wie könnte es weitergehen?“)";
+    case "mehr_tiefgang":
+      return "Mehr Tiefgang: Nebenthema-Mix und realistische Konflikte";
     case "adventskalender":
       return "Adventskalenderbuch: 24 Tage mit PIN-Vorschau für Eltern";
     case "export":

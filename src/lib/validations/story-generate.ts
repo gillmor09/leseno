@@ -4,6 +4,7 @@ import { STORY_LENGTH_STEP_IDS } from "@/lib/stories/length";
 import {
   STORY_MOODS,
   STORY_SCHOOL_STAGES,
+  STORY_TOPIC_MIX_PATTERNS,
   STORY_TOP_TOPICS,
 } from "@/lib/stories/options";
 
@@ -27,6 +28,11 @@ const topTopicIds = [...STORY_TOP_TOPICS] as [
   ...(typeof STORY_TOP_TOPICS)[number][],
 ];
 
+const mixPatternIds = STORY_TOPIC_MIX_PATTERNS.map((pattern) => pattern.id) as [
+  (typeof STORY_TOPIC_MIX_PATTERNS)[number]["id"],
+  ...(typeof STORY_TOPIC_MIX_PATTERNS)[number]["id"][],
+];
+
 export const storyGenerateSchema = z
   .object({
     /** When true, topic is optional; server loads Meine Welt for the profile. */
@@ -42,6 +48,11 @@ export const storyGenerateSchema = z
      */
     trialMode: z.boolean().default(false),
     topic: z.string().trim().optional(),
+    /** Optional second theme; requires `topicMixPattern`. */
+    topicSecondary: z.string().trim().optional(),
+    topicMixPattern: z.enum(mixPatternIds).optional(),
+    /** Realistic conflict depth (lingering emotions / compromise). */
+    conflictDepth: z.boolean().default(false),
     schoolStage: z.enum(schoolStageIds, {
       message: "Bitte eine gültige Schulstufe wählen.",
     }),
@@ -75,6 +86,41 @@ export const storyGenerateSchema = z
         code: "custom",
         path: ["topic"],
         message: "Bitte wähl ein Thema oder schalte „Ganz persönlich“ ein.",
+      });
+      return;
+    }
+    const secondary = value.topicSecondary?.trim() ?? "";
+    if (!secondary) {
+      if (value.topicMixPattern) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["topicMixPattern"],
+          message: "Ein Mix-Muster braucht ein Nebenthema.",
+        });
+      }
+      return;
+    }
+    if (!(topTopicIds as string[]).includes(secondary)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["topicSecondary"],
+        message: "Bitte wähl ein gültiges Nebenthema.",
+      });
+      return;
+    }
+    if (secondary === value.topic) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["topicSecondary"],
+        message: "Haupt- und Nebenthema müssen verschieden sein.",
+      });
+      return;
+    }
+    if (!value.topicMixPattern) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["topicMixPattern"],
+        message: "Bitte wähl, wie die beiden Themen verbunden werden.",
       });
     }
   });
