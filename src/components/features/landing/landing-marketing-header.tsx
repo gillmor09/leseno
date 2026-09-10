@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { hash: "so-gehts", label: "So geht’s" },
   { hash: "staerken", label: "Stärken" },
+  { hash: "funktionen", label: "Funktionen" },
   { hash: "probieren", label: "Ausprobieren" },
   { hash: "eltern", label: "Für Eltern" },
   { hash: "preise", label: "Preise" },

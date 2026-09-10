@@ -6,6 +6,10 @@ import {
   Check,
   BicepsFlexed,
   CalendarDays,
+  Download,
+  Globe,
+  Highlighter,
+  Layers,
   Lightbulb,
   Maximize2,
   Smile,
@@ -14,10 +18,13 @@ import {
   Users,
   Volume2,
   Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
+import { landingFeatureShowcase } from "@/lib/users/package-marketing";
+import type { PackageFeatureId } from "@/lib/users/packages";
 
 /** Brand name in body copy: always lowercase + bold. */
 function withLesenoBrand(text: string): ReactNode {
@@ -88,31 +95,49 @@ const strengths = [
     icon: Sparkles,
   },
   {
+    title: "Meine Welt & Kind-Login",
+    text: "Ab Plus: eigenes Profil mit Interessen — und Kennung plus Passwort, damit Kinder selbst einsteigen.",
+    icon: Globe,
+  },
+  {
     title: "Lesemodus",
     text: "Vollbild ohne Ablenkung. Schriftgröße, Abstände und Breite so einstellen, dass Lesen sich gut anfühlt.",
     icon: Maximize2,
   },
   {
-    title: "Mein Buchclub",
-    text: "Freunde per Kennung verbinden, Geschichten freigeben und liken — ab Plus mit der Bücherei.",
-    icon: Users,
+    title: "Mehr Tiefgang",
+    text: "Ab Pro: realistische Konflikte und optional ein Nebenthema — Geschichten mit mehr Gefühl und Twists.",
+    icon: Layers,
   },
   {
-    title: "Bücherei & Fortsetzen",
-    text: "Geschichten speichern und Favoriten setzen — und mit Pro fragen: „Wie könnte es weitergehen?“",
+    title: "Bücherei & Buchclub",
+    text: "Ab Plus speichern und Favoriten setzen — Freunde einladen, teilen und liken. Mit Pro: „Wie könnte es weitergehen?“",
     icon: BookMarked,
   },
   {
-    title: "Vorlesen, Silben & Bilder",
-    text: "Vorlesen mit Tempo, Silbenhilfe für den Fluss — und Illustrationen, die dich mittendrin im Abenteuer halten.",
-    icon: Volume2,
-  },
-  {
-    title: "Adventskalenderbuch",
-    text: "Mit Ultimate: 24 Tage, eine fortlaufende Geschichte — Türen öffnen sich erst am richtigen Dezember-Tag.",
+    title: "Vorlesen, Silben & Advent",
+    text: "Ultimate: Vorlesen mit Markierung, Silbenhilfe — und 24 Tage Adventskalenderbuch.",
     icon: CalendarDays,
   },
 ] as const;
+
+const FEATURE_SHOWCASE_ICONS: Record<PackageFeatureId, LucideIcon> = {
+  lesemodus: Maximize2,
+  buchclub: Users,
+  meine_welt: Globe,
+  meine_welt_familie: Users,
+  buecherei: BookMarked,
+  fortsetzen: BookOpen,
+  mehr_tiefgang: Layers,
+  adventskalender: CalendarDays,
+  export: Download,
+  bilder: Sparkles,
+  warum: Lightbulb,
+  hintergrund: Target,
+  silbenmethode: BookOpen,
+  vorlesen: Volume2,
+  markierung: Highlighter,
+};
 
 const parentPoints = [
   "Eigenmotivation statt Druck: Kinder lesen, weil sie die Geschichte wollen — nicht weil jemand bewertet.",
@@ -120,8 +145,9 @@ const parentPoints = [
   "Passend zum Kind: Sprache und Länge fühlen sich gut an — ohne Test- oder Notenstimmung.",
   "Credits verfallen nie: Monatliche Gutschrift am Buchungstag; Rest bleibt fair in Folgemonaten liegen.",
   "Neugier inklusive: echtes Wissen steckt mitten im Abenteuer; mit Pro gibt’s „Warum?“ zum Nachforschen.",
-  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits, Bücherei & Buchclub, Pro für Familie & Fortsetzen, Ultimate für Silbenhilfe, Vorlesen & Adventskalenderbuch.",
-  "Meine Welt: ab Plus ein Kinderprofil (Interessen & Erlebnisse), mit Pro beliebig viele unter einem Konto.",
+  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits, Bücherei, Buchclub & Kind-Login, Pro für Familie, Mehr Tiefgang & Fortsetzen, Ultimate für Silbenhilfe, Vorlesen & Adventskalenderbuch.",
+  "Meine Welt: ab Plus ein Kinderprofil (Interessen & Erlebnisse) mit eigenem Kind-Login; mit Pro beliebig viele unter einem Konto.",
+  "Mehr Tiefgang ab Pro: realistische Konflikte und optional Nebenthema — ohne Schul- oder Moralton.",
   "Mein Buchclub: ab Plus Freunde per Kennung einladen, freigegebene Geschichten lesen und liken.",
   "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden. Abo zum Periodenende kündbar.",
   "Weiterempfehlen leicht: Link teilen — Freundinnen starten kostenlos mit Basis.",
@@ -141,7 +167,7 @@ const trySteps = [
   {
     number: "3",
     title: "Dann mit Konto weiter",
-    text: "Mit Basis starten; mit Plus Credits, Meine Bücherei, Buchclub und PDF — Bilder, Silbenhilfe und Vorlesen in den höheren Paketen.",
+    text: "Mit Basis starten; mit Plus Credits, Meine Bücherei, Buchclub, Meine Welt und PDF — Mehr Tiefgang, Bilder, Silbenhilfe und Vorlesen in den höheren Paketen.",
   },
 ] as const;
 
@@ -159,6 +185,7 @@ export function LandingPage() {
         <HeroSection />
         <StepsSection />
         <StrengthsSection />
+        <FeaturesSection />
         <MoodsSection />
         <FactsSection />
         <TrySection />
@@ -202,7 +229,7 @@ function HeroSection() {
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
             {withLesenoBrand(
-              "leseno macht eigene Geschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Was dabei hängen bleibt, kommt nebenbei. Kostenlos mit Basis starten; Bücherei, Buchclub, Silbenhilfe, Vorlesen und Bilder freischalten, wenn ihr wollt.",
+              "leseno macht eigene Geschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Was dabei hängen bleibt, kommt nebenbei. Kostenlos mit Basis starten; Bücherei, Kind-Login, Mehr Tiefgang, Silbenhilfe, Vorlesen und Bilder freischalten, wenn ihr wollt.",
             )}
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -220,7 +247,7 @@ function HeroSection() {
             </a>
           </div>
           <p className="mt-5 text-sm font-semibold text-zinc-600">
-            Spaß · Neugier · Bücherei · Buchclub · Pakete für Bilder,
+            Spaß · Neugier · Kind-Login · Mehr Tiefgang · Pakete für Bilder,
             Silbenhilfe &amp; Vorlesen
           </p>
         </div>
@@ -321,9 +348,9 @@ function StrengthsSection() {
           Sechs Dinge, die Lesen leichter machen.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Die Highlights, die zählen: eigene Geschichten, Lesemodus, Buchclub,
-          Bücherei mit Fortsetzen, Vorlesen mit Silben und Bildern sowie das
-          Adventskalenderbuch — je nach Paket freischaltbar.
+          Die Highlights: eigene Geschichten, Meine Welt mit Kind-Login,
+          Lesemodus, Mehr Tiefgang, Bücherei &amp; Buchclub sowie Vorlesen,
+          Silben und Advent — je nach Paket freischaltbar.
         </p>
         <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {strengths.map((item) => {
@@ -342,6 +369,70 @@ function StrengthsSection() {
                 <p className="mt-2 text-sm leading-relaxed text-zinc-600">
                   {item.text}
                 </p>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="mt-8 text-sm text-zinc-600">
+          Alle Funktionen im Überblick?{" "}
+          <a
+            href="#funktionen"
+            className="font-bold text-orange-800 underline-offset-2 hover:underline"
+          >
+            Was leseno kann
+          </a>
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function FeaturesSection() {
+  const features = landingFeatureShowcase();
+
+  return (
+    <section id="funktionen" className="scroll-mt-20">
+      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+        <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
+          Funktionen
+        </p>
+        <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
+          Was leseno kann.
+        </h2>
+        <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
+          Die einzelnen Bausteine — mit dem Paket, ab dem sie freischalten. Auf{" "}
+          <a
+            href="/preise"
+            className="font-bold text-orange-800 underline-offset-2 hover:underline"
+          >
+            Preise
+          </a>{" "}
+          siehst du den direkten Vergleich.
+        </p>
+        <ul className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {features.map((item) => {
+            const Icon = FEATURE_SHOWCASE_ICONS[item.id];
+            return (
+              <li
+                key={item.id}
+                className="flex gap-4 rounded-2xl bg-white px-5 py-4 shadow-md ring-1 ring-zinc-950/10"
+              >
+                <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-yellow-400 text-zinc-950">
+                  <Icon className="size-4" aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <h3 className="text-base font-extrabold text-zinc-950">
+                      {item.title}
+                    </h3>
+                    <span className="text-xs font-bold tracking-wide text-orange-800 uppercase">
+                      {item.fromBadge}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-zinc-600">
+                    {item.blurb}
+                  </p>
+                </div>
               </li>
             );
           })}
@@ -500,7 +591,7 @@ function TrySection() {
                   "Kurze Geschichten zum Eintauchen",
                   "Sofort loslegen — ohne Registrierung",
                   "Danach: Konto mit Basis — Pakete nach Bedarf",
-                  "Plus mit Bücherei, Buchclub, Credits und PDF",
+                  "Plus mit Bücherei, Buchclub, Meine Welt und PDF",
                 ].map((line) => (
                   <li
                     key={line}
@@ -550,7 +641,7 @@ function ParentsSection() {
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
             {withLesenoBrand(
-              "Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und Bewertung. leseno setzt genau da an: eigene Geschichten, die man freiwillig liest. Was an Lesefertigkeit und Wissen hängen bleibt, kommt nebenbei. Mit Plus speichert ihr in der Bücherei und teilt im Buchclub, mit Pro mehrere Kinder-Profile, mit Ultimate Silbenhilfe und Vorlesen.",
+              "Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und Bewertung. leseno setzt genau da an: eigene Geschichten, die man freiwillig liest. Was an Lesefertigkeit und Wissen hängen bleibt, kommt nebenbei. Mit Plus speichert ihr in der Bücherei, teilt im Buchclub und richtet Kind-Login ein; mit Pro mehrere Profile und Mehr Tiefgang; mit Ultimate Silbenhilfe und Vorlesen.",
             )}
           </p>
           <ul className="mt-6 space-y-3">
@@ -584,7 +675,7 @@ function PricingSection() {
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
           {withLesenoBrand(
-            "Probier leseno ohne Druck. Wenn Lesen zum Ritual wird, bringt Plus Credits, Meine Bücherei, Buchclub, Meine Welt und PDF — Vorlesen und Silbenhilfe erst mit Ultimate.",
+            "Probier leseno ohne Druck. Wenn Lesen zum Ritual wird, bringt Plus Credits, Meine Bücherei, Buchclub, Meine Welt mit Kind-Login und PDF — Mehr Tiefgang ab Pro; Vorlesen und Silbenhilfe mit Ultimate.",
           )}
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-2">
@@ -641,7 +732,7 @@ function PricingSection() {
             </p>
             <p className="mt-1 text-sm text-zinc-300">
               {withLesenoBrand(
-                "Monatliche Credits, die nie verfallen — plus Bücherei, Meine Welt, PDF und Buchclub",
+                "Monatliche Credits, die nie verfallen — plus Bücherei, Meine Welt mit Kind-Login, PDF und Buchclub",
               )}
             </p>
             <ul className="mt-6 space-y-3 text-sm text-zinc-200">
@@ -664,7 +755,7 @@ function PricingSection() {
                   className="mt-0.5 size-4 shrink-0 text-yellow-400"
                   aria-hidden
                 />
-                Meine Welt für ein Kind · PDF-Export
+                Meine Welt &amp; Kind-Login · PDF-Export
               </li>
               <li className="flex gap-2">
                 <Check

@@ -31,6 +31,10 @@ import {
 import { loadStoryLengthCatalog } from "@/lib/stories/length-repository";
 import { buildConflictDepthPromptBlock } from "@/lib/stories/conflict-depth";
 import {
+  buildAgeAppropriateKnowledgeBlock,
+  preciseAgeLabelForSchoolStage,
+} from "@/lib/stories/age-appropriate-knowledge";
+import {
   promptValueForMood,
   promptValueForTopic,
   promptValueForTopicMix,
@@ -480,6 +484,7 @@ export async function generateStoryPipeline(
   const sharedValues = {
     topic: resolveTopicPromptValue(input),
     school_stage: labelForSchoolStage(input.schoolStage),
+    age_group: preciseAgeLabelForSchoolStage(input.schoolStage),
     story_mood: moodPromptValue(input.mood),
     length_step: labelForLengthStep(input.lengthStep),
     fact_count: factCount,
@@ -496,6 +501,10 @@ export async function generateStoryPipeline(
     conflict_depth_block: buildConflictDepthPromptBlock(
       Boolean(input.conflictDepth),
       input.schoolStage,
+    ),
+    age_guidance_block: buildAgeAppropriateKnowledgeBlock(
+      input.schoolStage,
+      "facts",
     ),
   };
 

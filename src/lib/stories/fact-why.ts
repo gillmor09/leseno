@@ -12,7 +12,10 @@ import {
   type PromptTemplateConfig,
 } from "@/lib/prompts/catalog";
 import { loadPromptAdminCatalog } from "@/lib/prompts/repository";
-import { ageGroupForSchoolStage } from "@/lib/stories/length";
+import {
+  buildAgeAppropriateKnowledgeBlock,
+  preciseAgeLabelForSchoolStage,
+} from "@/lib/stories/age-appropriate-knowledge";
 import {
   STORY_SCHOOL_STAGES,
   type StorySchoolStageId,
@@ -66,13 +69,11 @@ function resolveModel(
   return model;
 }
 
-/** Human-readable age band for prompts (`5–7 Jahre` / `8–10 Jahre`). */
+/** Human-readable age band for prompts (precise per Schulstufe). */
 export function ageGroupLabelForSchoolStage(
   stage: StorySchoolStageId,
 ): string {
-  return ageGroupForSchoolStage(stage) === "5-7"
-    ? "ca. 5–7 Jahre"
-    : "ca. 8–10 Jahre";
+  return preciseAgeLabelForSchoolStage(stage);
 }
 
 function schoolStageLabel(stage: StorySchoolStageId): string {
@@ -81,11 +82,18 @@ function schoolStageLabel(stage: StorySchoolStageId): string {
   );
 }
 
-function commonPlaceholders(input: FactWhyInput): Record<string, string> {
+function commonPlaceholders(
+  input: FactWhyInput,
+  mode: "explain" | "explain_more",
+): Record<string, string> {
   return {
     age_group: ageGroupLabelForSchoolStage(input.schoolStage),
     school_stage: schoolStageLabel(input.schoolStage),
     fact: input.fact.trim(),
+    age_guidance_block: buildAgeAppropriateKnowledgeBlock(
+      input.schoolStage,
+      mode,
+    ),
   };
 }
 
@@ -111,7 +119,9 @@ async function runFactPrompt(options: {
 
   const cleaned = text.trim();
   if (!cleaned) {
-    throw new UserFacingError("Die Erklärung ist leer geblieben. Bitte nochmal versuchen.");
+    throw new UserFacingError(
+      "Die Erklärung ist leer geblieben. Bitte nochmal versuchen.",
+    );
   }
   return cleaned;
 }
@@ -122,7 +132,7 @@ async function runFactPrompt(options: {
 export async function explainFactWhy(input: FactWhyInput): Promise<string> {
   return runFactPrompt({
     promptKey: "fact-why",
-    values: commonPlaceholders(input),
+    values: commonPlaceholders(input, "explain"),
   });
 }
 
@@ -135,7 +145,7 @@ export async function explainFactWhyMore(
   return runFactPrompt({
     promptKey: "fact-why-more",
     values: {
-      ...commonPlaceholders(input),
+      ...commonPlaceholders(input, "explain_more"),
       background: input.background.trim(),
     },
   });

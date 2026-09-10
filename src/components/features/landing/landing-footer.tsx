@@ -32,6 +32,12 @@ export function LandingFooter() {
             Motivation
           </Link>
           <Link
+            href="/#funktionen"
+            className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
+          >
+            Funktionen
+          </Link>
+          <Link
             href="/preise"
             className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
           >

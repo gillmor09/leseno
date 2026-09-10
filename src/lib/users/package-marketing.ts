@@ -214,3 +214,80 @@ export function marketingBlurbForPackage(pkg: MembershipPackage): string {
 export function featureLabel(feature: PackageFeatureId): string {
   return PACKAGE_FEATURE_LABELS[feature];
 }
+
+/** Lowest package that includes the feature (for landing „ab …“ badges). */
+export const FEATURE_FROM_PACKAGE: Record<PackageFeatureId, UserPackageId> = {
+  lesemodus: "basis",
+  buchclub: "plus",
+  meine_welt: "plus",
+  buecherei: "plus",
+  export: "plus",
+  meine_welt_familie: "pro",
+  fortsetzen: "pro",
+  mehr_tiefgang: "pro",
+  bilder: "pro",
+  warum: "pro",
+  hintergrund: "ultimate",
+  silbenmethode: "ultimate",
+  vorlesen: "ultimate",
+  markierung: "ultimate",
+  adventskalender: "ultimate",
+};
+
+const FROM_PACKAGE_BADGE: Record<UserPackageId, string> = {
+  basis: "ab Basis",
+  plus: "ab Plus",
+  pro: "ab Pro",
+  ultimate: "ab Ultimate",
+};
+
+/** Longer parent-facing blurbs for the landing feature gallery. */
+export const LANDING_FEATURE_BLURBS: Record<PackageFeatureId, string> = {
+  lesemodus:
+    "Vollbild ohne Ablenkung — Schriftgröße, Abstände und Breite so, dass Lesen sich gut anfühlt.",
+  buchclub:
+    "Freunde per Kennung verbinden, Geschichten freigeben und liken.",
+  meine_welt:
+    "Kinderprofil mit Interessen und Erlebnissen — und ein eigenes Kind-Login mit Kennung und Passwort.",
+  meine_welt_familie:
+    "Mehrere Kinder-Profile unter einem Elternkonto — jedes mit eigener Welt und Login.",
+  buecherei:
+    "Geschichten speichern, Favoriten setzen und später wiederlesen.",
+  fortsetzen:
+    "Nach dem Ende fragen: „Wie könnte es weitergehen?“ — und die nächste Episode erzeugen.",
+  mehr_tiefgang:
+    "Realistische Konflikte und optional ein Nebenthema mit Mix — Geschichten mit mehr Gefühl und Twists.",
+  adventskalender:
+    "24 Tage, eine fortlaufende Geschichte — Türen öffnen sich erst am richtigen Dezember-Tag.",
+  export: "Als PDF speichern und offline weiterlesen.",
+  bilder: "Illustrationen mitten in der Geschichte — zum Mitfiebern und Vorstellen.",
+  warum: "Bei Aha-Momenten nachfragen und den Hintergrund verstehen.",
+  hintergrund: "„Ich will mehr wissen“ — tieferes Hintergrundwissen zur Geschichte.",
+  silbenmethode: "Silbenhilfe für den Lesefluss — besonders beim Lesenlernen.",
+  vorlesen: "Vorlesen mit einstellbarem Tempo — zum Mitlesen oder Entspannen.",
+  markierung: "Das gerade gesprochene Wort wird beim Vorlesen markiert.",
+};
+
+export type LandingFeatureShowcaseItem = {
+  id: PackageFeatureId;
+  title: string;
+  blurb: string;
+  fromPackage: UserPackageId;
+  fromBadge: string;
+};
+
+/**
+ * Ordered feature gallery for the landing page — same IDs as the package matrix.
+ */
+export function landingFeatureShowcase(): LandingFeatureShowcaseItem[] {
+  return PACKAGE_COMPARE_FEATURE_IDS.map((id) => {
+    const fromPackage = FEATURE_FROM_PACKAGE[id];
+    return {
+      id,
+      title: PACKAGE_FEATURE_LABELS[id],
+      blurb: LANDING_FEATURE_BLURBS[id],
+      fromPackage,
+      fromBadge: FROM_PACKAGE_BADGE[fromPackage],
+    };
+  });
+}

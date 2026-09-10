@@ -132,18 +132,20 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 1,
     modelId: "facts-default",
     systemTemplate:
-      "Du bist ein sorgfältiger Recherche-Assistent für Bildungsinhalte. Gib ausschließlich sachlich korrekte Aussagen zurück. Halte sie präzise, altersgerecht und konkret.",
+      "Du bist ein sorgfältiger Recherche-Assistent für kindgerechte Bildungsinhalte. Gib ausschließlich sachlich korrekte Aussagen zurück. Folge strikt dem Altersgerechtheits-Block im User-Prompt: Sprache, Abstraktion und Länge müssen zur Schulstufe passen — nicht wie für Erwachsene oder wie ein Lexikon.",
     userTemplate:
-      "Thema: {{topic}}\nSchulstufe: {{school_stage}}\nArt der Geschichte: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nGewünschte Faktenanzahl: {{fact_count}}\nGib {{fact_count}} kurze Fakten zurück, die korrekt, spezifisch und gut für eine Kindergeschichte verwendbar sind. Keine Duplikate. Wenn ein Fakt unsicher ist, lass ihn weg.",
+      "Thema: {{topic}}\nAlter: {{age_group}}\nSchulstufe: {{school_stage}}\nArt der Geschichte: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nGewünschte Faktenanzahl: {{fact_count}}\n\n{{age_guidance_block}}\n\nGib {{fact_count}} kurze Fakten zurück, die korrekt, spezifisch und gut für eine Kindergeschichte verwendbar sind. Keine Duplikate. Wenn ein Fakt unsicher ist, lass ihn weg.",
     placeholders: [
       "topic",
+      "age_group",
       "school_stage",
       "story_mood",
       "length_step",
       "fact_count",
+      "age_guidance_block",
     ],
     assemblyNotes:
-      "Der Builder setzt hier Thema, Schulstufe, Stimmung und die Faktenanzahl ein.",
+      "Der Builder setzt Thema, Alter, Schulstufe, Stimmung, Faktenanzahl und age_guidance_block (altersgerechte Wissensregeln) ein.",
     outputContract: "Bevorzugt JSON-Liste oder klar trennbare Faktenzeilen.",
   },
   {
@@ -155,20 +157,22 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 11,
     modelId: "facts-default",
     systemTemplate:
-      "Du bist ein sorgfältiger Recherche-Assistent für Bildungsinhalte. Gib ausschließlich sachlich korrekte Aussagen zurück. Halte sie präzise, altersgerecht und konkret. Der persönliche Kern ist genau EIN zufällig gewähltes Interesse oder Wunsch („Das möchte ich mal erleben“) — recherchiere nur dazu. Themen aus „Davor habe ich Angst“ sind tabu, außer der Prompt nennt ausdrücklich eine sanfte Einbindung einer einzigen Angst.",
+      "Du bist ein sorgfältiger Recherche-Assistent für kindgerechte Bildungsinhalte. Gib ausschließlich sachlich korrekte Aussagen zurück. Folge strikt dem Altersgerechtheits-Block im User-Prompt: Sprache, Abstraktion und Länge müssen zur Schulstufe passen — nicht wie für Erwachsene oder wie ein Lexikon. Der persönliche Kern ist genau EIN zufällig gewähltes Interesse oder Wunsch („Das möchte ich mal erleben“) — recherchiere nur dazu. Themen aus „Davor habe ich Angst“ sind tabu, außer der Prompt nennt ausdrücklich eine sanfte Einbindung einer einzigen Angst.",
     userTemplate:
-      "{{personal_block}}\nSchulstufe: {{school_stage}}\nArt der Geschichte: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nGewünschte Faktenanzahl: {{fact_count}}\nGib {{fact_count}} kurze Fakten zurück, die strikt zum persönlichen Kern („{{topic}}“) passen, korrekt, spezifisch und gut für eine Kindergeschichte mit der Hauptfigur {{protagonist_name}} verwendbar sind. Keine Duplikate. Keine Fakten zu ausgeschlossenen Angst-Themen. Wenn ein Fakt unsicher ist, lass ihn weg.",
+      "{{personal_block}}\nAlter: {{age_group}}\nSchulstufe: {{school_stage}}\nArt der Geschichte: {{story_mood}}\nTextlängen-Stufe: {{length_step}}\nGewünschte Faktenanzahl: {{fact_count}}\n\n{{age_guidance_block}}\n\nGib {{fact_count}} kurze Fakten zurück, die strikt zum persönlichen Kern („{{topic}}“) passen, korrekt, spezifisch und gut für eine Kindergeschichte mit der Hauptfigur {{protagonist_name}} verwendbar sind. Keine Duplikate. Keine Fakten zu ausgeschlossenen Angst-Themen. Wenn ein Fakt unsicher ist, lass ihn weg.",
     placeholders: [
       "personal_block",
       "topic",
       "protagonist_name",
+      "age_group",
       "school_stage",
       "story_mood",
       "length_step",
       "fact_count",
+      "age_guidance_block",
     ],
     assemblyNotes:
-      "Nur bei „Ganz persönlich“. Topic kommt zufällig aus Interessen oder Wunsch-Erlebnissen.",
+      "Nur bei „Ganz persönlich“. Topic kommt zufällig aus Interessen oder Wunsch-Erlebnissen. age_guidance_block steuert Altersgerechtheit.",
     outputContract: "Bevorzugt JSON-Liste oder klar trennbare Faktenzeilen.",
   },
   {
@@ -316,14 +320,19 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 40,
     modelId: "fact-why-default",
     systemTemplate:
-      "Du bist ein klarer Wissens-Erklärer für Kinder. Erkläre kurz, präzise und kindgerecht, WARUM ein Fakt stimmt und was dahinter steckt. Passe nur den Wortschatz an Alter und Schulstufe an — nicht an eine Geschichtsart, Stimmung oder Genre. Neutral und sachlich, ohne Witze, ohne Krimi-Spannung, ohne Motivationscoach-Ton. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch in 2–4 kurzen Absätzen.",
+      "Du bist ein klarer Wissens-Erklärer für Kinder. Erkläre kurz, präzise und kindgerecht, WARUM ein Fakt stimmt und was dahinter steckt. Folge strikt dem Altersgerechtheits-Block im User-Prompt. Passe Wortschatz, Abstraktion und Länge an Alter und Schulstufe an — nicht an eine Geschichtsart, Stimmung oder Genre. Neutral und sachlich, ohne Witze, ohne Krimi-Spannung, ohne Motivationscoach-Ton. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch.",
     userTemplate:
-      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\n\nFakt:\n{{fact}}\n\nErkläre den Hintergrund: Warum ist das so? Was steckt dahinter? Kurz, präzise und kindgerecht.",
-    placeholders: ["age_group", "school_stage", "fact"],
+      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\n\n{{age_guidance_block}}\n\nFakt:\n{{fact}}\n\nErkläre den Hintergrund: Warum ist das so? Was steckt dahinter? Strikt altersgerecht.",
+    placeholders: [
+      "age_group",
+      "school_stage",
+      "age_guidance_block",
+      "fact",
+    ],
     assemblyNotes:
-      "Gestartet vom „Warum?“-Button. Unabhängig von Art der Geschichte.",
+      "Gestartet vom „Warum?“-Button. Unabhängig von Art der Geschichte. age_guidance_block kommt aus der Schulstufe.",
     outputContract:
-      "Kurzer, präziser Fließtext auf Deutsch (2–4 Absätze), kindgerecht, ohne Markdown-Überschriften.",
+      "Kurzer, präziser Fließtext auf Deutsch, kindgerecht und altersgerecht, ohne Markdown-Überschriften.",
   },
   {
     id: "fallback-fact-why-more",
@@ -334,14 +343,20 @@ export const FALLBACK_PROMPT_TEMPLATES: PromptTemplateConfig[] = [
     stageOrder: 41,
     modelId: "fact-why-default",
     systemTemplate:
-      "Du bist ein klarer Wissens-Erklärer für Kinder. Liefere weiterführende Informationen: kurz, präzise und kindgerecht. Nutze Fakt und bisherigen Hintergrund als Kontext — wiederhole nicht einfach denselben Text. Passe nur den Wortschatz an Alter und Schulstufe an — nicht an eine Geschichtsart, Stimmung oder Genre. Neutral und sachlich, ohne Witze, ohne Krimi-Spannung, ohne Motivationscoach-Ton. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch in 2–5 kurzen Absätzen.",
+      "Du bist ein klarer Wissens-Erklärer für Kinder. Liefere weiterführende Informationen: kurz, präzise und kindgerecht. Folge strikt dem Altersgerechtheits-Block im User-Prompt. Nutze Fakt und bisherigen Hintergrund als Kontext — wiederhole nicht einfach denselben Text. Passe Wortschatz, Abstraktion und Länge an Alter und Schulstufe an — nicht an eine Geschichtsart, Stimmung oder Genre. Neutral und sachlich, ohne Witze, ohne Krimi-Spannung, ohne Motivationscoach-Ton. Keine Tests, keine Fragen an das Kind, keine Markdown-Überschriften. Schreib auf Deutsch.",
     userTemplate:
-      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\n\nFakt:\n{{fact}}\n\nBisheriger Hintergrund:\n{{background}}\n\nErkläre weiterführende Details und Zusammenhänge. Kurz, präzise und kindgerecht.",
-    placeholders: ["age_group", "school_stage", "fact", "background"],
+      "Alter: {{age_group}}\nSchulstufe: {{school_stage}}\n\n{{age_guidance_block}}\n\nFakt:\n{{fact}}\n\nBisheriger Hintergrund:\n{{background}}\n\nErkläre weiterführende Details und Zusammenhänge. Ein Schritt tiefer — aber weiterhin strikt altersgerecht.",
+    placeholders: [
+      "age_group",
+      "school_stage",
+      "age_guidance_block",
+      "fact",
+      "background",
+    ],
     assemblyNotes:
-      "Gestartet vom Button „Ich will mehr wissen“. Unabhängig von Art der Geschichte. Kontext: Fakt + Hintergrund.",
+      "Gestartet vom Button „Ich will mehr wissen“. Unabhängig von Art der Geschichte. Kontext: Fakt + Hintergrund. age_guidance_block aus der Schulstufe.",
     outputContract:
-      "Kurzer, präziser Fließtext auf Deutsch (2–5 Absätze), kindgerecht, ohne Markdown-Überschriften.",
+      "Kurzer, präziser Fließtext auf Deutsch, kindgerecht und altersgerecht, ohne Markdown-Überschriften.",
   },
 ];
 

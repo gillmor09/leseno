@@ -277,6 +277,24 @@ export const MOTIVATION_ANGLES: MotivationAngle[] = [
       "Child frowning then brightening across a page-turn, rainy window background, resilient cozy mood",
   },
   {
+    id: "konflikte-aushalten",
+    theme: "entwicklung",
+    title: "Konflikte aushalten dürfen",
+    insight:
+      "Wenn Figuren sich nicht sofort vertragen, üben Kinder Mitfühlen und Aushalten — ohne echte Angst, mit echter Tiefe.",
+    sceneHint:
+      "Two story characters mid-argument then soft reconciliation imagined around a child reading intently on the sofa",
+  },
+  {
+    id: "eigenes-lesen",
+    theme: "spass",
+    title: "Mein Login, meine Geschichten",
+    insight:
+      "Ein eigener Zugang macht Lesen zur Sache des Kindes — Autonomie klebt stärker als „jetzt lesen, weil Mama sagt“.",
+    sceneHint:
+      "Child proudly opening a tablet or book corner alone but happily, personal space, warm independence vibe",
+  },
+  {
     id: "schulstoff-nebenbei",
     theme: "schule",
     title: "Lernen ohne Unterrichtsgesicht",
