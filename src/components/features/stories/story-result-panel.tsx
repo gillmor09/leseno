@@ -120,6 +120,7 @@ export function StoryResultPanel({
     storyHtml: string;
     facts: string[];
     schoolStage: StorySchoolStageId;
+    lengthStep: StoryLengthStepId;
     libraryStoryId: string;
     creditsRemaining?: number;
   }) => void;

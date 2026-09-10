@@ -6,25 +6,26 @@ import {
   Check,
   BicepsFlexed,
   CalendarDays,
-  Download,
   Globe,
-  Highlighter,
   Layers,
   Lightbulb,
   Maximize2,
+  Repeat2,
+  Shield,
   Smile,
   Sparkles,
   Target,
   Users,
-  Volume2,
   Zap,
   type LucideIcon,
 } from "lucide-react";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
-import { landingFeatureShowcase } from "@/lib/users/package-marketing";
-import type { PackageFeatureId } from "@/lib/users/packages";
+import {
+  vsChatPositionsForLanding,
+  type VsChatPositionId,
+} from "@/lib/social/vs-chat-positioning";
 
 /** Brand name in body copy: always lowercase + bold. */
 function withLesenoBrand(text: string): ReactNode {
@@ -50,13 +51,13 @@ const steps = [
   {
     number: "02",
     title: "Passende Lesestufe",
-    text: "Die Sätze sollen sich gut anfühlen: leicht genug zum Mitfiebern, spannend genug zum Weitermachen — ohne Druck.",
+    text: "Die Sätze sollen sich gut anfühlen: leicht genug zum Mitfiebern, spannend genug zum Weitermachen.",
     icon: Target,
   },
   {
     number: "03",
     title: "Lesen und Staunen",
-    text: "Einfach eintauchen. Unterwegs bleiben echte Aha-Momente hängen. Mit den Paketen kommen Silbenhilfe, Vorlesen oder Bilder dazu — wenn du willst.",
+    text: "Einfach eintauchen. Unterwegs bleiben echte Aha-Momente hängen — Neugier mitten im Abenteuer.",
     icon: BookOpen,
   },
 ] as const;
@@ -121,36 +122,26 @@ const strengths = [
   },
 ] as const;
 
-const FEATURE_SHOWCASE_ICONS: Record<PackageFeatureId, LucideIcon> = {
-  lesemodus: Maximize2,
-  buchclub: Users,
-  meine_welt: Globe,
-  meine_welt_familie: Users,
-  buecherei: BookMarked,
-  fortsetzen: BookOpen,
-  mehr_tiefgang: Layers,
-  adventskalender: CalendarDays,
-  export: Download,
-  bilder: Sparkles,
-  warum: Lightbulb,
-  hintergrund: Target,
-  silbenmethode: BookOpen,
-  vorlesen: Volume2,
-  markierung: Highlighter,
+const VS_CHAT_ICONS: Record<VsChatPositionId, LucideIcon> = {
+  lesen_nicht_prompten: BookOpen,
+  altersgerecht: Target,
+  wissen_im_abenteuer: Lightbulb,
+  kind_im_zentrum: Globe,
+  wiederkommen: Repeat2,
+  schutzraum: Shield,
+  regeln_drin: Sparkles,
+  soziales_lesen: Users,
+  lust_statt_pflicht: Smile,
+  tippen_kann_jeder: Zap,
 };
 
+/** Trust-focused parent bullets — packages live under Preise. */
 const parentPoints = [
+  "Passend zur Lesestufe: Sprache und Länge fühlen sich gut an — ohne Test- oder Notenstimmung.",
   "Eigenmotivation statt Druck: Kinder lesen, weil sie die Geschichte wollen — nicht weil jemand bewertet.",
-  "Kein Schulgefühl: eigene Abenteuer statt starrer Lesebücher oder Übungsblätter.",
-  "Passend zum Kind: Sprache und Länge fühlen sich gut an — ohne Test- oder Notenstimmung.",
-  "Credits verfallen nie: Monatliche Gutschrift am Buchungstag; Rest bleibt fair in Folgemonaten liegen.",
-  "Neugier inklusive: echtes Wissen steckt mitten im Abenteuer; mit Familie gibt’s „Warum?“ zum Nachforschen.",
-  "Pakete nach Bedarf: Basis mit Lesemodus, Plus für Credits, Bücherei, Buchclub & Kind-Login, Familie für Mehr Tiefgang & Fortsetzen, Komplett für Silbenhilfe, Vorlesen & Adventskalenderbuch.",
-  "Meine Welt: ab Plus ein Kinderprofil (Interessen & Erlebnisse) mit eigenem Kind-Login; mit Familie beliebig viele unter einem Konto.",
-  "Mehr Tiefgang ab Familie: realistische Konflikte und optional Nebenthema — ohne Schul- oder Moralton.",
-  "Mein Buchclub: ab Plus Freunde per Kennung einladen, freigegebene Geschichten lesen und liken.",
+  "Ritual statt Einmal-Wow: speichern, wiederlesen, weitermachen — Lesen, das im Alltag bleibt.",
+  "Ihr behaltet den Überblick: Kind-Login und Profile, wenn ihr sie wollt — klarer Weg vom Thema zum Lesen.",
   "Risikofrei starten: Erst kostenlos ausprobieren, dann entscheiden. Abo zum Periodenende kündbar.",
-  "Weiterempfehlen leicht: Link teilen — Freundinnen starten kostenlos mit Basis.",
 ] as const;
 
 const trySteps = [
@@ -167,12 +158,35 @@ const trySteps = [
   {
     number: "3",
     title: "Dann mit Konto weiter",
-    text: "Mit Basis starten; mit Plus Credits, Meine Bücherei, Buchclub, Meine Welt und PDF — Mehr Tiefgang, Bilder, Silbenhilfe und Vorlesen in den höheren Paketen.",
+    text: "Mit Basis starten. Wenn Lesen zum Ritual wird, schaltet ihr später ruhig weitere Extras frei.",
+  },
+] as const;
+
+const faqItems = [
+  {
+    question: "Für welches Alter ist leseno gedacht?",
+    answer:
+      "Von Vorschule bis etwa 5. Klasse und etwas darüber. Ihr wählt die Lesestufe — Sprache und Länge passen sich an.",
+  },
+  {
+    question: "Ist das sicher für Kinder?",
+    answer:
+      "leseno ist ein klarer Weg vom Thema zum Lesen — kein offenes Chatfenster. Mit Plus könnt ihr ein Kind-Login einrichten, damit Kinder selbst einsteigen.",
+  },
+  {
+    question: "Warum nicht einfach selbst eine Geschichte tippen lassen?",
+    answer:
+      "Weil Lesen mehr braucht als einen Text: passende Stufe, Wiederkommen, Lesemodus und kindgerechte Regeln sind schon drin — ohne dass ihr Prompt-Profis werden müsst.",
+  },
+  {
+    question: "Was kostet der Einstieg?",
+    answer:
+      "Basis ist kostenlos. Ohne Konto könnt ihr eine Probe-Geschichte testen. Plus, Familie und Komplett schalten mehr Alltag und Lesefluss frei — Details unter Preise.",
   },
 ] as const;
 
 /**
- * Marketing home: joy of reading + curiosity — not a school/learning-app pitch.
+ * Marketing home: joy of reading + parent trust — not a feature dump.
  * Header is Suspense-wrapped so auth does not block streaming the LCP hero.
  */
 export function LandingPage() {
@@ -184,13 +198,15 @@ export function LandingPage() {
       <main id="main">
         <HeroSection />
         <StepsSection />
-        <StrengthsSection />
-        <FeaturesSection />
         <MoodsSection />
+        <BeispieleTeaserSection />
         <FactsSection />
+        <StrengthsSection />
         <TrySection />
         <ParentsSection />
+        <VsChatSection />
         <PricingSection />
+        <FaqSection />
         <InviteFriendsCard />
         <ClosingSection />
       </main>
@@ -222,14 +238,14 @@ function HeroSection() {
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-2 lg:gap-14 lg:py-20">
         <div>
           <p className="inline-flex items-center gap-2 rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-            Geschichten aus Neugier
+            Kindergeschichten aus Neugier
           </p>
           <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl lg:text-[3.25rem] lg:leading-[1.1]">
             Lesen, weil’s Spaß macht. Staunen, weil’s weitergeht.
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
             {withLesenoBrand(
-              "leseno macht eigene Geschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Was dabei hängen bleibt, kommt nebenbei. Kostenlos mit Basis starten; Bücherei, Kind-Login, Mehr Tiefgang, Silbenhilfe, Vorlesen und Bilder freischalten, wenn ihr wollt.",
+              "leseno macht eigene Kindergeschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Was hängen bleibt, kommt nebenbei.",
             )}
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -247,8 +263,7 @@ function HeroSection() {
             </a>
           </div>
           <p className="mt-5 text-sm font-semibold text-zinc-600">
-            Spaß · Neugier · Kind-Login · Mehr Tiefgang · Pakete für Bilder,
-            Silbenhilfe &amp; Vorlesen
+            Passende Lesestufe · echte Neugier · ohne Druck
           </p>
         </div>
 
@@ -281,8 +296,8 @@ function HeroSection() {
               </span>
             </div>
             <p className="mt-3 rounded-xl bg-orange-50 px-3 py-2 text-xs leading-relaxed font-semibold text-orange-900">
-              Mitten im Abenteuer: Lava ist oft über 700 °C heiß. Mit Familie fragst
-              du „Warum?“ — mit Komplett lässt du vorlesen.
+              Mitten im Abenteuer: Lava ist oft über 700 °C heiß — Staunen ohne
+              Test.
             </p>
           </div>
         </div>
@@ -302,9 +317,7 @@ function StepsSection() {
           Drei Schritte zum eigenen Abenteuer.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Thema wählen, Lesestufe setzen, Ton drehen — dann eintauchen. Extra
-          wie Silben, Vorlesen oder Bilder kommen mit den Paketen, wenn ihr sie
-          wollt.
+          Thema wählen, Lesestufe setzen, Ton drehen — dann eintauchen.
         </p>
         <ol className="mt-10 grid gap-6 md:grid-cols-3">
           {steps.map((step) => {
@@ -337,114 +350,9 @@ function StepsSection() {
   );
 }
 
-function StrengthsSection() {
-  return (
-    <section id="staerken" className="scroll-mt-20">
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
-          Deine Superkräfte
-        </p>
-        <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Sechs Dinge, die Lesen leichter machen.
-        </h2>
-        <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Die Highlights: eigene Geschichten, Meine Welt mit Kind-Login,
-          Lesemodus, Mehr Tiefgang, Bücherei &amp; Buchclub sowie Vorlesen,
-          Silben und Advent — je nach Paket freischaltbar.
-        </p>
-        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {strengths.map((item) => {
-            const Icon = item.icon;
-            return (
-              <li
-                key={item.title}
-                className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10"
-              >
-                <span className="flex size-11 items-center justify-center rounded-2xl bg-yellow-400 text-zinc-950">
-                  <Icon className="size-5" aria-hidden />
-                </span>
-                <h3 className="mt-4 text-lg font-extrabold text-zinc-950">
-                  {item.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-                  {item.text}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-        <p className="mt-8 text-sm text-zinc-600">
-          Alle Funktionen im Überblick?{" "}
-          <a
-            href="#funktionen"
-            className="font-bold text-orange-800 underline-offset-2 hover:underline"
-          >
-            Was leseno kann
-          </a>
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function FeaturesSection() {
-  const features = landingFeatureShowcase();
-
-  return (
-    <section id="funktionen" className="scroll-mt-20">
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-        <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
-          Funktionen
-        </p>
-        <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-          Was leseno kann.
-        </h2>
-        <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          Die einzelnen Bausteine — mit dem Paket, ab dem sie freischalten. Auf{" "}
-          <a
-            href="/preise"
-            className="font-bold text-orange-800 underline-offset-2 hover:underline"
-          >
-            Preise
-          </a>{" "}
-          siehst du den direkten Vergleich.
-        </p>
-        <ul className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((item) => {
-            const Icon = FEATURE_SHOWCASE_ICONS[item.id];
-            return (
-              <li
-                key={item.id}
-                className="flex gap-4 rounded-2xl bg-white px-5 py-4 shadow-md ring-1 ring-zinc-950/10"
-              >
-                <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-xl bg-yellow-400 text-zinc-950">
-                  <Icon className="size-4" aria-hidden />
-                </span>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <h3 className="text-base font-extrabold text-zinc-950">
-                      {item.title}
-                    </h3>
-                    <span className="text-xs font-bold tracking-wide text-orange-800 uppercase">
-                      {item.fromBadge}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm leading-relaxed text-zinc-600">
-                    {item.blurb}
-                  </p>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
 function MoodsSection() {
   return (
-    <section id="stimmungen" className="scroll-mt-20 bg-white">
+    <section id="stimmungen" className="scroll-mt-20">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
           Drei Töne
@@ -462,7 +370,7 @@ function MoodsSection() {
             return (
               <article
                 key={mood.title}
-                className="overflow-hidden rounded-[1.75rem] bg-gray-100 shadow-xl ring-1 ring-zinc-950/10"
+                className="overflow-hidden rounded-[1.75rem] bg-white shadow-xl ring-1 ring-zinc-950/10"
               >
                 <Image
                   src={mood.image}
@@ -470,7 +378,6 @@ function MoodsSection() {
                   width={720}
                   height={720}
                   className="aspect-square h-auto w-full object-cover"
-                  // ~360px in 3-col max-w-6xl; avoid `33vw` (viewport) → wrongly picks 640w
                   sizes="(max-width: 767px) calc(100vw - 2rem), 360px"
                   quality={70}
                   loading="lazy"
@@ -497,6 +404,45 @@ function MoodsSection() {
   );
 }
 
+function BeispieleTeaserSection() {
+  return (
+    <section id="beispiele" className="scroll-mt-20 bg-white">
+      <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-2 lg:gap-14">
+        <div className="order-2 overflow-hidden rounded-[2rem] bg-gray-100 shadow-xl ring-1 ring-zinc-950/10 lg:order-1">
+          <Image
+            src="/landing/beispiele-pinwand.webp"
+            alt="Pinnwand mit bunten Notizzetteln und Geschichten-Motiven"
+            width={1536}
+            height={864}
+            className="h-auto w-full"
+            sizes="(max-width: 1024px) 100vw, 50vw"
+            loading="lazy"
+          />
+        </div>
+        <div className="order-1 lg:order-2">
+          <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
+            Reinlesen
+          </p>
+          <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
+            Beispielgeschichten auf der Pinnwand.
+          </h2>
+          <p className="mt-4 text-base leading-relaxed text-zinc-600">
+            {withLesenoBrand(
+              "Ausschnitte und Wissens-Häppchen aus öffentlich geteilten Geschichten — zufällig wie Post-its verteilt. Kein Spoiler der ganzen Story, nur Appetit auf mehr.",
+            )}
+          </p>
+          <a
+            href="/beispiele"
+            className="mt-8 inline-flex items-center justify-center rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
+          >
+            Zur Beispiel-Pinnwand
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const landingDemoFacts = [
   "Wusstest du? Ein Kolibri fliegt rückwärts.",
   "Neues: Bienen tanzen den Weg zur Blüte.",
@@ -510,15 +456,15 @@ function FactsSection() {
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-2">
         <div>
           <p className="text-sm font-extrabold tracking-wide text-yellow-400 uppercase">
-            Unser Unterschied
+            Staunen nebenbei
           </p>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
             Mitten im Abenteuer staunen.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-300">
-            Jede Geschichte trägt echte Aha-Momente mit — ohne Test, ohne
+            Jede Geschichte trägt echte Aha-Momente mit — ohne Test und ohne
             Bewertung. Du liest, weil’s dich packt; was hängen bleibt, kommt
-            nebenbei. Mit Familie kannst du bei „Warum?“ tiefer nachfragen.
+            nebenbei.
           </p>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2" aria-label="Beispiel-Fakten">
@@ -534,6 +480,55 @@ function FactsSection() {
             </li>
           ))}
         </ul>
+      </div>
+    </section>
+  );
+}
+
+function StrengthsSection() {
+  return (
+    <section id="staerken" className="scroll-mt-20 bg-white">
+      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+        <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
+          Deine Superkräfte
+        </p>
+        <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
+          Sechs Dinge, die Lesen leichter machen.
+        </h2>
+        <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
+          Die Highlights für den Alltag — klar, kindgerecht und je nach Paket
+          freischaltbar.
+        </p>
+        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {strengths.map((item) => {
+            const Icon = item.icon;
+            return (
+              <li
+                key={item.title}
+                className="rounded-[1.75rem] bg-gray-100 p-6 ring-1 ring-zinc-950/5"
+              >
+                <span className="flex size-11 items-center justify-center rounded-2xl bg-yellow-400 text-zinc-950">
+                  <Icon className="size-5" aria-hidden />
+                </span>
+                <h3 className="mt-4 text-lg font-extrabold text-zinc-950">
+                  {item.title}
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-600">
+                  {item.text}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="mt-8 text-sm text-zinc-600">
+          Alle Funktionen und Pakete im Vergleich?{" "}
+          <a
+            href="/preise"
+            className="font-bold text-orange-800 underline-offset-2 hover:underline"
+          >
+            Mehr auf Preise
+          </a>
+        </p>
       </div>
     </section>
   );
@@ -590,8 +585,8 @@ function TrySection() {
                   "Thema und Ton selbst wählen",
                   "Kurze Geschichten zum Eintauchen",
                   "Sofort loslegen — ohne Registrierung",
-                  "Danach: Konto mit Basis — Pakete nach Bedarf",
-                  "Plus mit Bücherei, Buchclub, Meine Welt und PDF",
+                  "Danach: Konto mit Basis — ohne Druck",
+                  "Später erweitern, wenn ihr wollt",
                 ].map((line) => (
                   <li
                     key={line}
@@ -641,8 +636,17 @@ function ParentsSection() {
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
             {withLesenoBrand(
-              "Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und Bewertung. leseno setzt genau da an: eigene Geschichten, die man freiwillig liest. Was an Lesefertigkeit und Wissen hängen bleibt, kommt nebenbei. Mit Plus speichert ihr in der Bücherei, teilt im Buchclub und richtet Kind-Login ein; mit Familie mehrere Profile und Mehr Tiefgang; mit Komplett Silbenhilfe und Vorlesen.",
+              "Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und Bewertung. leseno setzt genau da an: eigene Geschichten, die man freiwillig liest. Was an Lesefertigkeit und Wissen hängen bleibt, kommt nebenbei.",
             )}
+          </p>
+          <p className="mt-3 text-sm font-semibold text-zinc-600">
+            Was leseno anders macht?{" "}
+            <a
+              href="#anders"
+              className="font-bold text-orange-800 underline-offset-2 hover:underline"
+            >
+              Kurz erklärt
+            </a>
           </p>
           <ul className="mt-6 space-y-3">
             {parentPoints.map((point) => (
@@ -663,19 +667,71 @@ function ParentsSection() {
   );
 }
 
+function VsChatSection() {
+  const points = vsChatPositionsForLanding();
+
+  return (
+    <section id="anders" className="scroll-mt-20 bg-zinc-800">
+      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+        <p className="text-sm font-extrabold tracking-wide text-yellow-400 uppercase">
+          Warum leseno
+        </p>
+        <h2 className="mt-2 max-w-3xl text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
+          Weil Lesen mehr braucht als einen Text.
+        </h2>
+        <p className="mt-4 max-w-3xl text-base leading-relaxed text-zinc-300">
+          {withLesenoBrand(
+            "leseno ist ein Leseprodukt für Kinder: altersgerecht, persönlich und wiederholbar — mit klaren Regeln für Kindgerechtigkeit, ohne dass Eltern jedes Mal nachjustieren müssen.",
+          )}
+        </p>
+        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {points.map((item) => {
+            const Icon = VS_CHAT_ICONS[item.id];
+            return (
+              <li
+                key={item.id}
+                className="rounded-[1.75rem] bg-zinc-700/80 p-6 ring-1 ring-white/10"
+              >
+                <span className="flex size-11 items-center justify-center rounded-2xl bg-yellow-400 text-zinc-950">
+                  <Icon className="size-5" aria-hidden />
+                </span>
+                <h3 className="mt-4 text-lg font-extrabold text-white">
+                  {item.title}
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-300">
+                  {withLesenoBrand(item.landingText)}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="mt-8 text-sm font-semibold text-zinc-400">
+          Ein fertiges Leseprodukt für den Alltag.{" "}
+          <a
+            href="/preise"
+            className="font-bold text-yellow-400 underline-offset-2 hover:underline"
+          >
+            Mehr auf Preise
+          </a>
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function PricingSection() {
   return (
     <section id="preise" className="scroll-mt-20">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
-          Freemium
+          Einstieg
         </p>
         <h2 className="mt-2 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
           Starte frei. Steig später auf.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
           {withLesenoBrand(
-            "Probier leseno ohne Druck. Wenn Lesen zum Ritual wird, bringt Plus Credits, Meine Bücherei, Buchclub, Meine Welt mit Kind-Login und PDF — Mehr Tiefgang ab Familie; Vorlesen und Silbenhilfe mit Komplett.",
+            "Probier leseno ohne Verpflichtung. Wenn Lesen zum Ritual wird, bringt Plus mehr Alltag — Familie und Komplett erweitern Lesefluss und Tiefe.",
           )}
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-2">
@@ -769,7 +825,7 @@ function PricingSection() {
               href="/preise"
               className="mt-8 inline-flex w-full items-center justify-center rounded-full bg-yellow-400 px-5 py-3 text-sm font-bold text-zinc-950 transition-all duration-200 ease-in-out hover:bg-yellow-300"
             >
-              Vorteile entdecken
+              Alle Pakete &amp; Funktionen
             </a>
           </article>
         </div>
@@ -778,9 +834,39 @@ function PricingSection() {
   );
 }
 
+function FaqSection() {
+  return (
+    <section id="faq" className="scroll-mt-20 bg-white">
+      <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 sm:py-20">
+        <p className="text-sm font-extrabold tracking-wide text-orange-800 uppercase">
+          Kurz &amp; klar
+        </p>
+        <h2 className="mt-2 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
+          Häufige Fragen von Eltern.
+        </h2>
+        <dl className="mt-10 space-y-4">
+          {faqItems.map((item) => (
+            <div
+              key={item.question}
+              className="rounded-[1.75rem] bg-gray-100 px-6 py-5 ring-1 ring-zinc-950/5"
+            >
+              <dt className="text-base font-extrabold text-zinc-950">
+                {item.question}
+              </dt>
+              <dd className="mt-2 text-sm leading-relaxed text-zinc-600">
+                {withLesenoBrand(item.answer)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </section>
+  );
+}
+
 function ClosingSection() {
   return (
-    <section className="bg-white">
+    <section className="bg-gray-100">
       <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 sm:py-20">
         <Image
           src="/landing/vogel-hell.webp"
@@ -796,7 +882,7 @@ function ClosingSection() {
         </h2>
         <p className="mt-4 text-base leading-relaxed text-zinc-600">
           {withLesenoBrand(
-            "Sag, worum es gehen soll. leseno legt los — dein Kind liest, staunt und bleibt gerne hängen. Teilen geht in einem Klick.",
+            "Sag, worum es gehen soll. leseno legt los — dein Kind liest, staunt und bleibt gerne hängen.",
           )}
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">

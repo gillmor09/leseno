@@ -9,11 +9,11 @@ import { hasServiceRoleConfig } from "@/lib/supabase/service";
 export const metadata: Metadata = {
   title: "Social Media — Leseno Admin",
   description:
-    "Instagram-Beiträge einzeln erzeugen: Datum, Winkel, Caption und Bild.",
+    "Instagram-Beiträge: Winkel oder Marketing (Funktionen), Caption und Bild.",
 };
 
 /**
- * Admin Social Media: global CRAFT + single-post create with chosen Winkel.
+ * Admin Social Media: global CRAFT + create Winkel or soft marketing posts.
  */
 export default async function SocialMediaAdminPage() {
   const canSave = hasServiceRoleConfig();
@@ -72,15 +72,18 @@ export default async function SocialMediaAdminPage() {
             Social Media
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Beiträge einzeln anlegen: Datum und einen Winkel aus der{" "}
+            Beiträge einzeln anlegen:{" "}
+            <span className="font-semibold text-zinc-800">Winkel</span> aus der{" "}
             <a
               href="/motivation"
               className="font-semibold text-orange-700 underline-offset-2 hover:underline"
             >
               Motivations-Seite
             </a>{" "}
-            wählen — knackig, mit Humor. Role/Format/Action und Bild-Stil
-            steuern Stimme und Look.
+            oder dezentes{" "}
+            <span className="font-semibold text-zinc-800">Marketing</span> mit
+            1–2 Funktionen und softem CTA. Role/Format/Action steuern die
+            Winkel-Stimme; Marketing-Bilder nutzen einen eigenen Produkt-Look.
           </p>
           <div className="mt-10">
             <SocialMediaAdminForm

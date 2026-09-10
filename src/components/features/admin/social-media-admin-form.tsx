@@ -1,32 +1,47 @@
 "use client";
 
 /**
- * Admin Social Media: CRAFT settings + single-post create (date + Winkel) and edit list.
+ * Admin Social Media: CRAFT settings + create (Winkel or marketing) and edit list.
  */
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Copy, Loader2 } from "lucide-react";
+import { ChevronDown, Copy, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  commitSocialPostAction,
   generateSocialCaptionAction,
   generateSocialImageAction,
+  deleteSocialPostAction,
   loadSocialWorkspaceAction,
   saveSocialGlobalSettingsAction,
 } from "@/app/actions/social-admin";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import {
+  buildMarketingAngleId,
+  getMarketingTopicByAngleId,
+  MARKETING_EXTRA_IDS,
+  marketingFeatureLabel,
+  parseMarketingAngleId,
+  type MarketingFeatureId,
+} from "@/lib/social/marketing-features";
 import {
   emptyGlobalSettings,
+  SOCIAL_POST_KIND_LABELS,
   type SocialGlobalSettings,
   type SocialPost,
+  type SocialPostKind,
 } from "@/lib/social/types";
 import type { SocialAiModelInfo } from "@/lib/social/generate";
 import {
   getMotivationAngleById,
-  MOTIVATION_ANGLES,
   MOTIVATION_THEME_LABELS,
+  SOCIAL_SELECTABLE_ANGLES,
+  VS_CHAT_ANGLE_ID_PREFIX,
 } from "@/lib/social/motivation";
 import { LESENO_SOCIAL_STYLE_GUIDE } from "@/lib/social/leseno-visual-style";
+import { PACKAGE_FEATURE_IDS } from "@/lib/users/packages";
 import { cn } from "@/lib/utils";
 
 const CHANNEL = "instagram" as const;
@@ -192,11 +207,34 @@ export function SocialMediaAdminForm({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [postDate, setPostDate] = useState(todayIsoDate);
-  const [angleId, setAngleId] = useState(MOTIVATION_ANGLES[0]?.id ?? "");
+  const [postKind, setPostKind] = useState<SocialPostKind>("winkel");
+  const [angleId, setAngleId] = useState(SOCIAL_SELECTABLE_ANGLES[0]?.id ?? "");
+  const [marketingFeatures, setMarketingFeatures] = useState<
+    MarketingFeatureId[]
+  >(["wissen"]);
   const [captionDraft, setCaptionDraft] = useState("");
+  const [imageDraft, setImageDraft] = useState<string | null>(null);
+  const [lastImagePromptDraft, setLastImagePromptDraft] = useState<
+    string | null
+  >(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [generateConfirm, setGenerateConfirm] =
     useState<GenerateConfirm | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SocialPost | null>(null);
+
+  const marketingAngleId = useMemo(() => {
+    if (marketingFeatures.length < 1 || marketingFeatures.length > 2) {
+      return "";
+    }
+    try {
+      return buildMarketingAngleId(marketingFeatures);
+    } catch {
+      return "";
+    }
+  }, [marketingFeatures]);
+
+  const effectiveAngleId =
+    postKind === "marketing" ? marketingAngleId : angleId;
 
   const activePost = useMemo(
     () =>
@@ -204,25 +242,44 @@ export function SocialMediaAdminForm({
         (post) =>
           post.postDate === postDate &&
           post.channel === CHANNEL &&
-          post.angleId === angleId,
+          post.postKind === postKind &&
+          post.angleId === effectiveAngleId,
       ) ?? null,
-    [posts, postDate, angleId],
+    [posts, postDate, postKind, effectiveAngleId],
   );
 
   const anglesUsedToday = useMemo(() => {
     const used = new Set<string>();
     for (const post of posts) {
-      if (post.postDate === postDate && post.angleId) {
+      if (
+        post.postDate === postDate &&
+        post.postKind === postKind &&
+        post.angleId
+      ) {
         used.add(post.angleId);
       }
     }
     return used;
-  }, [posts, postDate]);
+  }, [posts, postDate, postKind]);
 
   const selectedAngle = useMemo(
-    () => getMotivationAngleById(angleId),
-    [angleId],
+    () =>
+      postKind === "winkel" ? getMotivationAngleById(angleId) : null,
+    [postKind, angleId],
   );
+
+  const selectedMarketing = useMemo(
+    () =>
+      postKind === "marketing" && marketingAngleId
+        ? getMarketingTopicByAngleId(marketingAngleId)
+        : null,
+    [postKind, marketingAngleId],
+  );
+
+  const topicTitle =
+    postKind === "marketing"
+      ? (selectedMarketing?.title ?? "Funktionen wählen")
+      : (selectedAngle?.title ?? angleId);
 
   const mergePost = useCallback((post: SocialPost) => {
     setPosts((prev) => {
@@ -256,7 +313,14 @@ export function SocialMediaAdminForm({
 
   useEffect(() => {
     setCaptionDraft(activePost?.caption ?? "");
-  }, [activePost]);
+    setImageDraft(activePost?.imageDataUrl ?? null);
+    setLastImagePromptDraft(activePost?.lastImagePrompt ?? null);
+    // Sync when create-form topic changes — not on every posts reload while drafting.
+  }, [postDate, postKind, effectiveAngleId, activePost?.id, activePost?.updatedAt]);
+
+  const hasCreateDraft =
+    Boolean(captionDraft.trim()) || Boolean(imageDraft?.trim());
+  const previewImage = imageDraft;
 
   const busy = pending || loadPending || Boolean(waitStatus);
   const fieldClass =
@@ -270,27 +334,51 @@ export function SocialMediaAdminForm({
       return { title: "", description: "", confirmLabel: "" };
     }
     const dateLabel = formatDeDate(postDate);
-    const angleLabel = selectedAngle?.title ?? angleId;
+    const kindLabel = SOCIAL_POST_KIND_LABELS[postKind];
     if (generateConfirm.kind === "text") {
       return {
         title: "Text erzeugen?",
-        description: `Caption für ${dateLabel}\nWinkel: ${angleLabel}\n\nKI-Modell: ${textModelLine}`,
+        description: `Caption für ${dateLabel}\n${kindLabel}: ${topicTitle}\n\nNur Entwurf — Speichern erst mit „Übernehmen“.\n\nKI-Modell: ${textModelLine}`,
         confirmLabel: "Text erzeugen",
       };
     }
     return {
       title: "Bild erzeugen?",
-      description: `Bild für ${dateLabel}\nWinkel: ${angleLabel}\n\nSzenenplanung: ${textModelLine}\nBildpixel: ${imageModelLine}`,
+      description: `Bild für ${dateLabel}\n${kindLabel}: ${topicTitle}\n\nNur Entwurf — Speichern erst mit „Übernehmen“.\n\nSzenenplanung: ${textModelLine}\nBildpixel: ${imageModelLine}`,
       confirmLabel: "Bild erzeugen",
     };
   }, [
     generateConfirm,
     postDate,
-    selectedAngle,
-    angleId,
+    postKind,
+    topicTitle,
     textModelLine,
     imageModelLine,
   ]);
+
+  function toggleMarketingFeature(id: MarketingFeatureId) {
+    setMarketingFeatures((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((item) => item !== id);
+      }
+      if (prev.length >= 2) {
+        toast.error("Maximal 2 Funktionen.");
+        return prev;
+      }
+      return [...prev, id];
+    });
+  }
+
+  function applyPostSelection(post: SocialPost) {
+    setPostDate(post.postDate);
+    setPostKind(post.postKind);
+    if (post.postKind === "marketing" && post.angleId) {
+      const features = parseMarketingAngleId(post.angleId);
+      if (features?.length) setMarketingFeatures(features);
+    } else if (post.angleId) {
+      setAngleId(post.angleId);
+    }
+  }
 
   function handleSaveGlobal() {
     if (!canSave) return;
@@ -317,8 +405,12 @@ export function SocialMediaAdminForm({
   function focusCreatedPost(post: SocialPost) {
     setCreateOpen(false);
     setCaptionDraft("");
+    setImageDraft(null);
+    setLastImagePromptDraft(null);
     setPostDate(todayIsoDate());
-    setAngleId(MOTIVATION_ANGLES[0]?.id ?? "");
+    setPostKind("winkel");
+    setAngleId(SOCIAL_SELECTABLE_ANGLES[0]?.id ?? "");
+    setMarketingFeatures(["wissen"]);
     setExpandedId(post.id);
     window.setTimeout(() => {
       document
@@ -332,8 +424,12 @@ export function SocialMediaAdminForm({
     setGenerateConfirm(null);
     if (!job) return;
 
-    if (!angleId.trim()) {
-      toast.error("Bitte einen Winkel wählen.");
+    if (!effectiveAngleId.trim()) {
+      toast.error(
+        postKind === "marketing"
+          ? "Bitte 1–2 Funktionen wählen."
+          : "Bitte einen Winkel wählen.",
+      );
       return;
     }
 
@@ -344,19 +440,16 @@ export function SocialMediaAdminForm({
           if (!(await persistGlobal())) return;
           const result = await generateSocialCaptionAction({
             postDate,
-            angleId,
+            angleId: effectiveAngleId,
+            postKind,
             channel: CHANNEL,
           });
           if (!result.success || !result.data) {
             toast.error(result.error ?? "Fehler");
             return;
           }
-          mergePost(result.data.post);
-          await reloadWorkspace();
-          setCaptionDraft(result.data.post.caption);
-          toast.success(
-            `Text erzeugt und gespeichert — ${result.data.angleTitle}`,
-          );
+          setCaptionDraft(result.data.caption);
+          toast.success(`Text erzeugt (Entwurf) — ${result.data.angleTitle}`);
         } finally {
           setWaitStatus(null);
         }
@@ -370,16 +463,67 @@ export function SocialMediaAdminForm({
         if (!(await persistGlobal())) return;
         const result = await generateSocialImageAction({
           postDate,
-          angleId,
+          angleId: effectiveAngleId,
+          postKind,
           channel: CHANNEL,
+          caption: captionDraft,
         });
         if (!result.success || !result.data) {
           toast.error(result.error ?? "Fehler");
           return;
         }
+        setImageDraft(result.data.imageDataUrl);
+        setLastImagePromptDraft(result.data.lastImagePrompt);
+        toast.success("Bild erzeugt (Entwurf).");
+      } finally {
+        setWaitStatus(null);
+      }
+    })();
+  }
+
+  function commitAndReset() {
+    if (!effectiveAngleId.trim()) {
+      toast.error(
+        postKind === "marketing"
+          ? "Bitte 1–2 Funktionen wählen."
+          : "Bitte einen Winkel wählen.",
+      );
+      return;
+    }
+    if (!captionDraft.trim()) {
+      toast.error("Caption fehlt — zuerst Text erzeugen.");
+      return;
+    }
+
+    setWaitStatus("Beitrag wird gespeichert …");
+    void (async () => {
+      try {
+        if (!(await persistGlobal())) return;
+        const result = await commitSocialPostAction({
+          postDate,
+          angleId: effectiveAngleId,
+          postKind,
+          channel: CHANNEL,
+          caption: captionDraft,
+          imageDataUrl: imageDraft,
+          lastImagePrompt: lastImagePromptDraft,
+        });
+        if (!result.success || !result.data) {
+          toast.error(result.error ?? "Speichern fehlgeschlagen.");
+          return;
+        }
         mergePost(result.data.post);
         await reloadWorkspace();
-        toast.success("Bild erzeugt und gespeichert.");
+        toast.success("Beitrag übernommen.");
+        focusCreatedPost(result.data.post);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Speichern fehlgeschlagen.";
+        toast.error(
+          /body exceeded|413/i.test(message)
+            ? "Bild zu groß fürs Speichern — Dev-Server neu starten (Limit erhöht) oder Bild neu erzeugen."
+            : message,
+        );
       } finally {
         setWaitStatus(null);
       }
@@ -408,14 +552,15 @@ export function SocialMediaAdminForm({
               Übergreifende Einstellungen
             </h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Stimme & Bild-Stil. Inhalt kommt vom gewählten Winkel auf{" "}
+              Stimme & Bild-Stil für Winkel-Posts. Marketing nutzt dieselben Figuren
+              (Wiedererkennung), aber freiere Produkt-Inszenierung. Inhalt: Winkel auf{" "}
               <a
                 href="/motivation"
                 className="font-semibold text-orange-700 underline-offset-2 hover:underline"
               >
                 /motivation
-              </a>
-              .
+              </a>{" "}
+              oder 1–2 Funktionen.
             </p>
           </div>
           <ChevronDown
@@ -494,8 +639,9 @@ export function SocialMediaAdminForm({
                 placeholder="Oder leer lassen → eingebauter leseno-Stil. Keine Bild-URLs."
               />
               <span className="mt-1 block text-[11px] font-semibold normal-case tracking-normal text-zinc-500">
-                Bildmodelle malen keinen Text. Der Winkel-Titel wird danach
-                exakt in Nunito SemiBold (weiß) aufgelegt.
+                Gilt für Winkel-Bilder. Marketing-Bilder haben einen eigenen
+                Poster-Stil. Titel/Features werden danach in Nunito SemiBold
+                (weiß) aufgelegt.
               </span>
             </label>
             <button
@@ -540,8 +686,9 @@ export function SocialMediaAdminForm({
               Beitrag erstellen
             </h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Datum und Winkel wählen — mehrere Beiträge pro Tag möglich, solange
-              der Winkel anders ist.
+              Post-Art wählen: Winkel (Lesemotivation) oder Marketing (1–2
+              Funktionen + softes CTA). Mehrere Beiträge pro Tag möglich, solange
+              Thema/Art anders ist.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
@@ -563,7 +710,26 @@ export function SocialMediaAdminForm({
 
         {createOpen ? (
           <div className="border-t border-zinc-950/10 px-6 pb-6 pt-4">
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="flex flex-wrap gap-2">
+              {(["winkel", "marketing"] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  disabled={busy || !canSave}
+                  onClick={() => setPostKind(kind)}
+                  className={cn(
+                    "rounded-full px-4 py-2 text-sm font-bold ring-1 transition-colors disabled:opacity-60",
+                    postKind === kind
+                      ? "bg-orange-700 text-white ring-orange-800"
+                      : "bg-zinc-100 text-zinc-800 ring-zinc-950/10 hover:bg-zinc-200",
+                  )}
+                >
+                  {SOCIAL_POST_KIND_LABELS[kind]}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
                 Datum
                 <input
@@ -576,28 +742,119 @@ export function SocialMediaAdminForm({
                   className={fieldClass}
                 />
               </label>
-              <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
-                Winkel
-                <select
-                  disabled={busy || !canSave}
-                  value={angleId}
-                  onChange={(e) => setAngleId(e.target.value)}
-                  className={fieldClass}
-                >
-                  {MOTIVATION_ANGLES.map((angle) => {
-                    const count = angleUsage[angle.id] ?? 0;
-                    const usedToday = anglesUsedToday.has(angle.id);
-                    return (
-                      <option key={angle.id} value={angle.id}>
-                        {angle.title} · {MOTIVATION_THEME_LABELS[angle.theme]} (
-                        {count}×)
-                        {usedToday ? " · heute schon" : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              </label>
+              {postKind === "winkel" ? (
+                <label className="block text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                  Winkel
+                  <select
+                    disabled={busy || !canSave}
+                    value={angleId}
+                    onChange={(e) => setAngleId(e.target.value)}
+                    className={fieldClass}
+                  >
+                    <optgroup label="Lesen & Haltung">
+                      {SOCIAL_SELECTABLE_ANGLES.filter(
+                        (angle) =>
+                          !angle.id.startsWith(VS_CHAT_ANGLE_ID_PREFIX),
+                      ).map((angle) => {
+                        const count = angleUsage[angle.id] ?? 0;
+                        const usedToday = anglesUsedToday.has(angle.id);
+                        return (
+                          <option key={angle.id} value={angle.id}>
+                            {angle.title} ·{" "}
+                            {MOTIVATION_THEME_LABELS[angle.theme]} ({count}×)
+                            {usedToday ? " · heute schon" : ""}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                    <optgroup label="vs. Chatfenster (Archiv)">
+                      {SOCIAL_SELECTABLE_ANGLES.filter((angle) =>
+                        angle.id.startsWith(VS_CHAT_ANGLE_ID_PREFIX),
+                      ).map((angle) => {
+                        const count = angleUsage[angle.id] ?? 0;
+                        const usedToday = anglesUsedToday.has(angle.id);
+                        return (
+                          <option key={angle.id} value={angle.id}>
+                            {angle.title} ·{" "}
+                            {MOTIVATION_THEME_LABELS[angle.theme]} ({count}×)
+                            {usedToday ? " · heute schon" : ""}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                  </select>
+                </label>
+              ) : (
+                <div className="sm:col-span-1">
+                  <p className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                    Funktionen (1–2)
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-zinc-500">
+                    {marketingFeatures.length}/2 gewählt
+                    {marketingAngleId && anglesUsedToday.has(marketingAngleId)
+                      ? " · Kombination heute schon"
+                      : ""}
+                  </p>
+                </div>
+              )}
             </div>
+
+            {postKind === "marketing" ? (
+              <div className="mt-3 space-y-3">
+                <div>
+                  <p className="text-[11px] font-bold tracking-wide text-zinc-500 uppercase">
+                    Story &amp; Persönlich
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    {MARKETING_EXTRA_IDS.map((id) => {
+                      const active = marketingFeatures.includes(id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          disabled={busy || !canSave}
+                          onClick={() => toggleMarketingFeature(id)}
+                          className={cn(
+                            "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition-colors disabled:opacity-60",
+                            active
+                              ? "bg-orange-100 text-orange-950 ring-orange-700/30"
+                              : "bg-zinc-50 text-zinc-700 ring-zinc-950/10 hover:bg-zinc-100",
+                          )}
+                        >
+                          {marketingFeatureLabel(id)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold tracking-wide text-zinc-500 uppercase">
+                    Paket-Funktionen
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    {PACKAGE_FEATURE_IDS.map((id) => {
+                      const active = marketingFeatures.includes(id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          disabled={busy || !canSave}
+                          onClick={() => toggleMarketingFeature(id)}
+                          className={cn(
+                            "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition-colors disabled:opacity-60",
+                            active
+                              ? "bg-orange-100 text-orange-950 ring-orange-700/30"
+                              : "bg-zinc-50 text-zinc-700 ring-zinc-950/10 hover:bg-zinc-100",
+                          )}
+                        >
+                          {marketingFeatureLabel(id)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {selectedAngle ? (
               <p className="mt-3 rounded-2xl bg-orange-50 px-4 py-3 text-sm leading-relaxed text-orange-950 ring-1 ring-orange-700/15">
@@ -608,18 +865,34 @@ export function SocialMediaAdminForm({
               </p>
             ) : null}
 
+            {selectedMarketing ? (
+              <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-950 ring-1 ring-amber-700/20">
+                <span className="font-extrabold">{selectedMarketing.title}</span>
+                <span className="mt-1 block whitespace-pre-line text-amber-950/90">
+                  {selectedMarketing.insight}
+                </span>
+                <span className="mt-2 block text-xs font-semibold text-amber-900/80">
+                  CTA im Text: Seite besuchen oder kostenlos ausprobieren.
+                </span>
+              </p>
+            ) : null}
+
             {activePost ? (
               <p className="mt-3 text-sm font-semibold text-zinc-600">
-                Dieser Winkel existiert an diesem Tag schon — Erzeugen
-                überschreibt Text bzw. Bild. Andere Winkel sind am gleichen Tag
-                möglich.
+                Dieses Thema existiert an diesem Tag schon — „Übernehmen“
+                überschreibt den gespeicherten Text bzw. das Bild. Erzeugen
+                speichert noch nichts.
+              </p>
+            ) : hasCreateDraft ? (
+              <p className="mt-3 text-sm font-semibold text-zinc-600">
+                Entwurf — erst mit „Übernehmen und zurücksetzen“ speichern.
               </p>
             ) : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={busy || !canSave || !angleId}
+                disabled={busy || !canSave || !effectiveAngleId}
                 onClick={() => setGenerateConfirm({ kind: "text" })}
                 className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
               >
@@ -630,15 +903,13 @@ export function SocialMediaAdminForm({
                 disabled={
                   busy ||
                   !canSave ||
-                  !angleId ||
-                  !(captionDraft.trim() || activePost?.caption?.trim())
+                  !effectiveAngleId ||
+                  !captionDraft.trim()
                 }
                 onClick={() => setGenerateConfirm({ kind: "image" })}
                 className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
                 title={
-                  !(captionDraft.trim() || activePost?.caption?.trim())
-                    ? "Zuerst Text erzeugen"
-                    : undefined
+                  !captionDraft.trim() ? "Zuerst Text erzeugen" : undefined
                 }
               >
                 Bild erzeugen
@@ -656,25 +927,25 @@ export function SocialMediaAdminForm({
               />
             </div>
 
-            {activePost?.imageDataUrl ? (
+            {previewImage ? (
               <div className="mt-5">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={activePost.imageDataUrl}
+                  src={previewImage}
                   alt={`Social-Bild ${formatDeDate(postDate)}`}
                   className="mx-auto max-h-[28rem] w-auto max-w-full rounded-2xl ring-1 ring-zinc-950/10"
                 />
               </div>
             ) : null}
 
-            {activePost ? (
+            {hasCreateDraft ? (
               <div className="mt-6">
                 <div className="border-t border-zinc-950/10" role="separator" />
                 <div className="mt-5 flex justify-center">
                   <button
                     type="button"
-                    disabled={busy}
-                    onClick={() => focusCreatedPost(activePost)}
+                    disabled={busy || !canSave || !captionDraft.trim()}
+                    onClick={commitAndReset}
                     className="rounded-full bg-zinc-800 px-5 py-2.5 text-sm font-bold text-white hover:bg-zinc-900 disabled:opacity-60"
                   >
                     Übernehmen und zurücksetzen
@@ -696,9 +967,14 @@ export function SocialMediaAdminForm({
           </p>
         ) : (
           posts.map((post) => {
-            const angle = post.angleId
-              ? getMotivationAngleById(post.angleId)
-              : null;
+            const angle =
+              post.postKind === "marketing"
+                ? post.angleId
+                  ? getMarketingTopicByAngleId(post.angleId)
+                  : null
+                : post.angleId
+                  ? getMotivationAngleById(post.angleId)
+                  : null;
             const open = expandedId === post.id;
             return (
               <article
@@ -711,8 +987,7 @@ export function SocialMediaAdminForm({
                   aria-expanded={open}
                   onClick={() => {
                     setExpandedId(open ? null : post.id);
-                    setPostDate(post.postDate);
-                    if (post.angleId) setAngleId(post.angleId);
+                    applyPostSelection(post);
                   }}
                   className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
                 >
@@ -721,7 +996,10 @@ export function SocialMediaAdminForm({
                       {formatDeDate(post.postDate)}
                     </p>
                     <p className="mt-0.5 text-sm text-zinc-600">
-                      {angle?.title ?? post.angleId ?? "Ohne Winkel"}
+                      <span className="font-semibold text-zinc-500">
+                        {SOCIAL_POST_KIND_LABELS[post.postKind]} ·{" "}
+                      </span>
+                      {angle?.title ?? post.angleId ?? "Ohne Thema"}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -756,25 +1034,35 @@ export function SocialMediaAdminForm({
                         className="max-h-64 w-auto max-w-full rounded-xl ring-1 ring-zinc-950/10"
                       />
                     ) : null}
-                    <button
-                      type="button"
-                      className="text-sm font-bold text-orange-700 underline-offset-2 hover:underline"
-                      onClick={() => {
-                        setPostDate(post.postDate);
-                        if (post.angleId) setAngleId(post.angleId);
-                        setCreateOpen(true);
-                        window.setTimeout(() => {
-                          document
-                            .getElementById("social-create-card")
-                            ?.scrollIntoView({
-                              behavior: "smooth",
-                              block: "start",
-                            });
-                        }, 50);
-                      }}
-                    >
-                      Oben bearbeiten
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        className="text-sm font-bold text-orange-700 underline-offset-2 hover:underline"
+                        onClick={() => {
+                          applyPostSelection(post);
+                          setCreateOpen(true);
+                          window.setTimeout(() => {
+                            document
+                              .getElementById("social-create-card")
+                              ?.scrollIntoView({
+                                behavior: "smooth",
+                                block: "start",
+                              });
+                          }, 50);
+                        }}
+                      >
+                        Oben bearbeiten
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !canSave}
+                        onClick={() => setDeleteTarget(post)}
+                        className="inline-flex items-center gap-1.5 text-sm font-bold text-red-700 underline-offset-2 hover:underline disabled:opacity-60"
+                      >
+                        <Trash2 className="size-3.5" aria-hidden />
+                        Löschen
+                      </button>
+                    </div>
                   </div>
                 ) : null}
               </article>
@@ -790,6 +1078,45 @@ export function SocialMediaAdminForm({
         confirmLabel={confirmCopy.confirmLabel}
         onCancel={() => setGenerateConfirm(null)}
         onConfirm={runConfirmedGenerate}
+      />
+
+      <ConfirmDeleteDialog
+        open={Boolean(deleteTarget)}
+        title="Beitrag löschen?"
+        description={
+          deleteTarget
+            ? (() => {
+                const topic =
+                  deleteTarget.postKind === "marketing" && deleteTarget.angleId
+                    ? getMarketingTopicByAngleId(deleteTarget.angleId)?.title
+                    : deleteTarget.angleId
+                      ? getMotivationAngleById(deleteTarget.angleId)?.title
+                      : null;
+                return `Der Social-Media-Beitrag vom ${formatDeDate(deleteTarget.postDate)} (${SOCIAL_POST_KIND_LABELS[deleteTarget.postKind]}${topic ? ` · ${topic}` : ""}) wird dauerhaft gelöscht — Text und Bild inklusive.`;
+              })()
+            : ""
+        }
+        confirmLabel="Endgültig löschen"
+        pending={pending}
+        onCancel={() => {
+          if (!pending) setDeleteTarget(null);
+        }}
+        onConfirm={() => {
+          const target = deleteTarget;
+          if (!target) return;
+          startTransition(async () => {
+            const result = await deleteSocialPostAction({ postId: target.id });
+            if (!result.success) {
+              toast.error(result.error ?? "Löschen fehlgeschlagen.");
+              return;
+            }
+            setPosts((prev) => prev.filter((item) => item.id !== target.id));
+            if (expandedId === target.id) setExpandedId(null);
+            setDeleteTarget(null);
+            toast.success("Beitrag gelöscht.");
+            await reloadWorkspace();
+          });
+        }}
       />
     </div>
   );

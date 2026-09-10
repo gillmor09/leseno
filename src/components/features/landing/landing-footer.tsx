@@ -26,16 +26,22 @@ export function LandingFooter() {
         </div>
         <nav aria-label="Fußzeile" className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <Link
+            href="/#anders"
+            className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
+          >
+            Warum leseno
+          </Link>
+          <Link
             href="/motivation"
             className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
           >
             Motivation
           </Link>
           <Link
-            href="/#funktionen"
+            href="/beispiele"
             className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
           >
-            Funktionen
+            Beispiele
           </Link>
           <Link
             href="/preise"

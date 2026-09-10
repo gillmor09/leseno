@@ -1,7 +1,13 @@
 /**
  * Shared reading motivation content for /motivation and social caption generation.
  * Source of truth: manifesto + angle bank (admin picks one Winkel per post).
+ * Positioning vs. free chat: also `vs-chat-positioning.ts` (merged into selectable angles).
  */
+
+import {
+  VS_CHAT_POSITIONS,
+  type VsChatPositionId,
+} from "@/lib/social/vs-chat-positioning";
 
 export type MotivationTheme =
   | "entwicklung"
@@ -29,6 +35,38 @@ export const MOTIVATION_THEME_LABELS: Record<MotivationTheme, string> = {
   neugier: "Neugier",
   alltag: "Alltag",
 };
+
+/** Theme for archived vs-chat positioning angles in the Social picker. */
+const VS_CHAT_THEME: Record<VsChatPositionId, MotivationTheme> = {
+  lesen_nicht_prompten: "alltag",
+  altersgerecht: "familie",
+  wissen_im_abenteuer: "neugier",
+  kind_im_zentrum: "familie",
+  wiederkommen: "alltag",
+  schutzraum: "familie",
+  regeln_drin: "familie",
+  soziales_lesen: "familie",
+  lust_statt_pflicht: "spass",
+  tippen_kann_jeder: "spass",
+};
+
+/** Prefix so vs-chat ids never collide with reading-joy Winkel ids. */
+export const VS_CHAT_ANGLE_ID_PREFIX = "vs:" as const;
+
+export function vsChatAngleId(positionId: VsChatPositionId): string {
+  return `${VS_CHAT_ANGLE_ID_PREFIX}${positionId}`;
+}
+
+/** Positioning archive as selectable Social Winkel. */
+export function vsChatPositionsAsMotivationAngles(): MotivationAngle[] {
+  return VS_CHAT_POSITIONS.map((entry) => ({
+    id: vsChatAngleId(entry.id),
+    theme: VS_CHAT_THEME[entry.id],
+    title: entry.title,
+    insight: entry.insight,
+    sceneHint: entry.sceneHint,
+  }));
+}
 
 /**
  * Fixed north star for leseno voice (social + public page). Keep short.
@@ -312,6 +350,59 @@ export const MOTIVATION_ANGLES: MotivationAngle[] = [
     sceneHint:
       "Soft invitation moment: adult patting a cushion, child joining with a book, warm cooperative energy",
   },
+  {
+    id: "lesen-statt-prompt",
+    theme: "alltag",
+    title: "Lesen, nicht Prompten",
+    insight:
+      "Ein Chatfenster liefert Text auf Zuruf — Lesen braucht Stufe, Raum und Fokus. Der Unterschied ist die Situation, nicht nur der Generator.",
+    sceneHint:
+      "Calm reading nook: child absorbed in a story book while a blurred laptop chat window sits unused in the background",
+  },
+  {
+    id: "stufe-statt-glueck",
+    theme: "familie",
+    title: "Stufe statt Glückstreffer",
+    insight:
+      "„Irgendwie kindlich“ reicht nicht: Sprache und Tiefe müssen zur Lesestufe passen — sonst frustriert oder langweilt der Text.",
+    sceneHint:
+      "Parent adjusting a simple story setting while child reads comfortably at their level, warm cooperative kitchen table",
+  },
+  {
+    id: "naechste-geschichte",
+    theme: "alltag",
+    title: "Die nächste Geschichte zählt",
+    insight:
+      "Ein Wow im Chat verpufft. Wiederfinden, weitermachen und Rituale kleben stärker als ein einmaliger Prompt-Erfolg.",
+    sceneHint:
+      "Bookshelf or library corner ritual: child pulling out a favorite story again with eager routine energy",
+  },
+  {
+    id: "klarer-weg",
+    theme: "familie",
+    title: "Klarer Weg statt offenem Chat",
+    insight:
+      "Thema wählen und lesen — ohne Nebenchats, ohne unvorhersehbare Abzweigungen. Schutzraum schlägt Prompt-Lotterie.",
+    sceneHint:
+      "Focused path visual: child and parent on a simple story journey from topic choice to cozy reading, no cluttered screens",
+  },
+  {
+    id: "tippen-kann-jeder",
+    theme: "spass",
+    title: "Tippen kann jeder",
+    insight:
+      "Kostenlos Text erzeugen ist leicht. Verlässlich kindgerecht lesen lassen — mit Lust statt Pflicht — ist das eigentliche Produkt.",
+    sceneHint:
+      "Joyful reading moment outdoors or on a sofa: child laughing into a story, phone face-down nearby, pure leisure",
+  },
+];
+
+/**
+ * All Winkel available in Social Admin: reading-joy bank + vs-chat positioning archive.
+ */
+export const SOCIAL_SELECTABLE_ANGLES: MotivationAngle[] = [
+  ...MOTIVATION_ANGLES,
+  ...vsChatPositionsAsMotivationAngles(),
 ];
 
 export function pickMotivationAngle(postDate: string): MotivationAngle {
@@ -327,8 +418,8 @@ export function pickMotivationAngle(postDate: string): MotivationAngle {
       seed = (seed + postDate.charCodeAt(i) * (i + 1)) % 9973;
     }
   }
-  const index = Math.abs(seed) % MOTIVATION_ANGLES.length;
-  return MOTIVATION_ANGLES[index]!;
+  const index = Math.abs(seed) % SOCIAL_SELECTABLE_ANGLES.length;
+  return SOCIAL_SELECTABLE_ANGLES[index]!;
 }
 
 /** Looks up a bank Winkel by stable `id` (admin selection). */
@@ -337,7 +428,7 @@ export function getMotivationAngleById(
 ): MotivationAngle | null {
   const id = angleId.trim();
   if (!id) return null;
-  return MOTIVATION_ANGLES.find((angle) => angle.id === id) ?? null;
+  return SOCIAL_SELECTABLE_ANGLES.find((angle) => angle.id === id) ?? null;
 }
 
 export function anglesByTheme(): Record<MotivationTheme, MotivationAngle[]> {

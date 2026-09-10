@@ -9,8 +9,17 @@ import {
   type BookClubShareLevel,
 } from "@/lib/book-club/share";
 import type { StoryLengthStepId } from "@/lib/stories/length";
-import type { StoryMoodId, StorySchoolStageId } from "@/lib/stories/options";
-import { STORY_MOODS, STORY_SCHOOL_STAGES } from "@/lib/stories/options";
+import type {
+  StoryMoodId,
+  StorySchoolStageId,
+  StoryTopicMixPatternId,
+  StoryTopicSeedSource,
+} from "@/lib/stories/options";
+import {
+  isStoryTopicMixPatternId,
+  STORY_MOODS,
+  STORY_SCHOOL_STAGES,
+} from "@/lib/stories/options";
 import { STORY_LENGTH_STEP_IDS } from "@/lib/stories/length";
 import { deleteStoryTtsObject } from "@/lib/stories/tts-storage";
 
@@ -19,6 +28,7 @@ const SCHOOL_STAGE_IDS = new Set(
 );
 const LENGTH_STEP_IDS = new Set<string>(STORY_LENGTH_STEP_IDS);
 const MOOD_IDS = new Set(STORY_MOODS.map((mood) => mood.id));
+const SEED_SOURCES = new Set<StoryTopicSeedSource>(["interest", "experience"]);
 
 export type UserStorySummary = {
   id: string;
@@ -35,15 +45,20 @@ export type UserStorySummary = {
   bookClubShare: BookClubShareLevel;
   /** True when `tts_storage_path` is set (Vorlesen already generated). */
   hasTtsAudio: boolean;
+  /** Hauptthema / personal seed / legacy mix label. */
+  topic: string | null;
+  topicSecondary: string | null;
+  topicMixPattern: StoryTopicMixPatternId | null;
+  topicSeedSource: StoryTopicSeedSource | null;
+  /** Chosen text length when the story was generated. */
+  lengthStep: StoryLengthStepId | null;
   createdAt: string;
 };
 
 export type UserStoryDetail = UserStorySummary & {
   storyHtml: string;
   facts: string[];
-  lengthStep: StoryLengthStepId | null;
   mood: StoryMoodId | null;
-  topic: string | null;
   syllableHelp: boolean;
   includeImages: boolean;
   creditsCharged: number | null;
@@ -58,7 +73,11 @@ export type SaveUserStoryInput = {
   childProfileId?: string | null;
   lengthStep?: StoryLengthStepId | null;
   mood?: StoryMoodId | null;
+  /** Hauptthema or personal seed text (not the „A + B“ display label). */
   topic?: string | null;
+  topicSecondary?: string | null;
+  topicMixPattern?: StoryTopicMixPatternId | null;
+  topicSeedSource?: StoryTopicSeedSource | null;
   personalMode?: boolean;
   syllableHelp?: boolean;
   includeImages?: boolean;
@@ -90,6 +109,17 @@ function asMood(value: unknown): StoryMoodId | null {
   return null;
 }
 
+function asTopicSeedSource(value: unknown): StoryTopicSeedSource | null {
+  if (typeof value === "string" && SEED_SOURCES.has(value as StoryTopicSeedSource)) {
+    return value as StoryTopicSeedSource;
+  }
+  return null;
+}
+
+function asTopicMixPattern(value: unknown): StoryTopicMixPatternId | null {
+  return isStoryTopicMixPatternId(value) ? value : null;
+}
+
 function asFacts(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -117,6 +147,14 @@ function mapSummary(row: Record<string, unknown>): UserStorySummary {
       row.book_club_share ?? row.shared_to_book_club,
     ),
     hasTtsAudio: Boolean(row.has_tts_audio),
+    topic: typeof row.topic === "string" ? row.topic.trim() || null : null,
+    topicSecondary:
+      typeof row.topic_secondary === "string"
+        ? row.topic_secondary.trim() || null
+        : null,
+    topicMixPattern: asTopicMixPattern(row.topic_mix_pattern),
+    topicSeedSource: asTopicSeedSource(row.topic_seed_source),
+    lengthStep: asLengthStep(row.length_step),
     createdAt:
       typeof row.created_at === "string"
         ? row.created_at
@@ -138,9 +176,7 @@ function mapDetail(row: Record<string, unknown>): UserStoryDetail {
     ...mapSummary(row),
     storyHtml: typeof row.story_html === "string" ? row.story_html : "",
     facts: asFacts(row.facts),
-    lengthStep: asLengthStep(row.length_step),
     mood: asMood(row.mood),
-    topic: typeof row.topic === "string" ? row.topic.trim() || null : null,
     syllableHelp: Boolean(row.syllable_help),
     includeImages: Boolean(row.include_images),
     creditsCharged:
@@ -168,6 +204,9 @@ export async function saveMyStory(
     p_include_images: input.includeImages ?? false,
     p_credits_charged: input.creditsCharged ?? null,
     p_parent_story_id: input.parentStoryId ?? null,
+    p_topic_secondary: input.topicSecondary ?? null,
+    p_topic_mix_pattern: input.topicMixPattern ?? null,
+    p_topic_seed_source: input.topicSeedSource ?? null,
   });
   if (error) {
     throw new Error(error.message);
@@ -203,6 +242,9 @@ export async function saveStoryForUser(
     p_include_images: input.includeImages ?? false,
     p_credits_charged: input.creditsCharged ?? null,
     p_parent_story_id: input.parentStoryId ?? null,
+    p_topic_secondary: input.topicSecondary ?? null,
+    p_topic_mix_pattern: input.topicMixPattern ?? null,
+    p_topic_seed_source: input.topicSeedSource ?? null,
   });
   if (error) {
     throw new Error(error.message);

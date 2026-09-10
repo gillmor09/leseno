@@ -36,7 +36,6 @@ import {
   type AdventDayMeta,
 } from "@/lib/stories/advent-repository";
 import { adventBookCreditsForLength } from "@/lib/stories/credits-cost";
-import { formatStoryTopicMixLabel } from "@/lib/stories/options";
 import { buildPersonalStoryContext } from "@/lib/stories/personal";
 import { titleFromStoryHtml } from "@/lib/stories/title-from-html";
 import { addUserCredits } from "@/lib/stripe/billing-sync";
@@ -514,10 +513,9 @@ export async function getAdventDayAction(
         childProfileId: book.childProfileId,
         lengthStep: book.lengthStep,
         mood: book.mood,
-        topic:
-          book.topic && book.topicSecondary
-            ? formatStoryTopicMixLabel(book.topic, book.topicSecondary)
-            : book.topic,
+        topic: book.topic,
+        topicSecondary: book.personalMode ? null : book.topicSecondary,
+        topicMixPattern: book.personalMode ? null : book.topicMixPattern,
         personalMode: book.personalMode,
         syllableHelp: book.syllableHelp,
         includeImages: book.includeImages,

@@ -14,11 +14,10 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { hash: "so-gehts", label: "So geht’s" },
   { hash: "staerken", label: "Stärken" },
-  { hash: "funktionen", label: "Funktionen" },
   { hash: "probieren", label: "Ausprobieren" },
   { hash: "eltern", label: "Für Eltern" },
+  { hash: "anders", label: "Warum leseno" },
   { hash: "preise", label: "Preise" },
-  { hash: "empfehlen", label: "Empfehlen" },
 ] as const;
 
 const headerBtnBase =

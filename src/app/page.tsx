@@ -3,9 +3,9 @@ import { LandingPage } from "@/components/features/landing/landing-page";
 import { buildPageMetadata, homeJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Eigene Geschichten aus Spaß und Neugier",
+  title: "Eigene Kindergeschichten aus Spaß und Neugier",
   description:
-    "Eigene Geschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Silbenhilfe, Vorlesen und Bilder in den Paketen. Kostenlos mit Basis starten.",
+    "Eigene Kindergeschichten, die Kinder freiwillig lesen wollen — passende Lesestufe, Lust statt Druck, Staunen ohne Schulgefühl. Kostenlos mit Basis starten oder ohne Konto ausprobieren.",
   path: "/",
 });
 

@@ -34,6 +34,7 @@ import {
   type BookClubShareLevel,
 } from "@/lib/book-club/share";
 import type { StoryLengthCatalog } from "@/lib/stories/length";
+import { STORY_LENGTH_STEPS } from "@/lib/stories/length";
 import type { AdventBookSummary } from "@/lib/stories/advent-repository";
 import type {
   UserStoryDetail,
@@ -41,7 +42,7 @@ import type {
 } from "@/lib/stories/library-repository";
 import type { ReadingModePrefs } from "@/lib/stories/reading-mode-prefs";
 import type { ReadingTypographyDefaultsCatalog } from "@/lib/stories/reading-typography-defaults";
-import { STORY_SCHOOL_STAGES } from "@/lib/stories/options";
+import { STORY_SCHOOL_STAGES, formatStoryBasedOnLabel } from "@/lib/stories/options";
 import { storyTtsPlayPath } from "@/lib/stories/tts-download-name";
 import {
   featuresInclude,
@@ -473,6 +474,15 @@ export function StoryLibraryBrowser({
             const storyProfile = story.childProfileId
               ? (profiles.find((p) => p.id === story.childProfileId) ?? null)
               : null;
+            const basedOn = formatStoryBasedOnLabel({
+              topic: story.topic,
+              topicSecondary: story.topicSecondary,
+              topicSeedSource: story.topicSeedSource,
+              personalMode: story.personalMode,
+            });
+            const lengthLabel =
+              STORY_LENGTH_STEPS.find((step) => step.id === story.lengthStep)
+                ?.label ?? null;
             const meta = [
               depth > 0 ? "Fortsetzung" : null,
               story.profileDisplayName
@@ -480,6 +490,8 @@ export function StoryLibraryBrowser({
                 : story.personalMode
                   ? "Persönlich"
                   : "Freies lesen",
+              basedOn,
+              lengthLabel ? `Länge: ${lengthLabel}` : null,
               stageLabel,
               formatStoryDate(story.createdAt),
               story.isRead ? "Gelesen" : null,
@@ -752,6 +764,11 @@ export function StoryLibraryBrowser({
                           parentStoryId: story.id,
                           bookClubShare: "none",
                           hasTtsAudio: false,
+                          topic: expandedStory.topic,
+                          topicSecondary: expandedStory.topicSecondary,
+                          topicMixPattern: expandedStory.topicMixPattern,
+                          topicSeedSource: expandedStory.topicSeedSource,
+                          lengthStep: result.lengthStep,
                           createdAt: new Date().toISOString(),
                         };
                         setStories((prev) => [summary, ...prev]);
@@ -760,9 +777,7 @@ export function StoryLibraryBrowser({
                           ...summary,
                           storyHtml: result.storyHtml,
                           facts: result.facts,
-                          lengthStep: expandedStory.lengthStep,
                           mood: expandedStory.mood,
-                          topic: expandedStory.topic,
                           syllableHelp: expandedStory.syllableHelp,
                           includeImages: expandedStory.includeImages,
                           creditsCharged: null,

@@ -1,6 +1,6 @@
 import "@/lib/validations/configure-zod";
 import { z } from "zod";
-import { SOCIAL_CHANNELS } from "@/lib/social/types";
+import { SOCIAL_CHANNELS, SOCIAL_POST_KINDS } from "@/lib/social/types";
 
 const postDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
   message: "Datum als JJJJ-MM-TT angeben.",
@@ -9,10 +9,11 @@ const postDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
 const angleIdSchema = z
   .string()
   .trim()
-  .min(1, { message: "Winkel auswählen." })
-  .max(80);
+  .min(1, { message: "Winkel oder Funktionen auswählen." })
+  .max(120);
 
 const channelSchema = z.enum(SOCIAL_CHANNELS);
+const postKindSchema = z.enum(SOCIAL_POST_KINDS).default("winkel");
 
 export const socialGlobalSettingsSchema = z.object({
   storyline: z.string().max(8000),
@@ -25,12 +26,14 @@ export const socialGlobalSettingsSchema = z.object({
 export const socialGenerateCaptionSchema = z.object({
   postDate: postDateSchema,
   angleId: angleIdSchema,
+  postKind: postKindSchema,
   channel: channelSchema.default("instagram"),
 });
 
 export const socialRefineCaptionSchema = z.object({
   postDate: postDateSchema,
   angleId: angleIdSchema,
+  postKind: postKindSchema,
   channel: channelSchema.default("instagram"),
   refineInstruction: z
     .string()
@@ -42,6 +45,7 @@ export const socialRefineCaptionSchema = z.object({
 export const socialSaveCaptionSchema = z.object({
   postDate: postDateSchema,
   angleId: angleIdSchema,
+  postKind: postKindSchema,
   channel: channelSchema.default("instagram"),
   caption: z.string().max(8000),
 });
@@ -49,19 +53,43 @@ export const socialSaveCaptionSchema = z.object({
 export const socialGenerateImageSchema = z.object({
   postDate: postDateSchema,
   angleId: angleIdSchema,
+  postKind: postKindSchema,
   channel: channelSchema.default("instagram"),
+  /** Draft caption from the create form — required when the post is not saved yet. */
+  caption: z.string().max(8000).optional(),
   extraInstruction: z.string().trim().max(2000).optional(),
+});
+
+/** Persist create-form draft (caption + optional image) — only on „Übernehmen“. */
+export const socialCommitPostSchema = z.object({
+  postDate: postDateSchema,
+  angleId: angleIdSchema,
+  postKind: postKindSchema,
+  channel: channelSchema.default("instagram"),
+  caption: z
+    .string()
+    .trim()
+    .min(1, { message: "Caption fehlt — zuerst Text erzeugen." })
+    .max(8000),
+  imageDataUrl: z.string().max(12_000_000).nullable().optional(),
+  lastImagePrompt: z.string().max(16_000).nullable().optional(),
 });
 
 export const socialClearImageSchema = z.object({
   postDate: postDateSchema,
   angleId: angleIdSchema,
+  postKind: postKindSchema,
   channel: channelSchema.default("instagram"),
 });
 
 export const socialSetPublishedSchema = z.object({
   postDate: postDateSchema,
   angleId: angleIdSchema,
+  postKind: postKindSchema,
   channel: channelSchema.default("instagram"),
   published: z.boolean(),
+});
+
+export const socialDeletePostSchema = z.object({
+  postId: z.string().uuid({ message: "Ungültiger Beitrag." }),
 });

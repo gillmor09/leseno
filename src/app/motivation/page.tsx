@@ -8,6 +8,7 @@ import {
   MOTIVATION_THEME_LABELS,
   type MotivationTheme,
 } from "@/lib/social/motivation";
+import { VS_CHAT_POSITIONS } from "@/lib/social/vs-chat-positioning";
 
 export const metadata: Metadata = {
   title: "Motivation — Warum Lesen mit Spaß zählt | Leseno",
@@ -25,7 +26,8 @@ const THEME_ORDER: MotivationTheme[] = [
 ];
 
 /**
- * Public motivation / background page — same manifesto + angles as social generation.
+ * Public motivation / background page — manifesto, vs-chat positioning archive,
+ * and reading-joy angles (same bank as social generation).
  */
 export default function MotivationPage() {
   const grouped = anglesByTheme();
@@ -62,9 +64,40 @@ export default function MotivationPage() {
               ))}
             </div>
 
+            <section id="vs-chat" className="mt-14 scroll-mt-24">
+              <h2 className="text-xl font-extrabold text-zinc-950">
+                Warum leseno — und nicht nur ein Chatfenster
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-600">
+                Zehn Argumente gegen „kann man doch kostenlos tippen“. Sechs
+                davon stehen auf der{" "}
+                <Link
+                  href="/#anders"
+                  className="font-bold text-orange-800 underline-offset-2 hover:underline"
+                >
+                  Landingpage
+                </Link>
+                ; alle zehn bleiben hier archiviert — mit knackigen Insights und
+                Bild-Hinweisen für spätere Social Posts.
+              </p>
+              <ul className="mt-4 space-y-3">
+                {VS_CHAT_POSITIONS.map((item) => (
+                  <li
+                    key={item.id}
+                    className="rounded-2xl bg-white px-5 py-4 shadow-md ring-1 ring-zinc-950/10"
+                  >
+                    <p className="font-extrabold text-zinc-950">{item.title}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-zinc-600">
+                      {item.insight}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
             <p className="mt-12 text-sm font-semibold text-zinc-600">
-              Daraus entstehen viele einzelne Blickwinkel — Social Posts greifen
-              jeweils{" "}
+              Daraus und aus der Lesehaltung entstehen viele einzelne
+              Blickwinkel — Social Posts greifen jeweils{" "}
               <span className="font-extrabold text-zinc-950">einen</span> davon
               knackig auf.
             </p>

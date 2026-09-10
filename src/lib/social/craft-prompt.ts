@@ -1,8 +1,8 @@
 /**
  * Builds CRAFT-style prompts for social captions and social image prompts.
- * Captions: manifesto + one motivation angle.
- * Images: Gemini plans a lively scene with ZERO text; Winkel title is composited later
- * in Nunito SemiBold (white) via `overlayExactAngleTextOnImage`.
+ * Winkel: manifesto + one motivation angle.
+ * Marketing: 1–2 feature highlights + soft CTA (visit / try free).
+ * Images: Gemini plans a scene with ZERO text; title overlay via `overlayExactAngleTextOnImage`.
  */
 
 import {
@@ -11,8 +11,11 @@ import {
   fluxDayVisualVariation,
   sanitizeFluxVisualCue,
 } from "@/lib/ai/flux-prompt-guards";
+import type { MarketingTopic } from "@/lib/social/marketing-features";
 import {
   LESENO_FLUX_PALETTE_LOCK,
+  LESENO_MARKETING_FLUX_PALETTE_LOCK,
+  LESENO_MARKETING_STYLE_GUIDE,
   LESENO_SOCIAL_STYLE_GUIDE,
 } from "@/lib/social/leseno-visual-style";
 import {
@@ -33,6 +36,26 @@ Länge: eher kurz als lang. Deutsch.`;
 
 const DEFAULT_ACTION =
   "Schreibe einen Instagram-Post, der genau den genannten Winkel trifft — prägnant, schwungvoll, mit Humor.";
+
+const DEFAULT_MARKETING_ROLE =
+  "Produktstimme für leseno — warm, konkret, dezent; Nutzen zeigen, nie laut verkaufen, nie Oberlehrer.";
+
+const DEFAULT_MARKETING_FORMAT = `Genau 1–2 Produkt-Highlights. Aufbau:
+1) Hook zum Alltag/Nutzen — max. 1–2 Zeilen
+2) Core: die genannten Funktionen als tolles Highlight herausstellen (kurz, greifbar, kein Feature-Dump)
+3) Softes CTA-Ende — wähle EINES: „Seite besuchen“ (leseno.de) ODER „kostenlos ausprobieren“
+4) Leerzeile, dann 3–5 passende Hashtags in einer Zeile (Pflicht)
+Länge: eher kurz. Deutsch. Kein Hard-Sell, kein Preisdumping, keine Fake-Urgency.`;
+
+const DEFAULT_MARKETING_ACTION =
+  "Schreibe einen dezenten Instagram-Marketing-Post zu den genannten leseno-Funktionen — highlight-stark, einladend, mit softem CTA und passenden Hashtags.";
+
+const MARKETING_HASHTAG_RULES = `Hashtags (Pflicht, ganz am Ende nach einer Leerzeile):
+- Genau 3–5 Tags in einer Zeile, mit #, durch Leerzeichen getrennt.
+- Immer #leseno dabei.
+- Rest passend zum Highlight und zur Zielgruppe (Eltern, Vorlesen, Kinder, Lesefreude) — z. B. #vorlesen #kinderbücher #lesenmachtspaß #elternleben #geschichtenfürkinder — je nach Thema wählen, nicht alle stapeln.
+- Keine generischen Spam-Tags (#love #instagood), keine Marken-Konkurrenz, keine Politik.
+- Keine doppelten Tags, keine Satzzeichen in Tags.`;
 
 export function buildCraftCaptionPrompt(input: {
   storyline: string;
@@ -121,8 +144,99 @@ ${input.currentCaption.trim()}`;
   return { systemInstruction, userText };
 }
 
+export function buildMarketingCaptionPrompt(input: {
+  storyline: string;
+  channel: SocialChannel;
+  postDate: string;
+  dayIndex: number;
+  daysInMonth: number;
+  topic: MarketingTopic;
+}): { systemInstruction: string; userText: string } {
+  const channelLabel = SOCIAL_CHANNEL_LABELS[input.channel];
+  const featureLines = input.topic.features
+    .map((f) => `- ${f.title}: ${f.blurb}`)
+    .join("\n");
+
+  const systemInstruction = `Du bist Social-Media-Texter:in für leseno (Lesen für Kinder und Familien).
+
+# Nordstern (immer beachten)
+${LESENO_READING_MANIFESTO}
+
+# Stimme (Marketing)
+Dezent, konkret, einladend. Produktnutzen zeigen — kein Hard-Sell, kein Pseudo-Coach, keine Floskeln wie „Entdecke die Magie“.
+Antworte ausschließlich mit dem fertigen Beitragstext auf Deutsch — keine Anführungszeichen um den ganzen Text, keine Meta-Kommentare.`;
+
+  const extraNotes = input.storyline.trim();
+  const userText = `Erstelle einen ${channelLabel}-Marketing-Beitrag.
+
+# Role
+${DEFAULT_MARKETING_ROLE}
+
+# Action
+${DEFAULT_MARKETING_ACTION}
+
+# Format
+${DEFAULT_MARKETING_FORMAT}
+
+# Feature-Highlights (NUR DIESE — 1 oder 2)
+${featureLines}
+
+# Pflicht
+- Genau diese ${input.topic.features.length} Funktion(en) als Highlight herausstellen.
+- Softes CTA am Ende: entweder Seite besuchen (leseno.de) oder kostenlos ausprobieren — nicht beides stapeln.
+- ${MARKETING_HASHTAG_RULES}
+- Kein Preis-Dumping, keine Fake-Urgency, kein Vergleichs-Bashing.
+
+${extraNotes ? `# Zusätzliche Redaktionsnotiz (optional, nachrangig)\n${extraNotes}\n` : ""}# Datum
+Beitrag für den ${input.postDate} (Tag ${input.dayIndex} von ${input.daysInMonth}).
+Variiere Einstieg gegenüber anderen Tagen.`;
+
+  return { systemInstruction, userText };
+}
+
+export function buildMarketingRefinePrompt(input: {
+  storyline: string;
+  channel: SocialChannel;
+  currentCaption: string;
+  refineInstruction: string;
+  topic?: MarketingTopic;
+}): { systemInstruction: string; userText: string } {
+  const channelLabel = SOCIAL_CHANNEL_LABELS[input.channel];
+  const systemInstruction = `Du überarbeitest Social-Media-Marketing-Texte für leseno.
+Nordstern:
+${LESENO_READING_MANIFESTO}
+Stimme: dezent, konkret, einladend — soft CTA und passende Hashtags behalten bzw. sinnvoll anpassen.
+Antworte nur mit dem fertigen Beitragstext auf Deutsch.`;
+
+  const topicBlock = input.topic
+    ? `# Features (beibehalten, nicht austauschen)
+${input.topic.features.map((f) => `${f.title}: ${f.blurb}`).join("\n")}`
+    : "";
+
+  const userText = `Überarbeite den folgenden ${channelLabel}-Marketing-Beitrag.
+
+# Role
+${DEFAULT_MARKETING_ROLE}
+
+# Action (Überarbeitung)
+${input.refineInstruction.trim()}
+
+# Format
+${DEFAULT_MARKETING_FORMAT}
+
+${topicBlock}
+
+# Hashtags
+${MARKETING_HASHTAG_RULES}
+
+# Bisheriger Text
+${input.currentCaption.trim()}`;
+
+  return { systemInstruction, userText };
+}
+
 /**
- * Gemini plans a social scene (no on-image text — Winkel is composited later).
+ * Gemini plans a social scene (no on-image text — title is composited later).
  */
 export function buildSocialImageScenePlanPrompt(input: {
   imagePromptTemplate: string;
@@ -131,22 +245,30 @@ export function buildSocialImageScenePlanPrompt(input: {
   postDate: string;
   extraInstruction?: string;
   sceneHint?: string;
+  /** Marketing posts use the product/poster style guide. */
+  visualMode?: "winkel" | "marketing";
 }): { systemInstruction: string; userText: string } {
   const channelLabel = SOCIAL_CHANNEL_LABELS[input.channel];
-  const styleGuide =
-    input.imagePromptTemplate.trim() || LESENO_SOCIAL_STYLE_GUIDE;
+  const marketing = input.visualMode === "marketing";
+  const styleGuide = marketing
+    ? LESENO_MARKETING_STYLE_GUIDE
+    : input.imagePromptTemplate.trim() || LESENO_SOCIAL_STYLE_GUIDE;
+
+  const sceneRule = marketing
+    ? "Describe a joyful product-benefit scene starring the SAME familiar leseno illustrated kid (messy dark-brown hair, freckles, large eyes, orange/navy hoodie) as Winkel posts — same 2D craft for people, props, AND background; louder staging, never photo backgrounds with cutout figures."
+    : "Describe a FULL lively situation (environment + action + relationships), not a portrait of a kid holding a book.";
 
   const systemInstruction = `You are the visual art director for leseno (reading joy for kids and families).
 Your job: turn a social-media caption into ONE detailed image brief for the pixel model.
 
-Brand / style system (follow literally — especially ART STYLE, COLOR PALETTE, SCENES):
+Brand / style system (follow literally — especially ART STYLE, COLOR PALETTE, SCENES/COMPOSITION):
 """
 ${styleGuide}
 """
 
 Hard rules:
 - English only; image brief only — no markdown, no quotes around the whole answer.
-- Describe a FULL lively situation (environment + action + relationships), not a portrait of a kid holding a book.
+- ${sceneRule}
 - Name brand colors (warm orange, golden yellow, cream).
 - Purely visual — do not paint caption words or any headline.
 - ZERO text/letters/numbers/signs/logos/UI in the image (typography is added later in code).
@@ -156,14 +278,17 @@ Hard rules:
 
   const extra = input.extraInstruction?.trim();
   const hint = input.sceneHint?.trim();
-  const userText = `Plan the illustration for this ${channelLabel} post (day ${input.postDate} = mood variation only, never paint the date).
+  const fallbackCaption = marketing
+    ? "(no caption — invent a joyful leseno product-benefit scene with the familiar illustrated kid hero)"
+    : "(no caption — invent a warm leseno reading situation)";
+  const userText = `Plan the illustration for this ${channelLabel} ${marketing ? "marketing " : ""}post (day ${input.postDate} = mood variation only, never paint the date).
 
 # Caption (mood inspiration only — do not paint these words)
-${input.caption.trim() || "(no caption — invent a warm leseno reading situation)"}
+${input.caption.trim() || fallbackCaption}
 
 ${hint ? `# Suggested situation direction\n${hint}\n` : ""}
 ${extra ? `# Extra visual direction from editor\n${extra}\n` : ""}
-Write the image brief now: full scene, orange–gold–cream, illustrated not photo, absolutely no text.`;
+Write the image brief now: ${marketing ? "same character craft as Winkel, joyful product staging" : "full scene"}, orange–gold–cream, illustrated not photo, absolutely no text.`;
 
   return { systemInstruction, userText };
 }
@@ -176,23 +301,35 @@ export function buildSocialFluxPromptFromScene(input: {
   imagePromptTemplate: string;
   postDate: string;
   extraInstruction?: string;
+  visualMode?: "winkel" | "marketing";
 }): string {
+  const marketing = input.visualMode === "marketing";
   const wantsPhoto =
+    !marketing &&
     /\b(photo|fotorealist|photoreal|stock\s*photo|kamera|dslr)\b/i.test(
       `${input.imagePromptTemplate} ${input.extraInstruction ?? ""}`,
     );
 
   const scene =
     sanitizeFluxVisualCue(input.sceneDescription, 900) ||
-    "Lively family living-room reading adventure, warm orange glow, full environment";
+    (marketing
+      ? "Joyful leseno product-benefit scene with the familiar freckled messy-hair illustrated kid hero, same 2D craft as Winkel posts, warm orange–gold energy"
+      : "Lively family living-room reading adventure, warm orange glow, full environment");
 
-  // Style + palette first (long no-text blocks were drowning the warm leseno look).
+  const framing = marketing
+    ? "Marketing composition with brand-character recognition: STRICT square 1024 frame, full illustration (no photo background), familiar leseno kid as hero when a child appears, edge-to-edge fill, leave a slightly calmer upper band for a title card and a quiet lower strip for a brand bar."
+    : "Full lively situation with environment and action, square crop, illustration fills the frame, slightly calmer lower third for overlay space.";
+
   return [
     wantsPhoto ? null : FLUX_ILLUSTRATION_STYLE_LOCK,
-    wantsPhoto ? null : LESENO_FLUX_PALETTE_LOCK,
+    wantsPhoto
+      ? null
+      : marketing
+        ? LESENO_MARKETING_FLUX_PALETTE_LOCK
+        : LESENO_FLUX_PALETTE_LOCK,
     `Scene: ${scene}.`,
     fluxDayVisualVariation(input.postDate),
-    "Full lively situation with environment and action, square crop, illustration fills the frame, slightly calmer lower third for overlay space.",
+    framing,
     FLUX_SOCIAL_NO_TEXT,
   ]
     .filter(Boolean)

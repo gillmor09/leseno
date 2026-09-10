@@ -1,12 +1,12 @@
 /**
- * Overlays exact Winkel title on a social image in real Nunito SemiBold (white).
- * Glyph outlines come from the vendored Nunito SemiBold TTF via opentype.js (per-glyph paths).
- * Placement: top or bottom band — whichever is darker for white-text contrast.
+ * Overlays exact titles on social images in real Nunito SemiBold (opentype glyph paths).
+ * Winkel: white type on dark edge gradient.
+ * Marketing: zinc-700/80 dark card + light orange checklist, solid zinc-700 footer.
  */
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { createCanvas, loadImage, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import { parse, type Font as OtFont } from "opentype.js";
 
 /** Vendored brand font — keep path statically scoped for Turbopack tracing. */
@@ -17,6 +17,21 @@ const NUNITO_SEMIBOLD_TTF = path.join(
   "fonts",
   "Nunito-SemiBold.ttf",
 );
+
+const LESENO_LOGO_PATH = path.join(
+  process.cwd(),
+  "public",
+  "landing",
+  "vogel-hell.webp",
+);
+
+/** Marketing social posts are always composed at this square size. */
+export const MARKETING_SOCIAL_IMAGE_PX = 1024;
+
+const MARKETING_ORANGE = "#fdba74"; // orange-300 — light & punchy on zinc-700 card
+const MARKETING_CARD_FILL = "rgba(63, 63, 70, 0.8)"; // zinc-700/80
+const FOOTER_ZINC = "#3f3f46"; // zinc-700 solid
+const MARKETING_CHECK_MARK = "#fff7ed"; // warm cream on orange badge
 
 let nunitoFont: OtFont | null = null;
 
@@ -40,7 +55,6 @@ function getNunitoFont(): OtFont {
       }`,
     );
   }
-  // Smoke-check: rounded Nunito 'o' must exist as a real glyph outline.
   const o = font.charToGlyph("o");
   if (!o || (o.advanceWidth ?? 0) < 100 || o.path.commands.length < 4) {
     throw new Error(`Nunito SemiBold ungültig (${NUNITO_SEMIBOLD_TTF}).`);
@@ -93,18 +107,8 @@ function parseDataUrl(dataUrl: string): { mime: string; buffer: Buffer } {
   };
 }
 
-/**
- * Mean relative luminance (0–255) of a horizontal band. Sampled for speed.
- */
 function meanBandLuminance(
-  ctx: {
-    getImageData: (
-      sx: number,
-      sy: number,
-      sw: number,
-      sh: number,
-    ) => { data: Uint8ClampedArray; width: number };
-  },
+  ctx: SKRSContext2D,
   width: number,
   y0: number,
   bandHeight: number,
@@ -128,26 +132,8 @@ function meanBandLuminance(
   return count > 0 ? sum / count : 128;
 }
 
-/**
- * Fills one centered line using per-glyph Nunito outlines (no GSUB / no ctx.font).
- */
 function fillNunitoLine(
-  ctx: {
-    beginPath(): void;
-    moveTo(x: number, y: number): void;
-    lineTo(x: number, y: number): void;
-    bezierCurveTo(
-      cp1x: number,
-      cp1y: number,
-      cp2x: number,
-      cp2y: number,
-      x: number,
-      y: number,
-    ): void;
-    quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void;
-    closePath(): void;
-    fill(): void;
-  },
+  ctx: SKRSContext2D,
   font: OtFont,
   text: string,
   fontSize: number,
@@ -175,21 +161,149 @@ function fillNunitoLine(
   }
 }
 
+/** SemiBold stroked + filled — reads as Bold without a separate Bold TTF. */
+function fillNunitoLineBold(
+  ctx: SKRSContext2D,
+  font: OtFont,
+  text: string,
+  fontSize: number,
+  centerX: number,
+  baselineY: number,
+): void {
+  const scale = fontSize / font.unitsPerEm;
+  let x = centerX - measureLineWidth(font, text, fontSize) / 2;
+  const strokeW = Math.max(1.2, fontSize * 0.045);
+
+  for (const ch of text) {
+    const glyph = font.charToGlyph(ch);
+    const otPath = glyph.getPath(x, baselineY, fontSize);
+    ctx.beginPath();
+    for (const cmd of otPath.commands) {
+      if (cmd.type === "M") ctx.moveTo(cmd.x, cmd.y);
+      else if (cmd.type === "L") ctx.lineTo(cmd.x, cmd.y);
+      else if (cmd.type === "C") {
+        ctx.bezierCurveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
+      } else if (cmd.type === "Q") {
+        ctx.quadraticCurveTo(cmd.x1, cmd.y1, cmd.x, cmd.y);
+      } else if (cmd.type === "Z") ctx.closePath();
+    }
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = strokeW;
+    ctx.stroke();
+    ctx.fill();
+    x += (glyph.advanceWidth ?? 0) * scale;
+  }
+}
+
+/** Left-aligned bold Nunito (marketing benefit rows). */
+function fillNunitoLineBoldLeft(
+  ctx: SKRSContext2D,
+  font: OtFont,
+  text: string,
+  fontSize: number,
+  leftX: number,
+  baselineY: number,
+): void {
+  const scale = fontSize / font.unitsPerEm;
+  let x = leftX;
+  const strokeW = Math.max(1.2, fontSize * 0.045);
+
+  for (const ch of text) {
+    const glyph = font.charToGlyph(ch);
+    const otPath = glyph.getPath(x, baselineY, fontSize);
+    ctx.beginPath();
+    for (const cmd of otPath.commands) {
+      if (cmd.type === "M") ctx.moveTo(cmd.x, cmd.y);
+      else if (cmd.type === "L") ctx.lineTo(cmd.x, cmd.y);
+      else if (cmd.type === "C") {
+        ctx.bezierCurveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
+      } else if (cmd.type === "Q") {
+        ctx.quadraticCurveTo(cmd.x1, cmd.y1, cmd.x, cmd.y);
+      } else if (cmd.type === "Z") ctx.closePath();
+    }
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = strokeW;
+    ctx.stroke();
+    ctx.fill();
+    x += (glyph.advanceWidth ?? 0) * scale;
+  }
+}
+
 /**
- * Draws `overlayText` exactly (no paraphrase) in white Nunito SemiBold outlines.
- * Returns a PNG data URL so model detail stays sharp.
+ * Benefit-list check badge (circle + tick) — clearer than thumbs-up for feature claims.
  */
-export async function overlayExactAngleTextOnImage(input: {
+function drawCheckBadge(
+  ctx: SKRSContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+): void {
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fillStyle = MARKETING_ORANGE;
+  ctx.fill();
+
+  const s = radius * 0.55;
+  ctx.beginPath();
+  ctx.moveTo(cx - s * 0.75, cy + s * 0.05);
+  ctx.lineTo(cx - s * 0.15, cy + s * 0.65);
+  ctx.lineTo(cx + s * 0.85, cy - s * 0.55);
+  ctx.strokeStyle = MARKETING_CHECK_MARK;
+  ctx.lineWidth = Math.max(2.5, radius * 0.28);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.stroke();
+}
+
+/** Splits marketing titles joined with “ · ” into stacked benefit lines. */
+function parseMarketingBenefitLines(overlayText: string): string[] {
+  const parts = overlayText
+    .split(/\s*·\s*/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [overlayText.trim()].filter(Boolean);
+}
+
+function fillRoundedRect(
+  ctx: SKRSContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+): void {
+  const r = Math.min(radius, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/**
+ * Draws the source image cover-cropped into a square canvas (fills every pixel).
+ */
+function drawCoverSquare(ctx: SKRSContext2D, image: Image, size: number): void {
+  const scale = Math.max(size / image.width, size / image.height);
+  const dw = image.width * scale;
+  const dh = image.height * scale;
+  const dx = (size - dw) / 2;
+  const dy = (size - dh) / 2;
+  ctx.drawImage(image, dx, dy, dw, dh);
+}
+async function overlayWinkelStyle(input: {
   imageDataUrl: string;
   overlayText: string;
 }): Promise<string> {
   const text = input.overlayText.trim().replace(/\s+/g, " ");
-  if (!text) {
-    return input.imageDataUrl;
-  }
+  if (!text) return input.imageDataUrl;
 
   const font = getNunitoFont();
-
   const { buffer } = parseDataUrl(input.imageDataUrl);
   const image = await loadImage(buffer);
   const width = image.width;
@@ -199,11 +313,10 @@ export async function overlayExactAngleTextOnImage(input: {
 
   ctx.drawImage(image, 0, 0, width, height);
 
-  // Compare top vs bottom band — white type reads better on the darker edge.
   const bandH = Math.round(height * 0.3);
   const topLuma = meanBandLuminance(ctx, width, 0, bandH);
   const bottomLuma = meanBandLuminance(ctx, width, height - bandH, bandH);
-  const placeTop = topLuma < bottomLuma - 4; // slight bias to bottom on ties
+  const placeTop = topLuma < bottomLuma - 4;
 
   if (placeTop) {
     const gradient = ctx.createLinearGradient(0, 0, 0, bandH);
@@ -236,7 +349,6 @@ export async function overlayExactAngleTextOnImage(input: {
   const lineHeight = Math.round(fontSize * 1.18);
   const blockHeight = lines.length * lineHeight;
   const edgePad = Math.round(height * 0.075);
-  // Baseline for first line (opentype y is baseline, not middle).
   const firstBaseline = placeTop
     ? edgePad + fontSize * 0.85
     : height - edgePad - blockHeight / 2 + fontSize * 0.35;
@@ -259,4 +371,187 @@ export async function overlayExactAngleTextOnImage(input: {
 
   const out = canvas.toBuffer("image/png");
   return `data:image/png;base64,${out.toString("base64")}`;
+}
+
+async function overlayMarketingStyle(input: {
+  imageDataUrl: string;
+  overlayText: string;
+}): Promise<string> {
+  const benefits = parseMarketingBenefitLines(input.overlayText);
+  const font = getNunitoFont();
+  const { buffer } = parseDataUrl(input.imageDataUrl);
+  const image = await loadImage(buffer);
+  const size = MARKETING_SOCIAL_IMAGE_PX;
+  const canvas = createCanvas(size, size);
+  const ctx = canvas.getContext("2d");
+
+  // Fill every pixel of the 1024² square (cover crop).
+  drawCoverSquare(ctx, image, size);
+
+  const footerH = Math.round(size * 0.078);
+  const footerY = size - footerH;
+
+  // Benefit card — stacked checklist (1–2 features), dark enough to read in feed.
+  if (benefits.length > 0) {
+    const padX = Math.round(size * 0.06);
+    const cardMaxW = size - padX * 2;
+    let fontSize = Math.round(size * 0.048);
+    fontSize = Math.min(52, Math.max(30, fontSize));
+
+    const textInnerPad = Math.round(size * 0.04);
+
+    type BenefitRow = { label: string; lines: string[] };
+    let rows: BenefitRow[] = [];
+    let iconR = Math.round(fontSize * 0.42);
+    let iconGap = Math.round(fontSize * 0.38);
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      iconR = Math.round(fontSize * 0.42);
+      iconGap = Math.round(fontSize * 0.38);
+      const textMaxW = cardMaxW - textInnerPad * 2 - iconR * 2 - iconGap;
+      rows = benefits.map((label) => ({
+        label,
+        lines: wrapLines(font, label, fontSize, textMaxW),
+      }));
+      const maxLines = Math.max(...rows.map((row) => row.lines.length), 1);
+      if (maxLines <= 2) break;
+      fontSize = Math.max(26, fontSize - 2);
+    }
+
+    const lineHeight = Math.round(fontSize * 1.18);
+    const rowGap = Math.round(fontSize * 0.42);
+    const cardPadY = Math.round(fontSize * 0.58);
+    let contentH = 0;
+    for (let i = 0; i < rows.length; i++) {
+      contentH += Math.max(iconR * 2, rows[i]!.lines.length * lineHeight);
+      if (i < rows.length - 1) contentH += rowGap;
+    }
+    const cardH = contentH + cardPadY * 2;
+
+    let widestText = 0;
+    for (const row of rows) {
+      for (const line of row.lines) {
+        widestText = Math.max(
+          widestText,
+          measureLineWidth(font, line, fontSize),
+        );
+      }
+    }
+    const cardW = Math.min(
+      cardMaxW,
+      Math.max(
+        Math.round(size * 0.55),
+        textInnerPad * 2 + iconR * 2 + iconGap + widestText,
+      ),
+    );
+    const cardX = (size - cardW) / 2;
+    const cardY = Math.round(size * 0.07);
+
+    ctx.shadowColor = "rgba(0,0,0,0.28)";
+    ctx.shadowBlur = Math.round(size * 0.018);
+    ctx.shadowOffsetY = Math.round(size * 0.006);
+    ctx.fillStyle = MARKETING_CARD_FILL;
+    fillRoundedRect(ctx, cardX, cardY, cardW, cardH, Math.round(size * 0.02));
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    let rowTop = cardY + cardPadY;
+    const textLeft = cardX + textInnerPad + iconR * 2 + iconGap;
+
+    for (const row of rows) {
+      const blockH = Math.max(iconR * 2, row.lines.length * lineHeight);
+      const iconCy = rowTop + blockH / 2;
+      drawCheckBadge(ctx, cardX + textInnerPad + iconR, iconCy, iconR);
+
+      ctx.fillStyle = MARKETING_ORANGE;
+      ctx.strokeStyle = MARKETING_ORANGE;
+      const firstBaseline =
+        rowTop +
+        (blockH - row.lines.length * lineHeight) / 2 +
+        fontSize * 0.82;
+      for (let i = 0; i < row.lines.length; i++) {
+        fillNunitoLineBoldLeft(
+          ctx,
+          font,
+          row.lines[i]!,
+          fontSize,
+          textLeft,
+          firstBaseline + i * lineHeight,
+        );
+      }
+      rowTop += blockH + rowGap;
+    }
+  }
+
+  // Brand footer bar.
+  ctx.fillStyle = FOOTER_ZINC;
+  ctx.fillRect(0, footerY, size, footerH);
+
+  const brandFontSize = Math.round(size * 0.032);
+  const brandLabel = "leseno";
+  const logoSize = Math.round(footerH * 0.55);
+  let logo: Awaited<ReturnType<typeof loadImage>> | null = null;
+  try {
+    logo = await loadImage(readFileSync(/*turbopackIgnore: true*/ LESENO_LOGO_PATH));
+  } catch {
+    logo = null;
+  }
+
+  const gap = Math.round(size * 0.012);
+  const labelW = measureLineWidth(font, brandLabel, brandFontSize);
+  const clusterW = (logo ? logoSize + gap : 0) + labelW;
+  let cursorX = (size - clusterW) / 2;
+  const midY = footerY + footerH / 2;
+
+  if (logo) {
+    ctx.drawImage(
+      logo,
+      cursorX,
+      midY - logoSize / 2,
+      logoSize,
+      logoSize,
+    );
+    cursorX += logoSize + gap;
+  }
+
+  ctx.fillStyle = "#fafafa";
+  // Left-aligned baseline for the wordmark next to the logo.
+  const scale = brandFontSize / font.unitsPerEm;
+  let x = cursorX;
+  const baselineY = midY + brandFontSize * 0.35;
+  for (const ch of brandLabel) {
+    const glyph = font.charToGlyph(ch);
+    const otPath = glyph.getPath(x, baselineY, brandFontSize);
+    ctx.beginPath();
+    for (const cmd of otPath.commands) {
+      if (cmd.type === "M") ctx.moveTo(cmd.x, cmd.y);
+      else if (cmd.type === "L") ctx.lineTo(cmd.x, cmd.y);
+      else if (cmd.type === "C") {
+        ctx.bezierCurveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
+      } else if (cmd.type === "Q") {
+        ctx.quadraticCurveTo(cmd.x1, cmd.y1, cmd.x, cmd.y);
+      } else if (cmd.type === "Z") ctx.closePath();
+    }
+    ctx.fill();
+    x += (glyph.advanceWidth ?? 0) * scale;
+  }
+
+  const out = canvas.toBuffer("image/jpeg", 88);
+  return `data:image/jpeg;base64,${out.toString("base64")}`;
+}
+
+/**
+ * Draws `overlayText` exactly (no paraphrase).
+ * `style: "marketing"` → 1024² cover, zinc-700/80 checklist card + light orange type + solid zinc-700 footer.
+ */
+export async function overlayExactAngleTextOnImage(input: {
+  imageDataUrl: string;
+  overlayText: string;
+  style?: "winkel" | "marketing";
+}): Promise<string> {
+  if (input.style === "marketing") {
+    return overlayMarketingStyle(input);
+  }
+  return overlayWinkelStyle(input);
 }

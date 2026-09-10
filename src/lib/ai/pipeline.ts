@@ -592,6 +592,9 @@ export async function generateStoryPipeline(
 
   const fluxPlans = buildFluxIllustrationPlans({
     topic: input.topic,
+    topicSecondary: input.topicSecondary,
+    topicMixPattern: input.topicMixPattern,
+    schoolStage: input.schoolStage,
     schoolStageLabel: sharedValues.school_stage,
     moodId: input.mood,
     moodLabel: labelForMood(input.mood),
@@ -776,6 +779,7 @@ export async function generateContinuationPipeline(
 
   const fluxPlans = buildFluxIllustrationPlans({
     topic: input.topic,
+    schoolStage: input.schoolStage,
     schoolStageLabel: sharedValues.school_stage,
     moodId: input.mood,
     moodLabel: labelForMood(input.mood),
@@ -952,6 +956,9 @@ export async function generateAdventDayPipeline(
 
   const fluxPlans = buildFluxIllustrationPlans({
     topic: input.topic,
+    topicSecondary: input.topicSecondary,
+    topicMixPattern: input.topicMixPattern,
+    schoolStage: input.schoolStage,
     schoolStageLabel: sharedValues.school_stage,
     moodId: input.mood,
     moodLabel: labelForMood(input.mood),

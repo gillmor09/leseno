@@ -28,6 +28,7 @@ export type StoryContinueSuccess = {
   storyHtml: string;
   facts: string[];
   schoolStage: StorySchoolStageId;
+  lengthStep: StoryLengthStepId;
   libraryStoryId: string;
   creditsRemaining?: number;
 };
@@ -100,6 +101,7 @@ export function StoryContinueDialog({
         storyHtml: result.data.story,
         facts: result.data.facts,
         schoolStage,
+        lengthStep,
         libraryStoryId: result.data.libraryStoryId,
         creditsRemaining: result.data.creditsRemaining,
       });

@@ -42,8 +42,8 @@ export const PACKAGE_COMPARE_FEATURE_HINTS: Partial<
   adventskalender: "24 Tage, tagesweise öffnen",
   export: "Als PDF speichern",
   bilder: "Illustrationen in der Geschichte",
-  warum: "Hintergrund zu Aha-Momenten",
-  hintergrund: "„Ich will mehr wissen“",
+  warum: "Am Ende bei Wissen: „Warum?“ zum Fakt",
+  hintergrund: "Noch mehr Wissen nach dem „Warum?“",
   silbenmethode: "Silbenhilfe beim Lesen",
   vorlesen: "Vorlesen mit Tempo",
   markierung: "Wort-Markierung beim Vorlesen",
@@ -115,9 +115,9 @@ function featureBulletText(
     case "bilder":
       return "Bilder in den Geschichten";
     case "warum":
-      return "„Warum?“ zu Aha-Momenten in der Geschichte";
+      return "Nach der Geschichte unter Wissen: „Warum?“ erklärt den Hintergrund zu einem Fakt";
     case "hintergrund":
-      return "„Ich will mehr wissen“ für tieferen Hintergrund";
+      return "„Ich will mehr wissen“ für noch tieferes Wissen nach dem „Warum?“";
     case "silbenmethode":
       return "Silbenhilfe für den Lesefluss";
     case "vorlesen":
@@ -261,8 +261,10 @@ export const LANDING_FEATURE_BLURBS: Record<PackageFeatureId, string> = {
     "24 Tage, eine fortlaufende Geschichte — Türen öffnen sich erst am richtigen Dezember-Tag.",
   export: "Als PDF speichern und offline weiterlesen.",
   bilder: "Illustrationen mitten in der Geschichte — zum Mitfiebern und Vorstellen.",
-  warum: "Bei Aha-Momenten nachfragen und den Hintergrund verstehen.",
-  hintergrund: "„Ich will mehr wissen“ — tieferes Hintergrundwissen zur Geschichte.",
+  warum:
+    "Nach dem Lesen unter „Wissen“: Bei einem Fakt „Warum?“ tippen und den Hintergrund verstehen — nicht mitten in der Geschichte.",
+  hintergrund:
+    "Nach dem „Warum?“ noch tiefer eintauchen: „Ich will mehr wissen“ für mehr Kontext zum Fakt.",
   silbenmethode: "Silbenhilfe für den Lesefluss — besonders beim Lesenlernen.",
   vorlesen: "Vorlesen mit einstellbarem Tempo — zum Mitlesen oder Entspannen.",
   markierung: "Das gerade gesprochene Wort wird beim Vorlesen markiert.",

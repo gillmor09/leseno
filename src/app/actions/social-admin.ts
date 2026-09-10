@@ -1,7 +1,7 @@
 "use server";
 
 /**
- * Admin Social Media: global CRAFT + single-post create/edit (date + Winkel).
+ * Admin Social Media: global CRAFT + single-post create/edit (Winkel or marketing).
  */
 
 import { revalidatePath } from "next/cache";
@@ -11,11 +11,13 @@ import {
   generateSocialImage,
   refineSocialCaption,
 } from "@/lib/social/generate";
+import { getMarketingTopicByAngleId } from "@/lib/social/marketing-features";
 import { getMotivationAngleById } from "@/lib/social/motivation";
 import {
   getSocialAngleUsage,
   getSocialGlobalSettings,
   listAllSocialPosts,
+  deleteSocialPost,
   upsertSocialGlobalSettings,
   upsertSocialPost,
 } from "@/lib/social/repository";
@@ -24,10 +26,13 @@ import {
   yearMonthFromPostDate,
   type SocialGlobalSettings,
   type SocialPost,
+  type SocialPostKind,
 } from "@/lib/social/types";
 import type { ActionResult } from "@/lib/types/actions";
 import {
   socialClearImageSchema,
+  socialCommitPostSchema,
+  socialDeletePostSchema,
   socialGenerateCaptionSchema,
   socialGenerateImageSchema,
   socialGlobalSettingsSchema,
@@ -45,13 +50,28 @@ function findPost(
   postDate: string,
   channel: string,
   angleId?: string | null,
+  postKind?: SocialPostKind | null,
 ): SocialPost | undefined {
   const angle = angleId?.trim();
+  const kind = postKind ?? "winkel";
   return posts.find((post) => {
     if (post.postDate !== postDate || post.channel !== channel) return false;
+    if (post.postKind !== kind) return false;
     if (angle) return post.angleId === angle;
     return true;
   });
+}
+
+function assertTopicId(
+  postKind: SocialPostKind,
+  angleId: string,
+): string | null {
+  if (postKind === "marketing") {
+    return getMarketingTopicByAngleId(angleId)
+      ? null
+      : "1–2 Funktionen für Marketing wählen.";
+  }
+  return getMotivationAngleById(angleId) ? null : "Unbekannter Winkel.";
 }
 
 export async function loadSocialWorkspaceAction(): Promise<
@@ -113,7 +133,7 @@ export async function saveSocialGlobalSettingsAction(
 export async function generateSocialCaptionAction(
   input: unknown,
 ): Promise<
-  ActionResult<{ post: SocialPost; angleTitle: string; angleId: string }>
+  ActionResult<{ caption: string; angleTitle: string; angleId: string }>
 > {
   const denied = await denyUnlessAdmin();
   if (denied) return { success: false, error: denied };
@@ -126,34 +146,29 @@ export async function generateSocialCaptionAction(
     };
   }
 
-  const { postDate, channel, angleId } = parsed.data;
-  if (!getMotivationAngleById(angleId)) {
-    return { success: false, error: "Unbekannter Winkel." };
-  }
-
-  const yearMonth = yearMonthFromPostDate(postDate);
+  const { postDate, channel, angleId, postKind } = parsed.data;
+  const topicError = assertTopicId(postKind, angleId);
+  if (topicError) return { success: false, error: topicError };
 
   try {
     const global = await getSocialGlobalSettings();
     const craft = craftFromGlobal(global);
-    const { caption, angle } = await generateSocialCaption({
+    const { caption, topic } = await generateSocialCaption({
       storyline: global.storyline,
       craft,
       channel,
       postDate,
       angleId,
+      postKind,
     });
-    const post = await upsertSocialPost({
-      yearMonth,
-      postDate,
-      channel,
-      caption,
-      angleId: angle.id,
-    });
-    revalidateSocial();
+    // Draft only — DB write happens in commitSocialPostAction („Übernehmen“).
     return {
       success: true,
-      data: { post, angleTitle: angle.title, angleId: angle.id },
+      data: {
+        caption,
+        angleTitle: topic.title,
+        angleId: topic.id,
+      },
     };
   } catch (error) {
     console.error("[generateSocialCaptionAction]", error);
@@ -193,6 +208,7 @@ export async function refineSocialCaptionAction(
       parsed.data.postDate,
       parsed.data.channel,
       parsed.data.angleId,
+      parsed.data.postKind,
     );
     const currentCaption = existing?.caption?.trim() ?? "";
     if (!currentCaption) {
@@ -203,7 +219,7 @@ export async function refineSocialCaptionAction(
     }
 
     const craft = craftFromGlobal(global);
-    const { caption } = await refineSocialCaption({
+    const { caption, topic } = await refineSocialCaption({
       storyline: global.storyline,
       craft,
       channel: parsed.data.channel,
@@ -211,13 +227,15 @@ export async function refineSocialCaptionAction(
       refineInstruction: parsed.data.refineInstruction,
       postDate: parsed.data.postDate,
       angleId: parsed.data.angleId,
+      postKind: parsed.data.postKind,
     });
     const post = await upsertSocialPost({
       yearMonth,
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       caption,
-      angleId: parsed.data.angleId,
+      angleId: topic.id,
+      postKind: topic.postKind,
     });
     revalidateSocial();
     return { success: true, data: { post } };
@@ -254,6 +272,7 @@ export async function saveSocialCaptionAction(
       channel: parsed.data.channel,
       caption: parsed.data.caption,
       angleId: parsed.data.angleId,
+      postKind: parsed.data.postKind,
     });
     revalidateSocial();
     return { success: true, data: { post } };
@@ -270,7 +289,8 @@ export async function generateSocialImageAction(
   input: unknown,
 ): Promise<
   ActionResult<{
-    post: SocialPost;
+    imageDataUrl: string;
+    lastImagePrompt: string;
     promptUsed: string;
     sceneDescription: string;
   }>
@@ -286,7 +306,8 @@ export async function generateSocialImageAction(
     };
   }
 
-  const yearMonth = yearMonthFromPostDate(parsed.data.postDate);
+  const topicError = assertTopicId(parsed.data.postKind, parsed.data.angleId);
+  if (topicError) return { success: false, error: topicError };
 
   try {
     const [global, posts] = await Promise.all([
@@ -298,43 +319,45 @@ export async function generateSocialImageAction(
       parsed.data.postDate,
       parsed.data.channel,
       parsed.data.angleId,
+      parsed.data.postKind,
     );
-    const angleId = parsed.data.angleId;
-    if (!getMotivationAngleById(angleId)) {
+    const caption =
+      parsed.data.caption?.trim() || existing?.caption?.trim() || "";
+    if (!caption) {
       return {
         success: false,
-        error: "Winkel wählen (oder zuerst Text mit Winkel erzeugen).",
+        error: "Kein Text für die Bildszene — zuerst Caption erzeugen.",
       };
     }
 
     const craft = craftFromGlobal(global);
-    const { dataUrl, promptUsed, sceneDescription, angle } =
-      await generateSocialImage({
+    const { dataUrl, promptUsed, sceneDescription } = await generateSocialImage(
+      {
         imagePromptTemplate: craft.imagePrompt,
-        caption: existing?.caption ?? "",
+        caption,
         channel: parsed.data.channel,
         postDate: parsed.data.postDate,
-        angleId,
+        angleId: parsed.data.angleId,
+        postKind: parsed.data.postKind,
         extraInstruction: parsed.data.extraInstruction,
-      });
-    const post = await upsertSocialPost({
-      yearMonth,
-      postDate: parsed.data.postDate,
-      channel: parsed.data.channel,
-      imageDataUrl: dataUrl,
-      lastImagePrompt: [
-        "— Gemini Szene —",
-        sceneDescription,
-        "",
-        "— FLUX Prompt —",
-        promptUsed,
-      ].join("\n"),
-      angleId: angle.id,
-    });
-    revalidateSocial();
+      },
+    );
+    const lastImagePrompt = [
+      "— Gemini Szene —",
+      sceneDescription,
+      "",
+      "— FLUX Prompt —",
+      promptUsed,
+    ].join("\n");
+    // Draft only — DB write happens in commitSocialPostAction („Übernehmen“).
     return {
       success: true,
-      data: { post, promptUsed, sceneDescription },
+      data: {
+        imageDataUrl: dataUrl,
+        lastImagePrompt,
+        promptUsed,
+        sceneDescription,
+      },
     };
   } catch (error) {
     console.error("[generateSocialImageAction]", error);
@@ -344,6 +367,48 @@ export async function generateSocialImageAction(
         error instanceof Error
           ? error.message
           : "Bildgenerierung fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Persists the create-form draft. Called only from „Übernehmen und zurücksetzen“.
+ */
+export async function commitSocialPostAction(
+  input: unknown,
+): Promise<ActionResult<{ post: SocialPost }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = socialCommitPostSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  const topicError = assertTopicId(parsed.data.postKind, parsed.data.angleId);
+  if (topicError) return { success: false, error: topicError };
+
+  try {
+    const post = await upsertSocialPost({
+      yearMonth: yearMonthFromPostDate(parsed.data.postDate),
+      postDate: parsed.data.postDate,
+      channel: parsed.data.channel,
+      caption: parsed.data.caption,
+      imageDataUrl: parsed.data.imageDataUrl ?? null,
+      lastImagePrompt: parsed.data.lastImagePrompt ?? null,
+      angleId: parsed.data.angleId,
+      postKind: parsed.data.postKind,
+    });
+    revalidateSocial();
+    return { success: true, data: { post } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Speichern fehlgeschlagen.",
     };
   }
 }
@@ -369,6 +434,7 @@ export async function clearSocialImageAction(
       channel: parsed.data.channel,
       clearImage: true,
       angleId: parsed.data.angleId,
+      postKind: parsed.data.postKind,
     });
     revalidateSocial();
     return { success: true, data: { post } };
@@ -402,6 +468,7 @@ export async function setSocialPostPublishedAction(
       channel: parsed.data.channel,
       published: parsed.data.published,
       angleId: parsed.data.angleId,
+      postKind: parsed.data.postKind,
     });
     revalidateSocial();
     return { success: true, data: { post } };
@@ -412,6 +479,33 @@ export async function setSocialPostPublishedAction(
         error instanceof Error
           ? error.message
           : "Veröffentlichungs-Status speichern fehlgeschlagen.",
+    };
+  }
+}
+
+export async function deleteSocialPostAction(
+  input: unknown,
+): Promise<ActionResult> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = socialDeletePostSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    await deleteSocialPost(parsed.data.postId);
+    revalidateSocial();
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Löschen fehlgeschlagen.",
     };
   }
 }

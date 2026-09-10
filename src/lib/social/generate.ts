@@ -1,5 +1,6 @@
 /**
  * Social Media caption (text model) + image (scene plan → images-default pixels).
+ * Branches on `postKind`: Winkel (motivation) vs marketing (1–2 features).
  */
 
 import { generateImage } from "@/lib/ai/generate-image";
@@ -12,29 +13,75 @@ import { loadPromptAdminCatalog } from "@/lib/prompts/repository";
 import {
   buildCraftCaptionPrompt,
   buildCraftRefinePrompt,
+  buildMarketingCaptionPrompt,
+  buildMarketingRefinePrompt,
   buildSocialFluxPromptFromScene,
   buildSocialImageScenePlanPrompt,
 } from "@/lib/social/craft-prompt";
+import {
+  getMarketingTopicByAngleId,
+  type MarketingTopic,
+} from "@/lib/social/marketing-features";
 import {
   getMotivationAngleById,
   pickMotivationAngle,
   type MotivationAngle,
 } from "@/lib/social/motivation";
 import { overlayExactAngleTextOnImage } from "@/lib/social/overlay-angle-text";
-import type { SocialChannel, SocialChannelCraft } from "@/lib/social/types";
+import type {
+  SocialChannel,
+  SocialChannelCraft,
+  SocialPostKind,
+} from "@/lib/social/types";
 
-function resolveAngle(
+export type SocialTopicRef = {
+  id: string;
+  title: string;
+  sceneHint: string;
+  postKind: SocialPostKind;
+  angle?: MotivationAngle;
+  marketing?: MarketingTopic;
+};
+
+function resolveTopic(
+  postKind: SocialPostKind,
   angleId: string | undefined,
   postDate: string,
-): MotivationAngle {
-  if (angleId) {
-    const found = getMotivationAngleById(angleId);
-    if (!found) {
-      throw new Error(`Unbekannter Winkel „${angleId}“.`);
+): SocialTopicRef {
+  if (postKind === "marketing") {
+    if (!angleId) {
+      throw new Error("Marketing-Thema (Funktionen) fehlt.");
     }
-    return found;
+    const marketing = getMarketingTopicByAngleId(angleId);
+    if (!marketing) {
+      throw new Error(`Unbekanntes Marketing-Thema „${angleId}“.`);
+    }
+    return {
+      id: marketing.id,
+      title: marketing.title,
+      sceneHint: marketing.sceneHint,
+      postKind: "marketing",
+      marketing,
+    };
   }
-  return pickMotivationAngle(postDate);
+
+  const angle = angleId
+    ? getMotivationAngleById(angleId)
+    : pickMotivationAngle(postDate);
+  if (!angle) {
+    throw new Error(
+      angleId
+        ? `Unbekannter Winkel „${angleId}“.`
+        : "Kein Winkel verfügbar.",
+    );
+  }
+  return {
+    id: angle.id,
+    title: angle.title,
+    sceneHint: angle.sceneHint,
+    postKind: "winkel",
+    angle,
+  };
 }
 
 function dayMeta(postDate: string): { dayIndex: number; daysInMonth: number } {
@@ -128,25 +175,39 @@ export async function generateSocialCaption(input: {
   channel: SocialChannel;
   postDate: string;
   angleId: string;
-}): Promise<{ caption: string; angle: MotivationAngle }> {
+  postKind?: SocialPostKind;
+}): Promise<{ caption: string; topic: SocialTopicRef }> {
   const model = await resolveSocialTextModel();
-  const angle = resolveAngle(input.angleId, input.postDate);
+  const postKind = input.postKind ?? "winkel";
+  const topic = resolveTopic(postKind, input.angleId, input.postDate);
   const { dayIndex, daysInMonth } = dayMeta(input.postDate);
-  const prompt = buildCraftCaptionPrompt({
-    storyline: input.storyline,
-    craft: input.craft,
-    channel: input.channel,
-    postDate: input.postDate,
-    dayIndex,
-    daysInMonth,
-    angle,
-  });
+
+  const prompt =
+    topic.postKind === "marketing" && topic.marketing
+      ? buildMarketingCaptionPrompt({
+          storyline: input.storyline,
+          channel: input.channel,
+          postDate: input.postDate,
+          dayIndex,
+          daysInMonth,
+          topic: topic.marketing,
+        })
+      : buildCraftCaptionPrompt({
+          storyline: input.storyline,
+          craft: input.craft,
+          channel: input.channel,
+          postDate: input.postDate,
+          dayIndex,
+          daysInMonth,
+          angle: topic.angle!,
+        });
+
   const text = await generateText({
     model,
     systemInstruction: prompt.systemInstruction,
     userText: prompt.userText,
   });
-  return { caption: text.trim(), angle };
+  return { caption: text.trim(), topic };
 }
 
 export async function refineSocialCaption(input: {
@@ -157,21 +218,38 @@ export async function refineSocialCaption(input: {
   refineInstruction: string;
   postDate: string;
   angleId?: string | null;
-}): Promise<{ caption: string; angle: MotivationAngle }> {
+  postKind?: SocialPostKind;
+}): Promise<{ caption: string; topic: SocialTopicRef }> {
   const model = await resolveSocialTextModel();
-  const angle = resolveAngle(input.angleId ?? undefined, input.postDate);
-  const prompt = buildCraftRefinePrompt({ ...input, angle });
+  const postKind = input.postKind ?? "winkel";
+  const topic = resolveTopic(
+    postKind,
+    input.angleId ?? undefined,
+    input.postDate,
+  );
+
+  const prompt =
+    topic.postKind === "marketing"
+      ? buildMarketingRefinePrompt({
+          storyline: input.storyline,
+          channel: input.channel,
+          currentCaption: input.currentCaption,
+          refineInstruction: input.refineInstruction,
+          topic: topic.marketing,
+        })
+      : buildCraftRefinePrompt({ ...input, angle: topic.angle });
+
   const text = await generateText({
     model,
     systemInstruction: prompt.systemInstruction,
     userText: prompt.userText,
   });
-  return { caption: text.trim(), angle };
+  return { caption: text.trim(), topic };
 }
 
 /**
  * Text model invents a scene from the caption; `images-default` renders pixels.
- * Winkel title is composited in Nunito afterwards.
+ * Title (Winkel or feature labels) is composited in Nunito afterwards.
  */
 export async function generateSocialImage(input: {
   imagePromptTemplate: string;
@@ -179,21 +257,26 @@ export async function generateSocialImage(input: {
   channel: SocialChannel;
   postDate: string;
   angleId: string;
+  postKind?: SocialPostKind;
   extraInstruction?: string;
 }): Promise<{
   dataUrl: string;
   promptUsed: string;
   sceneDescription: string;
-  angle: MotivationAngle;
+  topic: SocialTopicRef;
 }> {
   const [textModel, imagesModel] = await Promise.all([
     resolveSocialTextModel(),
     resolveSocialImagesModel(),
   ]);
-  const angle = resolveAngle(input.angleId, input.postDate);
+  const postKind = input.postKind ?? "winkel";
+  const topic = resolveTopic(postKind, input.angleId, input.postDate);
+  const visualMode = topic.postKind === "marketing" ? "marketing" : "winkel";
+
   const plan = buildSocialImageScenePlanPrompt({
     ...input,
-    sceneHint: angle.sceneHint,
+    sceneHint: topic.sceneHint,
+    visualMode,
   });
   const sceneRaw = await generateText({
     model: textModel,
@@ -214,21 +297,23 @@ export async function generateSocialImage(input: {
     imagePromptTemplate: input.imagePromptTemplate,
     postDate: input.postDate,
     extraInstruction: input.extraInstruction,
+    visualMode,
   });
 
+  const marketing = visualMode === "marketing";
   const result = await generateImage({
     model: imagesModel,
     prompt: promptUsed,
-    // 2K when the provider supports it (Gemini); IONOS still caps at 1024.
-    sizePx: 2048,
+    // Marketing: always 1024² (cover-composited in overlay). Winkel: 2K when supported.
+    sizePx: marketing ? 1024 : 2048,
     outputFormat: "png",
   });
 
-  // Exact Winkel title in Nunito (white) — image models cannot render this reliably.
   const dataUrl = await overlayExactAngleTextOnImage({
     imageDataUrl: result.dataUrl,
-    overlayText: angle.title,
+    overlayText: topic.title,
+    style: marketing ? "marketing" : "winkel",
   });
 
-  return { dataUrl, promptUsed, sceneDescription, angle };
+  return { dataUrl, promptUsed, sceneDescription, topic };
 }

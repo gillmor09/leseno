@@ -168,7 +168,7 @@ export function visibleStoryTopicsForSchoolStage(
 
 type TopicAgeBand = "early" | "later";
 
-function topicAgeBandForStage(stage: StorySchoolStageId): TopicAgeBand {
+export function topicAgeBandForStage(stage: StorySchoolStageId): TopicAgeBand {
   if (
     stage === "vorschule" ||
     stage === "klasse_1" ||
@@ -353,6 +353,40 @@ export function formatStoryTopicMixLabel(
   secondary: string,
 ): string {
   return `${main.trim()} + ${secondary.trim()}`;
+}
+
+export type StoryTopicSeedSource = "interest" | "experience";
+
+/**
+ * Human-readable “based on” line for library cards / detail
+ * (Thema, Nebenthema, Interesse, Wunsch).
+ */
+export function formatStoryBasedOnLabel(input: {
+  topic?: string | null;
+  topicSecondary?: string | null;
+  topicSeedSource?: StoryTopicSeedSource | null;
+  personalMode?: boolean;
+}): string | null {
+  const topic = input.topic?.trim() || "";
+  const secondary = input.topicSecondary?.trim() || "";
+  if (!topic && !secondary) return null;
+
+  if (input.topicSeedSource === "experience") {
+    return topic ? `Wunsch: ${topic}` : "Wunsch";
+  }
+  if (input.topicSeedSource === "interest") {
+    return topic ? `Interesse: ${topic}` : "Interesse";
+  }
+  if (input.personalMode) {
+    return topic ? `Persönlich: ${topic}` : "Persönlich";
+  }
+  if (secondary && topic) {
+    return `Thema: ${topic} · Nebenthema: ${secondary}`;
+  }
+  if (secondary) {
+    return `Nebenthema: ${secondary}`;
+  }
+  return topic ? `Thema: ${topic}` : null;
 }
 
 /**

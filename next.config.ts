@@ -18,6 +18,10 @@ const nextConfig: NextConfig = {
   experimental: {
     inlineCss: true,
     optimizePackageImports: ["lucide-react", "sonner"],
+    // Social „Übernehmen“ sends 1024² PNG/JPEG data-URLs back to the server action.
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
   },
   turbopack: {
     resolveAlias: {

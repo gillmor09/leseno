@@ -6,9 +6,11 @@ import { createServiceClient } from "@/lib/supabase/service";
 import {
   emptyGlobalSettings,
   isSocialChannel,
+  isSocialPostKind,
   type SocialChannel,
   type SocialGlobalSettings,
   type SocialPost,
+  type SocialPostKind,
 } from "@/lib/social/types";
 
 type GlobalRow = {
@@ -29,6 +31,7 @@ type PostRow = {
   image_data_url: string | null;
   last_image_prompt: string | null;
   published: boolean | null;
+  post_kind?: string | null;
   angle_id: string | null;
   updated_at: string;
 };
@@ -55,6 +58,10 @@ function mapPost(row: PostRow): SocialPost {
     typeof row.post_date === "string"
       ? row.post_date.slice(0, 10)
       : String(row.post_date).slice(0, 10);
+  const kindRaw = row.post_kind?.trim() ?? "winkel";
+  const postKind: SocialPostKind = isSocialPostKind(kindRaw)
+    ? kindRaw
+    : "winkel";
   return {
     id: row.id,
     yearMonth: row.year_month,
@@ -64,6 +71,7 @@ function mapPost(row: PostRow): SocialPost {
     imageDataUrl: row.image_data_url,
     lastImagePrompt: row.last_image_prompt,
     published: Boolean(row.published),
+    postKind,
     angleId: row.angle_id?.trim() || null,
     updatedAt: row.updated_at,
   };
@@ -124,7 +132,7 @@ export async function listAllSocialPosts(): Promise<SocialPost[]> {
     .filter((post) => post.channel === "instagram");
 }
 
-/** How often each Winkel id appears across all posts. */
+/** How often each Winkel/marketing id appears across all posts. */
 export async function getSocialAngleUsage(): Promise<Record<string, number>> {
   const supabase = createServiceClient(null);
   const { data, error } = await supabase.rpc("admin_social_angle_usage");
@@ -148,6 +156,7 @@ export async function upsertSocialPost(input: {
   clearImage?: boolean;
   published?: boolean | null;
   angleId: string;
+  postKind?: SocialPostKind;
 }): Promise<SocialPost> {
   const supabase = createServiceClient(null);
   await ensureSocialMonth(input.yearMonth);
@@ -162,9 +171,19 @@ export async function upsertSocialPost(input: {
     p_published:
       typeof input.published === "boolean" ? input.published : null,
     p_angle_id: input.angleId,
+    p_post_kind: input.postKind ?? "winkel",
   });
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error("Post konnte nicht gespeichert werden.");
   return mapPost(row as PostRow);
+}
+
+/** Deletes one Instagram post by id. */
+export async function deleteSocialPost(postId: string): Promise<void> {
+  const supabase = createServiceClient(null);
+  const { error } = await supabase.rpc("admin_delete_social_post", {
+    p_id: postId,
+  });
+  if (error) throw new Error(error.message);
 }
