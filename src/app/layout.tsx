@@ -4,7 +4,11 @@ import { GoogleAnalytics } from "@/components/analytics/google-analytics";
 import { CapturePromo } from "@/components/features/marketing/capture-promo";
 import { CaptureReferral } from "@/components/features/marketing/capture-referral";
 import { LazyAppToaster } from "@/components/ui/lazy-app-toaster";
-import { getMetadataBaseUrl, SITE_NAME } from "@/lib/seo";
+import {
+  DEFAULT_META_DESCRIPTION,
+  getMetadataBaseUrl,
+  SITE_NAME,
+} from "@/lib/seo";
 import "./globals.css";
 
 const nunito = Nunito({
@@ -17,10 +21,8 @@ const nunito = Nunito({
   adjustFontFallback: true,
 });
 
-const defaultTitle =
-  "leseno — Eigene Geschichten aus Spaß und Neugier";
-const defaultDescription =
-  "Eigene Geschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Kostenlos mit Basis starten.";
+const defaultTitle = "Eigene Kindergeschichten aus Spaß und Neugier";
+const defaultDescription = DEFAULT_META_DESCRIPTION;
 
 export const metadata: Metadata = {
   metadataBase: getMetadataBaseUrl(),
@@ -29,18 +31,26 @@ export const metadata: Metadata = {
     template: `%s — ${SITE_NAME}`,
   },
   description: defaultDescription,
-  keywords: [
-    "Geschichten für Kinder",
-    "Kinder lesen",
-    "Vorlesen App",
-    "persönliche Geschichten",
-    "Silbenhilfe",
-    "Lesen ohne Druck",
-    "Leseapp Kinder",
-    "Neugier",
-  ],
+  // No keywords meta — outdated and tools flag repeated brand tags.
   authors: [{ name: SITE_NAME }],
   creator: SITE_NAME,
+  icons: {
+    icon: [
+      { url: "/favicon.ico" },
+      {
+        url: "/leseno-vogel-256.png",
+        sizes: "256x256",
+        type: "image/png",
+      },
+    ],
+    apple: [
+      {
+        url: "/leseno-vogel-256.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
   alternates: {
     canonical: "/",
   },
@@ -48,7 +58,7 @@ export const metadata: Metadata = {
     type: "website",
     locale: "de_DE",
     siteName: SITE_NAME,
-    title: defaultTitle,
+    title: `${defaultTitle} — ${SITE_NAME}`,
     description: defaultDescription,
     url: "/",
     images: [
@@ -62,7 +72,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: defaultTitle,
+    title: `${defaultTitle} — ${SITE_NAME}`,
     description: defaultDescription,
     images: ["/landing/hero-lesen.webp"],
   },

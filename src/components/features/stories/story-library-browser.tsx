@@ -27,6 +27,8 @@ import {
   setMyStoryReadAction,
 } from "@/app/actions/story-library";
 import { StoryResultPanel } from "@/components/features/stories/story-result-panel";
+import { HelpSectionLabel } from "@/components/features/help/help-section-label";
+import { HelpTrigger } from "@/components/features/help/help-trigger";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   BOOK_CLUB_SHARE_LABELS,
@@ -379,9 +381,11 @@ export function StoryLibraryBrowser({
     <div className="mt-10 space-y-4">
       {allowAdvent && adventBooks.length > 0 ? (
         <div className="space-y-3">
-          <p className="text-xs font-extrabold tracking-wide text-orange-700 uppercase">
-            Adventskalenderbücher
-          </p>
+          <HelpSectionLabel
+            title="Adventskalenderbücher"
+            slotId="advent"
+            labelClassName="text-xs font-extrabold tracking-wide text-orange-700 uppercase"
+          />
           <ul className="space-y-3">
             {adventBooks.map((book) => (
               <li key={book.id}>
@@ -420,6 +424,9 @@ export function StoryLibraryBrowser({
         </div>
       ) : allowAdvent ? (
         <p className="rounded-[1.75rem] bg-white p-5 text-sm font-semibold text-zinc-600 shadow-xl ring-1 ring-zinc-950/10 sm:p-6">
+          <span className="mr-1 inline-flex align-middle">
+            <HelpTrigger slotId="advent" />
+          </span>
           Noch kein Adventskalenderbuch.{" "}
           <a
             href="/adventskalender"
@@ -431,7 +438,8 @@ export function StoryLibraryBrowser({
       ) : null}
 
       {showProfileFilters ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <HelpTrigger slotId="filter" />
           <FilterChip
             active={filter === "all"}
             label="Alle"
@@ -465,6 +473,15 @@ export function StoryLibraryBrowser({
           — sie wird automatisch gespeichert.
         </p>
       ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            <HelpTrigger slotId="story-aktionen" />
+            {allowBuchclub ? (
+              <HelpTrigger slotId="buchclub-freigabe" />
+            ) : null}
+            <HelpTrigger slotId="gelesen" />
+            <HelpTrigger slotId="favorit" />
+          </div>
         <ul className="space-y-3">
           {treeRows.map(({ story, depth }) => {
             const stageLabel =
@@ -817,6 +834,7 @@ export function StoryLibraryBrowser({
             );
           })}
         </ul>
+        </>
       )}
 
       <ConfirmDeleteDialog

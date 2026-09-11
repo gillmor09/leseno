@@ -8,7 +8,7 @@ export function LandingFooter() {
         <div className="flex items-center gap-3">
           <Image
             src="/landing/vogel-hell.webp"
-            alt=""
+            alt="leseno Logo"
             width={36}
             height={36}
             className="size-9 rounded-full"
@@ -29,7 +29,7 @@ export function LandingFooter() {
             href="/#anders"
             className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
           >
-            Warum leseno
+            Was leseno anders macht
           </Link>
           <Link
             href="/motivation"
@@ -47,7 +47,7 @@ export function LandingFooter() {
             href="/preise"
             className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
           >
-            Preise
+            Alle Preise
           </Link>
           <Link
             href="/kontakt"

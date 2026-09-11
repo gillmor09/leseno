@@ -6,6 +6,7 @@
  */
 
 import { Users } from "lucide-react";
+import { HelpSectionLabel } from "@/components/features/help/help-section-label";
 import type { ChildProfileOption } from "@/lib/world/catalog";
 import { cn } from "@/lib/utils";
 
@@ -50,9 +51,7 @@ export function ChildProfilePickerCard({
             <Users className="size-5" aria-hidden />
           </span>
           <div>
-            <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-              Für wen?
-            </p>
+            <HelpSectionLabel title="Für wen?" slotId="leser" />
             <h2 className="mt-1 text-xl font-extrabold text-zinc-950">
               Noch kein Kinder-Profil
             </h2>
@@ -84,9 +83,7 @@ export function ChildProfilePickerCard({
           <Users className="size-5" aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-            Für wen?
-          </p>
+          <HelpSectionLabel title="Für wen?" slotId="leser" />
           <h2 className="mt-1 text-xl font-extrabold text-zinc-950">
             {hideFreeReading ? "Dein Profil" : "Leser auswählen"}
           </h2>

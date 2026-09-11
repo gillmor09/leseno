@@ -8,21 +8,37 @@ import { getSupabasePublicConfig } from "@/lib/supabase/config";
  * so Server Components always receive a valid (or cleanly absent) session.
  * Without this, stale refresh tokens cause noisy `refresh_token_not_found` errors.
  *
- * Also redirects accidental `leseno.de:3000` hits (GoTrue SITE_URL / container port)
- * to the canonical https origin.
+ * Also:
+ * - redirects accidental `leseno.de:3000` hits (GoTrue SITE_URL / container port)
+ * - canonical host: `www.leseno.de` → `https://leseno.de` (avoid duplicate content)
  */
 export async function proxy(request: NextRequest) {
   const forwardedHost =
     request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "";
   const hostOnly = forwardedHost.split(",")[0]?.trim() ?? "";
+  const hostname = hostOnly.replace(/:\d+$/, "").toLowerCase();
+
+  // Prefer apex domain so www and non-www do not serve the same content.
+  if (hostname === "www.leseno.de") {
+    const target = new URL(
+      request.nextUrl.pathname + request.nextUrl.search,
+      "https://leseno.de",
+    );
+    return NextResponse.redirect(target, 308);
+  }
+
   if (/:(3000|3001|8080)$/.test(hostOnly)) {
-    const hostname = hostOnly.replace(/:\d+$/, "");
     if (
       hostname &&
       hostname !== "localhost" &&
       !hostname.startsWith("127.")
     ) {
-      const target = new URL(request.nextUrl.pathname + request.nextUrl.search, `https://${hostname}`);
+      const canonicalHost =
+        hostname === "www.leseno.de" ? "leseno.de" : hostname;
+      const target = new URL(
+        request.nextUrl.pathname + request.nextUrl.search,
+        `https://${canonicalHost}`,
+      );
       return NextResponse.redirect(target, 308);
     }
   }

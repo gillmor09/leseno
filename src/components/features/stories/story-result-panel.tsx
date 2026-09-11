@@ -18,6 +18,7 @@ import {
   BotGuardFields,
   useBotGuardFields,
 } from "@/components/features/security/bot-guard-fields";
+import { HelpSectionLabel } from "@/components/features/help/help-section-label";
 import { StoryContinueDialog } from "@/components/features/stories/story-continue-dialog";
 import { StoryFactsList } from "@/components/features/stories/story-facts-list";
 import { StoryHtmlBody } from "@/components/features/stories/story-html-body";
@@ -90,6 +91,7 @@ export function StoryResultPanel({
   eyebrow = "Deine Geschichte",
   inviteUserId = null,
   onClose,
+  helpSlotId,
 }: {
   storyHtml: string;
   facts: string[];
@@ -131,6 +133,8 @@ export function StoryResultPanel({
   inviteUserId?: string | null;
   /** When set, shows a close control (library expand). */
   onClose?: () => void;
+  /** Optional help slot next to the result eyebrow. */
+  helpSlotId?: string;
 }) {
   const botGuard = useBotGuardFields();
   const [readingModeOpen, setReadingModeOpen] = useState(false);
@@ -412,9 +416,13 @@ export function StoryResultPanel({
         style={cardStyle}
       >
         <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-            {eyebrow}
-          </p>
+          {helpSlotId ? (
+            <HelpSectionLabel title={eyebrow} slotId={helpSlotId} />
+          ) : (
+            <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+              {eyebrow}
+            </p>
+          )}
           <div className="flex min-w-0 flex-col items-stretch gap-3 self-stretch sm:items-end sm:self-auto">
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {allowContinue && libraryStoryId && lengthCatalog ? (

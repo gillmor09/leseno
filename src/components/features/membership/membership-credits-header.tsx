@@ -11,6 +11,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { HelpTrigger } from "@/components/features/help/help-trigger";
 import { CreditsCheckoutButton } from "@/components/features/pricing/pricing-checkout-buttons";
 
 type CreditsContextValue = {
@@ -32,6 +33,7 @@ export function MembershipCreditsHeader({
   initialCredits,
   checkoutEnabled,
   children,
+  helpSlotId,
 }: {
   /** Left-side pill (e.g. „Komplett“, „Bücherei“). */
   badge: ReactNode;
@@ -39,6 +41,8 @@ export function MembershipCreditsHeader({
   checkoutEnabled: boolean;
   /** Page body under the strip (must be React nodes, not a render prop). */
   children?: ReactNode;
+  /** Optional help slot (e.g. `credits` on Meine Geschichte). */
+  helpSlotId?: string;
 }) {
   const [credits, setCredits] = useState(initialCredits);
 
@@ -49,6 +53,7 @@ export function MembershipCreditsHeader({
       <div className="flex flex-wrap items-center justify-between gap-3">
         {badge}
         <div className="flex flex-wrap items-center gap-2">
+          {helpSlotId ? <HelpTrigger slotId={helpSlotId} /> : null}
           <p
             className="inline-flex items-center rounded-full bg-zinc-800 px-3 py-1 text-xs font-extrabold tracking-wide text-white tabular-nums"
             title="Aktueller Credits-Stand"

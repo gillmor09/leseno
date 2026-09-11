@@ -7,6 +7,7 @@
 
 import { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
+import { HelpTrigger } from "@/components/features/help/help-trigger";
 import { CreateChildProfileDialog } from "@/components/features/world/create-child-profile-dialog";
 import { MyWorldProfileEditor } from "@/components/features/world/my-world-profile-editor";
 import type { ChildProfile } from "@/lib/world/catalog";
@@ -134,6 +135,7 @@ export function MyWorldManager({
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-2">
+            <HelpTrigger slotId="profil" />
             <div
               role="tablist"
               aria-label="Kinder-Profile"

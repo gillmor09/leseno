@@ -15,6 +15,7 @@ import {
 import { ChildLoginSettings } from "@/components/features/world/child-login-settings";
 import { ReadingModePrefsControls } from "@/components/features/stories/reading-mode-prefs-controls";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { HelpSectionLabel } from "@/components/features/help/help-section-label";
 import type { ChildProfile, ChildProfileFields } from "@/lib/world/catalog";
 import {
   normalizeReadingModePrefs,
@@ -46,31 +47,41 @@ const AUTOSAVE_DEBOUNCE_MS = 650;
 
 const LIST_COPY: Record<
   ListKey,
-  { title: string; hint: string; placeholder: string; addLabel: string }
+  {
+    title: string;
+    hint: string;
+    placeholder: string;
+    addLabel: string;
+    helpSlotId: string;
+  }
 > = {
   friends: {
     title: "Freundesliste",
     hint: "Wen mag dein Kind dabei haben? Schreib Namen oder Spitznamen.",
     placeholder: "z. B. Mia",
     addLabel: "Freund:in hinzufügen",
+    helpSlotId: "freunde",
   },
   interests: {
     title: "Interessen",
     hint: "Was mag dein Kind besonders? Dinosaurier, Fußball, Sterne …",
     placeholder: "z. B. Weltall",
     addLabel: "Interesse hinzufügen",
+    helpSlotId: "interessen",
   },
   experiences: {
     title: "Das möchte ich mal erleben",
     hint: "Wünsche und Träume — nicht schon Erlebtes. z. B. einmal im Weltall sein …",
     placeholder: "z. B. einmal im Weltall sein",
     addLabel: "Wunsch hinzufügen",
+    helpSlotId: "wuensche",
   },
   fears: {
     title: "Davor habe ich Angst",
     hint: "Was macht deinem Kind Sorgen? Standard: kommt nicht in Geschichten vor. Optional unten „Sanft einbauen“ für Abenteuer- und Motivierend-Geschichten.",
     placeholder: "z. B. Gewitter",
     addLabel: "Angst hinzufügen",
+    helpSlotId: "aengste",
   },
 };
 
@@ -415,9 +426,7 @@ export function MyWorldProfileEditor({
       <div className="space-y-8">
         <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-              Name des Kindes
-            </p>
+            <HelpSectionLabel title="Name des Kindes" slotId="name" />
             {saveStatusLabel ? (
               <p
                 className={cn(
@@ -485,9 +494,7 @@ export function MyWorldProfileEditor({
         </section>
 
         <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
-          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-            Schulstufe
-          </p>
+          <HelpSectionLabel title="Schulstufe" slotId="schulstufe" />
           <p className="mt-1 text-sm text-zinc-600">
             Danach richtet sich die Sprache in den Geschichten für dieses Kind.
           </p>
@@ -529,9 +536,7 @@ export function MyWorldProfileEditor({
         </section>
 
         <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
-          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-            Textlänge
-          </p>
+          <HelpSectionLabel title="Textlänge" slotId="textlaenge" />
           <p className="mt-1 text-sm text-zinc-600">
             Standard für Geschichten mit diesem Profil — auf der Story-Seite
             noch änderbar.
@@ -568,9 +573,7 @@ export function MyWorldProfileEditor({
         </section>
 
         <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
-          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-            Art der Geschichte
-          </p>
+          <HelpSectionLabel title="Art der Geschichte" slotId="stimmung" />
           <p className="mt-1 text-sm text-zinc-600">
             Standard-Genre für dieses Profil — auf der Story-Seite noch
             änderbar.
@@ -613,9 +616,7 @@ export function MyWorldProfileEditor({
               key={key}
               className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8"
             >
-              <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                {copy.title}
-              </p>
+              <HelpSectionLabel title={copy.title} slotId={copy.helpSlotId} />
               <p className="mt-1 text-sm text-zinc-600">{copy.hint}</p>
 
               <ul className="mt-4 flex flex-wrap gap-2">
@@ -714,9 +715,7 @@ export function MyWorldProfileEditor({
         })}
 
         <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
-          <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-            Extras
-          </p>
+          <HelpSectionLabel title="Extras" slotId="extras" />
           <p className="mt-1 text-sm text-zinc-600">
             Diese Einstellungen gelten für Geschichten mit diesem Profil — auch
             beim Lesen in der Bücherei.
@@ -811,9 +810,7 @@ export function MyWorldProfileEditor({
 
         {allowLesemodus ? (
           <section className="rounded-[1.75rem] bg-white p-6 shadow-xl ring-1 ring-zinc-950/10 sm:p-8">
-            <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-              Lesemodus
-            </p>
+            <HelpSectionLabel title="Lesemodus" slotId="lesemodus" />
             <p className="mt-1 text-sm text-zinc-600">
               Anpassung für den Vollbild-Lesemodus. Ohne eigene Werte gilt der
               Admin-Standard der gewählten Schulstufe.

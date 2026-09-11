@@ -15,7 +15,7 @@ function isLocalHostname(hostname: string): boolean {
 }
 
 /**
- * Strips localhost and internal app ports so public links stay on :443/:80.
+ * Strips localhost, www, and internal app ports so public links stay on apex :443.
  */
 function normalizePublicOrigin(raw: string): string | null {
   try {
@@ -25,6 +25,9 @@ function normalizePublicOrigin(raw: string): string | null {
     }
     if (APP_DEV_PORTS.has(url.port)) {
       url.port = "";
+    }
+    if (url.hostname === "www.leseno.de" || url.hostname === "leseno.de") {
+      return DEFAULT_PUBLIC_SITE_URL;
     }
     return url.origin;
   } catch {

@@ -4,6 +4,8 @@
  * Client shell for `/geschichte`: package badge + live credits + composer.
  */
 
+import { HelpPageHeading } from "@/components/features/help/help-page-heading";
+import { HelpTrigger } from "@/components/features/help/help-trigger";
 import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
 import {
   MembershipCreditsHeader,
@@ -49,9 +51,7 @@ function GeschichteComposerBody({
 
   return (
     <>
-      <h1 className="mt-4 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl lg:text-5xl lg:leading-[1.1]">
-        Wähl dein Thema. Lies deine Geschichte.
-      </h1>
+      <HelpPageHeading title="Wähl dein Thema. Lies deine Geschichte." />
       <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
         {allowMeineWelt
           ? childSessionLockedProfileId
@@ -72,8 +72,11 @@ function GeschichteComposerBody({
         </p>
       ) : null}
       {inviteUserId ? (
-        <div className="mt-6">
-          <InviteFriendsCard variant="compact" userId={inviteUserId} />
+        <div className="mt-6 flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <InviteFriendsCard variant="compact" userId={inviteUserId} />
+          </div>
+          <HelpTrigger slotId="einladen" className="mt-2 shrink-0" />
         </div>
       ) : null}
       <div className="mt-10">
@@ -134,6 +137,7 @@ export function GeschichteComposer({
       }
       initialCredits={initialCredits}
       checkoutEnabled={creditsCheckoutEnabled}
+      helpSlotId="credits"
     >
       <GeschichteComposerBody
         allowMeineWelt={allowMeineWelt}

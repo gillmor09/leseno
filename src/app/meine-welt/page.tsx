@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { loadHelpTextsForPage } from "@/app/actions/help-admin";
+import { HelpPageHeading } from "@/components/features/help/help-page-heading";
+import { HelpTextsProvider } from "@/components/features/help/help-texts-context";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { MembershipCreditsHeader } from "@/components/features/membership/membership-credits-header";
@@ -40,7 +43,10 @@ export default async function MeineWeltPage() {
   }
 
   const allowFamily = featuresInclude(features, "meine_welt_familie");
-  const typographyDefaults = await loadReadingTypographyDefaults();
+  const [typographyDefaults, helpTexts] = await Promise.all([
+    loadReadingTypographyDefaults(),
+    loadHelpTextsForPage("meine-welt"),
+  ]);
 
   let initialCredits = 0;
   try {
@@ -66,38 +72,38 @@ export default async function MeineWeltPage() {
       <AppHeader />
       <main id="main" className="flex-1">
         <section className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">
-          <MembershipCreditsHeader
-            badge={
-              <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-                {allowFamily ? "Familie" : "Meine Welt"}
-              </p>
-            }
-            initialCredits={initialCredits}
-            checkoutEnabled={hasStripeCheckoutConfig()}
-          />
-          <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            Meine Welt
-          </h1>
-          <p className="mt-3 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            {allowFamily
-              ? "Lege für jedes Kind ein eigenes Profil an — mit Namen, Freunden, Interessen und Wünschen. Mit Kennung und Passwort kann sich dein Kind selbst anmelden."
-              : "Lege ein Profil für dein Kind an — mit Namen, Freunden, Interessen und Wünschen. Mit Kennung und Passwort kann sich dein Kind selbst anmelden."}
-          </p>
-
-          {loadError ? (
-            <p className="mt-8 rounded-[1.75rem] bg-orange-50 p-6 text-sm font-semibold text-orange-900 ring-1 ring-orange-700/10">
-              {loadError}
+          <HelpTextsProvider texts={helpTexts}>
+            <MembershipCreditsHeader
+              badge={
+                <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
+                  {allowFamily ? "Familie" : "Meine Welt"}
+                </p>
+              }
+              initialCredits={initialCredits}
+              checkoutEnabled={hasStripeCheckoutConfig()}
+            />
+            <HelpPageHeading title="Meine Welt" />
+            <p className="mt-3 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
+              {allowFamily
+                ? "Lege für jedes Kind ein eigenes Profil an — mit Namen, Freunden, Interessen und Wünschen. Mit Kennung und Passwort kann sich dein Kind selbst anmelden."
+                : "Lege ein Profil für dein Kind an — mit Namen, Freunden, Interessen und Wünschen. Mit Kennung und Passwort kann sich dein Kind selbst anmelden."}
             </p>
-          ) : (
-            <div className="mt-10">
-              <MyWorldManager
-                initialProfiles={profiles}
-                allowFamily={allowFamily}
-                enabledFeatures={features}
-                typographyDefaults={typographyDefaults}
-              />
-            </div>
-          )}
+
+            {loadError ? (
+              <p className="mt-8 rounded-[1.75rem] bg-orange-50 p-6 text-sm font-semibold text-orange-900 ring-1 ring-orange-700/10">
+                {loadError}
+              </p>
+            ) : (
+              <div className="mt-10">
+                <MyWorldManager
+                  initialProfiles={profiles}
+                  allowFamily={allowFamily}
+                  enabledFeatures={features}
+                  typographyDefaults={typographyDefaults}
+                />
+              </div>
+            )}
+          </HelpTextsProvider>
         </section>
       </main>
       <LandingFooter />

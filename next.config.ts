@@ -7,8 +7,10 @@ const modernPolyfill = path.join(__dirname, "src/lib/modern-polyfill.js");
  * - `inlineCss`: styles in HTML (no render-blocking CSS request) for first visits.
  * - Polyfill alias: drop Next’s unconditional ES polyfills (Array.at, Object.hasOwn, …)
  *   that Lighthouse flags as unused on modern browsers (~13 KiB).
+ * - `poweredByHeader: false`: hide `X-Powered-By` (SEO / hardening).
  */
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   // Native canvas must stay external for social image text overlay.
   serverExternalPackages: ["@napi-rs/canvas", "sharp", "opentype.js"],
   // Vendored Nunito TTF + Frage background for social overlays.

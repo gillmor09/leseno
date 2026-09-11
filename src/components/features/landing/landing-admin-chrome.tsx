@@ -41,6 +41,7 @@ const adminItems = [
   { href: "/admin/ki-modelle", label: "KI-Modelle" },
   { href: "/admin/prompts", label: "Prompts" },
   { href: "/admin/emails", label: "Auth-E-Mails" },
+  { href: "/admin/hilfe", label: "Hilfe" },
 ] as const;
 
 export function LandingAdminChrome({

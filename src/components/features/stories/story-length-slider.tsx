@@ -5,6 +5,7 @@
  * (used server-side); labels are the five named steps only.
  */
 
+import { HelpSectionLabel } from "@/components/features/help/help-section-label";
 import { cn } from "@/lib/utils";
 import type {
   StoryLengthCatalog,
@@ -17,6 +18,8 @@ type StoryLengthSliderProps = {
   onChange: (stepId: StoryLengthStepId) => void;
   /** Step ids that stay visible but cannot be selected (e.g. trial limits). */
   disabledStepIds?: readonly StoryLengthStepId[];
+  /** Help catalog slot (e.g. `textlaenge`). */
+  helpSlotId?: string;
 };
 
 export function StoryLengthSlider({
@@ -24,6 +27,7 @@ export function StoryLengthSlider({
   value,
   onChange,
   disabledStepIds = [],
+  helpSlotId,
 }: StoryLengthSliderProps) {
   const steps = catalog.steps;
   const disabled = new Set(disabledStepIds);
@@ -40,9 +44,13 @@ export function StoryLengthSlider({
 
   return (
     <div>
-      <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-        Textlänge
-      </p>
+      {helpSlotId ? (
+        <HelpSectionLabel title="Textlänge" slotId={helpSlotId} />
+      ) : (
+        <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
+          Textlänge
+        </p>
+      )}
 
       <div className="mt-5 px-1">
         <label htmlFor="story-length" className="sr-only">

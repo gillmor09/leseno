@@ -25,6 +25,7 @@ import {
   setMyFriendshipCodeAction,
 } from "@/app/actions/book-club";
 import { FriendStoriesBrowser } from "@/components/features/book-club/friend-stories-browser";
+import { HelpTitleRow, HelpTrigger } from "@/components/features/help/help-trigger";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import type {
   BookClubFriendship,
@@ -224,7 +225,12 @@ export function BookClubPanel({
   return (
     <div className="mt-10 space-y-8">
       <section className="rounded-[1.75rem] bg-white p-5 shadow-xl ring-1 ring-zinc-950/10 sm:p-6">
-        <h2 className="text-lg font-extrabold text-zinc-950">Meine Freunde</h2>
+        <HelpTitleRow
+          title="Meine Freunde"
+          slotId="freunde-aktionen"
+          as="h2"
+          titleClassName="text-lg font-extrabold text-zinc-950"
+        />
         <p className="mt-2 text-sm font-semibold text-zinc-600">
           Kennung teilen, Freunde hinzufügen und zu leseno einladen.
         </p>
@@ -234,12 +240,14 @@ export function BookClubPanel({
             hint={friendshipCode ?? "nicht gesetzt"}
             active={dialog === "code"}
             onClick={() => openDialog("code")}
+            helpSlotId="freundschaftskennung"
           />
           <ActionChip
             label="Hinzufügen"
             hint="per Kennung"
             active={dialog === "add"}
             onClick={() => openDialog("add")}
+            helpSlotId="freund-hinzufuegen"
           />
           <ActionChip
             label="Freunde"
@@ -251,20 +259,25 @@ export function BookClubPanel({
             badge={pendingCount > 0 ? pendingCount : undefined}
             active={dialog === "friends"}
             onClick={() => openDialog("friends")}
+            helpSlotId="freundesliste"
           />
           <ActionChip
             label="Einladen"
             hint="per E-Mail"
             active={dialog === "invite"}
             onClick={() => openDialog("invite")}
+            helpSlotId="einladen"
           />
         </div>
       </section>
 
       <section>
-        <h2 className="text-lg font-extrabold text-zinc-950">
-          Geschichten von Freunden
-        </h2>
+        <HelpTitleRow
+          title="Geschichten von Freunden"
+          slotId="freundegeschichten"
+          as="h2"
+          titleClassName="text-lg font-extrabold text-zinc-950"
+        />
         <p className="mt-2 mb-4 text-sm font-semibold text-zinc-600">
           Freunde-Geschichten und öffentliche Freigaben. Du kannst liken und —
           je nach Paket — als PDF speichern.
@@ -503,36 +516,41 @@ function ActionChip({
   badge,
   active,
   onClick,
+  helpSlotId,
 }: {
   label: string;
   hint: string;
   badge?: number;
   active?: boolean;
   onClick: () => void;
+  helpSlotId?: string;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex max-w-full flex-col items-start rounded-full px-3.5 py-2 text-left ring-1 transition",
-        active
-          ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
-          : "bg-gray-50 text-zinc-800 ring-zinc-950/10 hover:bg-gray-100",
-      )}
-    >
-      <span className="inline-flex items-center gap-1.5 text-sm font-extrabold">
-        {label}
-        {badge != null && badge > 0 ? (
-          <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-orange-700 px-1.5 text-[10px] font-extrabold text-white">
-            {badge > 9 ? "9+" : badge}
-          </span>
-        ) : null}
-      </span>
-      <span className="max-w-[11rem] truncate text-[11px] font-semibold opacity-70">
-        {hint}
-      </span>
-    </button>
+    <div className="inline-flex items-center gap-0.5">
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          "inline-flex max-w-full flex-col items-start rounded-full px-3.5 py-2 text-left ring-1 transition",
+          active
+            ? "bg-yellow-400 text-zinc-950 ring-yellow-400"
+            : "bg-gray-50 text-zinc-800 ring-zinc-950/10 hover:bg-gray-100",
+        )}
+      >
+        <span className="inline-flex items-center gap-1.5 text-sm font-extrabold">
+          {label}
+          {badge != null && badge > 0 ? (
+            <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-orange-700 px-1.5 text-[10px] font-extrabold text-white">
+              {badge > 9 ? "9+" : badge}
+            </span>
+          ) : null}
+        </span>
+        <span className="max-w-[11rem] truncate text-[11px] font-semibold opacity-70">
+          {hint}
+        </span>
+      </button>
+      {helpSlotId ? <HelpTrigger slotId={helpSlotId} /> : null}
+    </div>
   );
 }
 

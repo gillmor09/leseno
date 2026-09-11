@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { loadHelpTextsForPage } from "@/app/actions/help-admin";
+import { HelpPageHeading } from "@/components/features/help/help-page-heading";
+import { HelpTextsProvider } from "@/components/features/help/help-texts-context";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { MembershipCreditsHeader } from "@/components/features/membership/membership-credits-header";
@@ -38,11 +41,13 @@ export default async function MeineBuechereiPage() {
 
   const allowMeineWelt = featuresInclude(features, "meine_welt");
   const allowAdvent = featuresInclude(features, "adventskalender");
-  const [typographyDefaults, lengthCatalog, initialCredits] = await Promise.all([
-    loadReadingTypographyDefaults(),
-    loadStoryLengthCatalog(),
-    loadMyCredits().catch(() => 0),
-  ]);
+  const [typographyDefaults, lengthCatalog, initialCredits, helpTexts] =
+    await Promise.all([
+      loadReadingTypographyDefaults(),
+      loadStoryLengthCatalog(),
+      loadMyCredits().catch(() => 0),
+      loadHelpTextsForPage("meine-buecherei"),
+    ]);
 
   let stories: Awaited<ReturnType<typeof listMyStories>> = [];
   let adventBooks: Awaited<ReturnType<typeof listMyAdventBooks>> = [];
@@ -91,39 +96,39 @@ export default async function MeineBuechereiPage() {
       <AppHeader />
       <main id="main" className="flex-1">
         <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          <MembershipCreditsHeader
-            badge={
-              <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-                Bücherei
-              </p>
-            }
-            initialCredits={initialCredits}
-            checkoutEnabled={hasStripeCheckoutConfig()}
-          />
-          <h1 className="mt-4 max-w-2xl text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl lg:text-5xl lg:leading-[1.1]">
-            Meine Bücherei
-          </h1>
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
-            Hier liegen alle Geschichten, die du erzeugt hast — automatisch
-            gespeichert. Tippe auf den Titel zum Lesen; markiere Favoriten und
-            Gelesen mit den Buttons rechts. Über die Freigabe-Auswahl teilst du
-            eine Geschichte mit Freunden oder öffentlich im Buchclub.
-          </p>
-
-          {loadError ? (
-            <p className="mt-8 rounded-[1.75rem] bg-orange-50 p-6 text-sm font-semibold text-orange-900 ring-1 ring-orange-700/10">
-              {loadError}
-            </p>
-          ) : (
-            <StoryLibraryBrowser
-              initialStories={stories}
-              initialAdventBooks={adventBooks}
-              profileOptions={profileOptions}
-              enabledFeatures={features}
-              typographyDefaults={typographyDefaults}
-              lengthCatalog={lengthCatalog}
+          <HelpTextsProvider texts={helpTexts}>
+            <MembershipCreditsHeader
+              badge={
+                <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
+                  Bücherei
+                </p>
+              }
+              initialCredits={initialCredits}
+              checkoutEnabled={hasStripeCheckoutConfig()}
             />
-          )}
+            <HelpPageHeading title="Meine Bücherei" />
+            <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg">
+              Hier liegen alle Geschichten, die du erzeugt hast — automatisch
+              gespeichert. Tippe auf den Titel zum Lesen; markiere Favoriten und
+              Gelesen mit den Buttons rechts. Über die Freigabe-Auswahl teilst du
+              eine Geschichte mit Freunden oder öffentlich im Buchclub.
+            </p>
+
+            {loadError ? (
+              <p className="mt-8 rounded-[1.75rem] bg-orange-50 p-6 text-sm font-semibold text-orange-900 ring-1 ring-orange-700/10">
+                {loadError}
+              </p>
+            ) : (
+              <StoryLibraryBrowser
+                initialStories={stories}
+                initialAdventBooks={adventBooks}
+                profileOptions={profileOptions}
+                enabledFeatures={features}
+                typographyDefaults={typographyDefaults}
+                lengthCatalog={lengthCatalog}
+              />
+            )}
+          </HelpTextsProvider>
         </section>
       </main>
       <LandingFooter />

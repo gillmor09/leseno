@@ -5,7 +5,9 @@
 
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import { HelpTextsProvider } from "@/components/features/help/help-texts-context";
 import { GeschichteComposer } from "@/components/features/stories/geschichte-composer";
+import { loadHelpTextsForPage } from "@/app/actions/help-admin";
 import { isAdminImpersonating } from "@/lib/auth/admin-impersonation";
 import { getAppSession } from "@/lib/auth/app-session";
 import { requireAnyMembershipPage } from "@/lib/auth/require-membership";
@@ -33,9 +35,10 @@ export async function MembershipStoryPage() {
     meta.role === "admin" &&
     !isAdminImpersonating(meta);
 
-  const [lengthCatalog, typographyDefaults] = await Promise.all([
+  const [lengthCatalog, typographyDefaults, helpTexts] = await Promise.all([
     loadStoryLengthCatalog(),
     loadReadingTypographyDefaults(),
+    loadHelpTextsForPage("geschichte"),
   ]);
   const access = await loadPackageAccessForCurrentUser();
   const packageLabel = access?.label ?? "Basis";
@@ -80,22 +83,24 @@ export async function MembershipStoryPage() {
       <AppHeader />
       <main id="main" className="flex-1">
         <section className="mx-auto min-w-0 max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-          <GeschichteComposer
-            packageLabel={packageLabel}
-            initialCredits={initialCredits}
-            creditsCheckoutEnabled={hasStripeCheckoutConfig()}
-            allowMeineWelt={allowMeineWelt}
-            lengthCatalog={lengthCatalog}
-            typographyDefaults={typographyDefaults}
-            childProfiles={childProfiles}
-            unlockedProfileIds={unlockedProfileIds}
-            enabledFeatures={enabledFeatures}
-            inviteUserId={isChild ? null : (parentUser?.id ?? null)}
-            isAdmin={isAdmin}
-            childSessionLockedProfileId={
-              isChild ? session.profileId : null
-            }
-          />
+          <HelpTextsProvider texts={helpTexts}>
+            <GeschichteComposer
+              packageLabel={packageLabel}
+              initialCredits={initialCredits}
+              creditsCheckoutEnabled={hasStripeCheckoutConfig()}
+              allowMeineWelt={allowMeineWelt}
+              lengthCatalog={lengthCatalog}
+              typographyDefaults={typographyDefaults}
+              childProfiles={childProfiles}
+              unlockedProfileIds={unlockedProfileIds}
+              enabledFeatures={enabledFeatures}
+              inviteUserId={isChild ? null : (parentUser?.id ?? null)}
+              isAdmin={isAdmin}
+              childSessionLockedProfileId={
+                isChild ? session.profileId : null
+              }
+            />
+          </HelpTextsProvider>
         </section>
       </main>
       <LandingFooter />

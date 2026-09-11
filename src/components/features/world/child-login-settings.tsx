@@ -14,6 +14,7 @@ import {
   setChildLoginPasswordAction,
 } from "@/app/actions/user-world";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { HelpTitleRow } from "@/components/features/help/help-trigger";
 import { cn } from "@/lib/utils";
 
 type LoginCodeStatus = "idle" | "checking" | "available" | "taken" | "invalid";
@@ -162,7 +163,12 @@ export function ChildLoginSettings({
           <KeyRound className="size-5" aria-hidden />
         </span>
         <div>
-          <h2 className="text-lg font-extrabold text-zinc-950">Kind-Login</h2>
+          <HelpTitleRow
+            title="Kind-Login"
+            slotId="kind-login"
+            as="h2"
+            titleClassName="text-lg font-extrabold text-zinc-950"
+          />
           <p className="mt-1 text-sm leading-relaxed text-zinc-600">
             Mit Kennung und Passwort meldet sich dein Kind selbst an — ohne
             E-Mail und ohne Zugriff auf Meine Welt. Ohne Passwort bleibt der

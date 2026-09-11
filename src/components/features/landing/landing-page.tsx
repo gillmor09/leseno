@@ -245,7 +245,7 @@ function HeroSection() {
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
             {withLesenoBrand(
-              "leseno macht eigene Kindergeschichten, die Kinder freiwillig lesen wollen — aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Was hängen bleibt, kommt nebenbei.",
+              "Lesen macht Spaß — und Staunen geht weiter: leseno schreibt eigene Kindergeschichten, die Kinder freiwillig lesen wollen. Aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Was hängen bleibt, kommt nebenbei.",
             )}
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -335,9 +335,9 @@ function StepsSection() {
                     {step.number}
                   </span>
                 </div>
-                <h3 className="mt-5 text-xl font-extrabold text-zinc-950">
+                <p className="mt-5 text-xl font-extrabold text-zinc-950">
                   {step.title}
-                </h3>
+                </p>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-600">
                   {withLesenoBrand(step.text)}
                 </p>
@@ -387,9 +387,9 @@ function MoodsSection() {
                     <span className="flex size-9 items-center justify-center rounded-full bg-yellow-400 text-zinc-950">
                       <Icon className="size-4" aria-hidden />
                     </span>
-                    <h3 className="text-xl font-extrabold text-zinc-950">
+                    <p className="text-xl font-extrabold text-zinc-950">
                       {mood.title}
-                    </h3>
+                    </p>
                   </div>
                   <p className="mt-3 text-sm leading-relaxed text-zinc-600">
                     {mood.text}
@@ -510,9 +510,9 @@ function StrengthsSection() {
                 <span className="flex size-11 items-center justify-center rounded-2xl bg-yellow-400 text-zinc-950">
                   <Icon className="size-5" aria-hidden />
                 </span>
-                <h3 className="mt-4 text-lg font-extrabold text-zinc-950">
+                <p className="mt-4 text-lg font-extrabold text-zinc-950">
                   {item.title}
-                </h3>
+                </p>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-600">
                   {item.text}
                 </p>
@@ -526,7 +526,7 @@ function StrengthsSection() {
             href="/preise"
             className="font-bold text-orange-800 underline-offset-2 hover:underline"
           >
-            Mehr auf Preise
+            Pakete vergleichen
           </a>
         </p>
       </div>
@@ -695,9 +695,9 @@ function VsChatSection() {
                 <span className="flex size-11 items-center justify-center rounded-2xl bg-yellow-400 text-zinc-950">
                   <Icon className="size-5" aria-hidden />
                 </span>
-                <h3 className="mt-4 text-lg font-extrabold text-white">
+                <p className="mt-4 text-lg font-extrabold text-white">
                   {item.title}
-                </h3>
+                </p>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-300">
                   {withLesenoBrand(item.landingText)}
                 </p>
@@ -711,7 +711,7 @@ function VsChatSection() {
             href="/preise"
             className="font-bold text-yellow-400 underline-offset-2 hover:underline"
           >
-            Mehr auf Preise
+            Preise &amp; Funktionen ansehen
           </a>
         </p>
       </div>
@@ -870,7 +870,7 @@ function ClosingSection() {
       <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 sm:py-20">
         <Image
           src="/landing/vogel-hell.webp"
-          alt=""
+          alt="leseno Vogel-Maskottchen"
           width={80}
           height={80}
           className="mx-auto size-16"
@@ -890,13 +890,13 @@ function ClosingSection() {
             href="/registrieren"
             className="inline-flex items-center justify-center rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
           >
-            Kostenlos mit Basis starten
+            Konto anlegen und starten
           </a>
           <a
             href="/kostenlos"
             className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-bold text-zinc-950 ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out hover:bg-gray-100"
           >
-            Ohne Konto ausprobieren
+            Probe-Geschichte starten
           </a>
         </div>
       </div>

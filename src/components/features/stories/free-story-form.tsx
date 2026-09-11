@@ -24,6 +24,8 @@ import {
   BotGuardFields,
   useBotGuardFields,
 } from "@/components/features/security/bot-guard-fields";
+import { HelpSectionLabel } from "@/components/features/help/help-section-label";
+import { HelpTrigger } from "@/components/features/help/help-trigger";
 import { trackUserActivity } from "@/lib/users/track-client";
 import { cn } from "@/lib/utils";
 import { StoryLengthSlider } from "@/components/features/stories/story-length-slider";
@@ -648,9 +650,7 @@ export function FreeStoryForm({
 
             {!personalMode ? (
               <section className={selectionCardClass}>
-                <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                  Schulstufe
-                </p>
+                <HelpSectionLabel title="Schulstufe" slotId="schulstufe" />
                 <p className="mt-1 text-sm text-zinc-600">
                   So passen Sprache und Länge zu dem, was du schon gut lesen
                   kannst.
@@ -697,9 +697,7 @@ export function FreeStoryForm({
 
             {!personalMode ? (
               <section className={selectionCardClass}>
-                <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                  Hauptthema
-                </p>
+                <HelpSectionLabel title="Hauptthema" slotId="hauptthema" />
                 <p className="mt-1 text-sm text-zinc-600">
                   Schauplatz oder Plot für deine Geschichte.
                 </p>
@@ -756,9 +754,10 @@ export function FreeStoryForm({
                   <div className="mt-5 border-t border-zinc-100 pt-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
-                        <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                          Mehr Tiefgang
-                        </p>
+                        <HelpSectionLabel
+                          title="Mehr Tiefgang"
+                          slotId="mehr-tiefgang"
+                        />
                         <p className="mt-1 text-sm text-zinc-600">
                           Realistische Konflikte und optional ein Nebenthema —
                           Figuren vertragen sich nicht sofort, Emotionen bleiben
@@ -929,6 +928,7 @@ export function FreeStoryForm({
                     catalog={lengthCatalog}
                     value={lengthStep}
                     onChange={setLengthStep}
+                    helpSlotId="textlaenge"
                     disabledStepIds={
                       trialMode ? TRIAL_DISABLED_LENGTH_STEPS : undefined
                     }
@@ -936,9 +936,10 @@ export function FreeStoryForm({
                 </div>
 
                 <section className={selectionCardClass}>
-                  <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                    Art der Geschichte
-                  </p>
+                  <HelpSectionLabel
+                    title="Art der Geschichte"
+                    slotId="stimmung"
+                  />
                   <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                     {STORY_MOODS.map((item) => {
                       const Icon = moodIcons[item.id];
@@ -970,9 +971,10 @@ export function FreeStoryForm({
                   <section className={selectionCardClass}>
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
-                        <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
-                          Mehr Tiefgang
-                        </p>
+                        <HelpSectionLabel
+                          title="Mehr Tiefgang"
+                          slotId="mehr-tiefgang"
+                        />
                         <p className="mt-1 text-sm text-zinc-600">
                           Realistische Konflikte: Figuren vertragen sich nicht
                           sofort — Emotionen bleiben spürbar.
@@ -1013,26 +1015,29 @@ export function FreeStoryForm({
               </p>
             ) : null}
 
-            <button
-              type="submit"
-              disabled={isPending || (!trialMode && !hasEnoughCredits)}
-              className={cn(
-                "inline-flex w-full items-center justify-center gap-2 rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800",
-                (isPending || (!trialMode && !hasEnoughCredits)) &&
-                  "opacity-70",
-              )}
-            >
-              {isPending ? (
-                <Loader2 className="size-5 animate-spin" aria-hidden />
-              ) : (
-                <Sparkles className="size-5" aria-hidden />
-              )}
-              {isPending
-                ? "Deine Geschichte entsteht …"
-                : hasStory
-                  ? "Neue Geschichte starten"
-                  : "Meine Geschichte starten"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={isPending || (!trialMode && !hasEnoughCredits)}
+                className={cn(
+                  "inline-flex w-full flex-1 items-center justify-center gap-2 rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800",
+                  (isPending || (!trialMode && !hasEnoughCredits)) &&
+                    "opacity-70",
+                )}
+              >
+                {isPending ? (
+                  <Loader2 className="size-5 animate-spin" aria-hidden />
+                ) : (
+                  <Sparkles className="size-5" aria-hidden />
+                )}
+                {isPending
+                  ? "Deine Geschichte entsteht …"
+                  : hasStory
+                    ? "Neue Geschichte starten"
+                    : "Meine Geschichte starten"}
+              </button>
+              <HelpTrigger slotId="starten" className="shrink-0" />
+            </div>
           </>
         )}
       </form>
@@ -1056,6 +1061,7 @@ export function FreeStoryForm({
           lengthCatalog={lengthCatalog}
           continueLengthStep={lengthStep}
           continueMood={mood}
+          helpSlotId="ergebnis"
           onContinued={(result) => {
             setOutput(result.storyHtml);
             setLearnedFacts(result.facts);
