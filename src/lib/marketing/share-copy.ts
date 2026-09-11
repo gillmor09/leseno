@@ -32,7 +32,7 @@ export const SHARE_AFTER_STORY_HINT =
 export const SHARE_SECTION_EYEBROW = "Weiterempfehlen";
 export const SHARE_SECTION_HEADLINE = "Gut für euer Kind? Sag’s weiter.";
 export const SHARE_SECTION_BODY =
-  "Die besten Empfehlungen kommen von Eltern, die selbst begeistert sind. Teile leseno per Link, WhatsApp oder Instagram — mit Freundinnen und Familie.";
+  "Die besten Empfehlungen kommen von Eltern, die selbst begeistert sind. Teile den Link per WhatsApp oder Instagram — mit Freundinnen und Familie.";
 
 export const SHARE_BUTTON_LABEL = "Link zum Teilen kopieren";
 export const SHARE_BUTTON_SHARED = "Link kopiert";

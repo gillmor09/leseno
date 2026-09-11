@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Suspense, type ReactNode } from "react";
+import { Suspense } from "react";
 import {
   BookMarked,
   BookOpen,
@@ -27,25 +27,11 @@ import {
   type VsChatPositionId,
 } from "@/lib/social/vs-chat-positioning";
 
-/** Brand name in body copy: always lowercase + bold. */
-function withLesenoBrand(text: string): ReactNode {
-  const parts = text.split(/(Leseno|leseno)/g);
-  return parts.map((part, index) =>
-    part.toLowerCase() === "leseno" ? (
-      <strong key={index} className="font-extrabold">
-        leseno
-      </strong>
-    ) : (
-      part
-    ),
-  );
-}
-
 const steps = [
   {
     number: "01",
     title: "Wähl dein Thema",
-    text: "Dinos, Fußball, Weltall oder dein Hund — sag, worauf du Lust hast. leseno macht daraus eine Geschichte nur für dich.",
+    text: "Dinos, Fußball, Weltall oder dein Hund — sag, worauf du Lust hast. Daraus wird eine Geschichte nur für dich.",
     icon: Sparkles,
   },
   {
@@ -57,7 +43,7 @@ const steps = [
   {
     number: "03",
     title: "Lesen und Staunen",
-    text: "Einfach eintauchen. Unterwegs bleiben echte Aha-Momente hängen — Neugier mitten im Abenteuer.",
+    text: "Einfach eintauchen. Weil’s Spaß macht, liest du weiter — und Staunen weitergeht mit echten Aha-Momenten mitten im Abenteuer.",
     icon: BookOpen,
   },
 ] as const;
@@ -68,7 +54,7 @@ const moods = [
     text: "Komödie mit Klamauk: Missgeschicke, Quatsch und Lacher — und zwischendrin Dinge, über die man danach noch reden will.",
     image: "/landing/mood-lustig.webp",
     imageAlt:
-      "Kind lacht über ein aufgeschlagenes Buch, aus dem der Leseno-Vogel steigt",
+      "Kind lacht über ein aufgeschlagenes Buch, aus dem ein bunter Vogel steigt",
     icon: Smile,
   },
   {
@@ -76,7 +62,7 @@ const moods = [
     text: "Hindernis, Plan, Höhepunkt: echte Abenteuer-Spannung — optional mit Rätsel, kindgerecht und ohne Angstmachen.",
     image: "/landing/mood-spannend.webp",
     imageAlt:
-      "Kind liest gebannt, während der Leseno-Vogel und ein Blitz aus dem Buch aufsteigen",
+      "Kind liest gebannt, während ein Vogel und ein Blitz aus dem Buch aufsteigen",
     icon: Zap,
   },
   {
@@ -84,7 +70,7 @@ const moods = [
     text: "Wachstum und Mut: üben, Rückschlag, Durchbruch — danach das Gefühl: Wenn ich will, schaff ich das.",
     image: "/landing/mood-motivierend.webp",
     imageAlt:
-      "Kind betrachtet zuversichtlich ein Buch, aus dem der leuchtende Leseno-Vogel steigt",
+      "Kind betrachtet zuversichtlich ein Buch, aus dem ein leuchtender Vogel steigt",
     icon: BicepsFlexed,
   },
 ] as const;
@@ -164,14 +150,14 @@ const trySteps = [
 
 const faqItems = [
   {
-    question: "Für welches Alter ist leseno gedacht?",
+    question: "Für welches Alter ist das gedacht?",
     answer:
       "Von Vorschule bis etwa 5. Klasse und etwas darüber. Ihr wählt die Lesestufe — Sprache und Länge passen sich an.",
   },
   {
     question: "Ist das sicher für Kinder?",
     answer:
-      "leseno ist ein klarer Weg vom Thema zum Lesen — kein offenes Chatfenster. Mit Plus könnt ihr ein Kind-Login einrichten, damit Kinder selbst einsteigen.",
+      "Der Weg vom Thema zum Lesen ist klar — kein offenes Chatfenster. Mit Plus könnt ihr ein Kind-Login einrichten, damit Kinder selbst einsteigen.",
   },
   {
     question: "Warum nicht einfach selbst eine Geschichte tippen lassen?",
@@ -244,9 +230,9 @@ function HeroSection() {
             Lesen, weil’s Spaß macht. Staunen, weil’s weitergeht.
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
-            {withLesenoBrand(
-              "Lesen macht Spaß — und Staunen geht weiter: leseno schreibt eigene Kindergeschichten, die Kinder freiwillig lesen wollen. Aus Lust und Neugier, ohne Druck und ohne Schulgefühl. Was hängen bleibt, kommt nebenbei.",
-            )}
+            Weil’s Spaß macht und weil’s weitergeht: eigene Kindergeschichten
+            zum freiwilligen Lesen und Staunen — aus Lust und Neugier, ohne
+            Druck und ohne Schulgefühl. Was hängen bleibt, kommt nebenbei.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a
@@ -271,7 +257,7 @@ function HeroSection() {
           <div className="overflow-hidden rounded-[2rem] bg-white shadow-xl ring-1 ring-zinc-950/10">
             <Image
               src="/landing/hero-lesen.webp"
-              alt="Kind liest am Fenster eine Leseno-Geschichte, aus dem Buch steigt der Leseno-Vogel"
+              alt="Kind liest am Fenster eine Geschichte, aus dem Buch steigt ein bunter Vogel"
               width={1536}
               height={1024}
               className="h-auto w-full"
@@ -339,7 +325,7 @@ function StepsSection() {
                   {step.title}
                 </p>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-                  {withLesenoBrand(step.text)}
+                  {step.text}
                 </p>
               </li>
             );
@@ -427,9 +413,9 @@ function BeispieleTeaserSection() {
             Beispielgeschichten auf der Pinnwand.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
-            {withLesenoBrand(
-              "Ausschnitte und Wissens-Häppchen aus öffentlich geteilten Geschichten — zufällig wie Post-its verteilt. Kein Spoiler der ganzen Story, nur Appetit auf mehr.",
-            )}
+            Ausschnitte und Wissens-Häppchen aus öffentlich geteilten
+            Geschichten — zufällig wie Post-its verteilt. Kein Spoiler der
+            ganzen Story, nur Appetit auf mehr.
           </p>
           <a
             href="/beispiele"
@@ -463,8 +449,8 @@ function FactsSection() {
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-300">
             Jede Geschichte trägt echte Aha-Momente mit — ohne Test und ohne
-            Bewertung. Du liest, weil’s dich packt; was hängen bleibt, kommt
-            nebenbei.
+            Bewertung. Du liest, weil’s dich packt und weil’s Spaß macht. Staunen
+            weitergeht von Seite zu Seite — was hängen bleibt, kommt nebenbei.
           </p>
         </div>
         <ul className="grid gap-3 sm:grid-cols-2" aria-label="Beispiel-Fakten">
@@ -548,9 +534,8 @@ function TrySection() {
                 In wenigen Minuten deine erste Probe-Geschichte.
               </h2>
               <p className="mt-4 text-base leading-relaxed text-zinc-600">
-                {withLesenoBrand(
-                  "Kein Konto, kein Abo: Teste leseno mit einer kurzen Geschichte — und spür, ob Lesen so Spaß macht.",
-                )}
+                Kein Konto, kein Abo: teste eine kurze Geschichte — und spür, ob
+                Lesen so Spaß macht und ob Staunen weitergeht.
               </p>
               <ol className="mt-8 space-y-4">
                 {trySteps.map((step) => (
@@ -563,7 +548,7 @@ function TrySection() {
                         {step.title}
                       </p>
                       <p className="mt-0.5 text-sm leading-relaxed text-zinc-600">
-                        {withLesenoBrand(step.text)}
+                        {step.text}
                       </p>
                     </div>
                   </li>
@@ -600,9 +585,8 @@ function TrySection() {
                 ))}
               </ul>
               <p className="mt-8 text-sm leading-relaxed text-zinc-600">
-                {withLesenoBrand(
-                  "Für Eltern: Ihr seht in Minuten, ob leseno zu eurem Kind passt — ohne Verpflichtung.",
-                )}
+                Für Eltern: Ihr seht in Minuten, ob es zu eurem Kind passt —
+                ohne Verpflichtung.
               </p>
             </div>
           </div>
@@ -619,7 +603,7 @@ function ParentsSection() {
         <div className="overflow-hidden rounded-[2rem] shadow-xl ring-1 ring-zinc-950/10">
           <Image
             src="/landing/eltern-lesen.webp"
-            alt="Elternteil und Kind lesen gemeinsam auf dem Sofa, der Leseno-Vogel sitzt daneben"
+            alt="Elternteil und Kind lesen gemeinsam auf dem Sofa, ein Vogel sitzt daneben"
             width={1400}
             height={933}
             className="h-auto w-full"
@@ -635,12 +619,13 @@ function ParentsSection() {
             Lesen ohne Druck — aus eigenem Antrieb.
           </h2>
           <p className="mt-4 text-base leading-relaxed text-zinc-600">
-            {withLesenoBrand(
-              "Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und Bewertung. leseno setzt genau da an: eigene Geschichten, die man freiwillig liest. Was an Lesefertigkeit und Wissen hängen bleibt, kommt nebenbei.",
-            )}
+            Kinder wollen Abenteuer und Neugier — nicht Übungsblätter und
+            Bewertung. Genau da setzen wir an: eigene Geschichten, die man
+            freiwillig liest, weil’s Spaß macht. Was an Lesefertigkeit und Wissen
+            hängen bleibt, kommt nebenbei — und Staunen weitergeht.
           </p>
           <p className="mt-3 text-sm font-semibold text-zinc-600">
-            Was leseno anders macht?{" "}
+            Was anders ist?{" "}
             <a
               href="#anders"
               className="font-bold text-orange-800 underline-offset-2 hover:underline"
@@ -657,7 +642,7 @@ function ParentsSection() {
                 <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-zinc-950">
                   <Check className="size-3.5" aria-hidden />
                 </span>
-                {withLesenoBrand(point)}
+                {point}
               </li>
             ))}
           </ul>
@@ -674,15 +659,16 @@ function VsChatSection() {
     <section id="anders" className="scroll-mt-20 bg-zinc-800">
       <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
         <p className="text-sm font-extrabold tracking-wide text-yellow-400 uppercase">
-          Warum leseno
+          Der Unterschied
         </p>
         <h2 className="mt-2 max-w-3xl text-3xl font-extrabold tracking-tight text-white sm:text-4xl">
           Weil Lesen mehr braucht als einen Text.
         </h2>
         <p className="mt-4 max-w-3xl text-base leading-relaxed text-zinc-300">
-          {withLesenoBrand(
-            "leseno ist ein Leseprodukt für Kinder: altersgerecht, persönlich und wiederholbar — mit klaren Regeln für Kindgerechtigkeit, ohne dass Eltern jedes Mal nachjustieren müssen.",
-          )}
+          Ein Leseprodukt für Kinder: altersgerecht, persönlich und
+          wiederholbar — mit klaren Regeln für Kindgerechtigkeit, ohne dass
+          Eltern jedes Mal nachjustieren müssen. Lesen, weil’s Spaß macht;
+          Staunen, weil’s weitergeht.
         </p>
         <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {points.map((item) => {
@@ -699,7 +685,7 @@ function VsChatSection() {
                   {item.title}
                 </p>
                 <p className="mt-2 text-sm leading-relaxed text-zinc-300">
-                  {withLesenoBrand(item.landingText)}
+                  {item.landingText}
                 </p>
               </li>
             );
@@ -730,9 +716,8 @@ function PricingSection() {
           Starte frei. Steig später auf.
         </h2>
         <p className="mt-4 max-w-2xl text-base leading-relaxed text-zinc-600">
-          {withLesenoBrand(
-            "Probier leseno ohne Verpflichtung. Wenn Lesen zum Ritual wird, bringt Plus mehr Alltag — Familie und Komplett erweitern Lesefluss und Tiefe.",
-          )}
+          Probier ohne Verpflichtung. Wenn Lesen zum Ritual wird, bringt Plus
+          mehr Alltag — Familie und Komplett erweitern Lesefluss und Tiefe.
         </p>
         <div className="mt-10 grid gap-6 md:grid-cols-2">
           <article className="rounded-[1.75rem] bg-white p-8 shadow-xl ring-1 ring-zinc-950/10">
@@ -787,9 +772,8 @@ function PricingSection() {
               Mehr Geschichten im Alltag
             </p>
             <p className="mt-1 text-sm text-zinc-300">
-              {withLesenoBrand(
-                "Monatliche Credits, die nie verfallen — plus Bücherei, Meine Welt mit Kind-Login, PDF und Buchclub",
-              )}
+              Monatliche Credits, die nie verfallen — plus Bücherei, Meine Welt
+              mit Kind-Login, PDF und Buchclub
             </p>
             <ul className="mt-6 space-y-3 text-sm text-zinc-200">
               <li className="flex gap-2">
@@ -854,7 +838,7 @@ function FaqSection() {
                 {item.question}
               </dt>
               <dd className="mt-2 text-sm leading-relaxed text-zinc-600">
-                {withLesenoBrand(item.answer)}
+                {item.answer}
               </dd>
             </div>
           ))}
@@ -870,7 +854,7 @@ function ClosingSection() {
       <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 sm:py-20">
         <Image
           src="/landing/vogel-hell.webp"
-          alt="leseno Vogel-Maskottchen"
+          alt="Buntes Vogel-Maskottchen"
           width={80}
           height={80}
           className="mx-auto size-16"
@@ -881,9 +865,8 @@ function ClosingSection() {
           Bereit für die nächste Geschichte?
         </h2>
         <p className="mt-4 text-base leading-relaxed text-zinc-600">
-          {withLesenoBrand(
-            "Sag, worum es gehen soll. leseno legt los — dein Kind liest, staunt und bleibt gerne hängen.",
-          )}
+          Sag, worum es gehen soll. Die Geschichte entsteht — dein Kind liest,
+          weil’s Spaß macht, staunt mit, und Staunen weitergeht.
         </p>
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <a

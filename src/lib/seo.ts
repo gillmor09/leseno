@@ -76,7 +76,7 @@ export function buildPageMetadata(input: PageSeoInput): Metadata {
           url: DEFAULT_OG_IMAGE,
           width: 1536,
           height: 1024,
-          alt: "Kind liest eine Leseno-Geschichte",
+          alt: "Kind liest eine Geschichte am Fenster",
         },
       ],
     },

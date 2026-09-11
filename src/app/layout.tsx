@@ -66,7 +66,7 @@ export const metadata: Metadata = {
         url: "/landing/hero-lesen.webp",
         width: 1536,
         height: 1024,
-        alt: "Kind liest eine Leseno-Geschichte",
+        alt: "Kind liest eine Geschichte am Fenster",
       },
     ],
   },

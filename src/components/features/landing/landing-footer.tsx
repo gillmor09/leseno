@@ -8,7 +8,7 @@ export function LandingFooter() {
         <div className="flex items-center gap-3">
           <Image
             src="/landing/vogel-hell.webp"
-            alt="leseno Logo"
+            alt="Logo der Lese-App"
             width={36}
             height={36}
             className="size-9 rounded-full"
@@ -29,7 +29,7 @@ export function LandingFooter() {
             href="/#anders"
             className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
           >
-            Was leseno anders macht
+            Was anders ist
           </Link>
           <Link
             href="/motivation"
@@ -83,7 +83,7 @@ export function LandingFooter() {
             href="https://www.instagram.com/leseno.de/"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="leseno auf Instagram"
+            aria-label="Auf Instagram öffnen"
             title="Instagram"
             className="inline-flex size-9 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
           >

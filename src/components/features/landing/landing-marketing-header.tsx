@@ -16,7 +16,7 @@ const navItems = [
   { hash: "staerken", label: "Stärken" },
   { hash: "probieren", label: "Ausprobieren" },
   { hash: "eltern", label: "Für Eltern" },
-  { hash: "anders", label: "Warum leseno" },
+  { hash: "anders", label: "Unterschied" },
   { hash: "preise", label: "Preise" },
 ] as const;
 
@@ -75,7 +75,7 @@ export function LandingMarketingHeader({
         >
           <Image
             src="/landing/vogel-hell.webp"
-            alt="leseno Logo"
+            alt="Logo der Lese-App"
             width={40}
             height={40}
             className="size-9 shrink-0 sm:size-10"

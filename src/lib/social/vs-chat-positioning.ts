@@ -37,7 +37,7 @@ export const VS_CHAT_POSITIONS: VsChatPosition[] = [
     id: "lesen_nicht_prompten",
     title: "Lesen, nicht Prompten",
     landingText:
-      "leseno erzeugt eine Lesesituation: Stufe, Länge, Genre, Lesemodus — optional Silben und Vorlesen. Das Kind liest und taucht ein, statt einem Bot zu diktieren.",
+      "Hier entsteht eine Lesesituation: Stufe, Länge, Genre, Lesemodus — optional Silben und Vorlesen. Das Kind liest und taucht ein, statt einem Bot zu diktieren.",
     insight:
       "Ein Chatfenster liefert Text auf Zuruf — Lesen braucht Stufe, Raum und Fokus. Der Unterschied ist die Situation, nicht nur der Generator.",
     sceneHint:
