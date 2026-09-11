@@ -28,6 +28,13 @@ export const socialGenerateCaptionSchema = z.object({
   angleId: angleIdSchema,
   postKind: postKindSchema,
   channel: channelSchema.default("instagram"),
+  /** Overlay question — required when `postKind` is `frage`. */
+  frageQuestion: z.string().trim().max(500).optional(),
+});
+
+export const socialGenerateFrageSchema = z.object({
+  postDate: postDateSchema,
+  channel: channelSchema.default("instagram"),
 });
 
 export const socialRefineCaptionSchema = z.object({
@@ -40,6 +47,7 @@ export const socialRefineCaptionSchema = z.object({
     .trim()
     .min(3, { message: "Überarbeitungs-Hinweis angeben." })
     .max(2000),
+  frageQuestion: z.string().trim().max(500).optional(),
 });
 
 export const socialSaveCaptionSchema = z.object({
@@ -57,6 +65,8 @@ export const socialGenerateImageSchema = z.object({
   channel: channelSchema.default("instagram"),
   /** Draft caption from the create form — required when the post is not saved yet. */
   caption: z.string().max(8000).optional(),
+  /** Overlay question for `frage` posts (also stored as last_image_prompt). */
+  frageQuestion: z.string().trim().max(500).optional(),
   extraInstruction: z.string().trim().max(2000).optional(),
 });
 
@@ -73,6 +83,8 @@ export const socialCommitPostSchema = z.object({
     .max(8000),
   imageDataUrl: z.string().max(12_000_000).nullable().optional(),
   lastImagePrompt: z.string().max(16_000).nullable().optional(),
+  /** Frage overlay text — stored in last_image_prompt when set. */
+  frageQuestion: z.string().trim().max(500).optional(),
 });
 
 export const socialClearImageSchema = z.object({

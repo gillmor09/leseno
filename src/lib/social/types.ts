@@ -1,7 +1,7 @@
 /**
  * Social Media admin types.
  * Global CRAFT: storyline, role, format, action, imagePrompt (style for Gemini → FLUX).
- * Posts: Instagram entries — Winkel (`winkel`) or soft marketing (`marketing`) via `postKind` + `angleId`.
+ * Posts: Instagram — Winkel, Marketing, or Frage via `postKind` + `angleId`.
  */
 
 export const SOCIAL_CHANNELS = ["instagram"] as const;
@@ -11,12 +11,13 @@ export const SOCIAL_CHANNEL_LABELS: Record<SocialChannel, string> = {
   instagram: "Instagram",
 };
 
-export const SOCIAL_POST_KINDS = ["winkel", "marketing"] as const;
+export const SOCIAL_POST_KINDS = ["winkel", "marketing", "frage"] as const;
 export type SocialPostKind = (typeof SOCIAL_POST_KINDS)[number];
 
 export const SOCIAL_POST_KIND_LABELS: Record<SocialPostKind, string> = {
   winkel: "Winkel",
   marketing: "Marketing",
+  frage: "Frage",
 };
 
 export type SocialGlobalSettings = {
@@ -37,9 +38,9 @@ export type SocialPost = {
   imageDataUrl: string | null;
   lastImagePrompt: string | null;
   published: boolean;
-  /** `winkel` (motivation bank) or `marketing` (`mkt:…` feature highlight). */
+  /** `winkel` | `marketing` (`mkt:…`) | `frage` (`frage:<uuid>`). */
   postKind: SocialPostKind;
-  /** Winkel id or marketing angle id (`mkt:feature` / `mkt:a+b`). */
+  /** Winkel id, marketing angle id, or frage angle id. */
   angleId: string | null;
   updatedAt: string;
 };

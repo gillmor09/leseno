@@ -1,6 +1,6 @@
 /**
- * Social Media caption (text model) + image (scene plan → images-default pixels).
- * Branches on `postKind`: Winkel (motivation) vs marketing (1–2 features).
+ * Social Media caption (text model) + image (scene plan → pixels, or fixed Frage bg).
+ * Branches on `postKind`: Winkel | marketing | frage.
  */
 
 import { generateImage } from "@/lib/ai/generate-image";
@@ -13,11 +13,14 @@ import { loadPromptAdminCatalog } from "@/lib/prompts/repository";
 import {
   buildCraftCaptionPrompt,
   buildCraftRefinePrompt,
+  buildFrageCaptionPrompt,
+  buildFrageQuestionPrompt,
   buildMarketingCaptionPrompt,
   buildMarketingRefinePrompt,
   buildSocialFluxPromptFromScene,
   buildSocialImageScenePlanPrompt,
 } from "@/lib/social/craft-prompt";
+import { isFrageAngleId } from "@/lib/social/frage";
 import {
   getMarketingTopicByAngleId,
   type MarketingTopic,
@@ -27,7 +30,10 @@ import {
   pickMotivationAngle,
   type MotivationAngle,
 } from "@/lib/social/motivation";
-import { overlayExactAngleTextOnImage } from "@/lib/social/overlay-angle-text";
+import {
+  composeFrageImage,
+  overlayExactAngleTextOnImage,
+} from "@/lib/social/overlay-angle-text";
 import type {
   SocialChannel,
   SocialChannelCraft,
@@ -47,6 +53,7 @@ function resolveTopic(
   postKind: SocialPostKind,
   angleId: string | undefined,
   postDate: string,
+  frageQuestion?: string,
 ): SocialTopicRef {
   if (postKind === "marketing") {
     if (!angleId) {
@@ -62,6 +69,19 @@ function resolveTopic(
       sceneHint: marketing.sceneHint,
       postKind: "marketing",
       marketing,
+    };
+  }
+
+  if (postKind === "frage") {
+    if (!angleId || !isFrageAngleId(angleId)) {
+      throw new Error("Frage-Beitrag braucht eine gültige Frage-ID.");
+    }
+    const question = frageQuestion?.trim() ?? "";
+    return {
+      id: angleId,
+      title: question || "Frage",
+      sceneHint: "",
+      postKind: "frage",
     };
   }
 
@@ -176,31 +196,53 @@ export async function generateSocialCaption(input: {
   postDate: string;
   angleId: string;
   postKind?: SocialPostKind;
+  /** Required for `frage` — the overlay question to answer. */
+  frageQuestion?: string;
 }): Promise<{ caption: string; topic: SocialTopicRef }> {
   const model = await resolveSocialTextModel();
   const postKind = input.postKind ?? "winkel";
-  const topic = resolveTopic(postKind, input.angleId, input.postDate);
+  const topic = resolveTopic(
+    postKind,
+    input.angleId,
+    input.postDate,
+    input.frageQuestion,
+  );
   const { dayIndex, daysInMonth } = dayMeta(input.postDate);
 
-  const prompt =
-    topic.postKind === "marketing" && topic.marketing
-      ? buildMarketingCaptionPrompt({
-          storyline: input.storyline,
-          channel: input.channel,
-          postDate: input.postDate,
-          dayIndex,
-          daysInMonth,
-          topic: topic.marketing,
-        })
-      : buildCraftCaptionPrompt({
-          storyline: input.storyline,
-          craft: input.craft,
-          channel: input.channel,
-          postDate: input.postDate,
-          dayIndex,
-          daysInMonth,
-          angle: topic.angle!,
-        });
+  let prompt: { systemInstruction: string; userText: string };
+  if (topic.postKind === "marketing" && topic.marketing) {
+    prompt = buildMarketingCaptionPrompt({
+      storyline: input.storyline,
+      channel: input.channel,
+      postDate: input.postDate,
+      dayIndex,
+      daysInMonth,
+      topic: topic.marketing,
+    });
+  } else if (topic.postKind === "frage") {
+    const question = input.frageQuestion?.trim() ?? "";
+    if (!question) {
+      throw new Error("Frage fehlt — zuerst Frage erzeugen.");
+    }
+    prompt = buildFrageCaptionPrompt({
+      storyline: input.storyline,
+      channel: input.channel,
+      postDate: input.postDate,
+      dayIndex,
+      daysInMonth,
+      question,
+    });
+  } else {
+    prompt = buildCraftCaptionPrompt({
+      storyline: input.storyline,
+      craft: input.craft,
+      channel: input.channel,
+      postDate: input.postDate,
+      dayIndex,
+      daysInMonth,
+      angle: topic.angle!,
+    });
+  }
 
   const text = await generateText({
     model,
@@ -208,6 +250,34 @@ export async function generateSocialCaption(input: {
     userText: prompt.userText,
   });
   return { caption: text.trim(), topic };
+}
+
+/** Generates the Frage overlay question (before caption). */
+export async function generateSocialFrageQuestion(input: {
+  storyline: string;
+  postDate: string;
+}): Promise<{ question: string }> {
+  const model = await resolveSocialTextModel();
+  const { dayIndex, daysInMonth } = dayMeta(input.postDate);
+  const prompt = buildFrageQuestionPrompt({
+    storyline: input.storyline,
+    postDate: input.postDate,
+    dayIndex,
+    daysInMonth,
+  });
+  const text = await generateText({
+    model,
+    systemInstruction: prompt.systemInstruction,
+    userText: prompt.userText,
+  });
+  const question = text
+    .trim()
+    .replace(/^["'«»]+|["'«»]+$/g, "")
+    .trim();
+  if (!question) {
+    throw new Error("Textmodell hat keine Frage geliefert.");
+  }
+  return { question };
 }
 
 export async function refineSocialCaption(input: {
@@ -219,6 +289,7 @@ export async function refineSocialCaption(input: {
   postDate: string;
   angleId?: string | null;
   postKind?: SocialPostKind;
+  frageQuestion?: string;
 }): Promise<{ caption: string; topic: SocialTopicRef }> {
   const model = await resolveSocialTextModel();
   const postKind = input.postKind ?? "winkel";
@@ -226,7 +297,32 @@ export async function refineSocialCaption(input: {
     postKind,
     input.angleId ?? undefined,
     input.postDate,
+    input.frageQuestion,
   );
+
+  if (topic.postKind === "frage") {
+    const question = input.frageQuestion?.trim() ?? topic.title;
+    const { dayIndex, daysInMonth } = dayMeta(input.postDate);
+    const prompt = buildFrageCaptionPrompt({
+      storyline: input.storyline,
+      channel: input.channel,
+      postDate: input.postDate,
+      dayIndex,
+      daysInMonth,
+      question,
+    });
+    const text = await generateText({
+      model,
+      systemInstruction: `${prompt.systemInstruction}
+
+# Überarbeitung
+${input.refineInstruction.trim()}
+Bisheriger Text:
+${input.currentCaption.trim()}`,
+      userText: prompt.userText,
+    });
+    return { caption: text.trim(), topic };
+  }
 
   const prompt =
     topic.postKind === "marketing"
@@ -248,8 +344,7 @@ export async function refineSocialCaption(input: {
 }
 
 /**
- * Text model invents a scene from the caption; `images-default` renders pixels.
- * Title (Winkel or feature labels) is composited in Nunito afterwards.
+ * Image pipeline: AI scene (Winkel/Marketing) or fixed bg3 composite (Frage).
  */
 export async function generateSocialImage(input: {
   imagePromptTemplate: string;
@@ -259,18 +354,40 @@ export async function generateSocialImage(input: {
   angleId: string;
   postKind?: SocialPostKind;
   extraInstruction?: string;
+  /** Required for `frage` — painted onto bg3.jpg. */
+  frageQuestion?: string;
 }): Promise<{
   dataUrl: string;
   promptUsed: string;
   sceneDescription: string;
   topic: SocialTopicRef;
 }> {
+  const postKind = input.postKind ?? "winkel";
+  const topic = resolveTopic(
+    postKind,
+    input.angleId,
+    input.postDate,
+    input.frageQuestion,
+  );
+
+  if (topic.postKind === "frage") {
+    const question = input.frageQuestion?.trim() ?? "";
+    if (!question) {
+      throw new Error("Frage fehlt — zuerst Frage erzeugen.");
+    }
+    const dataUrl = await composeFrageImage(question);
+    return {
+      dataUrl,
+      promptUsed: "fixed:public/bg3.jpg + frage overlay",
+      sceneDescription: question,
+      topic: { ...topic, title: question },
+    };
+  }
+
   const [textModel, imagesModel] = await Promise.all([
     resolveSocialTextModel(),
     resolveSocialImagesModel(),
   ]);
-  const postKind = input.postKind ?? "winkel";
-  const topic = resolveTopic(postKind, input.angleId, input.postDate);
   const visualMode = topic.postKind === "marketing" ? "marketing" : "winkel";
 
   const plan = buildSocialImageScenePlanPrompt({
@@ -304,7 +421,6 @@ export async function generateSocialImage(input: {
   const result = await generateImage({
     model: imagesModel,
     prompt: promptUsed,
-    // Marketing: always 1024² (cover-composited in overlay). Winkel: 2K when supported.
     sizePx: marketing ? 1024 : 2048,
     outputFormat: "png",
   });

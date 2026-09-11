@@ -2,6 +2,7 @@
  * Overlays exact titles on social images in real Nunito SemiBold (opentype glyph paths).
  * Winkel: white type on dark edge gradient.
  * Marketing: zinc-700/80 dark card + light orange checklist, solid zinc-700 footer.
+ * Frage: bg3 + orange-800 question + same brand footer (logo + leseno).
  */
 
 import { readFileSync } from "node:fs";
@@ -25,8 +26,15 @@ const LESENO_LOGO_PATH = path.join(
   "vogel-hell.webp",
 );
 
-/** Marketing social posts are always composed at this square size. */
+const FRAGE_BG_PATH = path.join(process.cwd(), "public", "bg3.jpg");
+
+/** Marketing / Frage social posts are composed at this square size. */
 export const MARKETING_SOCIAL_IMAGE_PX = 1024;
+
+/** Headline size on 1024² Frage images (~text-7xl / feed-readable). */
+const FRAGE_TEXT_BASE_PX = 80;
+/** Vivid brand orange on light bg3 — strong contrast, still punchy in-feed. */
+const FRAGE_TEXT_COLOR = "#9a3412"; // orange-800
 
 const MARKETING_ORANGE = "#fdba74"; // orange-300 — light & punchy on zinc-700 card
 const MARKETING_CARD_FILL = "rgba(63, 63, 70, 0.8)"; // zinc-700/80
@@ -286,6 +294,64 @@ function fillRoundedRect(
 }
 
 /**
+ * Shared brand footer: zinc-700 bar with small logo + „leseno“ (Marketing + Frage).
+ */
+async function drawBrandFooter(
+  ctx: SKRSContext2D,
+  font: OtFont,
+  size: number,
+  footerY: number,
+  footerH: number,
+): Promise<void> {
+  ctx.fillStyle = FOOTER_ZINC;
+  ctx.fillRect(0, footerY, size, footerH);
+
+  const brandFontSize = Math.round(size * 0.032);
+  const brandLabel = "leseno";
+  const logoSize = Math.round(footerH * 0.55);
+  let logo: Image | null = null;
+  try {
+    logo = await loadImage(
+      readFileSync(/*turbopackIgnore: true*/ LESENO_LOGO_PATH),
+    );
+  } catch {
+    logo = null;
+  }
+
+  const gap = Math.round(size * 0.012);
+  const labelW = measureLineWidth(font, brandLabel, brandFontSize);
+  const clusterW = (logo ? logoSize + gap : 0) + labelW;
+  let cursorX = (size - clusterW) / 2;
+  const midY = footerY + footerH / 2;
+
+  if (logo) {
+    ctx.drawImage(logo, cursorX, midY - logoSize / 2, logoSize, logoSize);
+    cursorX += logoSize + gap;
+  }
+
+  ctx.fillStyle = "#fafafa";
+  const scale = brandFontSize / font.unitsPerEm;
+  let x = cursorX;
+  const baselineY = midY + brandFontSize * 0.35;
+  for (const ch of brandLabel) {
+    const glyph = font.charToGlyph(ch);
+    const otPath = glyph.getPath(x, baselineY, brandFontSize);
+    ctx.beginPath();
+    for (const cmd of otPath.commands) {
+      if (cmd.type === "M") ctx.moveTo(cmd.x, cmd.y);
+      else if (cmd.type === "L") ctx.lineTo(cmd.x, cmd.y);
+      else if (cmd.type === "C") {
+        ctx.bezierCurveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
+      } else if (cmd.type === "Q") {
+        ctx.quadraticCurveTo(cmd.x1, cmd.y1, cmd.x, cmd.y);
+      } else if (cmd.type === "Z") ctx.closePath();
+    }
+    ctx.fill();
+    x += (glyph.advanceWidth ?? 0) * scale;
+  }
+}
+
+/**
  * Draws the source image cover-cropped into a square canvas (fills every pixel).
  */
 function drawCoverSquare(ctx: SKRSContext2D, image: Image, size: number): void {
@@ -485,73 +551,114 @@ async function overlayMarketingStyle(input: {
   }
 
   // Brand footer bar.
-  ctx.fillStyle = FOOTER_ZINC;
-  ctx.fillRect(0, footerY, size, footerH);
-
-  const brandFontSize = Math.round(size * 0.032);
-  const brandLabel = "leseno";
-  const logoSize = Math.round(footerH * 0.55);
-  let logo: Awaited<ReturnType<typeof loadImage>> | null = null;
-  try {
-    logo = await loadImage(readFileSync(/*turbopackIgnore: true*/ LESENO_LOGO_PATH));
-  } catch {
-    logo = null;
-  }
-
-  const gap = Math.round(size * 0.012);
-  const labelW = measureLineWidth(font, brandLabel, brandFontSize);
-  const clusterW = (logo ? logoSize + gap : 0) + labelW;
-  let cursorX = (size - clusterW) / 2;
-  const midY = footerY + footerH / 2;
-
-  if (logo) {
-    ctx.drawImage(
-      logo,
-      cursorX,
-      midY - logoSize / 2,
-      logoSize,
-      logoSize,
-    );
-    cursorX += logoSize + gap;
-  }
-
-  ctx.fillStyle = "#fafafa";
-  // Left-aligned baseline for the wordmark next to the logo.
-  const scale = brandFontSize / font.unitsPerEm;
-  let x = cursorX;
-  const baselineY = midY + brandFontSize * 0.35;
-  for (const ch of brandLabel) {
-    const glyph = font.charToGlyph(ch);
-    const otPath = glyph.getPath(x, baselineY, brandFontSize);
-    ctx.beginPath();
-    for (const cmd of otPath.commands) {
-      if (cmd.type === "M") ctx.moveTo(cmd.x, cmd.y);
-      else if (cmd.type === "L") ctx.lineTo(cmd.x, cmd.y);
-      else if (cmd.type === "C") {
-        ctx.bezierCurveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
-      } else if (cmd.type === "Q") {
-        ctx.quadraticCurveTo(cmd.x1, cmd.y1, cmd.x, cmd.y);
-      } else if (cmd.type === "Z") ctx.closePath();
-    }
-    ctx.fill();
-    x += (glyph.advanceWidth ?? 0) * scale;
-  }
+  await drawBrandFooter(ctx, font, size, footerY, footerH);
 
   const out = canvas.toBuffer("image/jpeg", 88);
   return `data:image/jpeg;base64,${out.toString("base64")}`;
 }
 
 /**
+ * Frage posts: fixed `public/bg3.jpg`, question in orange-800 bold,
+ * centered above the brand footer (logo + leseno).
+ */
+async function overlayFrageStyle(input: {
+  overlayText: string;
+  /** Optional base — defaults to bg3.jpg when omitted. */
+  imageDataUrl?: string;
+}): Promise<string> {
+  const text = input.overlayText.trim().replace(/\s+/g, " ");
+  if (!text) {
+    throw new Error("Frage fehlt für das Overlay.");
+  }
+
+  const font = getNunitoFont();
+  let image: Image;
+  if (input.imageDataUrl?.startsWith("data:")) {
+    const { buffer } = parseDataUrl(input.imageDataUrl);
+    image = await loadImage(buffer);
+  } else {
+    try {
+      image = await loadImage(
+        readFileSync(/*turbopackIgnore: true*/ FRAGE_BG_PATH),
+      );
+    } catch (error) {
+      throw new Error(
+        `Frage-Hintergrund fehlt unter ${FRAGE_BG_PATH}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  const size = MARKETING_SOCIAL_IMAGE_PX;
+  const canvas = createCanvas(size, size);
+  const ctx = canvas.getContext("2d");
+  drawCoverSquare(ctx, image, size);
+
+  const footerH = Math.round(size * 0.078);
+  const footerY = size - footerH;
+  const contentH = footerY;
+
+  const padX = Math.round(size * 0.08);
+  const maxTextWidth = size - padX * 2;
+  let fontSize = Math.round(size * 0.078); // ~80px at 1024
+  fontSize = Math.min(FRAGE_TEXT_BASE_PX + 8, Math.max(56, fontSize));
+  let lines = wrapLines(font, text, fontSize, maxTextWidth);
+  // Prefer large type; shrink only if the question won't fit in 4 lines.
+  for (let attempt = 0; attempt < 10 && lines.length > 4; attempt++) {
+    fontSize = Math.max(48, fontSize - 4);
+    lines = wrapLines(font, text, fontSize, maxTextWidth);
+  }
+
+  const lineHeight = Math.round(fontSize * 1.2);
+  const blockHeight = lines.length * lineHeight;
+  // Vertically center in the area above the footer.
+  const firstBaseline =
+    contentH / 2 - blockHeight / 2 + fontSize * 0.8;
+
+  ctx.fillStyle = FRAGE_TEXT_COLOR;
+  ctx.strokeStyle = FRAGE_TEXT_COLOR;
+  for (let i = 0; i < lines.length; i++) {
+    fillNunitoLineBold(
+      ctx,
+      font,
+      lines[i]!,
+      fontSize,
+      size / 2,
+      firstBaseline + i * lineHeight,
+    );
+  }
+
+  await drawBrandFooter(ctx, font, size, footerY, footerH);
+
+  const out = canvas.toBuffer("image/jpeg", 90);
+  return `data:image/jpeg;base64,${out.toString("base64")}`;
+}
+
+/**
  * Draws `overlayText` exactly (no paraphrase).
- * `style: "marketing"` → 1024² cover, zinc-700/80 checklist card + light orange type + solid zinc-700 footer.
+ * `style: "marketing"` → checklist card; `style: "frage"` → bg3 + centered question.
  */
 export async function overlayExactAngleTextOnImage(input: {
   imageDataUrl: string;
   overlayText: string;
-  style?: "winkel" | "marketing";
+  style?: "winkel" | "marketing" | "frage";
 }): Promise<string> {
   if (input.style === "marketing") {
     return overlayMarketingStyle(input);
   }
+  if (input.style === "frage") {
+    return overlayFrageStyle({
+      overlayText: input.overlayText,
+      imageDataUrl: input.imageDataUrl,
+    });
+  }
   return overlayWinkelStyle(input);
+}
+
+/**
+ * Composites the Frage question onto the fixed brand background (`public/bg3.jpg`).
+ */
+export async function composeFrageImage(question: string): Promise<string> {
+  return overlayFrageStyle({ overlayText: question });
 }

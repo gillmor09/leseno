@@ -8,9 +8,11 @@ import { revalidatePath } from "next/cache";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
   generateSocialCaption,
+  generateSocialFrageQuestion,
   generateSocialImage,
   refineSocialCaption,
 } from "@/lib/social/generate";
+import { isFrageAngleId } from "@/lib/social/frage";
 import { getMarketingTopicByAngleId } from "@/lib/social/marketing-features";
 import { getMotivationAngleById } from "@/lib/social/motivation";
 import {
@@ -34,6 +36,7 @@ import {
   socialCommitPostSchema,
   socialDeletePostSchema,
   socialGenerateCaptionSchema,
+  socialGenerateFrageSchema,
   socialGenerateImageSchema,
   socialGlobalSettingsSchema,
   socialRefineCaptionSchema,
@@ -70,6 +73,9 @@ function assertTopicId(
     return getMarketingTopicByAngleId(angleId)
       ? null
       : "1–2 Funktionen für Marketing wählen.";
+  }
+  if (postKind === "frage") {
+    return isFrageAngleId(angleId) ? null : "Frage-ID fehlt.";
   }
   return getMotivationAngleById(angleId) ? null : "Unbekannter Winkel.";
 }
@@ -146,9 +152,12 @@ export async function generateSocialCaptionAction(
     };
   }
 
-  const { postDate, channel, angleId, postKind } = parsed.data;
+  const { postDate, channel, angleId, postKind, frageQuestion } = parsed.data;
   const topicError = assertTopicId(postKind, angleId);
   if (topicError) return { success: false, error: topicError };
+  if (postKind === "frage" && !frageQuestion?.trim()) {
+    return { success: false, error: "Frage fehlt — zuerst Frage erzeugen." };
+  }
 
   try {
     const global = await getSocialGlobalSettings();
@@ -160,6 +169,7 @@ export async function generateSocialCaptionAction(
       postDate,
       angleId,
       postKind,
+      frageQuestion,
     });
     // Draft only — DB write happens in commitSocialPostAction („Übernehmen“).
     return {
@@ -178,6 +188,40 @@ export async function generateSocialCaptionAction(
         error instanceof Error
           ? error.message
           : "Textgenerierung fehlgeschlagen.",
+    };
+  }
+}
+
+/** Generates only the overlay question for Frage posts (before caption). */
+export async function generateSocialFrageAction(
+  input: unknown,
+): Promise<ActionResult<{ question: string }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = socialGenerateFrageSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const global = await getSocialGlobalSettings();
+    const { question } = await generateSocialFrageQuestion({
+      storyline: global.storyline,
+      postDate: parsed.data.postDate,
+    });
+    return { success: true, data: { question } };
+  } catch (error) {
+    console.error("[generateSocialFrageAction]", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Frage-Generierung fehlgeschlagen.",
     };
   }
 }
@@ -321,9 +365,24 @@ export async function generateSocialImageAction(
       parsed.data.angleId,
       parsed.data.postKind,
     );
+
+    const frageQuestion =
+      parsed.data.frageQuestion?.trim() ||
+      (parsed.data.postKind === "frage"
+        ? existing?.lastImagePrompt?.trim()
+        : "") ||
+      "";
+
+    if (parsed.data.postKind === "frage" && !frageQuestion) {
+      return {
+        success: false,
+        error: "Frage fehlt — zuerst Frage erzeugen.",
+      };
+    }
+
     const caption =
       parsed.data.caption?.trim() || existing?.caption?.trim() || "";
-    if (!caption) {
+    if (parsed.data.postKind !== "frage" && !caption) {
       return {
         success: false,
         error: "Kein Text für die Bildszene — zuerst Caption erzeugen.",
@@ -340,15 +399,19 @@ export async function generateSocialImageAction(
         angleId: parsed.data.angleId,
         postKind: parsed.data.postKind,
         extraInstruction: parsed.data.extraInstruction,
+        frageQuestion,
       },
     );
-    const lastImagePrompt = [
-      "— Gemini Szene —",
-      sceneDescription,
-      "",
-      "— FLUX Prompt —",
-      promptUsed,
-    ].join("\n");
+    const lastImagePrompt =
+      parsed.data.postKind === "frage"
+        ? frageQuestion
+        : [
+            "— Gemini Szene —",
+            sceneDescription,
+            "",
+            "— FLUX Prompt —",
+            promptUsed,
+          ].join("\n");
     // Draft only — DB write happens in commitSocialPostAction („Übernehmen“).
     return {
       success: true,
@@ -392,13 +455,27 @@ export async function commitSocialPostAction(
   if (topicError) return { success: false, error: topicError };
 
   try {
+    const lastImagePrompt =
+      parsed.data.postKind === "frage"
+        ? (parsed.data.frageQuestion?.trim() ||
+            parsed.data.lastImagePrompt?.trim() ||
+            null)
+        : (parsed.data.lastImagePrompt ?? null);
+
+    if (parsed.data.postKind === "frage" && !lastImagePrompt) {
+      return {
+        success: false,
+        error: "Frage fehlt — zuerst Frage erzeugen.",
+      };
+    }
+
     const post = await upsertSocialPost({
       yearMonth: yearMonthFromPostDate(parsed.data.postDate),
       postDate: parsed.data.postDate,
       channel: parsed.data.channel,
       caption: parsed.data.caption,
       imageDataUrl: parsed.data.imageDataUrl ?? null,
-      lastImagePrompt: parsed.data.lastImagePrompt ?? null,
+      lastImagePrompt,
       angleId: parsed.data.angleId,
       postKind: parsed.data.postKind,
     });

@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import {
   commitSocialPostAction,
   generateSocialCaptionAction,
+  generateSocialFrageAction,
   generateSocialImageAction,
   deleteSocialPostAction,
   loadSocialWorkspaceAction,
@@ -18,6 +19,10 @@ import {
 } from "@/app/actions/social-admin";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import {
+  frageDisplayTitle,
+  newFrageAngleId,
+} from "@/lib/social/frage";
 import {
   buildMarketingAngleId,
   getMarketingTopicByAngleId,
@@ -47,6 +52,7 @@ import { cn } from "@/lib/utils";
 const CHANNEL = "instagram" as const;
 
 type GenerateConfirm =
+  | { kind: "frage" }
   | { kind: "text" }
   | { kind: "image" };
 
@@ -212,6 +218,8 @@ export function SocialMediaAdminForm({
   const [marketingFeatures, setMarketingFeatures] = useState<
     MarketingFeatureId[]
   >(["wissen"]);
+  const [frageAngleId, setFrageAngleId] = useState(newFrageAngleId);
+  const [frageDraft, setFrageDraft] = useState("");
   const [captionDraft, setCaptionDraft] = useState("");
   const [imageDraft, setImageDraft] = useState<string | null>(null);
   const [lastImagePromptDraft, setLastImagePromptDraft] = useState<
@@ -234,7 +242,11 @@ export function SocialMediaAdminForm({
   }, [marketingFeatures]);
 
   const effectiveAngleId =
-    postKind === "marketing" ? marketingAngleId : angleId;
+    postKind === "marketing"
+      ? marketingAngleId
+      : postKind === "frage"
+        ? frageAngleId
+        : angleId;
 
   const activePost = useMemo(
     () =>
@@ -279,7 +291,9 @@ export function SocialMediaAdminForm({
   const topicTitle =
     postKind === "marketing"
       ? (selectedMarketing?.title ?? "Funktionen wählen")
-      : (selectedAngle?.title ?? angleId);
+      : postKind === "frage"
+        ? frageDisplayTitle(frageDraft)
+        : (selectedAngle?.title ?? angleId);
 
   const mergePost = useCallback((post: SocialPost) => {
     setPosts((prev) => {
@@ -315,11 +329,17 @@ export function SocialMediaAdminForm({
     setCaptionDraft(activePost?.caption ?? "");
     setImageDraft(activePost?.imageDataUrl ?? null);
     setLastImagePromptDraft(activePost?.lastImagePrompt ?? null);
+    if (postKind === "frage") {
+      if (activePost?.angleId) setFrageAngleId(activePost.angleId);
+      setFrageDraft(activePost?.lastImagePrompt ?? "");
+    }
     // Sync when create-form topic changes — not on every posts reload while drafting.
   }, [postDate, postKind, effectiveAngleId, activePost?.id, activePost?.updatedAt]);
 
   const hasCreateDraft =
-    Boolean(captionDraft.trim()) || Boolean(imageDraft?.trim());
+    Boolean(captionDraft.trim()) ||
+    Boolean(imageDraft?.trim()) ||
+    Boolean(frageDraft.trim());
   const previewImage = imageDraft;
 
   const busy = pending || loadPending || Boolean(waitStatus);
@@ -335,16 +355,29 @@ export function SocialMediaAdminForm({
     }
     const dateLabel = formatDeDate(postDate);
     const kindLabel = SOCIAL_POST_KIND_LABELS[postKind];
+    if (generateConfirm.kind === "frage") {
+      return {
+        title: "Frage erzeugen?",
+        description: `Motivierende/provokante Lesefrage für ${dateLabel}\n\nNur Entwurf — Speichern erst mit „Übernehmen“.\n\nKI-Modell: ${textModelLine}`,
+        confirmLabel: "Frage erzeugen",
+      };
+    }
     if (generateConfirm.kind === "text") {
       return {
         title: "Text erzeugen?",
-        description: `Caption für ${dateLabel}\n${kindLabel}: ${topicTitle}\n\nNur Entwurf — Speichern erst mit „Übernehmen“.\n\nKI-Modell: ${textModelLine}`,
+        description:
+          postKind === "frage"
+            ? `Caption als Antwort auf die Frage\n${kindLabel}: ${topicTitle}\n\nNur Entwurf — Speichern erst mit „Übernehmen“.\n\nKI-Modell: ${textModelLine}`
+            : `Caption für ${dateLabel}\n${kindLabel}: ${topicTitle}\n\nNur Entwurf — Speichern erst mit „Übernehmen“.\n\nKI-Modell: ${textModelLine}`,
         confirmLabel: "Text erzeugen",
       };
     }
     return {
       title: "Bild erzeugen?",
-      description: `Bild für ${dateLabel}\n${kindLabel}: ${topicTitle}\n\nNur Entwurf — Speichern erst mit „Übernehmen“.\n\nSzenenplanung: ${textModelLine}\nBildpixel: ${imageModelLine}`,
+      description:
+        postKind === "frage"
+          ? `Festes Hintergrundbild (bg3) + Frage als Overlay\n${kindLabel}: ${topicTitle}\n\nKein KI-Bild — nur Vorlage + Schrift.`
+          : `Bild für ${dateLabel}\n${kindLabel}: ${topicTitle}\n\nNur Entwurf — Speichern erst mit „Übernehmen“.\n\nSzenenplanung: ${textModelLine}\nBildpixel: ${imageModelLine}`,
       confirmLabel: "Bild erzeugen",
     };
   }, [
@@ -375,6 +408,9 @@ export function SocialMediaAdminForm({
     if (post.postKind === "marketing" && post.angleId) {
       const features = parseMarketingAngleId(post.angleId);
       if (features?.length) setMarketingFeatures(features);
+    } else if (post.postKind === "frage" && post.angleId) {
+      setFrageAngleId(post.angleId);
+      setFrageDraft(post.lastImagePrompt ?? "");
     } else if (post.angleId) {
       setAngleId(post.angleId);
     }
@@ -407,6 +443,8 @@ export function SocialMediaAdminForm({
     setCaptionDraft("");
     setImageDraft(null);
     setLastImagePromptDraft(null);
+    setFrageDraft("");
+    setFrageAngleId(newFrageAngleId());
     setPostDate(todayIsoDate());
     setPostKind("winkel");
     setAngleId(SOCIAL_SELECTABLE_ANGLES[0]?.id ?? "");
@@ -424,16 +462,48 @@ export function SocialMediaAdminForm({
     setGenerateConfirm(null);
     if (!job) return;
 
+    if (job.kind === "frage") {
+      setWaitStatus("Frage wird erzeugt …");
+      void (async () => {
+        try {
+          if (!(await persistGlobal())) return;
+          const result = await generateSocialFrageAction({
+            postDate,
+            channel: CHANNEL,
+          });
+          if (!result.success || !result.data) {
+            toast.error(result.error ?? "Fehler");
+            return;
+          }
+          if (!frageAngleId.trim()) setFrageAngleId(newFrageAngleId());
+          setFrageDraft(result.data.question);
+          setCaptionDraft("");
+          setImageDraft(null);
+          setLastImagePromptDraft(result.data.question);
+          toast.success("Frage erzeugt (Entwurf).");
+        } finally {
+          setWaitStatus(null);
+        }
+      })();
+      return;
+    }
+
     if (!effectiveAngleId.trim()) {
       toast.error(
         postKind === "marketing"
           ? "Bitte 1–2 Funktionen wählen."
-          : "Bitte einen Winkel wählen.",
+          : postKind === "frage"
+            ? "Bitte zuerst eine Frage erzeugen."
+            : "Bitte einen Winkel wählen.",
       );
       return;
     }
 
     if (job.kind === "text") {
+      if (postKind === "frage" && !frageDraft.trim()) {
+        toast.error("Bitte zuerst eine Frage erzeugen.");
+        return;
+      }
       setWaitStatus("Text wird erzeugt …");
       void (async () => {
         try {
@@ -443,6 +513,7 @@ export function SocialMediaAdminForm({
             angleId: effectiveAngleId,
             postKind,
             channel: CHANNEL,
+            frageQuestion: postKind === "frage" ? frageDraft : undefined,
           });
           if (!result.success || !result.data) {
             toast.error(result.error ?? "Fehler");
@@ -457,7 +528,14 @@ export function SocialMediaAdminForm({
       return;
     }
 
-    setWaitStatus("Bild wird erzeugt …");
+    if (postKind === "frage" && !frageDraft.trim()) {
+      toast.error("Bitte zuerst eine Frage erzeugen.");
+      return;
+    }
+
+    setWaitStatus(
+      postKind === "frage" ? "Bild wird zusammengesetzt …" : "Bild wird erzeugt …",
+    );
     void (async () => {
       try {
         if (!(await persistGlobal())) return;
@@ -467,6 +545,7 @@ export function SocialMediaAdminForm({
           postKind,
           channel: CHANNEL,
           caption: captionDraft,
+          frageQuestion: postKind === "frage" ? frageDraft : undefined,
         });
         if (!result.success || !result.data) {
           toast.error(result.error ?? "Fehler");
@@ -474,7 +553,11 @@ export function SocialMediaAdminForm({
         }
         setImageDraft(result.data.imageDataUrl);
         setLastImagePromptDraft(result.data.lastImagePrompt);
-        toast.success("Bild erzeugt (Entwurf).");
+        toast.success(
+          postKind === "frage"
+            ? "Bild aus Vorlage erzeugt (Entwurf)."
+            : "Bild erzeugt (Entwurf).",
+        );
       } finally {
         setWaitStatus(null);
       }
@@ -486,8 +569,14 @@ export function SocialMediaAdminForm({
       toast.error(
         postKind === "marketing"
           ? "Bitte 1–2 Funktionen wählen."
-          : "Bitte einen Winkel wählen.",
+          : postKind === "frage"
+            ? "Bitte zuerst eine Frage erzeugen."
+            : "Bitte einen Winkel wählen.",
       );
+      return;
+    }
+    if (postKind === "frage" && !frageDraft.trim()) {
+      toast.error("Frage fehlt — zuerst Frage erzeugen.");
       return;
     }
     if (!captionDraft.trim()) {
@@ -499,14 +588,36 @@ export function SocialMediaAdminForm({
     void (async () => {
       try {
         if (!(await persistGlobal())) return;
+        let imageDataUrl = imageDraft;
+        let lastImagePrompt = lastImagePromptDraft;
+        // Frage: ensure image exists before commit (compose from bg3 if needed).
+        if (postKind === "frage" && !imageDataUrl?.trim()) {
+          const imageResult = await generateSocialImageAction({
+            postDate,
+            angleId: effectiveAngleId,
+            postKind,
+            channel: CHANNEL,
+            caption: captionDraft,
+            frageQuestion: frageDraft,
+          });
+          if (!imageResult.success || !imageResult.data) {
+            toast.error(imageResult.error ?? "Bild konnte nicht erzeugt werden.");
+            return;
+          }
+          imageDataUrl = imageResult.data.imageDataUrl;
+          lastImagePrompt = imageResult.data.lastImagePrompt;
+          setImageDraft(imageDataUrl);
+          setLastImagePromptDraft(lastImagePrompt);
+        }
         const result = await commitSocialPostAction({
           postDate,
           angleId: effectiveAngleId,
           postKind,
           channel: CHANNEL,
           caption: captionDraft,
-          imageDataUrl: imageDraft,
-          lastImagePrompt: lastImagePromptDraft,
+          imageDataUrl,
+          lastImagePrompt,
+          frageQuestion: postKind === "frage" ? frageDraft : undefined,
         });
         if (!result.success || !result.data) {
           toast.error(result.error ?? "Speichern fehlgeschlagen.");
@@ -553,7 +664,8 @@ export function SocialMediaAdminForm({
             </h2>
             <p className="mt-1 text-sm text-zinc-600">
               Stimme & Bild-Stil für Winkel-Posts. Marketing nutzt dieselben Figuren
-              (Wiedererkennung), aber freiere Produkt-Inszenierung. Inhalt: Winkel auf{" "}
+              (Wiedererkennung), aber freiere Produkt-Inszenierung. Frage nutzt
+              festes Hintergrundbild. Inhalt: Winkel auf{" "}
               <a
                 href="/motivation"
                 className="font-semibold text-orange-700 underline-offset-2 hover:underline"
@@ -686,9 +798,9 @@ export function SocialMediaAdminForm({
               Beitrag erstellen
             </h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Post-Art wählen: Winkel (Lesemotivation) oder Marketing (1–2
-              Funktionen + softes CTA). Mehrere Beiträge pro Tag möglich, solange
-              Thema/Art anders ist.
+              Post-Art: Winkel, Marketing (1–2 Funktionen) oder Frage (Frage →
+              Antwort-Caption → festes Bild). Mehrere Beiträge pro Tag möglich,
+              solange Thema/Art anders ist.
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
@@ -711,12 +823,17 @@ export function SocialMediaAdminForm({
         {createOpen ? (
           <div className="border-t border-zinc-950/10 px-6 pb-6 pt-4">
             <div className="flex flex-wrap gap-2">
-              {(["winkel", "marketing"] as const).map((kind) => (
+              {(["winkel", "marketing", "frage"] as const).map((kind) => (
                 <button
                   key={kind}
                   type="button"
                   disabled={busy || !canSave}
-                  onClick={() => setPostKind(kind)}
+                  onClick={() => {
+                    setPostKind(kind);
+                    if (kind === "frage" && !frageAngleId.trim()) {
+                      setFrageAngleId(newFrageAngleId());
+                    }
+                  }}
                   className={cn(
                     "rounded-full px-4 py-2 text-sm font-bold ring-1 transition-colors disabled:opacity-60",
                     postKind === kind
@@ -784,7 +901,7 @@ export function SocialMediaAdminForm({
                     </optgroup>
                   </select>
                 </label>
-              ) : (
+              ) : postKind === "marketing" ? (
                 <div className="sm:col-span-1">
                   <p className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
                     Funktionen (1–2)
@@ -794,6 +911,15 @@ export function SocialMediaAdminForm({
                     {marketingAngleId && anglesUsedToday.has(marketingAngleId)
                       ? " · Kombination heute schon"
                       : ""}
+                  </p>
+                </div>
+              ) : (
+                <div className="sm:col-span-1">
+                  <p className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                    Ablauf
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-zinc-500">
+                    1) Frage · 2) Antwort-Caption · 3) Bild (bg3)
                   </p>
                 </div>
               )}
@@ -877,6 +1003,17 @@ export function SocialMediaAdminForm({
               </p>
             ) : null}
 
+            {postKind === "frage" && frageDraft.trim() ? (
+              <p className="mt-3 rounded-2xl bg-zinc-100 px-4 py-3 text-sm leading-relaxed text-zinc-900 ring-1 ring-zinc-950/10">
+                <span className="text-xs font-bold tracking-wide text-zinc-500 uppercase">
+                  Overlay-Frage
+                </span>
+                <span className="mt-1 block font-extrabold text-zinc-800">
+                  {frageDraft.trim()}
+                </span>
+              </p>
+            ) : null}
+
             {activePost ? (
               <p className="mt-3 text-sm font-semibold text-zinc-600">
                 Dieses Thema existiert an diesem Tag schon — „Übernehmen“
@@ -890,11 +1027,32 @@ export function SocialMediaAdminForm({
             ) : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
+              {postKind === "frage" ? (
+                <button
+                  type="button"
+                  disabled={busy || !canSave}
+                  onClick={() => setGenerateConfirm({ kind: "frage" })}
+                  className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
+                >
+                  Frage erzeugen
+                </button>
+              ) : null}
               <button
                 type="button"
-                disabled={busy || !canSave || !effectiveAngleId}
+                disabled={
+                  busy ||
+                  !canSave ||
+                  (postKind === "frage"
+                    ? !frageDraft.trim()
+                    : !effectiveAngleId)
+                }
                 onClick={() => setGenerateConfirm({ kind: "text" })}
                 className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
+                title={
+                  postKind === "frage" && !frageDraft.trim()
+                    ? "Zuerst Frage erzeugen"
+                    : undefined
+                }
               >
                 Text erzeugen
               </button>
@@ -903,13 +1061,20 @@ export function SocialMediaAdminForm({
                 disabled={
                   busy ||
                   !canSave ||
-                  !effectiveAngleId ||
-                  !captionDraft.trim()
+                  (postKind === "frage"
+                    ? !frageDraft.trim()
+                    : !effectiveAngleId || !captionDraft.trim())
                 }
                 onClick={() => setGenerateConfirm({ kind: "image" })}
                 className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-60"
                 title={
-                  !captionDraft.trim() ? "Zuerst Text erzeugen" : undefined
+                  postKind === "frage"
+                    ? !frageDraft.trim()
+                      ? "Zuerst Frage erzeugen"
+                      : undefined
+                    : !captionDraft.trim()
+                      ? "Zuerst Text erzeugen"
+                      : undefined
                 }
               >
                 Bild erzeugen
@@ -922,7 +1087,11 @@ export function SocialMediaAdminForm({
               </p>
               <CopyableCaption
                 text={captionDraft}
-                emptyHint="Noch kein Text — „Text erzeugen“ starten."
+                emptyHint={
+                  postKind === "frage"
+                    ? "Noch kein Text — zuerst Frage, dann „Text erzeugen“."
+                    : "Noch kein Text — „Text erzeugen“ starten."
+                }
                 className="mt-1 min-h-[8rem] rounded-xl border border-zinc-950/10 bg-zinc-50 px-3 py-2"
               />
             </div>
@@ -972,9 +1141,14 @@ export function SocialMediaAdminForm({
                 ? post.angleId
                   ? getMarketingTopicByAngleId(post.angleId)
                   : null
-                : post.angleId
-                  ? getMotivationAngleById(post.angleId)
-                  : null;
+                : post.postKind === "frage"
+                  ? {
+                      title: frageDisplayTitle(post.lastImagePrompt),
+                      insight: post.lastImagePrompt ?? "",
+                    }
+                  : post.angleId
+                    ? getMotivationAngleById(post.angleId)
+                    : null;
             const open = expandedId === post.id;
             return (
               <article
@@ -1089,9 +1263,11 @@ export function SocialMediaAdminForm({
                 const topic =
                   deleteTarget.postKind === "marketing" && deleteTarget.angleId
                     ? getMarketingTopicByAngleId(deleteTarget.angleId)?.title
-                    : deleteTarget.angleId
-                      ? getMotivationAngleById(deleteTarget.angleId)?.title
-                      : null;
+                    : deleteTarget.postKind === "frage"
+                      ? frageDisplayTitle(deleteTarget.lastImagePrompt)
+                      : deleteTarget.angleId
+                        ? getMotivationAngleById(deleteTarget.angleId)?.title
+                        : null;
                 return `Der Social-Media-Beitrag vom ${formatDeDate(deleteTarget.postDate)} (${SOCIAL_POST_KIND_LABELS[deleteTarget.postKind]}${topic ? ` · ${topic}` : ""}) wird dauerhaft gelöscht — Text und Bild inklusive.`;
               })()
             : ""

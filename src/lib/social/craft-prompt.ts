@@ -57,6 +57,14 @@ const MARKETING_HASHTAG_RULES = `Hashtags (Pflicht, ganz am Ende nach einer Leer
 - Keine generischen Spam-Tags (#love #instagood), keine Marken-Konkurrenz, keine Politik.
 - Keine doppelten Tags, keine Satzzeichen in Tags.`;
 
+const DEFAULT_FRAGE_FORMAT = `Aufbau der Caption (Antwort auf die Frage):
+1) Kurzer Bezug zur Frage (1 Zeile) — nicht die Frage wiederholen
+2) Strukturierte Antwort mit 2–4 konkreten leseno-Lösungen/Funktionen (kurze Aufzählung oder Absätze)
+3) Softes CTA — wähle EINES: „Seite besuchen“ (leseno.de) ODER „kostenlos ausprobieren“
+4) Leerzeile, dann 3–5 passende Hashtags (Pflicht, inkl. #leseno)
+Länge: eher kurz. Deutsch. Kein Hard-Sell.`;
+
+
 export function buildCraftCaptionPrompt(input: {
   storyline: string;
   craft: SocialChannelCraft;
@@ -231,6 +239,83 @@ ${MARKETING_HASHTAG_RULES}
 
 # Bisheriger Text
 ${input.currentCaption.trim()}`;
+
+  return { systemInstruction, userText };
+}
+
+/**
+ * Generates a single motivating/provocative reading question for kids —
+ * one that leseno can answer with product solutions.
+ */
+export function buildFrageQuestionPrompt(input: {
+  storyline: string;
+  postDate: string;
+  dayIndex: number;
+  daysInMonth: number;
+}): { systemInstruction: string; userText: string } {
+  const extraNotes = input.storyline.trim();
+  const systemInstruction = `Du schreibst Social-Media-Fragen für leseno (Lesen für Kinder und Familien).
+
+# Nordstern
+${LESENO_READING_MANIFESTO}
+
+# Aufgabe
+Formuliere GENAU EINE motivierende oder leicht provokante Frage zum Thema Lesen mit Kindern.
+Die Frage muss so sein, dass leseno eine klare Produkt-Antwort/Lösung bieten kann
+(z. B. personalisierte Geschichten, Lesemodus, Meine Welt, Wissen, Spaß ohne Druck, Buchclub).
+
+Regeln:
+- Nur die Frage zurückgeben — kein Anführungszeichen um den ganzen Text, keine Erklärung, keine Caption.
+- Deutsch, Du-Ansprache an Eltern.
+- Max. 1–2 kurze Zeilen, ideal als großes Overlay auf einem Bild.
+- Kein Soft-Sell in der Frage selbst, kein Markenname „leseno“ in der Frage.
+- Keine Ja/Nein-Flachfragen ohne Spannungsbogen.`;
+
+  const userText = `Schreibe die Frage für den ${input.postDate} (Tag ${input.dayIndex}/${input.daysInMonth}).
+Variiere gegenüber typischen Lesefragen (nicht immer „Liest ihr genug?“).
+${extraNotes ? `\nRedaktionsnotiz (nachrangig):\n${extraNotes}\n` : ""}
+Nur die Frage:`;
+
+  return { systemInstruction, userText };
+}
+
+/**
+ * Caption that answers a Frage post with structured leseno solutions.
+ */
+export function buildFrageCaptionPrompt(input: {
+  storyline: string;
+  channel: SocialChannel;
+  postDate: string;
+  dayIndex: number;
+  daysInMonth: number;
+  question: string;
+}): { systemInstruction: string; userText: string } {
+  const channelLabel = SOCIAL_CHANNEL_LABELS[input.channel];
+  const extraNotes = input.storyline.trim();
+  const systemInstruction = `Du bist Social-Media-Texter:in für leseno (Lesen für Kinder und Familien).
+
+# Nordstern
+${LESENO_READING_MANIFESTO}
+
+# Stimme
+Warm, konkret, einladend. Die Frage beantworten — kein Hard-Sell, kein Pseudo-Coach.
+Antworte ausschließlich mit dem fertigen Beitragstext auf Deutsch — keine Anführungszeichen um den ganzen Text.`;
+
+  const userText = `Erstelle die ${channelLabel}-Caption als Antwort auf diese Overlay-Frage.
+
+# Frage (steht schon auf dem Bild — nicht wörtlich wiederholen)
+${input.question.trim()}
+
+# Format
+${DEFAULT_FRAGE_FORMAT}
+
+# Pflicht
+- Beantworte die Frage mit 2–4 greifbaren leseno-Lösungen/Funktionen.
+- Softes CTA: Seite besuchen (leseno.de) ODER kostenlos ausprobieren.
+- ${MARKETING_HASHTAG_RULES}
+
+${extraNotes ? `# Redaktionsnotiz (nachrangig)\n${extraNotes}\n` : ""}# Datum
+${input.postDate} (Tag ${input.dayIndex} von ${input.daysInMonth}).`;
 
   return { systemInstruction, userText };
 }
