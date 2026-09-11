@@ -44,6 +44,12 @@ export function LandingFooter() {
             Beispiele
           </Link>
           <Link
+            href="/blog"
+            className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
+          >
+            Blog
+          </Link>
+          <Link
             href="/preise"
             className="text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline"
           >

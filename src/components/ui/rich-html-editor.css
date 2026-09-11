@@ -46,3 +46,90 @@
 .rich-html-quill .ql-snow .ql-toolbar button.ql-active .ql-fill {
   fill: rgb(194 65 12);
 }
+
+/* German size labels */
+.rich-html-quill .ql-snow .ql-picker.ql-size .ql-picker-label::before,
+.rich-html-quill .ql-snow .ql-picker.ql-size .ql-picker-item::before {
+  content: "Normal";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-size .ql-picker-label[data-value="small"]::before,
+.rich-html-quill .ql-snow .ql-picker.ql-size .ql-picker-item[data-value="small"]::before {
+  content: "Klein";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-size .ql-picker-label[data-value="large"]::before,
+.rich-html-quill .ql-snow .ql-picker.ql-size .ql-picker-item[data-value="large"]::before {
+  content: "Groß";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-size .ql-picker-label[data-value="huge"]::before,
+.rich-html-quill .ql-snow .ql-picker.ql-size .ql-picker-item[data-value="huge"]::before {
+  content: "Sehr groß";
+}
+
+/* Table picker labels */
+.rich-html-quill .ql-snow .ql-picker.ql-table {
+  width: 7.5rem;
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-label::before,
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-item::before {
+  content: "Tabelle";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-item[data-value="new"]::before {
+  content: "Einfügen (3×3)";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-item[data-value="row-above"]::before {
+  content: "Zeile darüber";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-item[data-value="row-below"]::before {
+  content: "Zeile darunter";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-item[data-value="col-left"]::before {
+  content: "Spalte links";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-item[data-value="col-right"]::before {
+  content: "Spalte rechts";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-item[data-value="del-row"]::before {
+  content: "Zeile löschen";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-item[data-value="del-col"]::before {
+  content: "Spalte löschen";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-item[data-value="del-table"]::before {
+  content: "Tabelle löschen";
+}
+
+.rich-html-quill .ql-snow .ql-picker.ql-table .ql-picker-options {
+  width: 10rem;
+}
+
+/* Tables + images inside the editor */
+.rich-html-quill .ql-editor table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.rich-html-quill .ql-editor td {
+  border: 1px solid rgb(212 212 216);
+  padding: 0.4rem 0.55rem;
+  min-width: 2.5rem;
+}
+
+.rich-html-quill .ql-editor img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
+}

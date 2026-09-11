@@ -2,8 +2,7 @@
 
 /**
  * GA4 loader on first scroll / pointer / key only.
- * Keeps ~166 KiB gtag off PageSpeed’s unused-JS audit (lab has no interaction).
- * Real visitors who engage still get analytics; pure bounce may not.
+ * Skipped in the Amazon/Fire Capacitor shell (Kids / Appstore rules).
  */
 
 import { useEffect } from "react";
@@ -15,7 +14,34 @@ declare global {
   interface Window {
     dataLayer?: unknown[];
     gtag?: (...args: unknown[]) => void;
+    Capacitor?: {
+      isNativePlatform?: () => boolean;
+      getPlatform?: () => string;
+    };
   }
+}
+
+/**
+ * True for the native Android WebView app (especially Amazon/Fire).
+ * Browser visitors on leseno.de keep analytics.
+ */
+export function shouldSkipGoogleAnalytics(): boolean {
+  if (typeof window === "undefined") return false;
+
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("leseno_store") === "amazon") return true;
+  } catch {
+    // ignore
+  }
+
+  const ua = navigator.userAgent ?? "";
+  if (/LesenoApp\/Amazon/i.test(ua)) return true;
+
+  // Capacitor injects the bridge into the remote WebView.
+  if (window.Capacitor?.isNativePlatform?.()) return true;
+
+  return false;
 }
 
 function injectGoogleAnalytics(measurementId: string) {
@@ -37,6 +63,7 @@ function injectGoogleAnalytics(measurementId: string) {
 export function GoogleAnalytics() {
   useEffect(() => {
     if (!MEASUREMENT_ID) return;
+    if (shouldSkipGoogleAnalytics()) return;
 
     let loaded = false;
     const load = () => {

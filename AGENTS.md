@@ -2,6 +2,8 @@
 
 Product architecture (layers, pipeline, admin, world, bot guard): **[docs/architecture.md](docs/architecture.md)**.
 
+Android / Play / Fire shell: **[docs/android-stores.md](docs/android-stores.md)** (`mobile/`).
+
 Cursor rules: `.cursor/rules/`. Migrations: `supabase/migrations/`.
 
 <!-- BEGIN:nextjs-agent-rules -->

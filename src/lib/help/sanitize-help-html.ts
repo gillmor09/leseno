@@ -24,7 +24,8 @@ const ALLOWED_TAGS = [
   "span",
 ];
 
-const ALLOWED_ATTR = ["href", "target", "rel", "class"];
+/** `style` / `class` keep Quill size + color formats after sanitize. */
+const ALLOWED_ATTR = ["href", "target", "rel", "class", "style"];
 
 /**
  * Sanitizes Quill HTML for safe help-dialog rendering.

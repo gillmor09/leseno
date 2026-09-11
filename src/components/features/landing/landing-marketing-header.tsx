@@ -100,6 +100,17 @@ export function LandingMarketingHeader({
               {item.label}
             </a>
           ))}
+          <a
+            href="/blog"
+            className={cn(
+              "text-sm font-semibold transition-all duration-200 ease-in-out hover:text-orange-700",
+              pathname.startsWith("/blog")
+                ? "text-orange-800"
+                : "text-zinc-600",
+            )}
+          >
+            Blog
+          </a>
         </nav>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -161,6 +172,18 @@ export function LandingMarketingHeader({
               {item.label}
             </a>
           ))}
+          <a
+            href="/blog"
+            onClick={closeMenu}
+            className={cn(
+              "rounded-xl px-3 py-2.5 text-base font-semibold transition-all duration-200 ease-in-out hover:bg-gray-100",
+              pathname.startsWith("/blog")
+                ? "text-orange-800"
+                : "text-zinc-950",
+            )}
+          >
+            Blog
+          </a>
           <a
             href="/registrieren"
             onClick={closeMenu}

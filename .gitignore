@@ -50,3 +50,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Capacitor / Android (mobile/)
+/mobile/node_modules/
+/mobile/android/.gradle/
+/mobile/android/app/build/
+/mobile/android/build/
+/mobile/android/local.properties
+/mobile/android/keystore.properties
+/mobile/android/app/release/
+/mobile/keystore/
+/mobile/dist/
+/mobile/*.keystore
+/mobile/*.jks
+/mobile/keystore.properties
+*.keystore
+*.jks

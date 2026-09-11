@@ -1,0 +1,23 @@
+{
+  "name": "leseno-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor Android shell for https://leseno.de (Play Store + Amazon Fire)",
+  "scripts": {
+    "sync": "npx cap sync android",
+    "open": "npx cap open android",
+    "build:apk": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-release.ps1",
+    "build:aab": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-release.ps1",
+    "build:release": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-release.ps1"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/app": "^7.1.0",
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/splash-screen": "^7.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3",
+    "typescript": "^5.9.2"
+  }
+}
