@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * GA4 loader: after first interaction or a short idle timeout.
- * Skipped in the Amazon/Fire Capacitor shell (Kids / Appstore rules).
- * Sends page_view on App Router navigations once loaded.
+ * GA4 loader for leseno.de (skipped in Amazon/Fire Capacitor shell).
+ * Critical: the gtag stub must `dataLayer.push(arguments)` — not a rest Array —
+ * or queued config/page_view commands are ignored when gtag.js drains the queue.
  */
 
 import { usePathname, useSearchParams } from "next/navigation";
@@ -12,12 +12,9 @@ import { Suspense, useEffect, useRef } from "react";
 const MEASUREMENT_ID =
   process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() ?? "";
 
-/** Load even without interaction so Realtime / first paint still count. */
-const IDLE_LOAD_MS = 2_500;
-
 declare global {
   interface Window {
-    dataLayer?: unknown[];
+    dataLayer?: IArguments[];
     gtag?: (...args: unknown[]) => void;
     Capacitor?: {
       isNativePlatform?: () => boolean;
@@ -43,99 +40,71 @@ export function shouldSkipGoogleAnalytics(): boolean {
   const ua = navigator.userAgent ?? "";
   if (/LesenoApp\/Amazon/i.test(ua)) return true;
 
-  // Capacitor injects the bridge into the remote WebView.
   if (window.Capacitor?.isNativePlatform?.()) return true;
 
   return false;
 }
 
 function injectGoogleAnalytics(measurementId: string) {
-  if (window.gtag) return;
+  if (document.getElementById("leseno-ga4-gtag")) return;
 
   window.dataLayer = window.dataLayer || [];
-  window.gtag = function gtag(...args: unknown[]) {
-    window.dataLayer?.push(args);
+  // Official GA stub shape — do not replace `arguments` with a rest array.
+  window.gtag = function gtag() {
+    // eslint-disable-next-line prefer-rest-params -- GA queue requires Arguments
+    window.dataLayer!.push(arguments);
   };
+
   window.gtag("js", new Date());
   window.gtag("config", measurementId, {
-    anonymize_ip: true,
     send_page_view: true,
   });
 
   const script = document.createElement("script");
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
+  script.id = "leseno-ga4-gtag";
   script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
   document.head.appendChild(script);
 }
 
 function trackPageView(url: string) {
-  if (!MEASUREMENT_ID || !window.gtag) return;
-  window.gtag("config", MEASUREMENT_ID, {
+  if (!MEASUREMENT_ID || typeof window.gtag !== "function") return;
+  window.gtag("event", "page_view", {
     page_path: url,
-    anonymize_ip: true,
+    page_location: window.location.origin + url,
+    page_title: document.title,
   });
 }
 
-/**
- * Watches App Router URL changes and sends GA4 page_view after the tag is ready.
- */
 function GoogleAnalyticsRouteListener() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const readyRef = useRef(false);
+  const loadedRef = useRef(false);
   const lastPathRef = useRef<string | null>(null);
 
+  // Load GA as soon as the client mounts (browser only; still skipped in app shell).
   useEffect(() => {
     if (!MEASUREMENT_ID) return;
     if (shouldSkipGoogleAnalytics()) return;
+    if (loadedRef.current) return;
 
-    let cancelled = false;
-    let loaded = false;
-    let idleTimer = 0;
-
-    const load = () => {
-      if (loaded || cancelled) return;
-      loaded = true;
-      cleanup();
-      injectGoogleAnalytics(MEASUREMENT_ID);
-      readyRef.current = true;
-      lastPathRef.current =
-        window.location.pathname + window.location.search;
-    };
-
-    const onInteract = () => load();
-
-    function cleanup() {
-      window.removeEventListener("scroll", onInteract);
-      window.removeEventListener("pointerdown", onInteract);
-      window.removeEventListener("keydown", onInteract);
-      if (idleTimer) window.clearTimeout(idleTimer);
-    }
-
-    window.addEventListener("scroll", onInteract, {
-      once: true,
-      passive: true,
-    });
-    window.addEventListener("pointerdown", onInteract, { once: true });
-    window.addEventListener("keydown", onInteract, { once: true });
-    idleTimer = window.setTimeout(load, IDLE_LOAD_MS);
-
-    return () => {
-      cancelled = true;
-      cleanup();
-    };
+    loadedRef.current = true;
+    injectGoogleAnalytics(MEASUREMENT_ID);
+    lastPathRef.current =
+      window.location.pathname + window.location.search;
   }, []);
 
+  // Client-side navigations (App Router).
   useEffect(() => {
     if (!MEASUREMENT_ID) return;
     if (shouldSkipGoogleAnalytics()) return;
+    if (!loadedRef.current) return;
 
     const url =
       pathname +
       (searchParams?.toString() ? `?${searchParams.toString()}` : "");
 
-    // Initial config already sends the first page_view; skip duplicate.
-    if (!readyRef.current) {
+    if (lastPathRef.current === null) {
       lastPathRef.current = url;
       return;
     }
