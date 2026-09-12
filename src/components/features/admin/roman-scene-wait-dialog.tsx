@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Blocking wait dialog for Phase 1–3 (single scene or batch).
+ * Blocking wait dialog for Phase 0 roadmap or Phase 1–3 scene writing.
  * Mid-flight cancel is impossible; batch mode can stop after the current scene.
  */
 
@@ -10,7 +10,7 @@ import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const STEPS = [
+const SCENE_STEPS = [
   "Nächste Szene wird vorbereitet …",
   "KI-Autor schreibt den Entwurf …",
   "Lektor und Testleser prüfen parallel …",
@@ -18,8 +18,16 @@ const STEPS = [
   "Zusammenfassung wird angehängt …",
 ] as const;
 
+const ROADMAP_STEPS = [
+  "Manuskript und Fundament werden gelesen …",
+  "KI zerlegt den Plot in Szenen …",
+  "Roadmap wird gespeichert …",
+] as const;
+
 type RomanSceneWaitDialogProps = {
   open: boolean;
+  /** Phase 0 roadmap vs Phase 1–3 scene writing. */
+  variant?: "scene" | "roadmap";
   /** Batch mode: show overall progress + optional stop. */
   batch?: boolean;
   /** e.g. „Szene 3 von 40 wird geschrieben …“ */
@@ -31,11 +39,13 @@ type RomanSceneWaitDialogProps = {
 
 export function RomanSceneWaitDialog({
   open,
+  variant = "scene",
   batch = false,
   progressLabel = null,
   stopAfterCurrent = false,
   onRequestStopAfterCurrent,
 }: RomanSceneWaitDialogProps) {
+  const steps = variant === "roadmap" ? ROADMAP_STEPS : SCENE_STEPS;
   const [stepIndex, setStepIndex] = useState(0);
 
   useEffect(() => {
@@ -45,24 +55,39 @@ export function RomanSceneWaitDialog({
     }
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const intervalMs = variant === "roadmap" ? 8_000 : 12_000;
     const timer = window.setInterval(() => {
       setStepIndex((current) =>
-        current < STEPS.length - 1 ? current + 1 : current,
+        current < steps.length - 1 ? current + 1 : current,
       );
-    }, 12_000);
+    }, intervalMs);
     return () => {
       document.body.style.overflow = previous;
       window.clearInterval(timer);
     };
-  }, [open]);
+  }, [open, variant, steps.length]);
 
   // Reset inner step animation when a new batch scene starts.
   useEffect(() => {
-    if (!open || !batch) return;
+    if (!open || !batch || variant !== "scene") return;
     setStepIndex(0);
-  }, [open, batch, progressLabel]);
+  }, [open, batch, progressLabel, variant]);
 
   if (!open) return null;
+
+  const title =
+    variant === "roadmap"
+      ? "Szenen-Roadmap wird erzeugt"
+      : batch
+        ? "Roman wird geschrieben"
+        : "Szene wird geschrieben";
+
+  const footerHint =
+    variant === "roadmap"
+      ? "Das kann 1–3 Minuten dauern. Bitte diesen Tab offen lassen — Abbrechen ist nicht möglich."
+      : batch
+        ? "Szenen laufen nacheinander. Tab offen lassen. Stoppen gilt erst nach der aktuellen Szene."
+        : "Das kann einige Minuten dauern. Bitte diesen Tab offen lassen — Abbrechen ist nicht möglich.";
 
   return createPortal(
     <div
@@ -83,9 +108,9 @@ export function RomanSceneWaitDialog({
             id="roman-scene-wait-title"
             className="mt-5 text-xl font-extrabold text-zinc-950"
           >
-            {batch ? "Roman wird geschrieben" : "Szene wird geschrieben"}
+            {title}
           </h2>
-          {progressLabel ? (
+          {progressLabel && variant === "scene" ? (
             <p className="mt-2 text-sm font-extrabold text-orange-800">
               {progressLabel}
             </p>
@@ -94,23 +119,21 @@ export function RomanSceneWaitDialog({
             id="roman-scene-wait-desc"
             className="mt-2 text-sm font-semibold text-zinc-600"
           >
-            {STEPS[stepIndex]}
+            {steps[stepIndex]}
           </p>
           <p className="mt-4 text-xs font-semibold text-zinc-500">
-            {batch
-              ? "Szenen laufen nacheinander. Tab offen lassen. Stoppen gilt erst nach der aktuellen Szene."
-              : "Das kann einige Minuten dauern. Bitte diesen Tab offen lassen — Abbrechen ist nicht möglich."}
+            {footerHint}
           </p>
           <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
             <div
               className="h-full rounded-full bg-orange-600 transition-[width] duration-700 ease-out"
               style={{
-                width: `${Math.round(((stepIndex + 1) / STEPS.length) * 100)}%`,
+                width: `${Math.round(((stepIndex + 1) / steps.length) * 100)}%`,
               }}
             />
           </div>
           <ol className="mt-5 w-full space-y-1.5 text-left text-xs font-semibold text-zinc-500">
-            {STEPS.map((label, index) => (
+            {steps.map((label, index) => (
               <li
                 key={label}
                 className={
@@ -123,7 +146,7 @@ export function RomanSceneWaitDialog({
             ))}
           </ol>
 
-          {batch && onRequestStopAfterCurrent ? (
+          {variant === "scene" && batch && onRequestStopAfterCurrent ? (
             <button
               type="button"
               disabled={stopAfterCurrent}

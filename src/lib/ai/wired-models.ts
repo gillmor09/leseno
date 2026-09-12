@@ -9,6 +9,7 @@ export type WiredAiEndpoint = {
   provider:
     | "gemini"
     | "gemini-image"
+    | "gemini-video"
     | "claude"
     | "openai-compatible"
     | "ionos-image"
@@ -56,6 +57,18 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     provider: "gemini-image",
     label: "Gemini 3 Pro Image (Nano Banana Pro)",
     usage: "Bilder: höchste Qualität",
+  },
+  {
+    modelSlug: "veo-3.1-generate-preview",
+    provider: "gemini-video",
+    label: "Veo 3.1 (Gemini Video)",
+    usage: "Video-Clips: Bild/Video + Prompt → ca. 8s",
+  },
+  {
+    modelSlug: "veo-3.1-fast-generate-preview",
+    provider: "gemini-video",
+    label: "Veo 3.1 Fast (Gemini Video)",
+    usage: "Video-Clips: schneller, ca. 8s",
   },
   {
     modelSlug: "openai/gpt-oss-120b",
@@ -147,5 +160,12 @@ const TTS_PROVIDERS = new Set([
 
 /** True when the wired provider is a Vorlesen / TTS endpoint. */
 export function isTtsProvider(provider: string): boolean {
-  return TTS_PROVIDERS.has(provider.trim());
+  return TTS_PROVIDERS.has(provider.trim().toLowerCase());
+}
+
+const TEXT_LLM_PROVIDERS = new Set(["gemini", "claude", "openai-compatible"]);
+
+/** True when the provider is a text LLM (not image / TTS). */
+export function isTextLlmProvider(provider: string): boolean {
+  return TEXT_LLM_PROVIDERS.has(provider.trim().toLowerCase());
 }

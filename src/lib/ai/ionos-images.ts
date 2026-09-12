@@ -30,11 +30,33 @@ type ImagesGenerationsResponse = {
   }>;
   error?: {
     message?: string;
+    code?: string | number;
+    type?: string;
   };
+  detail?: string | Array<{ msg?: string; type?: string }>;
+  message?: string;
 };
 
+function ionosErrorMessage(
+  payload: ImagesGenerationsResponse,
+  status: number,
+): string {
+  if (payload.error?.message?.trim()) return payload.error.message.trim();
+  if (typeof payload.message === "string" && payload.message.trim()) {
+    return payload.message.trim();
+  }
+  if (typeof payload.detail === "string" && payload.detail.trim()) {
+    return payload.detail.trim();
+  }
+  if (Array.isArray(payload.detail) && payload.detail[0]?.msg) {
+    return payload.detail.map((d) => d.msg).filter(Boolean).join("; ");
+  }
+  return `IONOS-Bildgenerierung fehlgeschlagen (${status}).`;
+}
+
 /**
- * Generates one square illustration and returns a data URL for HTML embedding.
+ * Generates one illustration and returns a data URL for HTML embedding.
+ * FLUX.2 on IONOS: size sides must be multiples of 16 (64–2048).
  */
 export async function generateIonosImage(
   input: IonosImageGenerateInput,
@@ -65,8 +87,7 @@ export async function generateIonosImage(
 
   if (!response.ok || payload.error) {
     throw new Error(
-      payload.error?.message ??
-        `IONOS-Bildgenerierung fehlgeschlagen (${response.status}).`,
+      `${ionosErrorMessage(payload, response.status)} (size=${size})`,
     );
   }
 

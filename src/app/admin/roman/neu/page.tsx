@@ -2,6 +2,10 @@ import type { Metadata } from "next";
 import { RomanAdminWorkspace } from "@/components/features/admin/roman-admin-workspace";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import {
+  listRomanSchreibModels,
+  resolveRomanTextModel,
+} from "@/lib/roman/model";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
@@ -14,8 +18,12 @@ export const maxDuration = 300;
 /**
  * Create a new roman (Phase 0 entry).
  */
-export default function RomanAdminNewPage() {
+export default async function RomanAdminNewPage() {
   const canSave = hasServiceRoleConfig();
+  const [schreibModels, defaultModel] = await Promise.all([
+    listRomanSchreibModels(),
+    resolveRomanTextModel(),
+  ]);
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -34,6 +42,12 @@ export default function RomanAdminNewPage() {
               initialSzenen={[]}
               canSave={canSave}
               isNew
+              schreibModels={schreibModels.map((m) => ({
+                id: m.id,
+                label: m.label,
+                modelSlug: m.modelSlug,
+              }))}
+              defaultSchreibModelId={defaultModel.id}
             />
           </div>
         </section>

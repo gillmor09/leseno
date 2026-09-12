@@ -4,6 +4,10 @@ import { RomanAdminWorkspace } from "@/components/features/admin/roman-admin-wor
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import {
+  listRomanSchreibModels,
+  resolveRomanTextModel,
+} from "@/lib/roman/model";
+import {
   getRomanKontext,
   listSzenen,
 } from "@/lib/roman/repository";
@@ -41,11 +45,20 @@ export default async function RomanAdminDetailPage({ params }: PageProps) {
 
   let roman: Awaited<ReturnType<typeof getRomanKontext>> = null;
   let szenen: Awaited<ReturnType<typeof listSzenen>> = [];
+  let schreibModels: Awaited<ReturnType<typeof listRomanSchreibModels>> = [];
+  let defaultSchreibModelId = "story-default";
 
   try {
     roman = await getRomanKontext(id);
     if (!roman) notFound();
-    szenen = await listSzenen(id);
+    const [scenes, models, defaultModel] = await Promise.all([
+      listSzenen(id),
+      listRomanSchreibModels(),
+      resolveRomanTextModel(),
+    ]);
+    szenen = scenes;
+    schreibModels = models;
+    defaultSchreibModelId = defaultModel.id;
   } catch {
     notFound();
   }
@@ -66,6 +79,12 @@ export default async function RomanAdminDetailPage({ params }: PageProps) {
               initialRoman={roman}
               initialSzenen={szenen}
               canSave={canSave}
+              schreibModels={schreibModels.map((m) => ({
+                id: m.id,
+                label: m.label,
+                modelSlug: m.modelSlug,
+              }))}
+              defaultSchreibModelId={defaultSchreibModelId}
             />
           </div>
         </section>

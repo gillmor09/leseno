@@ -6,20 +6,26 @@
  */
 
 import Link from "next/link";
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   clearRomanCoverAction,
+  clearRomanKapitelAction,
+  clearRomanSzeneAction,
   extractRomanPdfAction,
   generateRomanCoverAction,
   generateRomanFrontMatterAction,
+  generateRomanOutlineAction,
   processNextRomanSzeneAction,
   resetRomanSzeneAction,
   runRomanPhase0Action,
   saveRomanCoverAction,
   saveRomanFrontMatterAction,
+  saveRomanIdeenChatAction,
   saveRomanKontextAction,
 } from "@/app/actions/roman-admin";
+import { RomanIdeaFinder } from "@/components/features/admin/roman-idea-finder";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -45,9 +51,11 @@ import {
   emptySzenenRasterItem,
   suggestFanPersona,
 } from "@/lib/roman/fundament";
+import type { RomanIdeaFoundationFill } from "@/lib/roman/idea-finder";
 import { runAllReadyRomanSzenen } from "@/lib/roman/run-all-scenes";
 import type {
   RomanCharakter,
+  RomanIdeaChatMessage,
   RomanKontext,
   RomanSzenenRasterItem,
   Szene,
@@ -118,16 +126,31 @@ const inputClass =
   "w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700";
 const textareaClass = `${inputClass} font-sans`;
 
+type SchreibModelOption = {
+  id: string;
+  label: string;
+  modelSlug: string;
+};
+
+function schreibModelStorageKey(romanId: string): string {
+  return `leseno.roman.schreibModel.${romanId}`;
+}
+
 export function RomanAdminWorkspace({
   initialRoman,
   initialSzenen,
   canSave,
   isNew = false,
+  schreibModels = [],
+  defaultSchreibModelId = "story-default",
 }: {
   initialRoman: RomanKontext | null;
   initialSzenen: Szene[];
   canSave: boolean;
   isNew?: boolean;
+  /** Active text LLMs for Phase 1–3 (from AI model catalog). */
+  schreibModels?: SchreibModelOption[];
+  defaultSchreibModelId?: string;
 }) {
   const [roman, setRoman] = useState<RomanKontext | null>(initialRoman);
   const [szenen, setSzenen] = useState(initialSzenen);
@@ -179,6 +202,20 @@ export function RomanAdminWorkspace({
   const [coverSavePending, setCoverSavePending] = useState(false);
   const [coverClearOpen, setCoverClearOpen] = useState(false);
   const [coverClearPending, setCoverClearPending] = useState(false);
+  const [sceneDeleteTarget, setSceneDeleteTarget] = useState<{
+    id: string;
+    kapitelNr: number;
+    szenenNr: number;
+  } | null>(null);
+  const [sceneDeletePending, setSceneDeletePending] = useState(false);
+  const [chapterDeleteTarget, setChapterDeleteTarget] = useState<{
+    kapitelNr: number;
+    count: number;
+  } | null>(null);
+  const [chapterDeletePending, setChapterDeletePending] = useState(false);
+  const [frontMatterPending, setFrontMatterPending] = useState(false);
+  const [frontMatterSavePending, setFrontMatterSavePending] = useState(false);
+  const [epubPending, setEpubPending] = useState(false);
   const [autorName, setAutorName] = useState(initialRoman?.autorName ?? "");
   const [buchruecken, setBuchruecken] = useState<RomanBuchruecken>(
     initialRoman?.buchruecken ?? emptyBuchruecken(),
@@ -186,9 +223,32 @@ export function RomanAdminWorkspace({
   const [vorsatz, setVorsatz] = useState<RomanVorsatz>(
     initialRoman?.vorsatz ?? emptyVorsatz(),
   );
-  const [frontMatterPending, setFrontMatterPending] = useState(false);
-  const [frontMatterSavePending, setFrontMatterSavePending] = useState(false);
-  const [epubPending, setEpubPending] = useState(false);
+  const [ideenChat, setIdeenChat] = useState<RomanIdeaChatMessage[]>(
+    initialRoman?.ideenChat ?? [],
+  );
+
+  const initialModelId = useMemo(() => {
+    if (
+      schreibModels.some((m) => m.id === defaultSchreibModelId)
+    ) {
+      return defaultSchreibModelId;
+    }
+    return schreibModels[0]?.id ?? defaultSchreibModelId;
+  }, [schreibModels, defaultSchreibModelId]);
+
+  const [schreibModelId, setSchreibModelId] = useState(initialModelId);
+
+  useEffect(() => {
+    if (!roman?.id || schreibModels.length === 0) return;
+    try {
+      const stored = sessionStorage.getItem(schreibModelStorageKey(roman.id));
+      if (stored && schreibModels.some((m) => m.id === stored)) {
+        setSchreibModelId(stored);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [roman?.id, schreibModels]);
 
   const [openFundament, setOpenFundament] = useState(false);
   const [openChars, setOpenChars] = useState(false);
@@ -211,6 +271,8 @@ export function RomanAdminWorkspace({
   const [savePending, setSavePending] = useState(false);
   const [pdfPending, setPdfPending] = useState(false);
   const [pdfLabel, setPdfLabel] = useState<string | null>(null);
+  const [outlinePending, setOutlinePending] = useState(false);
+  const [outlineOverwriteOpen, setOutlineOverwriteOpen] = useState(false);
   const [exportPending, setExportPending] = useState(false);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
@@ -238,10 +300,13 @@ export function RomanAdminWorkspace({
     scenePending ||
     batchPending ||
     pdfPending ||
+    outlinePending ||
     exportPending ||
     coverPending ||
     coverSavePending ||
     coverClearPending ||
+    sceneDeletePending ||
+    chapterDeletePending ||
     frontMatterPending ||
     frontMatterSavePending ||
     epubPending;
@@ -306,6 +371,70 @@ export function RomanAdminWorkspace({
     toast.success("Fan-Persona aus Genre/Tonalität vorgeschlagen.");
   }
 
+  function applyIdeaFoundation(fill: RomanIdeaFoundationFill) {
+    if (fill.title.trim()) setTitle(fill.title.trim());
+    setGenre(fill.genre);
+    setPraemisse(fill.praemisse);
+    setPerspektive(fill.perspektive);
+    setZeitform(fill.zeitform);
+    setTonalitaet(fill.tonalitaet);
+    if (fill.stilbibel.trim()) setStilbibel(fill.stilbibel);
+    setCharaktere(
+      fill.charaktere.length ? fill.charaktere : [emptyCharakter()],
+    );
+    setWeltSchauplaetze(fill.weltSchauplaetze);
+    setWeltRegeln(fill.weltRegeln);
+    setSzenenRaster(
+      fill.szenenRaster.length
+        ? fill.szenenRaster
+        : [emptySzenenRasterItem()],
+    );
+    setOpenFundament(true);
+    setOpenChars(true);
+    setOpenWelt(true);
+    setOpenRaster(true);
+  }
+
+  async function runOutlineGenerate() {
+    setOutlineOverwriteOpen(false);
+    setOutlinePending(true);
+    const result = await generateRomanOutlineAction({
+      title,
+      stilbibel,
+      genre,
+      praemisse,
+      perspektive,
+      zeitform,
+      tonalitaet,
+      charaktere,
+      weltSchauplaetze,
+      weltRegeln,
+      szenenRaster,
+      kiRegelwerk,
+      fanPersonaName,
+      fanPersonaProfil,
+    });
+    setOutlinePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Outline-Generierung fehlgeschlagen.");
+      return;
+    }
+    setManuskriptRaw(result.data!.outline);
+    setPdfLabel(null);
+    toast.success(
+      "Outline/Exposé erzeugt — bei Bedarf anpassen, dann speichern und Phase 0.",
+    );
+  }
+
+  function handleOutlineGenerateClick() {
+    if (!canSave || busy) return;
+    if (manuskriptRaw.trim().length > 0) {
+      setOutlineOverwriteOpen(true);
+      return;
+    }
+    void runOutlineGenerate();
+  }
+
   async function handlePdfUpload(file: File | null) {
     if (!file || !canSave) return;
     setPdfPending(true);
@@ -334,15 +463,35 @@ export function RomanAdminWorkspace({
     if (!canSave) return;
     setSavePending(true);
     const result = await saveRomanKontextAction(buildPayload());
-    setSavePending(false);
     if (!result.success) {
+      setSavePending(false);
       toast.error(result.error ?? "Speichern fehlgeschlagen.");
       return;
     }
-    setRoman(result.data!.roman);
+    const saved = result.data!.roman;
+    if (ideenChat.length > 0) {
+      const chatResult = await saveRomanIdeenChatAction({
+        romanId: saved.id,
+        messages: ideenChat,
+      });
+      if (!chatResult.success) {
+        setSavePending(false);
+        setRoman({ ...saved, ideenChat });
+        toast.error(
+          chatResult.error ??
+            "Kontext gespeichert, Ideen-Chat aber nicht historisiert.",
+        );
+        if (isNew) {
+          window.location.href = `/admin/roman/${saved.id}`;
+        }
+        return;
+      }
+    }
+    setSavePending(false);
+    setRoman({ ...saved, ideenChat });
     toast.success("Kontext gespeichert.");
-    if (isNew && result.data?.roman.id) {
-      window.location.href = `/admin/roman/${result.data.roman.id}`;
+    if (isNew && saved.id) {
+      window.location.href = `/admin/roman/${saved.id}`;
     }
   }
 
@@ -356,13 +505,23 @@ export function RomanAdminWorkspace({
       return;
     }
     const saved = result.data!.roman;
-    setRoman(saved);
+    if (ideenChat.length > 0) {
+      await saveRomanIdeenChatAction({
+        romanId: saved.id,
+        messages: ideenChat,
+      });
+    }
+    setRoman({ ...saved, ideenChat });
     toast.success(`Roadmap: ${result.data!.szenenCount} Szenen angelegt.`);
     window.location.href = `/admin/roman/${saved.id}`;
   }
 
   async function handleNextScene() {
     if (!canSave || !roman || batchPending) return;
+    if (!schreibModelId.trim()) {
+      toast.error("Schreibmodell wählen.");
+      return;
+    }
     const next = szenen.find((s) => s.status === "READY_FOR_WRITING");
     if (next) {
       setSzenen((current) =>
@@ -373,7 +532,10 @@ export function RomanAdminWorkspace({
       setSelectedId(next.id);
     }
     setScenePending(true);
-    const result = await processNextRomanSzeneAction({ romanId: roman.id });
+    const result = await processNextRomanSzeneAction({
+      romanId: roman.id,
+      modelId: schreibModelId,
+    });
     setScenePending(false);
     if (!result.success) {
       toast.error(result.error ?? "Szenen-Lauf fehlgeschlagen.");
@@ -401,6 +563,10 @@ export function RomanAdminWorkspace({
 
   async function handleAllScenes() {
     if (!canSave || !roman || batchPending || scenePending) return;
+    if (!schreibModelId.trim()) {
+      toast.error("Schreibmodell wählen.");
+      return;
+    }
     const totalAtStart = szenen.filter(
       (s) => s.status === "READY_FOR_WRITING",
     ).length;
@@ -414,12 +580,13 @@ export function RomanAdminWorkspace({
     setBatchPending(true);
     setBatchProgressLabel(`Szene 1 von ${totalAtStart} wird geschrieben …`);
 
+    const modelId = schreibModelId;
     const outcome = await runAllReadyRomanSzenen({
       romanId: roman.id,
       totalAtStart,
       shouldStop: () => batchStopRef.current,
       processOne: async (romanId) =>
-        processNextRomanSzeneAction({ romanId }),
+        processNextRomanSzeneAction({ romanId, modelId }),
       onProgress: (progress) => {
         setBatchProgressLabel(progress.label);
         if (progress.lastSzene) {
@@ -589,6 +756,91 @@ export function RomanAdminWorkspace({
     window.location.reload();
   }
 
+  async function handleDeleteSzene() {
+    if (!roman?.id || !sceneDeleteTarget) return;
+    if (!canSave) {
+      toast.error("Speichern/Löschen ist hier nicht konfiguriert (Service-Role).");
+      return;
+    }
+    setSceneDeletePending(true);
+    const target = sceneDeleteTarget;
+    const result = await clearRomanSzeneAction({
+      romanId: roman.id,
+      szeneId: target.id,
+    });
+    setSceneDeletePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Inhalt löschen fehlgeschlagen.");
+      return;
+    }
+    setSzenen((current) =>
+      current.map((s) =>
+        s.id === target.id
+          ? {
+              ...s,
+              status: "READY_FOR_WRITING",
+              entwurfRaw: "",
+              feedbackLektor: "",
+              feedbackFan: "",
+              entwurfRevidiert: "",
+            }
+          : s,
+      ),
+    );
+    const nextSummary = result.data?.aktuelleZusammenfassung ?? "";
+    setRoman((prev) =>
+      prev ? { ...prev, aktuelleZusammenfassung: nextSummary } : prev,
+    );
+    setSceneDeleteTarget(null);
+    toast.success(
+      `Inhalt von ${target.kapitelNr}.${target.szenenNr} gelöscht.`,
+    );
+  }
+
+  async function handleDeleteKapitel() {
+    if (!roman?.id || !chapterDeleteTarget) return;
+    if (!canSave) {
+      toast.error("Speichern/Löschen ist hier nicht konfiguriert (Service-Role).");
+      return;
+    }
+    setChapterDeletePending(true);
+    const target = chapterDeleteTarget;
+    const result = await clearRomanKapitelAction({
+      romanId: roman.id,
+      kapitelNr: target.kapitelNr,
+    });
+    setChapterDeletePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Kapitel-Inhalt löschen fehlgeschlagen.");
+      return;
+    }
+    setSzenen((current) =>
+      current.map((s) =>
+        s.kapitelNr === target.kapitelNr
+          ? {
+              ...s,
+              status: "READY_FOR_WRITING" as const,
+              entwurfRaw: "",
+              feedbackLektor: "",
+              feedbackFan: "",
+              entwurfRevidiert: "",
+            }
+          : s,
+      ),
+    );
+    const nextSummary = result.data?.aktuelleZusammenfassung ?? "";
+    setRoman((prev) =>
+      prev ? { ...prev, aktuelleZusammenfassung: nextSummary } : prev,
+    );
+    setChapterDeleteTarget(null);
+    const n = result.data?.clearedCount ?? target.count;
+    toast.success(
+      n === 1
+        ? `Inhalt von Kapitel ${target.kapitelNr} gelöscht (1 Szene).`
+        : `Inhalt von Kapitel ${target.kapitelNr} gelöscht (${n} Szenen).`,
+    );
+  }
+
   function closeRomanPdfPreview() {
     setPdfPreviewOpen(false);
     setPdfPreviewHtml(null);
@@ -710,10 +962,19 @@ export function RomanAdminWorkspace({
             Roman-Kontext
           </h2>
           <p className="mt-1 text-sm font-semibold text-zinc-600">
-            Einstieg offen: Manuskript allein reicht, oder zuerst Fundament /
-            Fan-Persona. Später kannst du vor dem Manuskript starten.
+            Ideen-Finder → Fundament (1–4) → Outline/Exposé → speichern →
+            Phase&nbsp;0. Manuskript-Feld ist die editierbare Brücke.
           </p>
         </div>
+
+        <RomanIdeaFinder
+          romanId={roman?.id}
+          messages={ideenChat}
+          onMessagesChange={setIdeenChat}
+          canSave={canSave}
+          disabled={busy}
+          onApplied={applyIdeaFoundation}
+        />
 
         <label className="block">
           <FieldLabel>Arbeitstitel</FieldLabel>
@@ -1218,7 +1479,11 @@ export function RomanAdminWorkspace({
         </Collapsible>
 
         <div className="block">
-          <FieldLabel>Manuskript / Outline (Einstieg offen)</FieldLabel>
+          <FieldLabel>Manuskript / Outline / Exposé</FieldLabel>
+          <p className="mb-2 text-xs font-semibold text-zinc-500">
+            Brücke zwischen Fundament und Phase&nbsp;0: editierbares Outline —
+            darauf bauen Roadmap und Szenen auf. Kein fertiger Romantext.
+          </p>
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <input
               ref={pdfInputRef}
@@ -1232,6 +1497,19 @@ export function RomanAdminWorkspace({
                 event.target.value = "";
               }}
             />
+            <button
+              type="button"
+              disabled={!canSave || busy}
+              onClick={() => void handleOutlineGenerateClick()}
+              className={cn(
+                "rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800",
+                (!canSave || busy) && "opacity-70",
+              )}
+            >
+              {outlinePending
+                ? "Outline wird erzeugt …"
+                : "Outline aus Fundament"}
+            </button>
             <button
               type="button"
               disabled={!canSave || busy}
@@ -1249,7 +1527,7 @@ export function RomanAdminWorkspace({
               </span>
             ) : (
               <span className="text-xs font-semibold text-zinc-500">
-                Text-PDF (kein Scan ohne OCR), max. 12 MB — oder leer lassen
+                Aus Fundament erzeugen, PDF laden — oder selbst tippen
               </span>
             )}
           </div>
@@ -1259,7 +1537,7 @@ export function RomanAdminWorkspace({
             disabled={!canSave || busy}
             rows={12}
             className="w-full rounded-2xl bg-gray-100 px-4 py-3 font-mono text-sm text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-            placeholder="Rohmanuskript, Exposé oder Outline — optional, wenn Fundament reicht"
+            placeholder="Exposé / Handlungsoutline — nach dem Fundament erzeugen oder einfügen, dann Phase 0"
           />
         </div>
 
@@ -1412,7 +1690,8 @@ export function RomanAdminWorkspace({
                     scenePending ||
                     batchPending ||
                     readyCount === 0 ||
-                    phase0Pending
+                    phase0Pending ||
+                    !schreibModelId
                   }
                   onClick={() => void handleNextScene()}
                   className={cn(
@@ -1420,7 +1699,8 @@ export function RomanAdminWorkspace({
                     (scenePending ||
                       batchPending ||
                       readyCount === 0 ||
-                      !canSave) &&
+                      !canSave ||
+                      !schreibModelId) &&
                       "opacity-70",
                   )}
                 >
@@ -1435,7 +1715,8 @@ export function RomanAdminWorkspace({
                     scenePending ||
                     batchPending ||
                     readyCount === 0 ||
-                    phase0Pending
+                    phase0Pending ||
+                    !schreibModelId
                   }
                   onClick={() => void handleAllScenes()}
                   className={cn(
@@ -1443,7 +1724,8 @@ export function RomanAdminWorkspace({
                     (scenePending ||
                       batchPending ||
                       readyCount === 0 ||
-                      !canSave) &&
+                      !canSave ||
+                      !schreibModelId) &&
                       "opacity-70",
                   )}
                 >
@@ -1453,10 +1735,42 @@ export function RomanAdminWorkspace({
                 </button>
               </div>
             </div>
+            <label className="block max-w-xl">
+              <FieldLabel>Schreibmodell (LLM für alle Szenen)</FieldLabel>
+              <select
+                value={schreibModelId}
+                disabled={!canSave || scenePending || batchPending}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setSchreibModelId(next);
+                  if (roman?.id) {
+                    try {
+                      sessionStorage.setItem(
+                        schreibModelStorageKey(roman.id),
+                        next,
+                      );
+                    } catch {
+                      // ignore
+                    }
+                  }
+                }}
+                className={inputClass}
+              >
+                {schreibModels.length === 0 ? (
+                  <option value="">Keine Text-LLMs im Katalog</option>
+                ) : (
+                  schreibModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label} · {model.modelSlug}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
             <p className="text-sm font-semibold text-zinc-600">
               Eine Szene oder alle offenen nacheinander (Autor → Lektor/Fan →
-              Revision). Batch kann Stunden dauern — Tab offen lassen; Stoppen
-              erst nach der laufenden Szene.
+              Revision) mit demselben LLM. Batch kann Stunden dauern — Tab offen
+              lassen; Stoppen erst nach der laufenden Szene.
             </p>
             {roman.aktuelleZusammenfassung.trim() ? (
               <div>
@@ -1483,9 +1797,34 @@ export function RomanAdminWorkspace({
                         <p className="text-xs font-extrabold text-zinc-800">
                           Kapitel {chapter.kapitelNr}
                         </p>
-                        <span className="text-[10px] font-extrabold tracking-wide text-zinc-500 uppercase">
-                          {chapter.headline}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-extrabold tracking-wide text-zinc-500 uppercase">
+                            {chapter.headline}
+                          </span>
+                          <button
+                            type="button"
+                            title={`Inhalt von Kapitel ${chapter.kapitelNr} löschen`}
+                            disabled={
+                              !canSave ||
+                              scenePending ||
+                              batchPending ||
+                              sceneDeletePending ||
+                              chapterDeletePending
+                            }
+                            onClick={() =>
+                              setChapterDeleteTarget({
+                                kapitelNr: chapter.kapitelNr,
+                                count: chapter.total,
+                              })
+                            }
+                            className="inline-flex size-7 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-orange-50 hover:text-orange-800 disabled:opacity-40"
+                          >
+                            <Trash2 className="size-3.5" aria-hidden />
+                            <span className="sr-only">
+                              Inhalt von Kapitel {chapter.kapitelNr} löschen
+                            </span>
+                          </button>
+                        </div>
                       </div>
                       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200">
                         <div
@@ -1560,17 +1899,40 @@ export function RomanAdminWorkspace({
                         {STATUS_LABEL[selected.status]}
                       </p>
                     </div>
-                    {selected.status !== "COMPLETED" &&
-                    selected.status !== "READY_FOR_WRITING" ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {selected.status !== "COMPLETED" &&
+                      selected.status !== "READY_FOR_WRITING" ? (
+                        <button
+                          type="button"
+                          disabled={!canSave}
+                          onClick={() => void handleReset(selected.id)}
+                          className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold text-zinc-700 ring-1 ring-zinc-950/10"
+                        >
+                          Auf bereit zurücksetzen
+                        </button>
+                      ) : null}
                       <button
                         type="button"
-                        disabled={!canSave}
-                        onClick={() => void handleReset(selected.id)}
-                        className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold text-zinc-700 ring-1 ring-zinc-950/10"
+                        disabled={
+                          !canSave ||
+                          scenePending ||
+                          batchPending ||
+                          sceneDeletePending ||
+                          chapterDeletePending
+                        }
+                        onClick={() =>
+                          setSceneDeleteTarget({
+                            id: selected.id,
+                            kapitelNr: selected.kapitelNr,
+                            szenenNr: selected.szenenNr,
+                          })
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-900 ring-1 ring-orange-200 hover:bg-orange-100 disabled:opacity-50"
                       >
-                        Auf bereit zurücksetzen
+                        <Trash2 className="size-3.5" aria-hidden />
+                        Inhalt löschen
                       </button>
-                    ) : null}
+                    </div>
                   </div>
                   <CollapsibleSceneField
                     key={`${selected.id}-briefing`}
@@ -1925,6 +2287,17 @@ export function RomanAdminWorkspace({
       ) : null}
 
       <ConfirmDeleteDialog
+        open={outlineOverwriteOpen}
+        title="Outline ersetzen?"
+        description="Das Manuskript-/Outline-Feld ist nicht leer. Der bisherige Text wird unwiderruflich durch ein neues Outline aus dem Fundament ersetzt."
+        confirmLabel="Ersetzen"
+        pending={outlinePending}
+        onCancel={() => {
+          if (!outlinePending) setOutlineOverwriteOpen(false);
+        }}
+        onConfirm={() => void runOutlineGenerate()}
+      />
+      <ConfirmDeleteDialog
         open={coverClearOpen}
         title="Cover löschen?"
         description="Das gespeicherte Buch-Cover und der zugehörige Prompt werden unwiderruflich entfernt."
@@ -1935,8 +2308,43 @@ export function RomanAdminWorkspace({
         }}
         onConfirm={() => void handleClearCover()}
       />
+      <ConfirmDeleteDialog
+        open={sceneDeleteTarget !== null}
+        title="Szenen-Inhalt löschen?"
+        description={
+          sceneDeleteTarget
+            ? `Entwurf, Feedback und Revision von Kapitel ${sceneDeleteTarget.kapitelNr} · Szene ${sceneDeleteTarget.szenenNr} werden geleert. Briefing und die Szene selbst bleiben. Status wird „Bereit“. Der zugehörige Absatz in der laufenden Zusammenfassung wird entfernt.`
+            : ""
+        }
+        confirmLabel="Inhalt löschen"
+        pending={sceneDeletePending}
+        onCancel={() => {
+          if (!sceneDeletePending) setSceneDeleteTarget(null);
+        }}
+        onConfirm={() => void handleDeleteSzene()}
+      />
+      <ConfirmDeleteDialog
+        open={chapterDeleteTarget !== null}
+        title="Kapitel-Inhalt löschen?"
+        description={
+          chapterDeleteTarget
+            ? `Entwurf, Feedback und Revision aller ${chapterDeleteTarget.count} Szene(n) in Kapitel ${chapterDeleteTarget.kapitelNr} werden geleert. Briefings und die Szenen bleiben. Status wird „Bereit“. Die Absätze dieses Kapitels in der laufenden Zusammenfassung werden entfernt.`
+            : ""
+        }
+        confirmLabel="Inhalt löschen"
+        pending={chapterDeletePending}
+        onCancel={() => {
+          if (!chapterDeletePending) setChapterDeleteTarget(null);
+        }}
+        onConfirm={() => void handleDeleteKapitel()}
+      />
+      <RomanSceneWaitDialog
+        open={phase0Pending}
+        variant="roadmap"
+      />
       <RomanSceneWaitDialog
         open={scenePending || batchPending}
+        variant="scene"
         batch={batchPending}
         progressLabel={batchPending ? batchProgressLabel : null}
         stopAfterCurrent={batchStopAfterCurrent}

@@ -8,10 +8,19 @@ import { revalidatePath } from "next/cache";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import { generateRomanCover } from "@/lib/roman/cover";
 import { generateRomanFrontMatter } from "@/lib/roman/front-matter";
+import { generateRomanOutlineFromFoundation } from "@/lib/roman/generate-outline";
+import {
+  applyRomanIdeaToFoundation,
+  chatRomanIdea,
+  type RomanIdeaChatMessage,
+  type RomanIdeaFoundationFill,
+} from "@/lib/roman/idea-finder";
 import { runRomanPhase0 } from "@/lib/roman/phase0";
 import { processNextRomanSzene } from "@/lib/roman/process-scene";
 import {
   clearRomanCover,
+  clearRomanKapitelContent,
+  clearSzeneContent,
   deleteRoman,
   getRomanKontext,
   listRomanKontexte,
@@ -19,6 +28,7 @@ import {
   resetSzeneToReady,
   setRomanCover,
   setRomanFrontMatter,
+  setRomanIdeenChat,
   upsertRomanKontext,
 } from "@/lib/roman/repository";
 import type {
@@ -33,7 +43,14 @@ import {
   romanFrontMatterGenerateSchema,
   romanFrontMatterSaveSchema,
   romanIdSchema,
+  romanIdeaApplySchema,
+  romanIdeaChatSchema,
+  romanIdeenChatSaveSchema,
+  romanKapitelClearSchema,
+  romanOutlineGenerateSchema,
   romanPhase0Schema,
+  romanProcessSceneSchema,
+  romanSzeneClearSchema,
   romanUpsertSchema,
   szeneIdSchema,
 } from "@/lib/validations/roman-admin";
@@ -202,16 +219,19 @@ export async function processNextRomanSzeneAction(
   const denied = await denyUnlessAdmin();
   if (denied) return { success: false, error: denied };
 
-  const parsed = romanIdSchema.safeParse(input);
+  const parsed = romanProcessSceneSchema.safeParse(input);
   if (!parsed.success) {
     return {
       success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültige ID.",
+      error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe.",
     };
   }
 
   try {
-    const result = await processNextRomanSzene(parsed.data.romanId);
+    const result = await processNextRomanSzene(
+      parsed.data.romanId,
+      parsed.data.modelId,
+    );
     revalidateRoman(parsed.data.romanId);
     if (!result) {
       return {
@@ -292,6 +312,88 @@ export async function deleteRomanAction(
       success: false,
       error:
         error instanceof Error ? error.message : "Löschen fehlgeschlagen.",
+    };
+  }
+}
+
+/** Clear scene writing content (keep row + briefing) and trim running summary. */
+export async function clearRomanSzeneAction(
+  input: unknown,
+): Promise<
+  ActionResult<{ cleared: boolean; aktuelleZusammenfassung: string }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanSzeneClearSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültige ID.",
+    };
+  }
+
+  try {
+    const result = await clearSzeneContent({
+      romanId: parsed.data.romanId,
+      szeneId: parsed.data.szeneId,
+    });
+    revalidateRoman(parsed.data.romanId);
+    return {
+      success: true,
+      data: {
+        cleared: true,
+        aktuelleZusammenfassung: result.aktuelleZusammenfassung,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Inhalt löschen fehlgeschlagen.",
+    };
+  }
+}
+
+/** Clear writing content for all scenes in one chapter; rebuilds summary. */
+export async function clearRomanKapitelAction(
+  input: unknown,
+): Promise<
+  ActionResult<{ clearedCount: number; aktuelleZusammenfassung: string }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanKapitelClearSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe.",
+    };
+  }
+
+  try {
+    const result = await clearRomanKapitelContent(
+      parsed.data.romanId,
+      parsed.data.kapitelNr,
+    );
+    revalidateRoman(parsed.data.romanId);
+    return {
+      success: true,
+      data: {
+        clearedCount: result.clearedCount,
+        aktuelleZusammenfassung: result.aktuelleZusammenfassung,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Kapitel-Inhalt löschen fehlgeschlagen.",
     };
   }
 }
@@ -547,6 +649,135 @@ export async function saveRomanFrontMatterAction(
         error instanceof Error
           ? error.message
           : "Buchrücken/Vorsatz speichern fehlgeschlagen.",
+    };
+  }
+}
+
+/** Ideen-Finder chat turn (Gemini Flash). */
+export async function romanIdeaChatAction(
+  input: unknown,
+): Promise<ActionResult<{ reply: string }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanIdeaChatSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const reply = await chatRomanIdea({
+      history: parsed.data.history as RomanIdeaChatMessage[],
+      userMessage: parsed.data.userMessage,
+    });
+    return { success: true, data: { reply } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Ideen-Chat fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Mistral maps Ideen-Finder chat → foundation steps 1–4 (client applies to form).
+ */
+export async function romanIdeaApplyAction(
+  input: unknown,
+): Promise<ActionResult<{ fill: RomanIdeaFoundationFill }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanIdeaApplySchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const fill = await applyRomanIdeaToFoundation(
+      parsed.data.messages as RomanIdeaChatMessage[],
+    );
+    return { success: true, data: { fill } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Übernahme ins Fundament fehlgeschlagen.",
+    };
+  }
+}
+
+/** Persist Ideen-Finder chat history. */
+export async function saveRomanIdeenChatAction(
+  input: unknown,
+): Promise<ActionResult<{ saved: boolean }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanIdeenChatSaveSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const saved = await setRomanIdeenChat({
+      id: parsed.data.romanId,
+      messages: parsed.data.messages,
+    });
+    revalidateRoman(parsed.data.romanId);
+    return { success: true, data: { saved } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Ideen-Chat speichern fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Gemini: foundation → editable outline/exposé for manuskriptRaw (before Phase 0).
+ */
+export async function generateRomanOutlineAction(
+  input: unknown,
+): Promise<ActionResult<{ outline: string }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanOutlineGenerateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const outline = await generateRomanOutlineFromFoundation(parsed.data);
+    return { success: true, data: { outline } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Outline-Generierung fehlgeschlagen.",
     };
   }
 }

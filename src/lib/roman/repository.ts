@@ -14,8 +14,10 @@ import {
   parseCharaktereJson,
   parseSzenenRasterJson,
 } from "@/lib/roman/fundament";
+import { parseIdeenChatJson } from "@/lib/roman/idea-finder";
 import type {
   ClaimedSzene,
+  RomanIdeaChatMessage,
   RomanKontext,
   RomanKontextSummary,
   RomanUpsertInput,
@@ -23,6 +25,7 @@ import type {
   SzeneRoadmapItem,
   SzeneStatus,
 } from "@/lib/roman/types";
+import { rebuildZusammenfassungForCompletedScenes } from "@/lib/roman/zusammenfassung";
 import { createServiceClient } from "@/lib/supabase/service";
 
 type KontextRow = {
@@ -48,6 +51,7 @@ type KontextRow = {
   autor_name?: string;
   buchruecken?: unknown;
   vorsatz?: unknown;
+  ideen_chat?: unknown;
   has_cover?: boolean;
   created_at: string;
   updated_at: string;
@@ -124,6 +128,7 @@ function mapKontext(row: KontextRow): RomanKontext {
       ? parseBuchrueckenJson(row.buchruecken)
       : emptyBuchruecken(),
     vorsatz: row.vorsatz ? parseVorsatzJson(row.vorsatz) : emptyVorsatz(),
+    ideenChat: parseIdeenChatJson(row.ideen_chat),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -348,6 +353,20 @@ export async function setRomanFrontMatter(input: {
   return Boolean(data);
 }
 
+/** Persist Ideen-Finder chat transcript. */
+export async function setRomanIdeenChat(input: {
+  id: string;
+  messages: RomanIdeaChatMessage[];
+}): Promise<boolean> {
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc("admin_set_roman_ideen_chat", {
+    p_id: input.id,
+    p_ideen_chat: input.messages,
+  });
+  if (error) throw new Error(error.message);
+  return Boolean(data);
+}
+
 /** Delete roman and cascading scenes. */
 export async function deleteRoman(id: string): Promise<boolean> {
   const supabase = createServiceClient(null);
@@ -356,6 +375,119 @@ export async function deleteRoman(id: string): Promise<boolean> {
   });
   if (error) throw new Error(error.message);
   return Boolean(data);
+}
+
+/** Replace the running manuscript summary. */
+export async function setRomanZusammenfassung(
+  romanId: string,
+  text: string,
+): Promise<string> {
+  const value = text ?? "";
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc(
+    "admin_set_roman_zusammenfassung",
+    {
+      p_roman_id: romanId,
+      p_text: value,
+    },
+  );
+  if (!error) return String(data ?? value);
+
+  // Fallback when the set-RPC migration is not applied yet.
+  const leseno = createServiceClient();
+  const { data: row, error: updateError } = await leseno
+    .from("roman_kontext")
+    .update({ aktuelle_zusammenfassung: value })
+    .eq("id", romanId)
+    .select("aktuelle_zusammenfassung")
+    .maybeSingle();
+  if (updateError) {
+    throw new Error(error.message || updateError.message);
+  }
+  if (!row) throw new Error("Roman nicht gefunden.");
+  return String(
+    (row as { aktuelle_zusammenfassung?: string }).aktuelle_zusammenfassung ??
+      value,
+  );
+}
+
+/**
+ * Clear writing content; keeps scene row and briefing.
+ * Also drops this scene's paragraph from the running summary.
+ */
+export async function clearSzeneContent(input: {
+  romanId: string;
+  szeneId: string;
+}): Promise<{ aktuelleZusammenfassung: string }> {
+  const [roman, scenes] = await Promise.all([
+    getRomanKontext(input.romanId),
+    listSzenen(input.romanId),
+  ]);
+  if (!roman) throw new Error("Roman nicht gefunden.");
+  const target = scenes.find((s) => s.id === input.szeneId);
+  if (!target) throw new Error("Szene nicht gefunden.");
+
+  await updateSzene({
+    id: input.szeneId,
+    entwurfRaw: "",
+    feedbackLektor: "",
+    feedbackFan: "",
+    entwurfRevidiert: "",
+    status: "READY_FOR_WRITING",
+  });
+
+  const completed = scenes.filter(
+    (s) => s.id !== input.szeneId && s.status === "COMPLETED",
+  );
+  const next = rebuildZusammenfassungForCompletedScenes(
+    roman.aktuelleZusammenfassung,
+    completed,
+  );
+  const aktuelleZusammenfassung = await setRomanZusammenfassung(
+    input.romanId,
+    next,
+  );
+  return { aktuelleZusammenfassung };
+}
+
+/**
+ * Clear writing content for all scenes in a chapter; rebuilds the running summary.
+ */
+export async function clearRomanKapitelContent(
+  romanId: string,
+  kapitelNr: number,
+): Promise<{ clearedCount: number; aktuelleZusammenfassung: string }> {
+  const [roman, scenes] = await Promise.all([
+    getRomanKontext(romanId),
+    listSzenen(romanId),
+  ]);
+  if (!roman) throw new Error("Roman nicht gefunden.");
+
+  const targets = scenes.filter((s) => s.kapitelNr === kapitelNr);
+  for (const scene of targets) {
+    await updateSzene({
+      id: scene.id,
+      entwurfRaw: "",
+      feedbackLektor: "",
+      feedbackFan: "",
+      entwurfRevidiert: "",
+      status: "READY_FOR_WRITING",
+    });
+  }
+
+  const clearedIds = new Set(targets.map((s) => s.id));
+  const completed = scenes.filter(
+    (s) => !clearedIds.has(s.id) && s.status === "COMPLETED",
+  );
+  const next = rebuildZusammenfassungForCompletedScenes(
+    roman.aktuelleZusammenfassung,
+    completed,
+  );
+  const aktuelleZusammenfassung = await setRomanZusammenfassung(
+    romanId,
+    next,
+  );
+  return { clearedCount: targets.length, aktuelleZusammenfassung };
 }
 
 /** Reset a stuck non-completed scene to READY_FOR_WRITING. */

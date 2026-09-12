@@ -9,6 +9,12 @@ import type {
 
 export type { RomanBuchruecken, RomanVorsatz };
 
+/** One turn in the Ideen-Finder chat (persisted on roman_kontext). */
+export type RomanIdeaChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type SzeneStatus =
   | "READY_FOR_WRITING"
   | "DRAFTING"
@@ -71,6 +77,8 @@ export type RomanKontext = {
   buchruecken: RomanBuchruecken;
   /** Minimal eBook front matter between cover and chapter 1 */
   vorsatz: RomanVorsatz;
+  /** Ideen-Finder chat transcript (Gemini), persisted per roman */
+  ideenChat: RomanIdeaChatMessage[];
   createdAt: string;
   updatedAt: string;
 };

@@ -8,7 +8,7 @@ import {
   buildRomanPromptContext,
   resolveFanPersona,
 } from "@/lib/roman/fundament";
-import { resolveRomanTextModel } from "@/lib/roman/model";
+import { resolveRomanSchreibModel } from "@/lib/roman/model";
 import {
   appendRomanZusammenfassung,
   claimNextSzene,
@@ -20,6 +20,7 @@ import {
   buildStyleContinuityPackage,
   priorRevisedBefore,
 } from "@/lib/roman/style-continuity";
+import type { AiModelConfig } from "@/lib/prompts/catalog";
 import type { ClaimedSzene, Szene } from "@/lib/roman/types";
 
 const AUTHOR_SYSTEM = `Du bist Bestseller-Autor:in — aber für DIESE Szene schreibst du in der bereits etablierten Stimme DIESES Romans.
@@ -65,8 +66,8 @@ async function loadStylePackage(scene: ClaimedSzene): Promise<string> {
 async function writeAuthorDraft(
   scene: ClaimedSzene,
   stylePackage: string,
+  model: AiModelConfig,
 ): Promise<string> {
-  const model = await resolveRomanTextModel();
   const bible = sceneBible(scene);
   return generateText({
     model,
@@ -99,8 +100,8 @@ async function writeLektorFeedback(
   entwurf: string,
   scene: ClaimedSzene,
   stylePackage: string,
+  model: AiModelConfig,
 ): Promise<string> {
-  const model = await resolveRomanTextModel();
   const bible = sceneBible(scene);
   return generateText({
     model,
@@ -122,8 +123,8 @@ ${entwurf}
 async function writeFanFeedback(
   entwurf: string,
   scene: ClaimedSzene,
+  model: AiModelConfig,
 ): Promise<string> {
-  const model = await resolveRomanTextModel();
   const fan = resolveFanPersona(scene);
   const ton = scene.tonalitaet.trim();
   const systemInstruction = `Du bist die Fan-Persona „${fan.name}“ und Testleser:in.
@@ -149,11 +150,11 @@ async function writeRevision(input: {
   fan: string;
   scene: ClaimedSzene;
   stylePackage: string;
+  model: AiModelConfig;
 }): Promise<string> {
-  const model = await resolveRomanTextModel();
   const bible = sceneBible(input.scene);
   return generateText({
-    model,
+    model: input.model,
     systemInstruction: REVISION_SYSTEM,
     userText: `${input.stylePackage}
 
@@ -181,8 +182,10 @@ Schreibe die überarbeitete, finale Szene — stilistisch wie die Anker, inhaltl
   });
 }
 
-async function writeSceneSummary(finalText: string): Promise<string> {
-  const model = await resolveRomanTextModel();
+async function writeSceneSummary(
+  finalText: string,
+  model: AiModelConfig,
+): Promise<string> {
   return generateText({
     model,
     systemInstruction: SUMMARY_SYSTEM,
@@ -192,18 +195,24 @@ async function writeSceneSummary(finalText: string): Promise<string> {
 
 /**
  * Processes the next READY scene for a roman (one scene per call).
+ * Uses one shared text LLM for author, reviews, revision, and summary.
  * Returns null when nothing is left to write.
  */
 export async function processNextRomanSzene(
   romanId: string,
+  modelId?: string | null,
 ): Promise<{ szene: Szene; summaryAppended: string } | null> {
   const claimed = await claimNextSzene(romanId);
   if (!claimed) return null;
 
+  const model = await resolveRomanSchreibModel(modelId);
+
   try {
     const stylePackage = await loadStylePackage(claimed);
 
-    const entwurf = (await writeAuthorDraft(claimed, stylePackage)).trim();
+    const entwurf = (
+      await writeAuthorDraft(claimed, stylePackage, model)
+    ).trim();
     if (!entwurf) throw new Error("Autor lieferte leeren Entwurf.");
 
     await updateSzene({
@@ -213,8 +222,8 @@ export async function processNextRomanSzene(
     });
 
     const [lektor, fan] = await Promise.all([
-      writeLektorFeedback(entwurf, claimed, stylePackage),
-      writeFanFeedback(entwurf, claimed),
+      writeLektorFeedback(entwurf, claimed, stylePackage, model),
+      writeFanFeedback(entwurf, claimed, model),
     ]);
 
     await updateSzene({
@@ -231,11 +240,12 @@ export async function processNextRomanSzene(
         fan: fan.trim(),
         scene: claimed,
         stylePackage,
+        model,
       })
     ).trim();
     if (!revised) throw new Error("Revision lieferte leeren Text.");
 
-    const summary = (await writeSceneSummary(revised)).trim();
+    const summary = (await writeSceneSummary(revised, model)).trim();
     const summaryAppended = await appendRomanZusammenfassung(
       romanId,
       `Kap. ${claimed.kapitelNr} / Szene ${claimed.szenenNr}: ${summary}`,

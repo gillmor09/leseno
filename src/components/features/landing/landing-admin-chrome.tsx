@@ -36,6 +36,7 @@ const adminItems = [
   { href: "/admin/pakete", label: "Pakete" },
   { href: "/admin/promo", label: "Promo-Codes" },
   { href: "/admin/social-media", label: "Social Media" },
+  { href: "/admin/video-clips", label: "Video-Clips" },
   { href: "/admin/textlaenge", label: "Textlängen" },
   { href: "/admin/schrifteinstellung", label: "Schrifteinstellung" },
   { href: "/admin/ki-modelle", label: "KI-Modelle" },

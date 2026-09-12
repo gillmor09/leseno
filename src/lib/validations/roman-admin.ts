@@ -67,8 +67,34 @@ export const romanIdSchema = z.object({
   romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
 });
 
+/** Phase 1–3: next READY scene with a shared text LLM for all steps. */
+export const romanProcessSceneSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+  modelId: z
+    .string()
+    .trim()
+    .min(1, { message: "Schreibmodell wählen." })
+    .max(80),
+});
+
 export const szeneIdSchema = z.object({
   szeneId: z.string().uuid({ message: "Ungültige Szenen-ID." }),
+});
+
+/** Clear writing content of one operational scene (keeps briefing). */
+export const romanSzeneClearSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+  szeneId: z.string().uuid({ message: "Ungültige Szenen-ID." }),
+});
+
+/** Clear writing content of all scenes in one chapter. */
+export const romanKapitelClearSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+  kapitelNr: z
+    .number()
+    .int()
+    .min(1, { message: "Ungültige Kapitelnummer." })
+    .max(500),
 });
 
 /** Generate cover from saved kontext + optional art direction. */
@@ -123,4 +149,54 @@ export const romanFrontMatterSaveSchema = z.object({
   autorName: z.string().max(200),
   buchruecken: buchrueckenSchema,
   vorsatz: vorsatzSchema,
+});
+
+const ideaChatMessageSchema = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string().max(20_000),
+});
+
+/** One Ideen-Finder chat turn (Gemini Flash). */
+export const romanIdeaChatSchema = z.object({
+  history: z.array(ideaChatMessageSchema).max(40),
+  userMessage: z
+    .string()
+    .trim()
+    .min(1, { message: "Nachricht eingeben." })
+    .max(8000),
+});
+
+/** Map Ideen-Finder transcript → foundation steps 1–4 (Mistral). */
+export const romanIdeaApplySchema = z.object({
+  messages: z
+    .array(ideaChatMessageSchema)
+    .min(2, { message: "Zu wenig Dialog zum Übernehmen." })
+    .max(40),
+});
+
+/** Persist Ideen-Finder chat history on a saved roman. */
+export const romanIdeenChatSaveSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+  messages: z.array(ideaChatMessageSchema).max(60),
+});
+
+/**
+ * Generate editable outline/exposé from foundation fields (no roman id required).
+ * Same shape as upsert without forcing a title if ideation is early — title optional here.
+ */
+export const romanOutlineGenerateSchema = z.object({
+  title: z.string().max(200),
+  stilbibel: z.string().max(100_000),
+  genre: z.string().max(200),
+  praemisse: z.string().max(4000),
+  perspektive: z.string().max(200),
+  zeitform: z.string().max(120),
+  tonalitaet: z.string().max(2000),
+  charaktere: z.array(charakterSchema).max(40),
+  weltSchauplaetze: z.string().max(50_000),
+  weltRegeln: z.string().max(50_000),
+  szenenRaster: z.array(szenenRasterSchema).max(200),
+  kiRegelwerk: z.string().max(50_000),
+  fanPersonaName: z.string().max(200),
+  fanPersonaProfil: z.string().max(20_000),
 });

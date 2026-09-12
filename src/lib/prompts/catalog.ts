@@ -71,6 +71,17 @@ export const FALLBACK_AI_MODELS: AiModelConfig[] = [
     notes: "Pixelbilder für Geschichten und Social Media.",
   },
   {
+    id: "video-default",
+    label: "Video-Clips",
+    provider: "gemini-video",
+    modelSlug: "veo-3.1-generate-preview",
+    supportsSystemPrompt: false,
+    supportsJsonOutput: false,
+    isActive: true,
+    ttsVoiceId: null,
+    notes: "Admin Video-Clips: Bild/Video + Prompt → kurzer Clip (Veo).",
+  },
+  {
     id: "layout-default",
     label: "Layout",
     provider: "openai-compatible",

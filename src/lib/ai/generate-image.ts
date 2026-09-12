@@ -45,27 +45,29 @@ function ionosSizeForPx(sizePx: number | undefined): string {
   return "1024x1024";
 }
 
-/** IONOS WxH for common eBook/social aspect ratios (multiples of 64). */
+/**
+ * IONOS FLUX.2 sizes: both sides multiples of 16, 64–2048.
+ * @see https://docs.ionos.com/cloud/ai/ai-model-hub/models/image-generation-models/flux-2-klein-4b
+ */
 function ionosSizeForAspect(
   aspectRatio: GenerateImageInput["aspectRatio"],
   sizePx: number | undefined,
 ): string {
-  const edge = !sizePx || sizePx <= 512 ? 512 : 1024;
+  const large = !sizePx || sizePx > 512;
   switch (aspectRatio) {
     case "2:3":
-      // Kindle-typical portrait cover (~1600×2400 at higher tiers; 1024×1536 here).
-      return edge <= 512 ? "512x768" : "1024x1536";
+      return large ? "1024x1536" : "512x768";
     case "5:8":
-      // Amazon eBook cover ratio 1600×2560.
-      return edge <= 512 ? "500x800" : "1000x1600";
+      // Amazon cover ratio 1600×2560 (=5:8). 1000×1600 is invalid (1000 % 16 ≠ 0).
+      return large ? "960x1536" : "640x1024";
     case "3:2":
-      return edge <= 512 ? "768x512" : "1536x1024";
+      return large ? "1536x1024" : "768x512";
     case "4:5":
-      return edge <= 512 ? "512x640" : "1024x1280";
+      return large ? "1024x1280" : "512x640";
     case "9:16":
-      return edge <= 512 ? "576x1024" : "864x1536";
+      return large ? "1088x1920" : "576x1024";
     case "16:9":
-      return edge <= 512 ? "1024x576" : "1536x864";
+      return large ? "1920x1088" : "1024x576";
     case "1:1":
     default:
       return ionosSizeForPx(sizePx);
