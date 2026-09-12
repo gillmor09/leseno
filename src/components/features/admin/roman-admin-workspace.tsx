@@ -1,0 +1,1446 @@
+"use client";
+
+/**
+ * Admin workspace: optional book foundation + Phase 0 roadmap + Phase 1–3.
+ * Entry stays open — manuscript alone, fundament alone, or both.
+ */
+
+import Link from "next/link";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
+import {
+  extractRomanPdfAction,
+  processNextRomanSzeneAction,
+  resetRomanSzeneAction,
+  runRomanPhase0Action,
+  saveRomanKontextAction,
+} from "@/app/actions/roman-admin";
+import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
+import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
+import {
+  buildRomanExportDocument,
+  buildRomanPdfBlob,
+  collectRevisedScenes,
+  romanPdfFilename,
+} from "@/lib/roman/export-roman-pdf";
+import {
+  DEFAULT_KI_REGELWERK,
+  emptyCharakter,
+  emptySzenenRasterItem,
+  suggestFanPersona,
+} from "@/lib/roman/fundament";
+import { runAllReadyRomanSzenen } from "@/lib/roman/run-all-scenes";
+import type {
+  RomanCharakter,
+  RomanKontext,
+  RomanSzenenRasterItem,
+  Szene,
+  SzeneStatus,
+} from "@/lib/roman/types";
+import { cn } from "@/lib/utils";
+
+const STATUS_LABEL: Record<SzeneStatus, string> = {
+  READY_FOR_WRITING: "Bereit",
+  DRAFTING: "Entwurf",
+  REVIEWING: "Lektorat",
+  REVISING: "Revision",
+  COMPLETED: "Fertig",
+};
+
+const STATUS_BADGE: Record<SzeneStatus, string> = {
+  READY_FOR_WRITING: "bg-zinc-100 text-zinc-600",
+  DRAFTING: "bg-amber-100 text-amber-900",
+  REVIEWING: "bg-sky-100 text-sky-900",
+  REVISING: "bg-violet-100 text-violet-900",
+  COMPLETED: "bg-emerald-100 text-emerald-900",
+};
+
+function ProgressBar({
+  value,
+  max,
+  label,
+}: {
+  value: number;
+  max: number;
+  label: string;
+}) {
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between gap-2 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+        <span>{label}</span>
+        <span className="normal-case tracking-normal text-zinc-600">
+          {value}/{max} · {pct}&nbsp;%
+        </span>
+      </div>
+      <div
+        className="h-2.5 overflow-hidden rounded-full bg-zinc-200"
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={label}
+      >
+        <div
+          className="h-full rounded-full bg-orange-600 transition-[width] duration-500 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return (
+    <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+      {children}
+    </span>
+  );
+}
+
+const inputClass =
+  "w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700";
+const textareaClass = `${inputClass} font-sans`;
+
+export function RomanAdminWorkspace({
+  initialRoman,
+  initialSzenen,
+  canSave,
+  isNew = false,
+}: {
+  initialRoman: RomanKontext | null;
+  initialSzenen: Szene[];
+  canSave: boolean;
+  isNew?: boolean;
+}) {
+  const [roman, setRoman] = useState<RomanKontext | null>(initialRoman);
+  const [szenen, setSzenen] = useState(initialSzenen);
+  const [title, setTitle] = useState(initialRoman?.title ?? "");
+  const [stilbibel, setStilbibel] = useState(initialRoman?.stilbibel ?? "");
+  const [manuskriptRaw, setManuskriptRaw] = useState(
+    initialRoman?.manuskriptRaw ?? "",
+  );
+  const [genre, setGenre] = useState(initialRoman?.genre ?? "");
+  const [praemisse, setPraemisse] = useState(initialRoman?.praemisse ?? "");
+  const [perspektive, setPerspektive] = useState(
+    initialRoman?.perspektive ?? "",
+  );
+  const [zeitform, setZeitform] = useState(initialRoman?.zeitform ?? "");
+  const [tonalitaet, setTonalitaet] = useState(initialRoman?.tonalitaet ?? "");
+  const [charaktere, setCharaktere] = useState<RomanCharakter[]>(
+    initialRoman?.charaktere?.length
+      ? initialRoman.charaktere
+      : [emptyCharakter()],
+  );
+  const [weltSchauplaetze, setWeltSchauplaetze] = useState(
+    initialRoman?.weltSchauplaetze ?? "",
+  );
+  const [weltRegeln, setWeltRegeln] = useState(initialRoman?.weltRegeln ?? "");
+  const [szenenRaster, setSzenenRaster] = useState<RomanSzenenRasterItem[]>(
+    initialRoman?.szenenRaster?.length
+      ? initialRoman.szenenRaster
+      : [emptySzenenRasterItem()],
+  );
+  const [kiRegelwerk, setKiRegelwerk] = useState(
+    initialRoman?.kiRegelwerk?.trim()
+      ? initialRoman.kiRegelwerk
+      : DEFAULT_KI_REGELWERK,
+  );
+  const [fanPersonaName, setFanPersonaName] = useState(
+    initialRoman?.fanPersonaName ?? "",
+  );
+  const [fanPersonaProfil, setFanPersonaProfil] = useState(
+    initialRoman?.fanPersonaProfil ?? "",
+  );
+
+  const [openFundament, setOpenFundament] = useState(false);
+  const [openChars, setOpenChars] = useState(false);
+  const [openWelt, setOpenWelt] = useState(false);
+  const [openRaster, setOpenRaster] = useState(false);
+  const [openKi, setOpenKi] = useState(false);
+  const [openFan, setOpenFan] = useState(true);
+
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialSzenen[0]?.id ?? null,
+  );
+  const [phase0Pending, setPhase0Pending] = useState(false);
+  const [scenePending, setScenePending] = useState(false);
+  const [batchPending, setBatchPending] = useState(false);
+  const [batchProgressLabel, setBatchProgressLabel] = useState<string | null>(
+    null,
+  );
+  const [batchStopAfterCurrent, setBatchStopAfterCurrent] = useState(false);
+  const batchStopRef = useRef(false);
+  const [savePending, setSavePending] = useState(false);
+  const [pdfPending, setPdfPending] = useState(false);
+  const [pdfLabel, setPdfLabel] = useState<string | null>(null);
+  const [exportPending, setExportPending] = useState(false);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
+  const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfDownloadName, setPdfDownloadName] = useState(
+    "roman-zwischenstand.pdf",
+  );
+  const pdfInputRef = useRef<HTMLInputElement>(null);
+
+  const selected = useMemo(
+    () => szenen.find((s) => s.id === selectedId) ?? null,
+    [szenen, selectedId],
+  );
+
+  const readyCount = szenen.filter(
+    (s) => s.status === "READY_FOR_WRITING",
+  ).length;
+  const completedCount = szenen.filter((s) => s.status === "COMPLETED").length;
+  const revisedCount = useMemo(
+    () => collectRevisedScenes(szenen).length,
+    [szenen],
+  );
+  const totalCount = szenen.length;
+  const busy =
+    phase0Pending ||
+    savePending ||
+    scenePending ||
+    batchPending ||
+    pdfPending ||
+    exportPending;
+
+  const chapters = useMemo(() => {
+    const map = new Map<number, Szene[]>();
+    for (const szene of szenen) {
+      const list = map.get(szene.kapitelNr) ?? [];
+      list.push(szene);
+      map.set(szene.kapitelNr, list);
+    }
+    return [...map.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([kapitelNr, items]) => {
+        const sorted = [...items].sort((a, b) => a.szenenNr - b.szenenNr);
+        const done = sorted.filter((s) => s.status === "COMPLETED").length;
+        const inFlight = sorted.find((s) =>
+          ["DRAFTING", "REVIEWING", "REVISING"].includes(s.status),
+        );
+        return {
+          kapitelNr,
+          szenen: sorted,
+          done,
+          total: sorted.length,
+          headline: inFlight
+            ? STATUS_LABEL[inFlight.status]
+            : done === sorted.length && sorted.length > 0
+              ? "Fertig"
+              : done > 0
+                ? "In Arbeit"
+                : "Offen",
+        };
+      });
+  }, [szenen]);
+
+  function buildPayload() {
+    return {
+      id: roman?.id ?? null,
+      title,
+      manuskriptRaw,
+      stilbibel,
+      genre,
+      praemisse,
+      perspektive,
+      zeitform,
+      tonalitaet,
+      charaktere,
+      weltSchauplaetze,
+      weltRegeln,
+      szenenRaster,
+      kiRegelwerk,
+      fanPersonaName,
+      fanPersonaProfil,
+    };
+  }
+
+  function applySuggestedFan() {
+    const suggested = suggestFanPersona({ genre, tonalitaet, praemisse });
+    setFanPersonaName(suggested.name);
+    setFanPersonaProfil(suggested.profil);
+    setOpenFan(true);
+    toast.success("Fan-Persona aus Genre/Tonalität vorgeschlagen.");
+  }
+
+  async function handlePdfUpload(file: File | null) {
+    if (!file || !canSave) return;
+    setPdfPending(true);
+    const form = new FormData();
+    form.set("file", file);
+    const result = await extractRomanPdfAction(form);
+    setPdfPending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "PDF-Import fehlgeschlagen.");
+      return;
+    }
+    setManuskriptRaw(result.data!.text);
+    setPdfLabel(
+      `${result.data!.fileName} · ${result.data!.pageCount} Seite(n)`,
+    );
+    if (!title.trim()) {
+      const base = result.data!.fileName.replace(/\.pdf$/i, "").trim();
+      if (base) setTitle(base);
+    }
+    toast.success(
+      `PDF gelesen (${result.data!.pageCount} Seiten). Text steht im Manuskript-Feld.`,
+    );
+  }
+
+  async function handleSaveOnly() {
+    if (!canSave) return;
+    setSavePending(true);
+    const result = await saveRomanKontextAction(buildPayload());
+    setSavePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Speichern fehlgeschlagen.");
+      return;
+    }
+    setRoman(result.data!.roman);
+    toast.success("Kontext gespeichert.");
+    if (isNew && result.data?.roman.id) {
+      window.location.href = `/admin/roman/${result.data.roman.id}`;
+    }
+  }
+
+  async function handlePhase0() {
+    if (!canSave) return;
+    setPhase0Pending(true);
+    const result = await runRomanPhase0Action(buildPayload());
+    setPhase0Pending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Phase 0 fehlgeschlagen.");
+      return;
+    }
+    const saved = result.data!.roman;
+    setRoman(saved);
+    toast.success(`Roadmap: ${result.data!.szenenCount} Szenen angelegt.`);
+    window.location.href = `/admin/roman/${saved.id}`;
+  }
+
+  async function handleNextScene() {
+    if (!canSave || !roman || batchPending) return;
+    const next = szenen.find((s) => s.status === "READY_FOR_WRITING");
+    if (next) {
+      setSzenen((current) =>
+        current.map((s) =>
+          s.id === next.id ? { ...s, status: "DRAFTING" as const } : s,
+        ),
+      );
+      setSelectedId(next.id);
+    }
+    setScenePending(true);
+    const result = await processNextRomanSzeneAction({ romanId: roman.id });
+    setScenePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Szenen-Lauf fehlgeschlagen.");
+      if (next) {
+        setSzenen((current) =>
+          current.map((s) =>
+            s.id === next.id
+              ? { ...s, status: "READY_FOR_WRITING" as const }
+              : s,
+          ),
+        );
+      }
+      return;
+    }
+    if (result.data!.szene) {
+      const done = result.data!.szene;
+      setSzenen((current) =>
+        current.map((s) => (s.id === done.id ? done : s)),
+      );
+      setSelectedId(done.id);
+    }
+    toast.success(result.data!.message);
+    window.location.reload();
+  }
+
+  async function handleAllScenes() {
+    if (!canSave || !roman || batchPending || scenePending) return;
+    const totalAtStart = szenen.filter(
+      (s) => s.status === "READY_FOR_WRITING",
+    ).length;
+    if (totalAtStart === 0) {
+      toast.message("Keine offenen Szenen (READY).");
+      return;
+    }
+
+    batchStopRef.current = false;
+    setBatchStopAfterCurrent(false);
+    setBatchPending(true);
+    setBatchProgressLabel(`Szene 1 von ${totalAtStart} wird geschrieben …`);
+
+    const outcome = await runAllReadyRomanSzenen({
+      romanId: roman.id,
+      totalAtStart,
+      shouldStop: () => batchStopRef.current,
+      processOne: async (romanId) =>
+        processNextRomanSzeneAction({ romanId }),
+      onProgress: (progress) => {
+        setBatchProgressLabel(progress.label);
+        if (progress.lastSzene) {
+          const done = progress.lastSzene;
+          setSzenen((current) =>
+            current.map((s) => (s.id === done.id ? done : s)),
+          );
+          setSelectedId(done.id);
+          return;
+        }
+        setSzenen((current) => {
+          const next = current.find((s) => s.status === "READY_FOR_WRITING");
+          if (next) {
+            setSelectedId(next.id);
+            return current.map((s) =>
+              s.id === next.id ? { ...s, status: "DRAFTING" as const } : s,
+            );
+          }
+          return current;
+        });
+      },
+    });
+
+    setBatchPending(false);
+    setBatchProgressLabel(null);
+    setBatchStopAfterCurrent(false);
+    batchStopRef.current = false;
+
+    if (outcome.error) {
+      toast.error(outcome.error);
+      window.location.reload();
+      return;
+    }
+
+    if (outcome.stopped) {
+      toast.message(
+        `Gestoppt nach ${outcome.processed} Szene(n). Rest bleibt bereit.`,
+      );
+    } else if (outcome.exhausted) {
+      toast.success(
+        outcome.processed > 0
+          ? `Alle offenen Szenen fertig (${outcome.processed}).`
+          : "Keine Szene mehr mit Status READY_FOR_WRITING.",
+      );
+    }
+    window.location.reload();
+  }
+
+  async function handleReset(szeneId: string) {
+    if (!canSave) return;
+    const result = await resetRomanSzeneAction({ szeneId });
+    if (!result.success) {
+      toast.error(result.error ?? "Reset fehlgeschlagen.");
+      return;
+    }
+    toast.success("Szene zurück auf „Bereit“.");
+    window.location.reload();
+  }
+
+  function closeRomanPdfPreview() {
+    setPdfPreviewOpen(false);
+    setPdfPreviewHtml(null);
+    if (pdfPreviewUrl) {
+      URL.revokeObjectURL(pdfPreviewUrl);
+      setPdfPreviewUrl(null);
+    }
+  }
+
+  async function handleExportRomanPdf() {
+    if (!roman || exportPending) return;
+    const revised = collectRevisedScenes(szenen);
+    if (!revised.length) {
+      toast.error("Noch keine revidierte Szene zum Export.");
+      return;
+    }
+
+    setExportPending(true);
+    closeRomanPdfPreview();
+    try {
+      const exportInput = {
+        title: title.trim() || roman.title,
+        szenen,
+        totalSzenen: szenen.length,
+      };
+      const html = buildRomanExportDocument(exportInput);
+      const blob = await buildRomanPdfBlob(exportInput);
+      const url = URL.createObjectURL(blob);
+      setPdfDownloadName(romanPdfFilename(exportInput.title));
+      setPdfPreviewHtml(html);
+      setPdfPreviewUrl(url);
+      setPdfPreviewOpen(true);
+      toast.success(
+        `Zwischenstand: ${revised.length} von ${szenen.length} Szenen.`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "PDF konnte nicht erzeugt werden.",
+      );
+    } finally {
+      setExportPending(false);
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          href="/admin/roman"
+          className="text-sm font-bold text-orange-800 hover:underline"
+        >
+          ← Alle Romane
+        </Link>
+        {roman && totalCount > 0 ? (
+          <p className="text-xs font-semibold text-zinc-500">
+            {completedCount}/{totalCount} fertig · {readyCount} bereit
+          </p>
+        ) : null}
+      </div>
+
+      {roman && totalCount > 0 ? (
+        <section className="rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+          <ProgressBar
+            value={completedCount}
+            max={totalCount}
+            label="Gesamtfortschritt"
+          />
+        </section>
+      ) : null}
+
+      <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+        <div>
+          <h2 className="text-lg font-extrabold text-zinc-950">
+            Roman-Kontext
+          </h2>
+          <p className="mt-1 text-sm font-semibold text-zinc-600">
+            Einstieg offen: Manuskript allein reicht, oder zuerst Fundament /
+            Fan-Persona. Später kannst du vor dem Manuskript starten.
+          </p>
+        </div>
+
+        <label className="block">
+          <FieldLabel>Arbeitstitel</FieldLabel>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            disabled={!canSave || busy}
+            className={inputClass}
+            placeholder="Arbeitstitel"
+          />
+        </label>
+
+        <Collapsible
+          title="1. Buch-Fundament (optional)"
+          open={openFundament}
+          onToggle={() => setOpenFundament((v) => !v)}
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block sm:col-span-2">
+              <FieldLabel>Genre</FieldLabel>
+              <input
+                value={genre}
+                onChange={(e) => setGenre(e.target.value)}
+                disabled={!canSave || busy}
+                className={inputClass}
+                placeholder="z. B. Thriller / Psychothriller"
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <FieldLabel>Prämisse (Logline)</FieldLabel>
+              <textarea
+                value={praemisse}
+                onChange={(e) => setPraemisse(e.target.value)}
+                disabled={!canSave || busy}
+                rows={3}
+                className={textareaClass}
+                placeholder="1–2 Sätze: Wer? Ziel? Hürde/Konflikt?"
+              />
+            </label>
+            <label className="block">
+              <FieldLabel>Perspektive</FieldLabel>
+              <input
+                value={perspektive}
+                onChange={(e) => setPerspektive(e.target.value)}
+                disabled={!canSave || busy}
+                className={inputClass}
+                placeholder="z. B. Ich-Perspektive"
+              />
+            </label>
+            <label className="block">
+              <FieldLabel>Zeitform</FieldLabel>
+              <input
+                value={zeitform}
+                onChange={(e) => setZeitform(e.target.value)}
+                disabled={!canSave || busy}
+                className={inputClass}
+                placeholder="z. B. Präteritum"
+              />
+            </label>
+            <label className="block sm:col-span-2">
+              <FieldLabel>Tonalität & Stil</FieldLabel>
+              <textarea
+                value={tonalitaet}
+                onChange={(e) => setTonalitaet(e.target.value)}
+                disabled={!canSave || busy}
+                rows={2}
+                className={textareaClass}
+                placeholder="z. B. düster, schnelles Tempo, zynischer Humor"
+              />
+            </label>
+          </div>
+        </Collapsible>
+
+        <Collapsible
+          title="2. Charakter-Steckbriefe (optional)"
+          open={openChars}
+          onToggle={() => setOpenChars((v) => !v)}
+        >
+          <div className="space-y-4">
+            {charaktere.map((char, index) => (
+              <div
+                key={index}
+                className="space-y-3 rounded-2xl bg-zinc-50 p-4 ring-1 ring-zinc-950/5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-extrabold text-zinc-800">
+                    Figur {index + 1}
+                  </p>
+                  {charaktere.length > 1 ? (
+                    <button
+                      type="button"
+                      disabled={!canSave || busy}
+                      onClick={() =>
+                        setCharaktere((rows) =>
+                          rows.filter((_, i) => i !== index),
+                        )
+                      }
+                      className="text-xs font-bold text-red-700 hover:underline"
+                    >
+                      Entfernen
+                    </button>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="block">
+                    <FieldLabel>Name</FieldLabel>
+                    <input
+                      value={char.name}
+                      onChange={(e) =>
+                        setCharaktere((rows) =>
+                          rows.map((r, i) =>
+                            i === index ? { ...r, name: e.target.value } : r,
+                          ),
+                        )
+                      }
+                      disabled={!canSave || busy}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="block">
+                    <FieldLabel>Alter</FieldLabel>
+                    <input
+                      value={char.alter}
+                      onChange={(e) =>
+                        setCharaktere((rows) =>
+                          rows.map((r, i) =>
+                            i === index ? { ...r, alter: e.target.value } : r,
+                          ),
+                        )
+                      }
+                      disabled={!canSave || busy}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="block">
+                    <FieldLabel>Rolle</FieldLabel>
+                    <input
+                      value={char.rolle}
+                      onChange={(e) =>
+                        setCharaktere((rows) =>
+                          rows.map((r, i) =>
+                            i === index ? { ...r, rolle: e.target.value } : r,
+                          ),
+                        )
+                      }
+                      disabled={!canSave || busy}
+                      className={inputClass}
+                      placeholder="Haupt- / Nebenfigur"
+                    />
+                  </label>
+                </div>
+                <label className="block">
+                  <FieldLabel>Kernmotivation & Ziel</FieldLabel>
+                  <textarea
+                    value={char.motivation}
+                    onChange={(e) =>
+                      setCharaktere((rows) =>
+                        rows.map((r, i) =>
+                          i === index
+                            ? { ...r, motivation: e.target.value }
+                            : r,
+                        ),
+                      )
+                    }
+                    disabled={!canSave || busy}
+                    rows={2}
+                    className={textareaClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Schwäche / Konflikt</FieldLabel>
+                  <textarea
+                    value={char.schwaeche}
+                    onChange={(e) =>
+                      setCharaktere((rows) =>
+                        rows.map((r, i) =>
+                          i === index
+                            ? { ...r, schwaeche: e.target.value }
+                            : r,
+                        ),
+                      )
+                    }
+                    disabled={!canSave || busy}
+                    rows={2}
+                    className={textareaClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Sprachstil</FieldLabel>
+                  <input
+                    value={char.sprachstil}
+                    onChange={(e) =>
+                      setCharaktere((rows) =>
+                        rows.map((r, i) =>
+                          i === index
+                            ? { ...r, sprachstil: e.target.value }
+                            : r,
+                        ),
+                      )
+                    }
+                    disabled={!canSave || busy}
+                    className={inputClass}
+                    placeholder="kurze Sätze, sarkastisch, Fachjargon …"
+                  />
+                </label>
+              </div>
+            ))}
+            <button
+              type="button"
+              disabled={!canSave || busy}
+              onClick={() =>
+                setCharaktere((rows) => [...rows, emptyCharakter()])
+              }
+              className="rounded-full bg-gray-100 px-4 py-2 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white"
+            >
+              + Figur
+            </button>
+          </div>
+        </Collapsible>
+
+        <Collapsible
+          title="3. Welt & Regeln (optional)"
+          open={openWelt}
+          onToggle={() => setOpenWelt((v) => !v)}
+        >
+          <label className="mb-3 block">
+            <FieldLabel>Hauptschauplätze</FieldLabel>
+            <textarea
+              value={weltSchauplaetze}
+              onChange={(e) => setWeltSchauplaetze(e.target.value)}
+              disabled={!canSave || busy}
+              rows={4}
+              className={textareaClass}
+              placeholder="Sensorische Details: Sehen, Hören, Riechen …"
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Regeln & Grenzen</FieldLabel>
+            <textarea
+              value={weltRegeln}
+              onChange={(e) => setWeltRegeln(e.target.value)}
+              disabled={!canSave || busy}
+              rows={4}
+              className={textareaClass}
+              placeholder="Logik von Magie, Technologie oder Gesetzen"
+            />
+          </label>
+        </Collapsible>
+
+        <Collapsible
+          title="4. Szenen-Raster / Plot-Plan (optional)"
+          open={openRaster}
+          onToggle={() => setOpenRaster((v) => !v)}
+        >
+          <p className="mb-3 text-xs font-semibold text-zinc-500">
+            Planungsraster vor der operativen Roadmap. Phase 0 kann daraus
+            ableiten — muss aber nicht ausgefüllt sein.
+          </p>
+          <div className="space-y-4">
+            {szenenRaster.map((row, index) => (
+              <div
+                key={index}
+                className="space-y-3 rounded-2xl bg-zinc-50 p-4 ring-1 ring-zinc-950/5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-extrabold text-zinc-800">
+                    Raster {index + 1}
+                  </p>
+                  {szenenRaster.length > 1 ? (
+                    <button
+                      type="button"
+                      disabled={!canSave || busy}
+                      onClick={() =>
+                        setSzenenRaster((rows) =>
+                          rows.filter((_, i) => i !== index),
+                        )
+                      }
+                      className="text-xs font-bold text-red-700 hover:underline"
+                    >
+                      Entfernen
+                    </button>
+                  ) : null}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="block">
+                    <FieldLabel>Szene-ID</FieldLabel>
+                    <input
+                      value={row.szeneId}
+                      onChange={(e) =>
+                        setSzenenRaster((rows) =>
+                          rows.map((r, i) =>
+                            i === index
+                              ? { ...r, szeneId: e.target.value }
+                              : r,
+                          ),
+                        )
+                      }
+                      disabled={!canSave || busy}
+                      className={inputClass}
+                      placeholder="z. B. K1-S2"
+                    />
+                  </label>
+                  <label className="block">
+                    <FieldLabel>Kapitel</FieldLabel>
+                    <input
+                      type="number"
+                      min={1}
+                      value={row.kapitelNr ?? 1}
+                      onChange={(e) =>
+                        setSzenenRaster((rows) =>
+                          rows.map((r, i) =>
+                            i === index
+                              ? {
+                                  ...r,
+                                  kapitelNr: Math.max(
+                                    1,
+                                    Number(e.target.value) || 1,
+                                  ),
+                                }
+                              : r,
+                          ),
+                        )
+                      }
+                      disabled={!canSave || busy}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="block">
+                    <FieldLabel>Ort</FieldLabel>
+                    <input
+                      value={row.ort}
+                      onChange={(e) =>
+                        setSzenenRaster((rows) =>
+                          rows.map((r, i) =>
+                            i === index ? { ...r, ort: e.target.value } : r,
+                          ),
+                        )
+                      }
+                      disabled={!canSave || busy}
+                      className={inputClass}
+                    />
+                  </label>
+                </div>
+                <label className="block">
+                  <FieldLabel>Anwesende Figuren</FieldLabel>
+                  <input
+                    value={row.figuren}
+                    onChange={(e) =>
+                      setSzenenRaster((rows) =>
+                        rows.map((r, i) =>
+                          i === index ? { ...r, figuren: e.target.value } : r,
+                        ),
+                      )
+                    }
+                    disabled={!canSave || busy}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Szenenziel</FieldLabel>
+                  <textarea
+                    value={row.szenenziel}
+                    onChange={(e) =>
+                      setSzenenRaster((rows) =>
+                        rows.map((r, i) =>
+                          i === index
+                            ? { ...r, szenenziel: e.target.value }
+                            : r,
+                        ),
+                      )
+                    }
+                    disabled={!canSave || busy}
+                    rows={2}
+                    className={textareaClass}
+                    placeholder="Was ändert sich am Ende der Szene?"
+                  />
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <FieldLabel>Stimmung Start</FieldLabel>
+                    <input
+                      value={row.emotionalStart}
+                      onChange={(e) =>
+                        setSzenenRaster((rows) =>
+                          rows.map((r, i) =>
+                            i === index
+                              ? { ...r, emotionalStart: e.target.value }
+                              : r,
+                          ),
+                        )
+                      }
+                      disabled={!canSave || busy}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="block">
+                    <FieldLabel>Stimmung Ende</FieldLabel>
+                    <input
+                      value={row.emotionalEnd}
+                      onChange={(e) =>
+                        setSzenenRaster((rows) =>
+                          rows.map((r, i) =>
+                            i === index
+                              ? { ...r, emotionalEnd: e.target.value }
+                              : r,
+                          ),
+                        )
+                      }
+                      disabled={!canSave || busy}
+                      className={inputClass}
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              disabled={!canSave || busy}
+              onClick={() =>
+                setSzenenRaster((rows) => [...rows, emptySzenenRasterItem()])
+              }
+              className="rounded-full bg-gray-100 px-4 py-2 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white"
+            >
+              + Raster-Zeile
+            </button>
+          </div>
+        </Collapsible>
+
+        <Collapsible
+          title="5. KI-Regelwerk"
+          open={openKi}
+          onToggle={() => setOpenKi((v) => !v)}
+        >
+          <label className="block">
+            <FieldLabel>System-Vorgaben für Autor / Revision</FieldLabel>
+            <textarea
+              value={kiRegelwerk}
+              onChange={(e) => setKiRegelwerk(e.target.value)}
+              disabled={!canSave || busy}
+              rows={6}
+              className={textareaClass}
+            />
+            <span className="mt-1.5 block text-xs font-semibold text-zinc-500">
+              Standard: Show don&apos;t tell, keine KI-Floskeln, Dialoge,
+              Orthografie, Perspektive/Zeitform.
+            </span>
+          </label>
+          <label className="mt-3 block">
+            <FieldLabel>Zusätzliche Stilbibel (frei)</FieldLabel>
+            <textarea
+              value={stilbibel}
+              onChange={(e) => setStilbibel(e.target.value)}
+              disabled={!canSave || busy}
+              rows={3}
+              className={textareaClass}
+              placeholder="Weitere Stilhinweise …"
+            />
+          </label>
+        </Collapsible>
+
+        <Collapsible
+          title="Fan-Persona (Testleser:in)"
+          open={openFan}
+          onToggle={() => setOpenFan((v) => !v)}
+        >
+          <p className="mb-3 text-xs font-semibold text-zinc-500">
+            Eine KI-Rolle als Genre-Fan — später auch schon beim Einstieg der
+            Roman-Erstellung nutzbar. Leer = Vorschlag aus Genre/Tonalität zur
+            Laufzeit.
+          </p>
+          <div className="mb-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!canSave || busy}
+              onClick={applySuggestedFan}
+              className="rounded-full bg-gray-100 px-4 py-2 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white"
+            >
+              Aus Genre vorschlagen
+            </button>
+          </div>
+          <label className="mb-3 block">
+            <FieldLabel>Name</FieldLabel>
+            <input
+              value={fanPersonaName}
+              onChange={(e) => setFanPersonaName(e.target.value)}
+              disabled={!canSave || busy}
+              className={inputClass}
+              placeholder="z. B. Thriller-Stammleser:in"
+            />
+          </label>
+          <label className="block">
+            <FieldLabel>Profil / Leseperspektive</FieldLabel>
+            <textarea
+              value={fanPersonaProfil}
+              onChange={(e) => setFanPersonaProfil(e.target.value)}
+              disabled={!canSave || busy}
+              rows={5}
+              className={textareaClass}
+              placeholder="Wer ist diese Person, was liebt / hasst sie beim Lesen?"
+            />
+          </label>
+        </Collapsible>
+
+        <div className="block">
+          <FieldLabel>Manuskript / Outline (Einstieg offen)</FieldLabel>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <input
+              ref={pdfInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              className="sr-only"
+              disabled={!canSave || busy}
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                void handlePdfUpload(file);
+                event.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              disabled={!canSave || busy}
+              onClick={() => pdfInputRef.current?.click()}
+              className={cn(
+                "rounded-full bg-gray-100 px-4 py-2 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white",
+                (!canSave || busy) && "opacity-70",
+              )}
+            >
+              {pdfPending ? "PDF wird gelesen …" : "PDF hochladen"}
+            </button>
+            {pdfLabel ? (
+              <span className="text-xs font-semibold text-zinc-500">
+                {pdfLabel}
+              </span>
+            ) : (
+              <span className="text-xs font-semibold text-zinc-500">
+                Text-PDF (kein Scan ohne OCR), max. 12 MB — oder leer lassen
+              </span>
+            )}
+          </div>
+          <textarea
+            value={manuskriptRaw}
+            onChange={(e) => setManuskriptRaw(e.target.value)}
+            disabled={!canSave || busy}
+            rows={12}
+            className="w-full rounded-2xl bg-gray-100 px-4 py-3 font-mono text-sm text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
+            placeholder="Rohmanuskript, Exposé oder Outline — optional, wenn Fundament reicht"
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={!canSave || busy}
+            onClick={() => void handleSaveOnly()}
+            className={cn(
+              "rounded-full bg-gray-100 px-5 py-2.5 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white",
+              (!canSave || busy) && "opacity-70",
+            )}
+          >
+            {savePending ? "Speichern …" : "Nur speichern"}
+          </button>
+          <button
+            type="button"
+            disabled={!canSave || busy}
+            onClick={() => void handlePhase0()}
+            className={cn(
+              "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800",
+              (!canSave || busy) && "opacity-70",
+            )}
+          >
+            {phase0Pending
+              ? "Roadmap wird erzeugt …"
+              : "Phase 0: Szenen-Roadmap (KI)"}
+          </button>
+        </div>
+        <p className="text-xs font-semibold text-zinc-500">
+          Phase 0 ersetzt alle nicht fertigen Szenen. Fertige (COMPLETED)
+          bleiben erhalten. Dauer: oft 1–3 Minuten.
+        </p>
+      </section>
+
+      {roman ? (
+        <>
+          <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-extrabold text-zinc-950">
+                Phase 1–3 — Nächste Szene
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={!roman || exportPending || revisedCount === 0 || busy}
+                  onClick={() => void handleExportRomanPdf()}
+                  className={cn(
+                    "rounded-full bg-gray-100 px-5 py-2.5 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white",
+                    (exportPending || revisedCount === 0 || busy) &&
+                      "opacity-70",
+                  )}
+                >
+                  {exportPending
+                    ? "PDF wird erzeugt …"
+                    : "Roman-PDF (revidiert)"}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !canSave ||
+                    scenePending ||
+                    batchPending ||
+                    readyCount === 0 ||
+                    phase0Pending
+                  }
+                  onClick={() => void handleNextScene()}
+                  className={cn(
+                    "rounded-full bg-yellow-400 px-5 py-2.5 text-sm font-extrabold text-zinc-950 hover:bg-yellow-300",
+                    (scenePending ||
+                      batchPending ||
+                      readyCount === 0 ||
+                      !canSave) &&
+                      "opacity-70",
+                  )}
+                >
+                  {scenePending && !batchPending
+                    ? "Autor → Lektor/Fan → Revision …"
+                    : "Nächste Szene schreiben"}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    !canSave ||
+                    scenePending ||
+                    batchPending ||
+                    readyCount === 0 ||
+                    phase0Pending
+                  }
+                  onClick={() => void handleAllScenes()}
+                  className={cn(
+                    "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800",
+                    (scenePending ||
+                      batchPending ||
+                      readyCount === 0 ||
+                      !canSave) &&
+                      "opacity-70",
+                  )}
+                >
+                  {batchPending
+                    ? "Alle Szenen laufen …"
+                    : `Alle offenen Szenen (${readyCount})`}
+                </button>
+              </div>
+            </div>
+            <p className="text-sm font-semibold text-zinc-600">
+              Eine Szene oder alle offenen nacheinander (Autor → Lektor/Fan →
+              Revision). Batch kann Stunden dauern — Tab offen lassen; Stoppen
+              erst nach der laufenden Szene.
+            </p>
+            {roman.aktuelleZusammenfassung.trim() ? (
+              <div>
+                <p className="mb-1.5 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Laufende Zusammenfassung
+                </p>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-2xl bg-gray-100 p-4 text-xs font-semibold text-zinc-700">
+                  {roman.aktuelleZusammenfassung}
+                </pre>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,16rem)_1fr]">
+            <div className="flex min-h-[28rem] flex-col rounded-3xl bg-white p-3 ring-1 ring-zinc-950/10 lg:h-0 lg:min-h-full">
+              <p className="mb-2 shrink-0 px-2 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                Szenen
+              </p>
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                {chapters.map((chapter) => (
+                  <div key={chapter.kapitelNr}>
+                    <div className="mb-1.5 px-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-extrabold text-zinc-800">
+                          Kapitel {chapter.kapitelNr}
+                        </p>
+                        <span className="text-[10px] font-extrabold tracking-wide text-zinc-500 uppercase">
+                          {chapter.headline}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200">
+                        <div
+                          className="h-full rounded-full bg-emerald-500 transition-[width] duration-300"
+                          style={{
+                            width: `${
+                              chapter.total > 0
+                                ? Math.round(
+                                    (chapter.done / chapter.total) * 100,
+                                  )
+                                : 0
+                            }%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-0.5 text-[10px] font-semibold text-zinc-500">
+                        {chapter.done}/{chapter.total} fertig
+                      </p>
+                    </div>
+                    <ul className="space-y-1">
+                      {chapter.szenen.map((szene) => (
+                        <li key={szene.id}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedId(szene.id)}
+                            className={cn(
+                              "flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold",
+                              selectedId === szene.id
+                                ? "bg-orange-50 text-orange-900"
+                                : "text-zinc-700 hover:bg-gray-100",
+                            )}
+                          >
+                            <span>
+                              {szene.kapitelNr}.{szene.szenenNr}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] font-extrabold tracking-wide uppercase",
+                                STATUS_BADGE[szene.status],
+                              )}
+                            >
+                              {STATUS_LABEL[szene.status]}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+              {!selected ? (
+                <p className="text-sm font-semibold text-zinc-500">
+                  Keine Szene ausgewählt.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <h3 className="text-lg font-extrabold text-zinc-950">
+                        Kapitel {selected.kapitelNr} · Szene{" "}
+                        {selected.szenenNr}
+                      </h3>
+                      <p
+                        className={cn(
+                          "mt-1 inline-flex rounded-full px-2.5 py-0.5 text-xs font-extrabold tracking-wide uppercase",
+                          STATUS_BADGE[selected.status],
+                        )}
+                      >
+                        {STATUS_LABEL[selected.status]}
+                      </p>
+                    </div>
+                    {selected.status !== "COMPLETED" &&
+                    selected.status !== "READY_FOR_WRITING" ? (
+                      <button
+                        type="button"
+                        disabled={!canSave}
+                        onClick={() => void handleReset(selected.id)}
+                        className="rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold text-zinc-700 ring-1 ring-zinc-950/10"
+                      >
+                        Auf bereit zurücksetzen
+                      </button>
+                    ) : null}
+                  </div>
+                  <CollapsibleSceneField
+                    key={`${selected.id}-briefing`}
+                    label="Briefing"
+                    value={selected.briefing}
+                  />
+                  <CollapsibleSceneField
+                    key={`${selected.id}-entwurf`}
+                    label="Entwurf"
+                    value={selected.entwurfRaw}
+                  />
+                  <CollapsibleSceneField
+                    key={`${selected.id}-lektor`}
+                    label="Feedback Lektor"
+                    value={selected.feedbackLektor}
+                  />
+                  <CollapsibleSceneField
+                    key={`${selected.id}-fan`}
+                    label="Feedback Fan"
+                    value={selected.feedbackFan}
+                  />
+                  <SceneField
+                    label="Revidierte Szene"
+                    value={selected.entwurfRevidiert}
+                  />
+                </div>
+              )}
+            </div>
+          </section>
+        </>
+      ) : null}
+
+      <RomanSceneWaitDialog
+        open={scenePending || batchPending}
+        batch={batchPending}
+        progressLabel={batchPending ? batchProgressLabel : null}
+        stopAfterCurrent={batchStopAfterCurrent}
+        onRequestStopAfterCurrent={
+          batchPending
+            ? () => {
+                batchStopRef.current = true;
+                setBatchStopAfterCurrent(true);
+                toast.message("Stoppt nach der aktuellen Szene …");
+              }
+            : undefined
+        }
+      />
+      <StoryPdfPreviewDialog
+        open={pdfPreviewOpen}
+        previewHtml={pdfPreviewHtml}
+        pdfUrl={pdfPreviewUrl}
+        downloadFileName={pdfDownloadName}
+        heading="Roman-Zwischenstand"
+        onClose={closeRomanPdfPreview}
+      />
+    </div>
+  );
+}
+
+function Collapsible({
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl ring-1 ring-zinc-950/10">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <span className="text-sm font-extrabold text-zinc-900">{title}</span>
+        <span className="text-xs font-bold text-zinc-500">
+          {open ? "Einklappen" : "Ausklappen"}
+        </span>
+      </button>
+      {open ? <div className="space-y-3 border-t border-zinc-100 p-4">{children}</div> : null}
+    </div>
+  );
+}
+
+function CollapsibleSceneField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasContent = value.trim().length > 0;
+
+  return (
+    <div className="rounded-2xl ring-1 ring-zinc-950/10">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <span className="min-w-0">
+          <span className="block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+            {label}
+          </span>
+          {!open ? (
+            <span className="mt-0.5 block truncate text-sm font-semibold text-zinc-600">
+              {hasContent ? "Inhalt vorhanden — ausklappen" : "— leer"}
+            </span>
+          ) : null}
+        </span>
+        <span className="shrink-0 text-xs font-bold text-zinc-500">
+          {open ? "Einklappen" : "Ausklappen"}
+        </span>
+      </button>
+      {open ? (
+        <div className="border-t border-zinc-100 p-4">
+          {hasContent ? (
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-2xl bg-gray-100 p-4 text-sm leading-relaxed text-zinc-800">
+              {value}
+            </pre>
+          ) : (
+            <p className="text-sm font-semibold text-zinc-400">—</p>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SceneField({ label, value }: { label: string; value: string }) {
+  if (!value.trim()) {
+    return (
+      <div>
+        <p className="mb-1 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+          {label}
+        </p>
+        <p className="text-sm font-semibold text-zinc-400">—</p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <p className="mb-1 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+        {label}
+      </p>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-2xl bg-gray-100 p-4 text-sm leading-relaxed text-zinc-800">
+        {value}
+      </pre>
+    </div>
+  );
+}

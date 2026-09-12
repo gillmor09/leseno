@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Large dialog: story export preview + PDF download.
- * Preview uses the export HTML (reliable). Download uses the html2pdf Blob.
+ * Large dialog: story/roman export preview + PDF download.
+ * Preview uses the export HTML (readable). Download uses the generated PDF Blob.
  * No backdrop-filter — Chrome PDF plugins break under filter ancestors.
  * Close via X / Escape / outside click; footer only „PDF speichern“.
  */
@@ -18,6 +18,10 @@ type StoryPdfPreviewDialogProps = {
   previewHtml: string | null;
   /** Object URL for `application/pdf` download (revoked by parent on close). */
   pdfUrl: string | null;
+  /** Download filename for „PDF speichern“. */
+  downloadFileName?: string;
+  /** Dialog heading under the PDF eyebrow. */
+  heading?: string;
   onClose: () => void;
 };
 
@@ -28,6 +32,8 @@ export function StoryPdfPreviewDialog({
   open,
   previewHtml,
   pdfUrl,
+  downloadFileName = "leseno-geschichte.pdf",
+  heading = "Vorschau",
   onClose,
 }: StoryPdfPreviewDialogProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -59,7 +65,18 @@ export function StoryPdfPreviewDialog({
   }, [open, onClose]);
 
   useLayoutEffect(() => {
-    if (!open || !previewHtml) {
+    if (!open) {
+      setPreviewReady(false);
+      return;
+    }
+
+    // Prefer the real PDF blob in the iframe so preview matches the download.
+    if (pdfUrl) {
+      setPreviewReady(true);
+      return;
+    }
+
+    if (!previewHtml) {
       setPreviewReady(false);
       return;
     }
@@ -74,6 +91,22 @@ export function StoryPdfPreviewDialog({
 
     let cancelled = false;
     void (async () => {
+      try {
+        if (doc.fonts?.ready) {
+          await doc.fonts.ready;
+        }
+        await Promise.all(
+          [
+            doc.fonts?.load?.("400 16px Nunito"),
+            doc.fonts?.load?.("600 16px Nunito"),
+            doc.fonts?.load?.("700 16px Nunito"),
+            doc.fonts?.load?.("800 16px Nunito"),
+          ].filter(Boolean) as Promise<FontFace[]>[],
+        );
+      } catch {
+        // Preview still usable with fallback fonts.
+      }
+
       const images = Array.from(doc.images);
       await Promise.all(
         images.map(
@@ -88,14 +121,14 @@ export function StoryPdfPreviewDialog({
             }),
         ),
       );
-      await new Promise((resolve) => window.setTimeout(resolve, 150));
+      await new Promise((resolve) => window.setTimeout(resolve, 200));
       if (!cancelled) setPreviewReady(true);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [open, previewHtml]);
+  }, [open, previewHtml, pdfUrl]);
 
   if (!open) {
     return null;
@@ -109,7 +142,7 @@ export function StoryPdfPreviewDialog({
     try {
       const link = document.createElement("a");
       link.href = pdfUrl;
-      link.download = "leseno-geschichte.pdf";
+      link.download = downloadFileName;
       link.rel = "noopener";
       document.body.appendChild(link);
       link.click();
@@ -144,7 +177,7 @@ export function StoryPdfPreviewDialog({
               id="story-pdf-preview-title"
               className="text-lg font-extrabold text-zinc-950 sm:text-xl"
             >
-              Vorschau
+              {heading}
             </h2>
           </div>
           <button
@@ -171,7 +204,8 @@ export function StoryPdfPreviewDialog({
           ) : null}
           <iframe
             ref={iframeRef}
-            title="PDF-Vorschau der Geschichte"
+            title="PDF-Vorschau"
+            src={pdfUrl ?? undefined}
             className="h-full w-full border-0 bg-white"
           />
         </div>

@@ -1,14 +1,19 @@
 "use client";
 
 /**
- * GA4 loader on first scroll / pointer / key only.
+ * GA4 loader: after first interaction or a short idle timeout.
  * Skipped in the Amazon/Fire Capacitor shell (Kids / Appstore rules).
+ * Sends page_view on App Router navigations once loaded.
  */
 
-import { useEffect } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useRef } from "react";
 
 const MEASUREMENT_ID =
   process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim() ?? "";
+
+/** Load even without interaction so Realtime / first paint still count. */
+const IDLE_LOAD_MS = 2_500;
 
 declare global {
   interface Window {
@@ -52,7 +57,10 @@ function injectGoogleAnalytics(measurementId: string) {
     window.dataLayer?.push(args);
   };
   window.gtag("js", new Date());
-  window.gtag("config", measurementId, { anonymize_ip: true });
+  window.gtag("config", measurementId, {
+    anonymize_ip: true,
+    send_page_view: true,
+  });
 
   const script = document.createElement("script");
   script.src = `https://www.googletagmanager.com/gtag/js?id=${measurementId}`;
@@ -60,32 +68,91 @@ function injectGoogleAnalytics(measurementId: string) {
   document.head.appendChild(script);
 }
 
-export function GoogleAnalytics() {
+function trackPageView(url: string) {
+  if (!MEASUREMENT_ID || !window.gtag) return;
+  window.gtag("config", MEASUREMENT_ID, {
+    page_path: url,
+    anonymize_ip: true,
+  });
+}
+
+/**
+ * Watches App Router URL changes and sends GA4 page_view after the tag is ready.
+ */
+function GoogleAnalyticsRouteListener() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const readyRef = useRef(false);
+  const lastPathRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!MEASUREMENT_ID) return;
     if (shouldSkipGoogleAnalytics()) return;
 
+    let cancelled = false;
     let loaded = false;
+    let idleTimer = 0;
+
     const load = () => {
-      if (loaded) return;
+      if (loaded || cancelled) return;
       loaded = true;
       cleanup();
       injectGoogleAnalytics(MEASUREMENT_ID);
+      readyRef.current = true;
+      lastPathRef.current =
+        window.location.pathname + window.location.search;
     };
 
     const onInteract = () => load();
-    window.addEventListener("scroll", onInteract, { once: true, passive: true });
-    window.addEventListener("pointerdown", onInteract, { once: true });
-    window.addEventListener("keydown", onInteract, { once: true });
 
     function cleanup() {
       window.removeEventListener("scroll", onInteract);
       window.removeEventListener("pointerdown", onInteract);
       window.removeEventListener("keydown", onInteract);
+      if (idleTimer) window.clearTimeout(idleTimer);
     }
 
-    return cleanup;
+    window.addEventListener("scroll", onInteract, {
+      once: true,
+      passive: true,
+    });
+    window.addEventListener("pointerdown", onInteract, { once: true });
+    window.addEventListener("keydown", onInteract, { once: true });
+    idleTimer = window.setTimeout(load, IDLE_LOAD_MS);
+
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
   }, []);
 
+  useEffect(() => {
+    if (!MEASUREMENT_ID) return;
+    if (shouldSkipGoogleAnalytics()) return;
+
+    const url =
+      pathname +
+      (searchParams?.toString() ? `?${searchParams.toString()}` : "");
+
+    // Initial config already sends the first page_view; skip duplicate.
+    if (!readyRef.current) {
+      lastPathRef.current = url;
+      return;
+    }
+    if (lastPathRef.current === url) return;
+    lastPathRef.current = url;
+    trackPageView(url);
+  }, [pathname, searchParams]);
+
   return null;
+}
+
+export function GoogleAnalytics() {
+  if (!MEASUREMENT_ID) return null;
+
+  return (
+    <Suspense fallback={null}>
+      <GoogleAnalyticsRouteListener />
+    </Suspense>
+  );
 }

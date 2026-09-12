@@ -43,6 +43,7 @@ const adminItems = [
   { href: "/admin/emails", label: "Auth-E-Mails" },
   { href: "/admin/hilfe", label: "Hilfe" },
   { href: "/admin/blog", label: "Blog" },
+  { href: "/admin/roman", label: "Roman" },
 ] as const;
 
 export function LandingAdminChrome({

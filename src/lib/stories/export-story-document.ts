@@ -4,6 +4,13 @@
  * Expects pipeline-sanitized story HTML.
  */
 
+import {
+  NUNITO_FONT_FAMILY,
+  appendNunitoStylesheet,
+  nunitoExportFontCss,
+  nunitoGoogleFontsLinkTag,
+  waitForNunitoFonts,
+} from "@/lib/pdf/export-font";
 import { looksLikeHtml } from "@/lib/stories/looks-like-html";
 
 function escapeHtml(value: string): string {
@@ -83,15 +90,17 @@ export function buildStoryExportDocument(input: StoryExportInput): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Leseno — Deine Geschichte</title>
+  ${nunitoGoogleFontsLinkTag()}
   <style>
     * { box-sizing: border-box; }
+    ${nunitoExportFontCss()}
     body,
     .leseno-pdf-root {
       margin: 0;
       padding: 1.5rem;
       background: #fff;
       color: #09090b;
-      font-family: Nunito, ui-sans-serif, system-ui, sans-serif;
+      font-family: ${NUNITO_FONT_FAMILY};
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -262,16 +271,20 @@ export async function buildStoryPdfBlob(
   host.setAttribute("data-leseno-pdf-export", "true");
   Object.assign(host.style, {
     position: "fixed",
-    left: "-9999px",
+    // In-viewport: off-screen (-9999px) often yields blank html2canvas captures.
+    left: "0",
     top: "0",
     width: "794px",
     margin: "0",
     padding: "0",
     background: "#ffffff",
-    zIndex: "1",
+    zIndex: "40",
     pointerEvents: "none",
     opacity: "1",
+    fontFamily: NUNITO_FONT_FAMILY,
   });
+
+  appendNunitoStylesheet(host);
 
   for (const styleEl of Array.from(parsed.querySelectorAll("style"))) {
     host.appendChild(styleEl.cloneNode(true));
@@ -279,11 +292,13 @@ export async function buildStoryPdfBlob(
 
   const root = document.createElement("div");
   root.className = "leseno-pdf-root";
+  root.style.fontFamily = NUNITO_FONT_FAMILY;
   root.innerHTML = parsed.body.innerHTML;
   host.appendChild(root);
   document.body.appendChild(host);
 
   try {
+    await waitForNunitoFonts();
     await waitForImages(host);
     await new Promise((resolve) => window.setTimeout(resolve, 400));
 
@@ -302,9 +317,8 @@ export async function buildStoryPdfBlob(
           logging: false,
           backgroundColor: "#ffffff",
           scrollX: 0,
-          scrollY: -window.scrollY,
+          scrollY: 0,
           windowWidth: root.scrollWidth || 794,
-          windowHeight: root.scrollHeight || 1123,
         },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
         pagebreak: { mode: ["avoid-all", "css", "legacy"] },

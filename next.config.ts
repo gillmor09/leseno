@@ -12,7 +12,7 @@ const modernPolyfill = path.join(__dirname, "src/lib/modern-polyfill.js");
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Native canvas must stay external for social image text overlay.
-  serverExternalPackages: ["@napi-rs/canvas", "sharp", "opentype.js"],
+  serverExternalPackages: ["@napi-rs/canvas", "sharp", "opentype.js", "unpdf"],
   // Vendored Nunito TTF + Frage background for social overlays.
   outputFileTracingIncludes: {
     "/*": [
