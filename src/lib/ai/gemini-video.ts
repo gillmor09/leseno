@@ -1,7 +1,6 @@
 /**
  * Gemini Veo video generation via `predictLongRunning` (Gemini API / GEMINI_API_KEY).
- * Image→video: `image.bytesBase64Encoded`.
- * Video extension: `video.uri` from a prior Veo generation only (not uploaded files).
+ * Image→video uses `image.bytesBase64Encoded` (not Gemini `inlineData`).
  */
 
 import { getGeminiApiKey } from "@/lib/ai/gemini";
@@ -10,28 +9,27 @@ const GEMINI_API_ROOT = "https://generativelanguage.googleapis.com/v1beta";
 
 export const DEFAULT_VEO_MODEL = "veo-3.1-generate-preview";
 
-/** Veo duration options (seconds). Longer values may depend on model access. */
-export const VEO_DURATION_SECONDS = [4, 6, 8, 10, 12, 15, 20] as const;
+/**
+ * Veo text→video lengths. Image→video is locked to 8s by the API
+ * (`reference image to video only supports 8 seconds`).
+ */
+export const VEO_DURATION_SECONDS = [4, 6, 8] as const;
 export type VeoDurationSeconds = (typeof VEO_DURATION_SECONDS)[number];
+
+/** Fixed length for image→video (Gemini / Vertex Veo constraint). */
+export const VEO_IMAGE_TO_VIDEO_SECONDS = 8 as const;
 
 export type VeoAspectRatio = "16:9" | "9:16";
 
-export type GeminiVideoSource =
-  | {
-      kind: "image";
-      mimeType: string;
-      /** Raw base64 without data-URL prefix. */
-      base64: string;
-    }
-  | {
-      kind: "video-uri";
-      /** Gemini Files download URI from a previous Veo result. */
-      uri: string;
-    };
+export type GeminiVideoImageSource = {
+  mimeType: string;
+  /** Raw base64 without data-URL prefix. */
+  base64: string;
+};
 
 export type GenerateGeminiVideoInput = {
   prompt: string;
-  source: GeminiVideoSource;
+  image: GeminiVideoImageSource;
   modelSlug?: string;
   durationSeconds?: VeoDurationSeconds;
   aspectRatio?: VeoAspectRatio;
@@ -44,7 +42,7 @@ export type GenerateGeminiVideoResult = {
   modelSlug: string;
   durationSeconds: VeoDurationSeconds;
   operationName: string;
-  /** Gemini download URI (usable for Veo extension for ~2 days). */
+  /** Gemini download URI from the generation response (for debugging / future use). */
   veoFileUri: string | null;
 };
 
@@ -73,7 +71,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Starts Veo, polls until done, downloads the MP4.
+ * Starts Veo image→video, polls until done, downloads the MP4.
  * Typical runtime: 1–3 minutes.
  */
 export async function generateWithGeminiVideo(
@@ -81,29 +79,12 @@ export async function generateWithGeminiVideo(
 ): Promise<GenerateGeminiVideoResult> {
   const apiKey = getGeminiApiKey();
   const modelSlug = (input.modelSlug?.trim() || DEFAULT_VEO_MODEL).trim();
-  const durationSeconds = input.durationSeconds ?? 8;
+  // Image→video rejects anything other than 8s.
+  const durationSeconds = VEO_IMAGE_TO_VIDEO_SECONDS;
   const aspectRatio = input.aspectRatio ?? "16:9";
   const prompt = input.prompt.trim();
   if (!prompt) {
     throw new Error("Prompt für den Video-Clip fehlt.");
-  }
-
-  const instance: Record<string, unknown> = { prompt };
-  if (input.source.kind === "image") {
-    // Veo image-to-video expects Vertex-style bytes, not Gemini inlineData.
-    instance.image = {
-      mimeType: input.source.mimeType,
-      bytesBase64Encoded: input.source.base64,
-    };
-  } else {
-    const uri = input.source.uri.trim();
-    if (!uri) {
-      throw new Error(
-        "Zum Verlängern fehlt die Gemini-Video-URI des Ausgangs-Clips.",
-      );
-    }
-    // Extension only accepts the URI from a prior Veo generation — not base64 uploads.
-    instance.video = { uri };
   }
 
   const startUrl = `${GEMINI_API_ROOT}/models/${encodeURIComponent(modelSlug)}:predictLongRunning`;
@@ -114,7 +95,15 @@ export async function generateWithGeminiVideo(
       "x-goog-api-key": apiKey,
     },
     body: JSON.stringify({
-      instances: [instance],
+      instances: [
+        {
+          prompt,
+          image: {
+            mimeType: input.image.mimeType,
+            bytesBase64Encoded: input.image.base64,
+          },
+        },
+      ],
       parameters: {
         sampleCount: 1,
         durationSeconds,
@@ -126,10 +115,18 @@ export async function generateWithGeminiVideo(
 
   const startPayload = (await startResponse.json()) as LongRunningStart;
   if (!startResponse.ok || startPayload.error || !startPayload.name) {
-    throw new Error(
+    const detail =
       startPayload.error?.message ??
-        `Video-Generierung starten fehlgeschlagen (${startResponse.status}).`,
-    );
+      `Video-Generierung starten fehlgeschlagen (${startResponse.status}).`;
+    console.error("[gemini-video] start failed", {
+      status: startResponse.status,
+      modelSlug,
+      durationSeconds,
+      aspectRatio,
+      detail,
+      payload: startPayload,
+    });
+    throw new Error(detail);
   }
 
   const operationName = startPayload.name;
@@ -194,9 +191,7 @@ export async function generateWithGeminiVideo(
     redirect: "follow",
   });
   if (!download.ok) {
-    throw new Error(
-      `Video-Download fehlgeschlagen (${download.status}).`,
-    );
+    throw new Error(`Video-Download fehlgeschlagen (${download.status}).`);
   }
   const arrayBuffer = await download.arrayBuffer();
   return {

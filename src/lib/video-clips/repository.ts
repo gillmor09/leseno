@@ -22,7 +22,7 @@ export type VideoClipRow = {
   byteSize: number | null;
   sourceKind: "image" | "video";
   sourceFileName: string;
-  /** Gemini Veo download URI — required to extend; expires on Google side (~2 days). */
+  /** Gemini download URI from generation (optional metadata). */
   veoFileUri: string | null;
   createdBy: string | null;
   createdAt: string;

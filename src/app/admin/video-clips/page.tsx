@@ -11,15 +11,14 @@ import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
   title: "Video-Clips — Leseno Admin",
-  description:
-    "Kurze Video-Clips mit Gemini Veo aus Bild- oder Video-Vorlage und Prompt.",
+  description: "Kurze Video-Clips mit Gemini Veo aus Bildvorlage und Prompt.",
 };
 
 /** Veo long-running generation. */
 export const maxDuration = 300;
 
 /**
- * Admin: generate short video clips (Gemini Veo) from image/video + prompt.
+ * Admin: generate short video clips (Gemini Veo) from image + prompt.
  */
 export default async function VideoClipsAdminPage() {
   const canGenerate = hasServiceRoleConfig();
@@ -66,8 +65,8 @@ export default async function VideoClipsAdminPage() {
             Video-Clips
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Aus einer Bild- oder Video-Vorlage und einem Prompt erzeugt Gemini
-            Veo einen kurzen Clip und speichert ihn in Supabase Storage.
+            Aus einer Bildvorlage und einem Prompt erzeugt Gemini Veo einen
+            kurzen Clip (8&nbsp;Sekunden) und speichert ihn in Supabase Storage.
           </p>
           <div className="mt-8">
             <VideoClipsAdminForm
