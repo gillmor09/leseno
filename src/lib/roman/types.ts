@@ -2,6 +2,13 @@
  * Admin novel pipeline types (`leseno.roman_kontext` / `leseno.szenen`).
  */
 
+import type {
+  RomanBuchruecken,
+  RomanVorsatz,
+} from "@/lib/roman/front-matter";
+
+export type { RomanBuchruecken, RomanVorsatz };
+
 export type SzeneStatus =
   | "READY_FOR_WRITING"
   | "DRAFTING"
@@ -55,6 +62,15 @@ export type RomanKontext = {
   /** Fan test-reader persona */
   fanPersonaName: string;
   fanPersonaProfil: string;
+  /** Book cover (Flux data URL) + last Gemini/Flux prompt debug */
+  coverImageDataUrl: string;
+  coverPrompt: string;
+  /** Author line for spine / title page */
+  autorName: string;
+  /** Print spine copy + design notes (Gemini) */
+  buchruecken: RomanBuchruecken;
+  /** Minimal eBook front matter between cover and chapter 1 */
+  vorsatz: RomanVorsatz;
   createdAt: string;
   updatedAt: string;
 };
@@ -63,6 +79,7 @@ export type RomanKontextSummary = RomanKontext & {
   szenenTotal: number;
   szenenCompleted: number;
   szenenReady: number;
+  hasCover?: boolean;
 };
 
 export type Szene = {

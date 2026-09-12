@@ -7,7 +7,7 @@ import {
 } from "@/lib/seo";
 
 export const metadata: Metadata = buildPageMetadata({
-  title: "Eigene Kindergeschichten aus Spaß und Neugier",
+  title: "Eigene Abenteuer-Geschichten zum Eintauchen",
   description: DEFAULT_META_DESCRIPTION,
   path: "/",
 });

@@ -15,7 +15,7 @@ export type GeminiImageGenerateInput = {
   prompt: string;
   /** Square output; default 1K (~1024). Stories may use 0.5K. */
   imageSize?: GeminiImageSize;
-  aspectRatio?: "1:1" | "4:5" | "9:16" | "16:9";
+  aspectRatio?: "1:1" | "2:3" | "3:2" | "3:4" | "4:3" | "4:5" | "5:4" | "9:16" | "16:9";
 };
 
 export type GeminiImageGenerateResult = {

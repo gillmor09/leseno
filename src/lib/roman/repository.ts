@@ -3,6 +3,14 @@
  */
 
 import {
+  emptyBuchruecken,
+  emptyVorsatz,
+  parseBuchrueckenJson,
+  parseVorsatzJson,
+  type RomanBuchruecken,
+  type RomanVorsatz,
+} from "@/lib/roman/front-matter";
+import {
   parseCharaktereJson,
   parseSzenenRasterJson,
 } from "@/lib/roman/fundament";
@@ -35,6 +43,12 @@ type KontextRow = {
   ki_regelwerk?: string;
   fan_persona_name?: string;
   fan_persona_profil?: string;
+  cover_image_data_url?: string;
+  cover_prompt?: string;
+  autor_name?: string;
+  buchruecken?: unknown;
+  vorsatz?: unknown;
+  has_cover?: boolean;
   created_at: string;
   updated_at: string;
   szenen_total?: number;
@@ -103,6 +117,13 @@ function mapKontext(row: KontextRow): RomanKontext {
     kiRegelwerk: row.ki_regelwerk ?? "",
     fanPersonaName: row.fan_persona_name ?? "",
     fanPersonaProfil: row.fan_persona_profil ?? "",
+    coverImageDataUrl: row.cover_image_data_url ?? "",
+    coverPrompt: row.cover_prompt ?? "",
+    autorName: row.autor_name ?? "",
+    buchruecken: row.buchruecken
+      ? parseBuchrueckenJson(row.buchruecken)
+      : emptyBuchruecken(),
+    vorsatz: row.vorsatz ? parseVorsatzJson(row.vorsatz) : emptyVorsatz(),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -114,6 +135,9 @@ function mapSummary(row: KontextRow): RomanKontextSummary {
     szenenTotal: row.szenen_total ?? 0,
     szenenCompleted: row.szenen_completed ?? 0,
     szenenReady: row.szenen_ready ?? 0,
+    hasCover:
+      row.has_cover ??
+      Boolean((row.cover_image_data_url ?? "").trim()),
   };
 }
 
@@ -278,6 +302,50 @@ export async function appendRomanZusammenfassung(
   );
   if (error) throw new Error(error.message);
   return String(data ?? "");
+}
+
+/** Persist generated cover data URL + prompt debug. */
+export async function setRomanCover(input: {
+  id: string;
+  coverImageDataUrl: string;
+  coverPrompt: string;
+}): Promise<boolean> {
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc("admin_set_roman_cover", {
+    p_id: input.id,
+    p_cover_image_data_url: input.coverImageDataUrl,
+    p_cover_prompt: input.coverPrompt,
+  });
+  if (error) throw new Error(error.message);
+  return Boolean(data);
+}
+
+/** Clear cover fields. */
+export async function clearRomanCover(id: string): Promise<boolean> {
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc("admin_clear_roman_cover", {
+    p_id: id,
+  });
+  if (error) throw new Error(error.message);
+  return Boolean(data);
+}
+
+/** Persist author + spine + eBook front matter. */
+export async function setRomanFrontMatter(input: {
+  id: string;
+  autorName: string;
+  buchruecken: RomanBuchruecken;
+  vorsatz: RomanVorsatz;
+}): Promise<boolean> {
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc("admin_set_roman_front_matter", {
+    p_id: input.id,
+    p_autor_name: input.autorName,
+    p_buchruecken: input.buchruecken,
+    p_vorsatz: input.vorsatz,
+  });
+  if (error) throw new Error(error.message);
+  return Boolean(data);
 }
 
 /** Delete roman and cascading scenes. */

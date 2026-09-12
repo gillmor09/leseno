@@ -9,20 +9,36 @@ import Link from "next/link";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
+  clearRomanCoverAction,
   extractRomanPdfAction,
+  generateRomanCoverAction,
+  generateRomanFrontMatterAction,
   processNextRomanSzeneAction,
   resetRomanSzeneAction,
   runRomanPhase0Action,
+  saveRomanCoverAction,
+  saveRomanFrontMatterAction,
   saveRomanKontextAction,
 } from "@/app/actions/roman-admin";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   buildRomanExportDocument,
   buildRomanPdfBlob,
   collectRevisedScenes,
   romanPdfFilename,
 } from "@/lib/roman/export-roman-pdf";
+import {
+  buildRomanEpubBlob,
+  romanEpubFilename,
+} from "@/lib/roman/export-roman-epub";
+import {
+  emptyBuchruecken,
+  emptyVorsatz,
+  type RomanBuchruecken,
+  type RomanVorsatz,
+} from "@/lib/roman/front-matter";
 import {
   DEFAULT_KI_REGELWERK,
   emptyCharakter,
@@ -152,6 +168,27 @@ export function RomanAdminWorkspace({
   const [fanPersonaProfil, setFanPersonaProfil] = useState(
     initialRoman?.fanPersonaProfil ?? "",
   );
+  const [coverImageDataUrl, setCoverImageDataUrl] = useState(
+    initialRoman?.coverImageDataUrl ?? "",
+  );
+  const [coverPrompt, setCoverPrompt] = useState(
+    initialRoman?.coverPrompt ?? "",
+  );
+  const [coverExtra, setCoverExtra] = useState("");
+  const [coverPending, setCoverPending] = useState(false);
+  const [coverSavePending, setCoverSavePending] = useState(false);
+  const [coverClearOpen, setCoverClearOpen] = useState(false);
+  const [coverClearPending, setCoverClearPending] = useState(false);
+  const [autorName, setAutorName] = useState(initialRoman?.autorName ?? "");
+  const [buchruecken, setBuchruecken] = useState<RomanBuchruecken>(
+    initialRoman?.buchruecken ?? emptyBuchruecken(),
+  );
+  const [vorsatz, setVorsatz] = useState<RomanVorsatz>(
+    initialRoman?.vorsatz ?? emptyVorsatz(),
+  );
+  const [frontMatterPending, setFrontMatterPending] = useState(false);
+  const [frontMatterSavePending, setFrontMatterSavePending] = useState(false);
+  const [epubPending, setEpubPending] = useState(false);
 
   const [openFundament, setOpenFundament] = useState(false);
   const [openChars, setOpenChars] = useState(false);
@@ -178,9 +215,7 @@ export function RomanAdminWorkspace({
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
-  const [pdfDownloadName, setPdfDownloadName] = useState(
-    "roman-zwischenstand.pdf",
-  );
+  const [pdfDownloadName, setPdfDownloadName] = useState("roman.pdf");
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
   const selected = useMemo(
@@ -203,7 +238,13 @@ export function RomanAdminWorkspace({
     scenePending ||
     batchPending ||
     pdfPending ||
-    exportPending;
+    exportPending ||
+    coverPending ||
+    coverSavePending ||
+    coverClearPending ||
+    frontMatterPending ||
+    frontMatterSavePending ||
+    epubPending;
 
   const chapters = useMemo(() => {
     const map = new Map<number, Szene[]>();
@@ -427,6 +468,116 @@ export function RomanAdminWorkspace({
     window.location.reload();
   }
 
+  async function handleGenerateCover() {
+    if (!canSave || !roman?.id) {
+      toast.error("Zuerst Roman speichern, dann Cover erzeugen.");
+      return;
+    }
+    setCoverPending(true);
+    const result = await generateRomanCoverAction({
+      romanId: roman.id,
+      extraInstruction: coverExtra.trim() || undefined,
+    });
+    setCoverPending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Cover-Generierung fehlgeschlagen.");
+      return;
+    }
+    setCoverImageDataUrl(result.data!.dataUrl);
+    setCoverPrompt(result.data!.promptUsed);
+    toast.success("Cover erzeugt — bei Bedarf speichern.");
+  }
+
+  async function handleSaveCover() {
+    if (!canSave || !roman?.id || !coverImageDataUrl.trim()) return;
+    setCoverSavePending(true);
+    const result = await saveRomanCoverAction({
+      romanId: roman.id,
+      coverImageDataUrl,
+      coverPrompt,
+    });
+    setCoverSavePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Cover speichern fehlgeschlagen.");
+      return;
+    }
+    setRoman((current) =>
+      current
+        ? {
+            ...current,
+            coverImageDataUrl,
+            coverPrompt,
+          }
+        : current,
+    );
+    toast.success("Cover gespeichert.");
+  }
+
+  async function handleClearCover() {
+    if (!canSave || !roman?.id) return;
+    setCoverClearPending(true);
+    const result = await clearRomanCoverAction({ romanId: roman.id });
+    setCoverClearPending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Cover löschen fehlgeschlagen.");
+      return;
+    }
+    setCoverImageDataUrl("");
+    setCoverPrompt("");
+    setCoverClearOpen(false);
+    setRoman((current) =>
+      current
+        ? { ...current, coverImageDataUrl: "", coverPrompt: "" }
+        : current,
+    );
+    toast.success("Cover entfernt.");
+  }
+
+  async function handleGenerateFrontMatter() {
+    if (!roman?.id) {
+      toast.error("Zuerst Roman speichern, dann Abschluss erzeugen.");
+      return;
+    }
+    setFrontMatterPending(true);
+    const result = await generateRomanFrontMatterAction({ romanId: roman.id });
+    setFrontMatterPending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Buchrücken/Vorsatz fehlgeschlagen.");
+      return;
+    }
+    setAutorName(result.data!.autorName);
+    setBuchruecken(result.data!.buchruecken);
+    setVorsatz(result.data!.vorsatz);
+    toast.success("Buchrücken & Vorsatz erzeugt — bei Bedarf speichern.");
+  }
+
+  async function handleSaveFrontMatter() {
+    if (!roman?.id) return;
+    setFrontMatterSavePending(true);
+    const result = await saveRomanFrontMatterAction({
+      romanId: roman.id,
+      autorName,
+      buchruecken,
+      vorsatz,
+    });
+    setFrontMatterSavePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Speichern fehlgeschlagen.");
+      return;
+    }
+    setRoman((prev) =>
+      prev
+        ? {
+            ...prev,
+            autorName,
+            buchruecken,
+            vorsatz,
+          }
+        : prev,
+    );
+    toast.success("Buchrücken & Vorsatz gespeichert.");
+  }
+
   async function handleReset(szeneId: string) {
     if (!canSave) return;
     const result = await resetRomanSzeneAction({ szeneId });
@@ -462,6 +613,8 @@ export function RomanAdminWorkspace({
         title: title.trim() || roman.title,
         szenen,
         totalSzenen: szenen.length,
+        coverImageDataUrl: coverImageDataUrl.trim() || undefined,
+        vorsatz,
       };
       const html = buildRomanExportDocument(exportInput);
       const blob = await buildRomanPdfBlob(exportInput);
@@ -470,9 +623,7 @@ export function RomanAdminWorkspace({
       setPdfPreviewHtml(html);
       setPdfPreviewUrl(url);
       setPdfPreviewOpen(true);
-      toast.success(
-        `Zwischenstand: ${revised.length} von ${szenen.length} Szenen.`,
-      );
+      toast.success(`PDF: ${revised.length} von ${szenen.length} Szenen.`);
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -481,6 +632,49 @@ export function RomanAdminWorkspace({
       );
     } finally {
       setExportPending(false);
+    }
+  }
+
+  async function handleExportRomanEpub() {
+    if (!roman || epubPending) return;
+    const revised = collectRevisedScenes(szenen);
+    if (!revised.length) {
+      toast.error("Noch keine revidierte Szene für das EPUB.");
+      return;
+    }
+
+    setEpubPending(true);
+    try {
+      const blob = await buildRomanEpubBlob({
+        title: title.trim() || roman.title,
+        autorName: autorName.trim() || vorsatz.titelseite.autor,
+        vorsatz,
+        coverImageDataUrl: coverImageDataUrl.trim() || undefined,
+        szenen,
+      });
+      const url = URL.createObjectURL(blob);
+      const name = romanEpubFilename(
+        vorsatz.titelseite.titel.trim() || title.trim() || roman.title,
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 2_000);
+      toast.success(
+        `EPUB gespeichert (${revised.length} Szenen) — bereit für KDP.`,
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "EPUB konnte nicht erzeugt werden.",
+      );
+    } finally {
+      setEpubPending(false);
     }
   }
 
@@ -1069,6 +1263,94 @@ export function RomanAdminWorkspace({
           />
         </div>
 
+        <div className="space-y-3 rounded-2xl ring-1 ring-zinc-950/10 p-4">
+          <div>
+            <h3 className="text-sm font-extrabold text-zinc-950">
+              Buch-Cover (nach Manuskript)
+            </h3>
+            <p className="mt-1 text-xs font-semibold text-zinc-500">
+              Gemini beschreibt eine Cover-Szene aus Manuskript/Fundament, Flux
+              erzeugt das Bild im Amazon-eBook-Format 5:8 / 1600×2560
+              (Hochformat, vollflächig, ohne Text) — Titel wird danach als
+              Overlay gesetzt. Roman zuerst speichern.
+            </p>
+          </div>
+          <label className="block">
+            <FieldLabel>Zusätzliche Art-Direction (optional)</FieldLabel>
+            <textarea
+              value={coverExtra}
+              onChange={(e) => setCoverExtra(e.target.value)}
+              disabled={!canSave || busy}
+              rows={2}
+              className={textareaClass}
+              placeholder="z. B. Nacht, Silhouette am Kai, kaltblaues Licht …"
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={!canSave || busy || !roman?.id}
+              onClick={() => void handleGenerateCover()}
+              className={cn(
+                "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800",
+                (!canSave || busy || !roman?.id) && "opacity-70",
+              )}
+            >
+              {coverPending
+                ? "Cover wird erzeugt …"
+                : coverImageDataUrl
+                  ? "Cover neu erzeugen"
+                  : "Cover erzeugen (Gemini → Flux)"}
+            </button>
+            <button
+              type="button"
+              disabled={
+                !canSave || busy || !roman?.id || !coverImageDataUrl.trim()
+              }
+              onClick={() => void handleSaveCover()}
+              className={cn(
+                "rounded-full bg-gray-100 px-5 py-2.5 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white",
+                (!canSave || busy || !coverImageDataUrl.trim()) && "opacity-70",
+              )}
+            >
+              {coverSavePending ? "Speichern …" : "Cover speichern"}
+            </button>
+            {coverImageDataUrl.trim() ? (
+              <button
+                type="button"
+                disabled={!canSave || busy || !roman?.id}
+                onClick={() => setCoverClearOpen(true)}
+                className="rounded-full bg-gray-100 px-5 py-2.5 text-sm font-bold text-red-800 ring-1 ring-zinc-950/10 hover:bg-white"
+              >
+                Cover löschen
+              </button>
+            ) : null}
+          </div>
+          {coverImageDataUrl.trim() ? (
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,16rem)_1fr]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={coverImageDataUrl}
+                alt={`Cover: ${title || "Roman"}`}
+                className="aspect-[5/8] w-full max-w-xs rounded-2xl object-cover ring-1 ring-zinc-950/10"
+              />
+              {coverPrompt.trim() ? (
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-2xl bg-gray-100 p-3 text-[11px] font-semibold leading-relaxed text-zinc-600">
+                  {coverPrompt}
+                </pre>
+              ) : (
+                <p className="text-xs font-semibold text-zinc-500">
+                  Prompt-Debug erscheint nach der Generierung.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs font-semibold text-zinc-500">
+              Noch kein Cover — nach dem Speichern des Kontexts erzeugen.
+            </p>
+          )}
+        </div>
+
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -1318,9 +1600,341 @@ export function RomanAdminWorkspace({
               )}
             </div>
           </section>
+
+          <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+            <div>
+              <h2 className="text-lg font-extrabold text-zinc-950">
+                Abschluss — Buchrücken & Vorsatz
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-zinc-600">
+                Am Ende: Gemini gestaltet den Buchrücken (Druck) und minimale
+                eBook-Vorsatzseiten (Titelseite, Impressum, optional Widmung /
+                Motto) — so wenig wie möglich vor Seite&nbsp;1. Im PDF landen
+                Cover + Vorsatz vor dem ersten Kapitel.
+              </p>
+            </div>
+
+            <label className="block">
+              <FieldLabel>Autor:in</FieldLabel>
+              <input
+                type="text"
+                value={autorName}
+                onChange={(e) => setAutorName(e.target.value)}
+                disabled={!canSave || busy}
+                className={inputClass}
+                placeholder="Name für Titelseite und Rücken"
+              />
+            </label>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!canSave || busy || !roman?.id}
+                onClick={() => void handleGenerateFrontMatter()}
+                className={cn(
+                  "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800",
+                  (!canSave || busy || !roman?.id) && "opacity-70",
+                )}
+              >
+                {frontMatterPending
+                  ? "Gemini arbeitet …"
+                  : buchruecken.titelKurz.trim() || vorsatz.titelseite.titel.trim()
+                    ? "Neu erzeugen (Gemini)"
+                    : "Buchrücken & Vorsatz erzeugen"}
+              </button>
+              <button
+                type="button"
+                disabled={!canSave || busy || !roman?.id}
+                onClick={() => void handleSaveFrontMatter()}
+                className={cn(
+                  "rounded-full bg-gray-100 px-5 py-2.5 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white",
+                  (!canSave || busy || !roman?.id) && "opacity-70",
+                )}
+              >
+                {frontMatterSavePending ? "Speichern …" : "Abschluss speichern"}
+              </button>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="space-y-3 rounded-2xl bg-gray-50 p-4 ring-1 ring-zinc-950/5">
+                <h3 className="text-sm font-extrabold text-zinc-950">
+                  Buchrücken (Druck)
+                </h3>
+                <label className="block">
+                  <FieldLabel>Kurztitel</FieldLabel>
+                  <input
+                    type="text"
+                    value={buchruecken.titelKurz}
+                    onChange={(e) =>
+                      setBuchruecken((p) => ({
+                        ...p,
+                        titelKurz: e.target.value,
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Autor-Zeile</FieldLabel>
+                  <input
+                    type="text"
+                    value={buchruecken.autorZeile}
+                    onChange={(e) =>
+                      setBuchruecken((p) => ({
+                        ...p,
+                        autorZeile: e.target.value,
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Verlag / Imprint</FieldLabel>
+                  <input
+                    type="text"
+                    value={buchruecken.verlagZeile}
+                    onChange={(e) =>
+                      setBuchruecken((p) => ({
+                        ...p,
+                        verlagZeile: e.target.value,
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Gestaltungshinweise</FieldLabel>
+                  <textarea
+                    value={buchruecken.gestaltungshinweise}
+                    onChange={(e) =>
+                      setBuchruecken((p) => ({
+                        ...p,
+                        gestaltungshinweise: e.target.value,
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    rows={5}
+                    className={textareaClass}
+                    placeholder="Farben, Typo, Lesbarkeit auf schmalem Rücken …"
+                  />
+                </label>
+              </div>
+
+              <div className="space-y-3 rounded-2xl bg-gray-50 p-4 ring-1 ring-zinc-950/5">
+                <h3 className="text-sm font-extrabold text-zinc-950">
+                  Vorsatz (eBook)
+                </h3>
+                <label className="block">
+                  <FieldLabel>Titel</FieldLabel>
+                  <input
+                    type="text"
+                    value={vorsatz.titelseite.titel}
+                    onChange={(e) =>
+                      setVorsatz((p) => ({
+                        ...p,
+                        titelseite: {
+                          ...p.titelseite,
+                          titel: e.target.value,
+                        },
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Untertitel (optional)</FieldLabel>
+                  <input
+                    type="text"
+                    value={vorsatz.titelseite.untertitel}
+                    onChange={(e) =>
+                      setVorsatz((p) => ({
+                        ...p,
+                        titelseite: {
+                          ...p.titelseite,
+                          untertitel: e.target.value,
+                        },
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Autor auf Titelseite</FieldLabel>
+                  <input
+                    type="text"
+                    value={vorsatz.titelseite.autor}
+                    onChange={(e) =>
+                      setVorsatz((p) => ({
+                        ...p,
+                        titelseite: {
+                          ...p.titelseite,
+                          autor: e.target.value,
+                        },
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Imprint</FieldLabel>
+                  <input
+                    type="text"
+                    value={vorsatz.titelseite.imprint}
+                    onChange={(e) =>
+                      setVorsatz((p) => ({
+                        ...p,
+                        titelseite: {
+                          ...p.titelseite,
+                          imprint: e.target.value,
+                        },
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>©-Hinweis</FieldLabel>
+                  <textarea
+                    value={vorsatz.impressum.hinweis}
+                    onChange={(e) =>
+                      setVorsatz((p) => ({
+                        ...p,
+                        impressum: { ...p.impressum, hinweis: e.target.value },
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    rows={2}
+                    className={textareaClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Fiktions-Disclaimer</FieldLabel>
+                  <textarea
+                    value={vorsatz.impressum.disclaimer}
+                    onChange={(e) =>
+                      setVorsatz((p) => ({
+                        ...p,
+                        impressum: {
+                          ...p.impressum,
+                          disclaimer: e.target.value,
+                        },
+                      }))
+                    }
+                    disabled={!canSave || busy}
+                    rows={2}
+                    className={textareaClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Widmung (optional, leer = keine Seite)</FieldLabel>
+                  <textarea
+                    value={vorsatz.widmung}
+                    onChange={(e) =>
+                      setVorsatz((p) => ({ ...p, widmung: e.target.value }))
+                    }
+                    disabled={!canSave || busy}
+                    rows={2}
+                    className={textareaClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Motto / Epigraph (optional)</FieldLabel>
+                  <textarea
+                    value={vorsatz.motto}
+                    onChange={(e) =>
+                      setVorsatz((p) => ({ ...p, motto: e.target.value }))
+                    }
+                    disabled={!canSave || busy}
+                    rows={2}
+                    className={textareaClass}
+                  />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+            <div>
+              <h2 className="text-lg font-extrabold text-zinc-950">
+                Publikation — EPUB für Amazon KDP
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-zinc-600">
+                Reflowable EPUB&nbsp;3 aus Cover, Vorsatz und revidierten
+                Kapiteln — geeignet zum Hochladen bei Kindle Direct Publishing
+                und zum Sideloaden aufs Kindle. Cover separat als JPG
+                (1600×2560) zusätzlich in KDP hochladen.
+              </p>
+            </div>
+            <ul className="list-disc space-y-1 pl-5 text-xs font-semibold text-zinc-500">
+              <li>
+                Inhalt: Cover (falls vorhanden) → Titelseite → Impressum →
+                optional Widmung/Motto → Kapitel
+              </li>
+              <li>
+                Vorher Abschluss speichern, damit Autor/Impressum im EPUB
+                stimmen
+              </li>
+              <li>
+                Nach dem Download: in KDP prüfen (Previewer), Preis setzen,
+                veröffentlichen
+              </li>
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={
+                  !roman || epubPending || revisedCount === 0 || busy
+                }
+                onClick={() => void handleExportRomanEpub()}
+                className={cn(
+                  "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800",
+                  (epubPending || revisedCount === 0 || busy) && "opacity-70",
+                )}
+              >
+                {epubPending
+                  ? "EPUB wird erzeugt …"
+                  : "EPUB herunterladen (KDP)"}
+              </button>
+            </div>
+            {revisedCount === 0 ? (
+              <p className="text-xs font-semibold text-amber-800">
+                Noch keine revidierten Szenen — zuerst Phase&nbsp;1–3
+                abschließen.
+              </p>
+            ) : (
+              <p className="text-xs font-semibold text-zinc-500">
+                {revisedCount} revidierte Szene(n) ·{" "}
+                {coverImageDataUrl.trim()
+                  ? "mit Cover"
+                  : "ohne Cover (optional vorher erzeugen)"}
+                {" · "}
+                {vorsatz.titelseite.titel.trim()
+                  ? "Vorsatz vorhanden"
+                  : "Titel aus Kontext — Vorsatz optional nachziehen"}
+              </p>
+            )}
+          </section>
         </>
       ) : null}
 
+      <ConfirmDeleteDialog
+        open={coverClearOpen}
+        title="Cover löschen?"
+        description="Das gespeicherte Buch-Cover und der zugehörige Prompt werden unwiderruflich entfernt."
+        confirmLabel="Cover löschen"
+        pending={coverClearPending}
+        onCancel={() => {
+          if (!coverClearPending) setCoverClearOpen(false);
+        }}
+        onConfirm={() => void handleClearCover()}
+      />
       <RomanSceneWaitDialog
         open={scenePending || batchPending}
         batch={batchPending}
@@ -1341,7 +1955,7 @@ export function RomanAdminWorkspace({
         previewHtml={pdfPreviewHtml}
         pdfUrl={pdfPreviewUrl}
         downloadFileName={pdfDownloadName}
-        heading="Roman-Zwischenstand"
+        heading="Roman-PDF"
         onClose={closeRomanPdfPreview}
       />
     </div>

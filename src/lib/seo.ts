@@ -39,7 +39,7 @@ export const DEFAULT_OG_IMAGE = "/landing/hero-lesen.webp";
 
 /** Home / default description — keep ≤ ~150 chars for SERP pixel limits. */
 export const DEFAULT_META_DESCRIPTION =
-  "Eigene Kindergeschichten, die Kinder aus Spaß und Neugier lesen. Passende Lesestufe, ohne Druck — kostenlos mit Basis starten.";
+  "Mit leseno eigene Kindergeschichten und Abenteuer erstellen und eintauchen — passend zur Lesestufe, aus Spaß und Neugier. Kostenlos mit Basis starten.";
 
 type PageSeoInput = {
   /** Page title; root layout appends „ — Leseno“ via template. */

@@ -172,7 +172,7 @@ const faqItems = [
 ] as const;
 
 /**
- * Marketing home: joy of reading + parent trust — not a feature dump.
+ * Marketing home: product clarity first (create & immerse) + parent trust.
  * Header is Suspense-wrapped so auth does not block streaming the LCP hero.
  */
 export function LandingPage() {
@@ -223,23 +223,25 @@ function HeroSection() {
     <section id="start" className="scroll-mt-20">
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-2 lg:gap-14 lg:py-20">
         <div>
-          <p className="inline-flex items-center gap-2 rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-            Kindergeschichten aus Neugier
+          <p className="text-3xl font-extrabold tracking-tight text-orange-800 sm:text-4xl">
+            leseno
           </p>
-          <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl lg:text-[3.25rem] lg:leading-[1.1]">
-            Lesen, weil’s Spaß macht. Staunen, weil’s weitergeht.
+          <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-zinc-950 sm:text-5xl lg:text-[3.15rem] lg:leading-[1.1]">
+            Eigene Abenteuer-Geschichten zum Eintauchen.
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-zinc-600">
-            Weil’s Spaß macht und weil’s weitergeht: eigene Kindergeschichten
-            zum freiwilligen Lesen und Staunen — aus Lust und Neugier, ohne
-            Druck und ohne Schulgefühl. Was hängen bleibt, kommt nebenbei.
+            Du wählst Thema und Lesestufe —{" "}
+            <strong className="font-extrabold text-zinc-800">leseno</strong>{" "}
+            macht daraus eine Kindergeschichte nur für dich. Lesen wie ein
+            eigenes Abenteuer: mitfiebern, staunen, weitermachen — ohne Druck
+            und ohne Chat-Tippen.
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a
               href="/registrieren"
               className="inline-flex items-center justify-center rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
             >
-              Kostenlos mit Basis starten
+              Kostenlos eigene Geschichte starten
             </a>
             <a
               href="/kostenlos"
@@ -249,15 +251,15 @@ function HeroSection() {
             </a>
           </div>
           <p className="mt-5 text-sm font-semibold text-zinc-600">
-            Passende Lesestufe · echte Neugier · ohne Druck
+            Thema wählen · Lesestufe passend · sofort eintauchen
           </p>
         </div>
 
-        <div className="relative pb-16 sm:pb-12">
+        <div className="relative">
           <div className="overflow-hidden rounded-[2rem] bg-white shadow-xl ring-1 ring-zinc-950/10">
             <Image
               src="/landing/hero-lesen.webp"
-              alt="Kind liest am Fenster eine Geschichte, aus dem Buch steigt ein bunter Vogel"
+              alt="Kind taucht in eine eigene Geschichte ein — aus dem Buch steigt ein Abenteuer"
               width={1536}
               height={1024}
               className="h-auto w-full"
@@ -266,26 +268,13 @@ function HeroSection() {
               fetchPriority="high"
             />
           </div>
-          <div className="absolute -bottom-5 left-4 right-4 rounded-2xl bg-white p-4 shadow-xl ring-1 ring-zinc-950/10 sm:left-8 sm:right-auto sm:w-72">
-            <p className="text-xs font-extrabold tracking-wide text-orange-800 uppercase">
-              So sieht’s aus
-            </p>
-            <p className="mt-1 text-sm font-extrabold text-zinc-950">
-              Lava und der mutige Käfer
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-bold text-zinc-600">
-                Vulkane
-              </span>
-              <span className="rounded-full bg-yellow-400 px-2.5 py-0.5 text-xs font-extrabold text-zinc-950">
-                Abenteuer
-              </span>
-            </div>
-            <p className="mt-3 rounded-xl bg-orange-50 px-3 py-2 text-xs leading-relaxed font-semibold text-orange-900">
-              Mitten im Abenteuer: Lava ist oft über 700 °C heiß — Staunen ohne
-              Test.
-            </p>
-          </div>
+          <p className="mt-4 text-center text-sm font-semibold text-zinc-500 lg:text-left">
+            Nicht irgendwelche Texte —{" "}
+            <span className="font-extrabold text-zinc-800">
+              dein Abenteuer zum Lesen
+            </span>
+            .
+          </p>
         </div>
       </div>
     </section>

@@ -3,6 +3,7 @@
 /**
  * Large dialog: story/roman export preview + PDF download.
  * Preview uses the export HTML (readable). Download uses the generated PDF Blob.
+ * Blob PDFs in iframes often render blank (Chrome viewer + large files/covers).
  * No backdrop-filter — Chrome PDF plugins break under filter ancestors.
  * Close via X / Escape / outside click; footer only „PDF speichern“.
  */
@@ -70,12 +71,7 @@ export function StoryPdfPreviewDialog({
       return;
     }
 
-    // Prefer the real PDF blob in the iframe so preview matches the download.
-    if (pdfUrl) {
-      setPreviewReady(true);
-      return;
-    }
-
+    // HTML preview only — do not set iframe src to the PDF blob (often blank).
     if (!previewHtml) {
       setPreviewReady(false);
       return;
@@ -128,7 +124,7 @@ export function StoryPdfPreviewDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, previewHtml, pdfUrl]);
+  }, [open, previewHtml]);
 
   if (!open) {
     return null;
@@ -205,7 +201,6 @@ export function StoryPdfPreviewDialog({
           <iframe
             ref={iframeRef}
             title="PDF-Vorschau"
-            src={pdfUrl ?? undefined}
             className="h-full w-full border-0 bg-white"
           />
         </div>

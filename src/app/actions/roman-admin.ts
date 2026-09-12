@@ -6,14 +6,19 @@
 
 import { revalidatePath } from "next/cache";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
+import { generateRomanCover } from "@/lib/roman/cover";
+import { generateRomanFrontMatter } from "@/lib/roman/front-matter";
 import { runRomanPhase0 } from "@/lib/roman/phase0";
 import { processNextRomanSzene } from "@/lib/roman/process-scene";
 import {
+  clearRomanCover,
   deleteRoman,
   getRomanKontext,
   listRomanKontexte,
   listSzenen,
   resetSzeneToReady,
+  setRomanCover,
+  setRomanFrontMatter,
   upsertRomanKontext,
 } from "@/lib/roman/repository";
 import type {
@@ -23,6 +28,10 @@ import type {
 } from "@/lib/roman/types";
 import type { ActionResult } from "@/lib/types/actions";
 import {
+  romanCoverGenerateSchema,
+  romanCoverSaveSchema,
+  romanFrontMatterGenerateSchema,
+  romanFrontMatterSaveSchema,
   romanIdSchema,
   romanPhase0Schema,
   romanUpsertSchema,
@@ -328,6 +337,216 @@ export async function extractRomanPdfAction(
         error instanceof Error
           ? error.message
           : "PDF konnte nicht gelesen werden.",
+    };
+  }
+}
+
+/**
+ * Gemini scene brief → Flux cover (returns data URL; persist via save).
+ */
+export async function generateRomanCoverAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    dataUrl: string;
+    sceneDescription: string;
+    promptUsed: string;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanCoverGenerateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) {
+      return { success: false, error: "Roman nicht gefunden." };
+    }
+
+    const result = await generateRomanCover({
+      title: roman.title,
+      genre: roman.genre,
+      praemisse: roman.praemisse,
+      tonalitaet: roman.tonalitaet,
+      weltSchauplaetze: roman.weltSchauplaetze,
+      charaktere: roman.charaktere,
+      manuskriptRaw: roman.manuskriptRaw,
+      extraInstruction: parsed.data.extraInstruction,
+      skipTitleOverlay: parsed.data.skipTitleOverlay,
+    });
+
+    return {
+      success: true,
+      data: {
+        dataUrl: result.dataUrl,
+        sceneDescription: result.sceneDescription,
+        promptUsed: result.promptUsed,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Cover-Generierung fehlgeschlagen.",
+    };
+  }
+}
+
+/** Persist cover on the roman row. */
+export async function saveRomanCoverAction(
+  input: unknown,
+): Promise<ActionResult<{ saved: boolean }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanCoverSaveSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const saved = await setRomanCover({
+      id: parsed.data.romanId,
+      coverImageDataUrl: parsed.data.coverImageDataUrl,
+      coverPrompt: parsed.data.coverPrompt,
+    });
+    revalidateRoman(parsed.data.romanId);
+    return { success: true, data: { saved } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Cover speichern fehlgeschlagen.",
+    };
+  }
+}
+
+/** Remove cover image + prompt. */
+export async function clearRomanCoverAction(
+  input: unknown,
+): Promise<ActionResult<{ cleared: boolean }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültige ID.",
+    };
+  }
+
+  try {
+    const cleared = await clearRomanCover(parsed.data.romanId);
+    revalidateRoman(parsed.data.romanId);
+    return { success: true, data: { cleared } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Cover löschen fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Gemini designs Buchrücken + minimal eBook Vorsatz from manuscript/summary.
+ */
+export async function generateRomanFrontMatterAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    autorName: string;
+    buchruecken: RomanKontext["buchruecken"];
+    vorsatz: RomanKontext["vorsatz"];
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanFrontMatterGenerateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) {
+      return { success: false, error: "Roman nicht gefunden." };
+    }
+
+    const result = await generateRomanFrontMatter({
+      title: roman.title,
+      autorName: roman.autorName,
+      genre: roman.genre,
+      praemisse: roman.praemisse,
+      tonalitaet: roman.tonalitaet,
+      manuskriptRaw: roman.manuskriptRaw,
+      aktuelleZusammenfassung: roman.aktuelleZusammenfassung,
+    });
+
+    return { success: true, data: result };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Buchrücken/Vorsatz-Generierung fehlgeschlagen.",
+    };
+  }
+}
+
+/** Persist Buchrücken + Vorsatz. */
+export async function saveRomanFrontMatterAction(
+  input: unknown,
+): Promise<ActionResult<{ saved: boolean }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanFrontMatterSaveSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const saved = await setRomanFrontMatter({
+      id: parsed.data.romanId,
+      autorName: parsed.data.autorName,
+      buchruecken: parsed.data.buchruecken,
+      vorsatz: parsed.data.vorsatz,
+    });
+    revalidateRoman(parsed.data.romanId);
+    return { success: true, data: { saved } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Buchrücken/Vorsatz speichern fehlgeschlagen.",
     };
   }
 }

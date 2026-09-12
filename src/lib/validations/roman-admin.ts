@@ -70,3 +70,57 @@ export const romanIdSchema = z.object({
 export const szeneIdSchema = z.object({
   szeneId: z.string().uuid({ message: "Ungültige Szenen-ID." }),
 });
+
+/** Generate cover from saved kontext + optional art direction. */
+export const romanCoverGenerateSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+  extraInstruction: z.string().max(2000).optional(),
+  skipTitleOverlay: z.boolean().optional(),
+});
+
+export const romanCoverSaveSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+  coverImageDataUrl: z
+    .string()
+    .trim()
+    .min(32, { message: "Kein Cover-Bild." })
+    .max(12_000_000),
+  coverPrompt: z.string().max(20_000),
+});
+
+const buchrueckenSchema = z.object({
+  titelKurz: z.string().max(200),
+  autorZeile: z.string().max(200),
+  verlagZeile: z.string().max(200),
+  gestaltungshinweise: z.string().max(8000),
+});
+
+const vorsatzSchema = z.object({
+  titelseite: z.object({
+    titel: z.string().max(300),
+    untertitel: z.string().max(500),
+    autor: z.string().max(200),
+    imprint: z.string().max(200),
+  }),
+  impressum: z.object({
+    jahr: z.string().max(20),
+    rechteinhaber: z.string().max(300),
+    hinweis: z.string().max(2000),
+    disclaimer: z.string().max(4000),
+  }),
+  widmung: z.string().max(2000),
+  motto: z.string().max(4000),
+});
+
+/** Generate spine + front matter from saved kontext. */
+export const romanFrontMatterGenerateSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+});
+
+/** Persist spine + front matter after generate/edit. */
+export const romanFrontMatterSaveSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+  autorName: z.string().max(200),
+  buchruecken: buchrueckenSchema,
+  vorsatz: vorsatzSchema,
+});

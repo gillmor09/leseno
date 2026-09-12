@@ -19,6 +19,7 @@
     "html2pdf.js": "^0.10.3",
     "hyphen": "^1.14.1",
     "isomorphic-dompurify": "^4.1.0",
+    "jszip": "^3.10.2",
     "lucide-react": "^1.40.0",
     "next": "16.3.2",
     "nodemailer": "^10.0.0",
