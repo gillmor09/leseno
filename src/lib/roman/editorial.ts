@@ -35,6 +35,7 @@ export type RomanEditorial = {
   mehrteilerBeratung: string;
   /** Hard “Verlagsregeln” beyond free-text kiRegelwerk (bullets). */
   harteRegeln: string[];
+  /** Legacy editorial sign-off flags (kept in jsonb; UI uses auto validation only). */
   checklist: RomanEditorialChecklist;
 };
 
@@ -69,22 +70,200 @@ export function emptyRomanEditorial(): RomanEditorial {
   };
 }
 
-/** Kinderbuch 8–10 preset (common Leseno use). */
+/**
+ * Built-in publisher presets (hardcoded editorial starting points — not AI-generated).
+ * Apply via UI selects in Schritt 3 (Alter/Umfang) and Schritt 4 (Genre-Regeln).
+ */
+export type RomanPresetKind = "alter" | "genre";
+
+export type RomanEditorialPreset = {
+  id: string;
+  kind: RomanPresetKind;
+  label: string;
+  /** Short note shown under the select. */
+  hint: string;
+  apply: Partial<RomanEditorial>;
+};
+
+export const ROMAN_ALTER_PRESETS: RomanEditorialPreset[] = [
+  {
+    id: "bilderbuch-3-6",
+    kind: "alter",
+    label: "Bilderbuch / Vorlesen (3–6)",
+    hint: "Sehr kurze Kapitel, Vorlesen, einfache Wörter · ca. 1.500–5.000 Wörter.",
+    apply: {
+      zielAlterMin: 3,
+      zielAlterMax: 6,
+      lesestufe: "Bilderbuch / Vorlesen",
+      zielWortzahlRoman: 3_000,
+      zielWortzahlSzeneMin: 200,
+      zielWortzahlSzeneMax: 500,
+    },
+  },
+  {
+    id: "kinder-6-8",
+    kind: "alter",
+    label: "Erstleser / Kinderbuch (6–8)",
+    hint: "Kurze Sätze, bekannte Wörter · ca. 8.000–18.000 Wörter.",
+    apply: {
+      zielAlterMin: 6,
+      zielAlterMax: 8,
+      lesestufe: "Erstleser / einfaches Kinderbuch",
+      zielWortzahlRoman: 12_000,
+      zielWortzahlSzeneMin: 600,
+      zielWortzahlSzeneMax: 1_200,
+    },
+  },
+  {
+    id: "kinder-8-10",
+    kind: "alter",
+    label: "Kinderbuch (8–10)",
+    hint: "Vorlesen & erstes Selbstlesen · ca. 20.000–35.000 Wörter.",
+    apply: {
+      zielAlterMin: 8,
+      zielAlterMax: 10,
+      lesestufe: "Kinderbuch / Vorlesen & erstes Selbstlesen",
+      zielWortzahlRoman: 28_000,
+      zielWortzahlSzeneMin: 1_200,
+      zielWortzahlSzeneMax: 2_000,
+    },
+  },
+  {
+    id: "jugend-11-14",
+    kind: "alter",
+    label: "Mittelstufe / YA light (11–14)",
+    hint: "Mehr Tempo und Konflikt, noch zugänglich · ca. 40.000–70.000 Wörter.",
+    apply: {
+      zielAlterMin: 11,
+      zielAlterMax: 14,
+      lesestufe: "Jugendbuch / Mittelstufe",
+      zielWortzahlRoman: 55_000,
+      zielWortzahlSzeneMin: 1_500,
+      zielWortzahlSzeneMax: 2_500,
+    },
+  },
+  {
+    id: "ya-14-18",
+    kind: "alter",
+    label: "Young Adult (14–18)",
+    hint: "Vollständige Romanstruktur, starke Stimme · ca. 60.000–90.000 Wörter.",
+    apply: {
+      zielAlterMin: 14,
+      zielAlterMax: 18,
+      lesestufe: "Young Adult",
+      zielWortzahlRoman: 75_000,
+      zielWortzahlSzeneMin: 1_800,
+      zielWortzahlSzeneMax: 2_800,
+    },
+  },
+  {
+    id: "erwachsen",
+    kind: "alter",
+    label: "Erwachsene / allgemein",
+    hint: "Keine Altersbegrenzung der Sprache · typisch 70.000–110.000 Wörter.",
+    apply: {
+      zielAlterMin: 18,
+      zielAlterMax: null,
+      lesestufe: "Erwachsene / allgemeine Belletristik",
+      zielWortzahlRoman: 90_000,
+      zielWortzahlSzeneMin: 1_800,
+      zielWortzahlSzeneMax: 2_800,
+    },
+  },
+];
+
+export const ROMAN_GENRE_RULE_PRESETS: RomanEditorialPreset[] = [
+  {
+    id: "regeln-kinderbuch",
+    kind: "genre",
+    label: "Kinderbuch",
+    hint: "Kindgerechte Sprache, Haken, kein Zynismus.",
+    apply: {
+      harteRegeln: [
+        "Wortwahl und Satzlänge an die gesetzte Lesestufe halten — kurze Sätze, bekannte Wörter.",
+        "Kein Erwachsenen-Feuilleton, keine Schachtelsätze, keine Fachsprache.",
+        "Humor und Spannung kindgerecht — nie zynisch oder grausam.",
+        "Jedes Kapitel endet mit einem klaren dramatischen oder emotionalen Haken.",
+      ],
+    },
+  },
+  {
+    id: "regeln-ya",
+    kind: "genre",
+    label: "Young Adult",
+    hint: "Stimme, Identifikation, Tempo — ohne Kinderton.",
+    apply: {
+      harteRegeln: [
+        "Protagonist:innen-Stimme glaubwürdig für die Zielaltersgruppe — kein Kinderton, kein belehrender Erwachsenenton.",
+        "Emotionale Ehrlichkeit vor Floskeln; innere Konflikte zeigen, nicht erklären.",
+        "Tempo halten: jede Szene verändert Beziehung, Wissen oder Risiko.",
+        "Keine moralischen Vorträge; Themen durch Handlung und Dialog tragen.",
+      ],
+    },
+  },
+  {
+    id: "regeln-thriller",
+    kind: "genre",
+    label: "Thriller / Spannung",
+    hint: "Information dosieren, Cliffhanger, Glaubwürdigkeit.",
+    apply: {
+      harteRegeln: [
+        "Information dosieren: Leser:in weiß nie deutlich mehr oder weniger als dramaturgisch nötig.",
+        "Jede Szene erhöht Risiko, Druck oder Rätsel — kein Leerlauf.",
+        "Kapitelenden mit Haken (Frage, Drohung, Entdeckung), ohne billige Cliffhanger-Wiederholung.",
+        "Motive und Logik der Antagonist:innen glaubwürdig halten — kein Plot-Convenience.",
+      ],
+    },
+  },
+  {
+    id: "regeln-fantasy",
+    kind: "genre",
+    label: "Fantasy / Spekulativ",
+    hint: "Weltregeln konsistent, Exposition sparsam.",
+    apply: {
+      harteRegeln: [
+        "Weltregeln (Magie, Technologie, Gesellschaft) konsistent einhalten — kein Regelbruch ohne Preis.",
+        "Exposition sparsam und szenisch: zeigen statt Weltbau-Vortrag.",
+        "Eigennamen und Begriffe dosieren; Leser:in nicht mit Glossar erschlagen.",
+        "Wunder und Gefahr emotional verankern — nicht nur spekulativ dekorieren.",
+      ],
+    },
+  },
+  {
+    id: "regeln-romance",
+    kind: "genre",
+    label: "Romance / Liebesgeschichte",
+    hint: "Chemie, Konflikt, Consent, emotionale Beats.",
+    apply: {
+      harteRegeln: [
+        "Romantische Chemie und Konflikt in jeder relevanten Szene spürbar machen.",
+        "Consent und emotionale Grenzen klar — kein „Überreden“ als Romantik.",
+        "Missverständnisse nur, wenn motiviert; kein künstliches Auseinanderreißen.",
+        "Intimität und Nähe zum Ton und zur Altersstufe passend dosieren.",
+      ],
+    },
+  },
+  {
+    id: "regeln-literary",
+    kind: "genre",
+    label: "Literarisch / Character-driven",
+    hint: "Stimme, Subtext, keine Genre-Pflicht-Plotpunkte.",
+    apply: {
+      harteRegeln: [
+        "Stimme und Subtext vor Plot-Pflichtpunkten — keine Schema-F-Wendungen.",
+        "Jedes Bild und jede Metapher muss zur etablierten Tonalität passen.",
+        "Dialog trägt Charakter und Machtverhältnis, nicht nur Information.",
+        "Emotion unter der Oberfläche lassen — Show, don’t tell, ohne Kälte.",
+      ],
+    },
+  },
+];
+
+/** @deprecated Use ROMAN_ALTER_PRESETS / ROMAN_GENRE_RULE_PRESETS. */
 export function kidsBookEditorialPreset(): Partial<RomanEditorial> {
-  return {
-    zielAlterMin: 8,
-    zielAlterMax: 10,
-    lesestufe: "Kinderbuch / Vorlesen & erstes Selbstlesen",
-    zielWortzahlRoman: 28_000,
-    zielWortzahlSzeneMin: 1200,
-    zielWortzahlSzeneMax: 2000,
-    harteRegeln: [
-      "Wortwahl und Satzlänge für 8–10 Jahre: kurze Sätze, bekannte Wörter.",
-      "Kein Erwachsenen-Feuilleton, keine Schachtelsätze, keine Fachsprache.",
-      "Humor und Spannung kindgerecht — nie zynisch oder grausam.",
-      "Jedes Kapitel endet mit einem klaren dramatischen oder emotionalen Haken.",
-    ],
-  };
+  const alter = ROMAN_ALTER_PRESETS.find((p) => p.id === "kinder-8-10")!.apply;
+  const rules = ROMAN_GENRE_RULE_PRESETS.find((p) => p.id === "regeln-kinderbuch")!.apply;
+  return { ...alter, ...rules };
 }
 
 function asInt(value: unknown): number | null {
@@ -188,7 +367,6 @@ export function buildRomanValidation(input: {
 }): RomanValidationItem[] {
   const e = input.editorial;
   const hasChars = input.charaktere.some((c) => c.name.trim() && c.motivation.trim());
-  const hasRaster = input.szenenRaster.some((r) => r.szenenziel.trim().length >= 10);
   const hasOutline = input.manuskriptRaw.trim().length >= 200;
   const hasRoadmap = input.szenen.length > 0;
   const completed = input.szenen.filter((s) => s.status === "COMPLETED").length;
@@ -257,9 +435,9 @@ export function buildRomanValidation(input: {
     {
       id: "outline",
       stage: "outline",
-      label: "Outline / Exposé geprüft",
-      ok: hasOutline && (e.checklist.outlineGeprueft || hasOutline),
-      hint: "Outline erzeugen und redaktionell gegenlesen.",
+      label: "Outline / Exposé vorhanden",
+      ok: hasOutline,
+      hint: "Mind. ca. 200 Zeichen Outline — danach selbst gegenlesen.",
     },
     {
       id: "roadmap",
@@ -279,15 +457,15 @@ export function buildRomanValidation(input: {
       id: "cover",
       stage: "abschluss",
       label: "Cover",
-      ok: input.hasCover || e.checklist.coverOk,
-      hint: "Cover erzeugen und freigeben.",
+      ok: input.hasCover,
+      hint: "Cover erzeugen und speichern.",
     },
     {
       id: "vorsatz",
       stage: "abschluss",
       label: "Vorsatz / Buchrücken",
-      ok: input.hasVorsatz || e.checklist.vorsatzOk,
-      hint: "Front Matter vor Publikation.",
+      ok: input.hasVorsatz,
+      hint: "Front Matter erzeugen und speichern.",
     },
   ];
 }

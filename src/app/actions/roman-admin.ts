@@ -16,6 +16,7 @@ import {
   type RomanIdeaFoundationFill,
 } from "@/lib/roman/idea-finder";
 import { generateMehrteilerBeratung } from "@/lib/roman/mehrteiler-beratung";
+import { generateHarteRegelnForBook } from "@/lib/roman/harte-regeln";
 import { runRomanPhase0 } from "@/lib/roman/phase0";
 import {
   processNextRomanSzene,
@@ -54,6 +55,7 @@ import {
   romanIdeenChatSaveSchema,
   romanKapitelClearSchema,
   romanMehrteilerAdviceSchema,
+  romanHarteRegelnGenerateSchema,
   romanOutlineGenerateSchema,
   romanPhase0Schema,
   romanProcessSceneSchema,
@@ -859,6 +861,38 @@ export async function generateRomanMehrteilerAdviceAction(
         error instanceof Error
           ? error.message
           : "Mehrteiler-Beratung fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Book-specific hard rules (Claude Sonnet 5, Gemini 3.8 Flash fallback).
+ * Replaces the editable harteRegeln list — user reviews, then Kontext speichern.
+ */
+export async function generateRomanHarteRegelnAction(
+  input: unknown,
+): Promise<ActionResult<{ rules: string[]; modelLabel: string }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanHarteRegelnGenerateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const result = await generateHarteRegelnForBook(parsed.data);
+    return { success: true, data: result };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Harte Regeln erzeugen fehlgeschlagen.",
     };
   }
 }

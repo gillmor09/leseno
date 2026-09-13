@@ -7,14 +7,14 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { generateRomanMehrteilerAdviceAction } from "@/app/actions/roman-admin";
+import { generateRomanMehrteilerAdviceAction, generateRomanHarteRegelnAction } from "@/app/actions/roman-admin";
 import {
   MEHRTEILER_FORM_LABELS,
+  ROMAN_ALTER_PRESETS,
+  ROMAN_GENRE_RULE_PRESETS,
   countWords,
   formatWordCount,
-  kidsBookEditorialPreset,
   type RomanEditorial,
-  type RomanEditorialChecklist,
   type RomanMehrteilerForm,
   type RomanValidationItem,
 } from "@/lib/roman/editorial";
@@ -38,29 +38,15 @@ function FieldLabel({ children }: { children: ReactNode }) {
 }
 
 export const ROMAN_PIPELINE_STAGES = [
-  { id: "idee", label: "Idee", href: "#roman-stage-idee" },
-  { id: "fundament", label: "Fundament", href: "#roman-stage-fundament" },
-  { id: "regeln", label: "Regeln", href: "#roman-stage-regeln" },
-  { id: "umfang", label: "Umfang", href: "#roman-stage-umfang" },
-  { id: "outline", label: "Outline", href: "#roman-stage-outline" },
-  { id: "roadmap", label: "Roadmap", href: "#roman-stage-roadmap" },
-  { id: "schreiben", label: "Schreiben", href: "#roman-stage-schreiben" },
-  { id: "abschluss", label: "Abschluss", href: "#roman-stage-abschluss" },
+  { id: "idee", label: "1 Idee", href: "#roman-stage-idee" },
+  { id: "fundament", label: "2 Fundament", href: "#roman-stage-fundament" },
+  { id: "umfang", label: "3 Umfang", href: "#roman-stage-umfang" },
+  { id: "regeln", label: "4 Regeln", href: "#roman-stage-regeln" },
+  { id: "outline", label: "5 Outline", href: "#roman-stage-outline" },
+  { id: "roadmap", label: "6 Roadmap", href: "#roman-stage-roadmap" },
+  { id: "schreiben", label: "7 Schreiben", href: "#roman-stage-schreiben" },
+  { id: "abschluss", label: "8 Abschluss", href: "#roman-stage-abschluss" },
 ] as const;
-
-const CHECKLIST_LABELS: { key: keyof RomanEditorialChecklist; label: string }[] =
-  [
-    { key: "ideeKlar", label: "Idee freigegeben" },
-    { key: "fundamentVoll", label: "Fundament redaktionell ok" },
-    { key: "regelnHart", label: "Harte Regeln gesetzt" },
-    { key: "umfangGesetzt", label: "Umfang / Alter freigegeben" },
-    { key: "outlineGeprueft", label: "Outline gegenlesen" },
-    { key: "roadmapGeprueft", label: "Roadmap spot-geprüft" },
-    { key: "stilStichprobe", label: "Stil-Stichprobe ok" },
-    { key: "coverOk", label: "Cover freigegeben" },
-    { key: "vorsatzOk", label: "Vorsatz / Buchrücken ok" },
-    { key: "readyToPublish", label: "Publish-ready" },
-  ];
 
 export function RomanPipelineNav({
   validation,
@@ -133,8 +119,8 @@ export function RomanValidationPanel({
             Verlags-Checkliste
           </h2>
           <p className="mt-1 text-sm font-semibold text-zinc-600">
-            Soft-Gates — speichern bleibt immer möglich. {okCount}/
-            {items.length} erfüllt.
+            Orientierungshilfe — blockiert nichts. {okCount}/{items.length}{" "}
+            Schwellen erreicht. Speichern bleibt immer möglich.
           </p>
         </div>
       </div>
@@ -250,11 +236,15 @@ export function RomanEditorialSection({
   genre,
   praemisse,
   tonalitaet,
+  perspektive = "",
+  zeitform = "",
   stilbibel,
   kiRegelwerk,
   manuskriptRaw,
   charaktere,
   szenenRaster,
+  parts = ["umfang", "regeln"],
+  showHeadings = true,
 }: {
   editorial: RomanEditorial;
   onChange: (next: RomanEditorial) => void;
@@ -264,24 +254,52 @@ export function RomanEditorialSection({
   genre: string;
   praemisse: string;
   tonalitaet: string;
+  perspektive?: string;
+  zeitform?: string;
   stilbibel: string;
   kiRegelwerk: string;
   manuskriptRaw: string;
   charaktere: RomanCharakter[];
   szenenRaster: RomanSzenenRasterItem[];
+  parts?: Array<"umfang" | "regeln">;
+  /** When false, omit inner H3s (parent StepCard already titles the block). */
+  showHeadings?: boolean;
 }) {
   const [advicePending, setAdvicePending] = useState(false);
+  const [rulesPending, setRulesPending] = useState(false);
+  const [alterPresetId, setAlterPresetId] = useState("");
+  const [genrePresetId, setGenrePresetId] = useState("");
   const disabled = !canSave || busy;
+  const showUmfang = parts.includes("umfang");
+  const showRegeln = parts.includes("regeln");
+
+  const alterHint =
+    ROMAN_ALTER_PRESETS.find((p) => p.id === alterPresetId)?.hint ??
+    "Vorgefertigte Verlags-Startwerte (Alter, Lesestufe, Wortzahl) — danach frei editierbar.";
+  const genreHint =
+    ROMAN_GENRE_RULE_PRESETS.find((p) => p.id === genrePresetId)?.hint ??
+    "Vorgefertigte harte Regeln je Genre — ersetzen die aktuelle Regelliste und sind danach editierbar.";
 
   function patch(partial: Partial<RomanEditorial>) {
     onChange({ ...editorial, ...partial });
   }
 
-  function patchChecklist(key: keyof RomanEditorialChecklist, value: boolean) {
-    onChange({
-      ...editorial,
-      checklist: { ...editorial.checklist, [key]: value },
-    });
+  function applyAlterPreset(id: string) {
+    setAlterPresetId(id);
+    if (!id) return;
+    const preset = ROMAN_ALTER_PRESETS.find((p) => p.id === id);
+    if (!preset) return;
+    onChange({ ...editorial, ...preset.apply });
+    toast.success(`Alter/Umfang: ${preset.label} übernommen — bei Bedarf anpassen und speichern.`);
+  }
+
+  function applyGenrePreset(id: string) {
+    setGenrePresetId(id);
+    if (!id) return;
+    const preset = ROMAN_GENRE_RULE_PRESETS.find((p) => p.id === id);
+    if (!preset?.apply.harteRegeln) return;
+    patch({ harteRegeln: [...preset.apply.harteRegeln] });
+    toast.success(`Genre-Regeln: ${preset.label} eingefügt — bei Bedarf anpassen und speichern.`);
   }
 
   function setHarteRegelnText(text: string) {
@@ -290,6 +308,38 @@ export function RomanEditorialSection({
       .map((l) => l.replace(/^[\s–\-•*]+/, "").trim())
       .filter(Boolean);
     patch({ harteRegeln: lines });
+  }
+
+  async function runSharpenRules() {
+    if (!praemisse.trim() && !genre.trim() && !manuskriptRaw.trim()) {
+      toast.error("Mindestens Prämisse, Genre oder Outline ausfüllen.");
+      return;
+    }
+    setRulesPending(true);
+    const result = await generateRomanHarteRegelnAction({
+      title,
+      genre,
+      praemisse,
+      tonalitaet,
+      perspektive,
+      zeitform,
+      stilbibel,
+      kiRegelwerk,
+      manuskriptRaw,
+      charaktere,
+      szenenRaster,
+      editorial,
+      existingHarteRegeln: editorial.harteRegeln,
+    });
+    setRulesPending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Harte Regeln erzeugen fehlgeschlagen.");
+      return;
+    }
+    patch({ harteRegeln: result.data!.rules });
+    toast.success(
+      `Regeln geschärft (${result.data!.modelLabel}) — prüfen, dann Kontext speichern.`,
+    );
   }
 
   async function runAdvice() {
@@ -312,40 +362,47 @@ export function RomanEditorialSection({
       return;
     }
     patch({ mehrteilerBeratung: result.data!.advice });
-    toast.success("Mehrteiler-Beratung erzeugt — bei Bedarf anpassen.");
+    toast.success("Mehrteiler-Beratung erzeugt — bei Bedarf anpassen und Kontext speichern.");
   }
 
   return (
     <div className="space-y-6">
-      <div id="roman-stage-umfang" className="scroll-mt-24 space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+      {showUmfang ? (
+      <div className="space-y-4">
+        {showHeadings ? (
           <div>
             <h3 className="text-base font-extrabold text-zinc-950">
               Umfang, Zielalter & Serie
             </h3>
             <p className="mt-1 text-sm font-semibold text-zinc-600">
-              Verbindlich für Outline, Roadmap und Szenen-Schreiben. Preset für
-              typische Kinderbücher verfügbar.
+              Verbindlich für Outline, Roadmap und Szenen-Schreiben.
             </p>
           </div>
-          <button
-            type="button"
+        ) : (
+          <p className="text-sm font-semibold text-zinc-600">
+            Werte steuern Sprache und Szenenlänge in allen späteren KI-Schritten.
+          </p>
+        )}
+
+        <label className="block max-w-xl">
+          <FieldLabel>Vorauswahl Alter / Umfang</FieldLabel>
+          <select
+            value={alterPresetId}
             disabled={disabled}
-            onClick={() =>
-              onChange({
-                ...editorial,
-                ...kidsBookEditorialPreset(),
-                checklist: {
-                  ...editorial.checklist,
-                  umfangGesetzt: true,
-                },
-              })
-            }
-            className="rounded-2xl bg-zinc-100 px-4 py-2 text-xs font-extrabold tracking-wide text-zinc-800 uppercase ring-1 ring-zinc-950/10 hover:bg-zinc-200 disabled:opacity-50"
+            onChange={(e) => applyAlterPreset(e.target.value)}
+            className={inputClass}
           >
-            Preset 8–10 Jahre
-          </button>
-        </div>
+            <option value="">— manuell oder Preset wählen —</option>
+            {ROMAN_ALTER_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1.5 block text-xs font-semibold text-zinc-500">
+            {alterHint} Quelle: feste Verlags-Presets in der App (kein KI-Output).
+          </span>
+        </label>
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="block">
@@ -523,70 +580,93 @@ export function RomanEditorialSection({
             onChange={(e) => patch({ mehrteilerBeratung: e.target.value })}
             rows={10}
             className={textareaClass}
-            placeholder="Hier erscheint die Verlagsberatung — editierbar."
+            placeholder="Hier erscheint die Verlagsberatung — editierbar. Danach Kontext speichern."
           />
-        </div>
-      </div>
-
-      <div id="roman-stage-regeln" className="scroll-mt-24 space-y-3">
-        <div>
-          <h3 className="text-base font-extrabold text-zinc-950">
-            Harte Verlagsregeln
-          </h3>
-          <p className="mt-1 text-sm font-semibold text-zinc-600">
-            Eine Regel pro Zeile — landen als MUSS in allen KI-Prompts (zusätzlich
-            zum KI-Regelwerk / Stilbibel).
+          <p className="text-xs font-semibold text-zinc-500">
+            Erzeugt nur Text im Formular — speichert noch nichts. Nach dem
+            Anpassen: Kontext speichern.
           </p>
         </div>
+      </div>
+      ) : null}
+
+      {showRegeln ? (
+      <div className="space-y-3">
+        {showHeadings ? (
+        <div>
+          <h3 className="text-base font-extrabold text-zinc-950">
+            1. Harte Verlagsregeln
+          </h3>
+          <p className="mt-1 text-sm font-semibold text-zinc-600">
+            Buch-spezifische MUSS-Bulletins — stärkste Schicht im Prompt.
+          </p>
+        </div>
+        ) : (
+          <div className="space-y-1">
+            <h3 className="text-sm font-extrabold text-orange-900">
+              1. Harte Verlagsregeln (stärkste Schicht)
+            </h3>
+            <p className="text-sm font-semibold text-zinc-600">
+              Eine Regel pro Zeile. Für <em>dieses</em> Buch: Zielalter, Genre,
+              Prämisse. Stehen im Prompt zuerst und schlagen bei Konflikt das
+              allgemeine KI-Regelwerk.
+            </p>
+          </div>
+        )}
+
+        <label className="block max-w-xl">
+          <FieldLabel>Vorauswahl Genre-Regeln (Startpunkt)</FieldLabel>
+          <select
+            value={genrePresetId}
+            disabled={disabled}
+            onChange={(e) => applyGenrePreset(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">— manuell oder Genre wählen —</option>
+            {ROMAN_GENRE_RULE_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1.5 block text-xs font-semibold text-zinc-500">
+            {genreHint} Ersetzt die aktuelle Liste (nicht anhängen).
+          </span>
+        </label>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={disabled || rulesPending}
+            onClick={() => void runSharpenRules()}
+            className="rounded-2xl bg-orange-700 px-4 py-2 text-xs font-extrabold tracking-wide text-white uppercase hover:bg-orange-800 disabled:opacity-50"
+          >
+            {rulesPending
+              ? "Regeln werden geschärft …"
+              : "Regeln für dieses Buch schärfen"}
+          </button>
+          <p className="text-xs font-semibold text-zinc-500">
+            Claude Sonnet 5 (Fallback: Gemini 3.8 Flash). Ersetzt die Liste —
+            speichert noch nichts.
+          </p>
+        </div>
+
         <textarea
           value={editorial.harteRegeln.join("\n")}
-          disabled={disabled}
+          disabled={disabled || rulesPending}
           onChange={(e) => setHarteRegelnText(e.target.value)}
-          rows={6}
+          rows={8}
           className={textareaClass}
           placeholder={
-            "Wortwahl für 8–10 Jahre …\nJedes Kapitel endet mit Haken …"
+            "Wortwahl für die Zielgruppe …\nJedes Kapitel endet mit Haken …"
           }
         />
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() =>
-            patch({
-              harteRegeln: kidsBookEditorialPreset().harteRegeln ?? [],
-              checklist: { ...editorial.checklist, regelnHart: true },
-            })
-          }
-          className="rounded-2xl bg-zinc-100 px-4 py-2 text-xs font-extrabold tracking-wide text-zinc-800 uppercase ring-1 ring-zinc-950/10 hover:bg-zinc-200 disabled:opacity-50"
-        >
-          Kinderbuch-Regeln einfügen
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        <h3 className="text-base font-extrabold text-zinc-950">
-          Redaktionelle Freigaben
-        </h3>
-        <p className="text-sm font-semibold text-zinc-600">
-          Manuelle Haken für den Verlagsweg — ergänzen die automatische Checkliste.
+        <p className="text-xs font-semibold text-zinc-500">
+          Geeignet für: Verbote, Altersstufe, Genre-Pflichten. Nicht geeignet
+          für lange Stilbeschreibungen → dafür die Stilbibel.
         </p>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {CHECKLIST_LABELS.map(({ key, label }) => (
-            <li key={key}>
-              <label className="flex cursor-pointer items-center gap-3 rounded-2xl bg-zinc-50 px-3 py-2.5 ring-1 ring-zinc-950/8">
-                <input
-                  type="checkbox"
-                  checked={editorial.checklist[key]}
-                  disabled={disabled}
-                  onChange={(e) => patchChecklist(key, e.target.checked)}
-                  className="h-4 w-4 rounded border-zinc-300 text-orange-700 focus:ring-orange-700"
-                />
-                <span className="text-sm font-bold text-zinc-800">{label}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
       </div>
+      ) : null}
     </div>
   );
 }

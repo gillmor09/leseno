@@ -251,3 +251,19 @@ export const romanMehrteilerAdviceSchema = z.object({
   szenenRaster: z.array(szenenRasterSchema).max(200),
   editorial: romanEditorialSchema,
 });
+/** Book-specific hard rules (Claude Sonnet 5 / Gemini fallback). */
+export const romanHarteRegelnGenerateSchema = z.object({
+  title: z.string().max(200),
+  genre: z.string().max(200),
+  praemisse: z.string().max(4000),
+  tonalitaet: z.string().max(2000),
+  perspektive: z.string().max(200),
+  zeitform: z.string().max(120),
+  stilbibel: z.string().max(100_000),
+  kiRegelwerk: z.string().max(50_000),
+  manuskriptRaw: z.string().max(500_000),
+  charaktere: z.array(charakterSchema).max(40),
+  szenenRaster: z.array(szenenRasterSchema).max(200),
+  editorial: romanEditorialSchema,
+  existingHarteRegeln: z.array(z.string().max(2000)).max(40),
+});

@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Admin workspace: optional book foundation + Phase 0 roadmap + Phase 1–3.
- * Entry stays open — manuscript alone, fundament alone, or both.
+ * Admin workspace: numbered publisher steps with clear save rules.
+ * Steps 1–5 = context forms; Phase 0 = roadmap; 1–3 = scene writing; finish = cover/vorsatz/export.
  */
 
 import Link from "next/link";
@@ -32,6 +32,12 @@ import {
   RomanValidationPanel,
   RomanWordStats,
 } from "@/components/features/admin/roman-editorial-panel";
+import {
+  RomanActionNote,
+  RomanKontextSaveBar,
+  RomanSaveLegend,
+  RomanStepCard,
+} from "@/components/features/admin/roman-step-card";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -272,8 +278,8 @@ export function RomanAdminWorkspace({
   const [openChars, setOpenChars] = useState(false);
   const [openWelt, setOpenWelt] = useState(false);
   const [openRaster, setOpenRaster] = useState(false);
-  const [openKi, setOpenKi] = useState(false);
-  const [openFan, setOpenFan] = useState(true);
+  const [openKi, setOpenKi] = useState(true);
+  const [openFan, setOpenFan] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(
     initialSzenen[0]?.id ?? null,
@@ -554,7 +560,7 @@ export function RomanAdminWorkspace({
     setSavePending(false);
     setRoman({ ...saved, ideenChat });
     setEditorial(saved.editorial ?? emptyRomanEditorial());
-    toast.success("Kontext gespeichert.");
+    toast.success("Kontext gespeichert (Titel, Fundament, Regeln, Umfang, Outline, Fan).");
     if (isNew && saved.id) {
       window.location.href = `/admin/roman/${saved.id}`;
     }
@@ -1041,6 +1047,8 @@ export function RomanAdminWorkspace({
 
       <RomanPipelineNav validation={validationItems} />
 
+      <RomanSaveLegend />
+
       <RomanWordStats
         szenen={szenen}
         editorial={editorial}
@@ -1054,26 +1062,27 @@ export function RomanAdminWorkspace({
           <ProgressBar
             value={completedCount}
             max={totalCount}
-            label="Gesamtfortschritt"
+            label="Gesamtfortschritt Szenen"
           />
         </section>
       ) : null}
 
-      <section
+      <RomanStepCard
         id="roman-stage-idee"
-        className="scroll-mt-24 space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6"
+        step={1}
+        title="Idee & Arbeitstitel"
+        task="Mit dem Ideen-Finder brainstormen oder direkt einen Arbeitstitel setzen. „Übernehmen“ füllt das Fundament (Schritt 2) vor."
+        effect="Ideen-Chat wird separat historisiert (eigener Speichern-Pfad). Titel gehört zum Kontext und braucht „Kontext speichern“."
+        save="kontext"
+        footer={
+          <RomanKontextSaveBar
+            onSave={() => void handleSaveOnly()}
+            disabled={!canSave || busy}
+            pending={savePending}
+            note="Speichert Titel + alles Weitere aus den Schritten 1–5, das du schon ausgefüllt hast."
+          />
+        }
       >
-        <div>
-          <h2 className="text-lg font-extrabold text-zinc-950">
-            Roman-Kontext
-          </h2>
-          <p className="mt-1 text-sm font-semibold text-zinc-600">
-            Ideen-Finder → Fundament → Regeln/Umfang → Outline → speichern →
-            Phase&nbsp;0 → Schreiben → Abschluss. Die Pipeline-Leiste oben
-            begleitet den Verlagsweg.
-          </p>
-        </div>
-
         <RomanIdeaFinder
           romanId={roman?.id}
           messages={ideenChat}
@@ -1093,10 +1102,25 @@ export function RomanAdminWorkspace({
             placeholder="Arbeitstitel"
           />
         </label>
+      </RomanStepCard>
 
-        <div id="roman-stage-fundament" className="scroll-mt-24">
+      <RomanStepCard
+        id="roman-stage-fundament"
+        step={2}
+        title="Buch-Fundament"
+        task="Genre, Prämisse, Figuren, Welt und optional Plot-Raster ausfüllen — je vollständiger, desto besser Outline und Roadmap."
+        effect="Fließt in Outline, Phase 0 und jedes Szenen-Schreiben ein. Ohne Speichern nur im Browser."
+        save="kontext"
+        footer={
+          <RomanKontextSaveBar
+            onSave={() => void handleSaveOnly()}
+            disabled={!canSave || busy}
+            pending={savePending}
+          />
+        }
+      >
         <Collapsible
-          title="1. Buch-Fundament (optional)"
+          title="2.1 Genre, Prämisse, Ton"
           open={openFundament}
           onToggle={() => setOpenFundament((v) => !v)}
         >
@@ -1157,7 +1181,7 @@ export function RomanAdminWorkspace({
         </Collapsible>
 
         <Collapsible
-          title="2. Charakter-Steckbriefe (optional)"
+          title="2.2 Charakter-Steckbriefe"
           open={openChars}
           onToggle={() => setOpenChars((v) => !v)}
         >
@@ -1304,7 +1328,7 @@ export function RomanAdminWorkspace({
         </Collapsible>
 
         <Collapsible
-          title="3. Welt & Regeln (optional)"
+          title="2.3 Welt & Regeln"
           open={openWelt}
           onToggle={() => setOpenWelt((v) => !v)}
         >
@@ -1333,13 +1357,13 @@ export function RomanAdminWorkspace({
         </Collapsible>
 
         <Collapsible
-          title="4. Szenen-Raster / Plot-Plan (optional)"
+          title="2.4 Szenen-Raster / Plot-Plan"
           open={openRaster}
           onToggle={() => setOpenRaster((v) => !v)}
         >
           <p className="mb-3 text-xs font-semibold text-zinc-500">
             Planungsraster vor der operativen Roadmap. Phase 0 kann daraus
-            ableiten — muss aber nicht ausgefüllt sein.
+            Briefings ableiten — muss aber nicht ausgefüllt sein.
           </p>
           <div className="space-y-4">
             {szenenRaster.map((row, index) => (
@@ -1510,33 +1534,138 @@ export function RomanAdminWorkspace({
             </button>
           </div>
         </Collapsible>
+      </RomanStepCard>
+
+      <RomanStepCard
+        id="roman-stage-umfang"
+        step={3}
+        title="Umfang, Zielalter & Serie"
+        task="Zielalter, Lesestufe und Wortzahl-Ziele setzen. Bei Unsicherheit Mehrteiler-Beratung erzeugen und Form wählen."
+        effect="Steuert Sprache und Szenenlänge verbindlich in Outline, Roadmap und Schreiben. Mehrteiler-Beratung ist nur Text — erst Kontext speichern macht sie dauerhaft."
+        save="kontext"
+        footer={
+          <RomanKontextSaveBar
+            onSave={() => void handleSaveOnly()}
+            disabled={!canSave || busy}
+            pending={savePending}
+          />
+        }
+      >
+        <RomanEditorialSection
+          editorial={editorial}
+          onChange={setEditorial}
+          canSave={canSave}
+          busy={busy}
+          title={title}
+          genre={genre}
+          praemisse={praemisse}
+          tonalitaet={tonalitaet}
+          stilbibel={stilbibel}
+          kiRegelwerk={kiRegelwerk}
+          manuskriptRaw={manuskriptRaw}
+          charaktere={charaktere}
+          szenenRaster={szenenRaster}
+          parts={["umfang"]}
+          showHeadings={false}
+        />
+      </RomanStepCard>
+
+      <RomanStepCard
+        id="roman-stage-regeln"
+        step={4}
+        title="Regeln, Stil & Testleser"
+        task="Drei getrennte Anweisungs-Schichten setzen (siehe Tabelle unten), optional Fan-Persona. Reihenfolge im Prompt: Harte Regeln → KI-Regelwerk → Stilbibel."
+        effect="Alle drei landen als MUSS in Outline, Phase 0 und Szenen-Schreiben. Harte Regeln stehen zuerst und gewinnen bei Konflikt. Speichern: Kontext speichern."
+        save="kontext"
+        footer={
+          <RomanKontextSaveBar
+            onSave={() => void handleSaveOnly()}
+            disabled={!canSave || busy}
+            pending={savePending}
+          />
+        }
+      >
+        <div className="overflow-x-auto rounded-2xl ring-1 ring-zinc-950/10">
+          <table className="w-full min-w-[36rem] text-left text-sm">
+            <thead className="bg-zinc-50 text-[11px] font-extrabold tracking-wide text-zinc-500 uppercase">
+              <tr>
+                <th className="px-3 py-2.5">Feld</th>
+                <th className="px-3 py-2.5">Wofür</th>
+                <th className="px-3 py-2.5">Stärke</th>
+              </tr>
+            </thead>
+            <tbody className="font-semibold text-zinc-800">
+              <tr className="border-t border-zinc-100">
+                <td className="px-3 py-2.5 font-extrabold text-orange-900">
+                  1. Harte Verlagsregeln
+                </td>
+                <td className="px-3 py-2.5">
+                  Buch-spezifische Verbote/Gebote (Alter, Genre, Prämisse). Eine
+                  Regel pro Zeile.
+                </td>
+                <td className="px-3 py-2.5">
+                  Stärkste Schicht — steht im Prompt zuerst, gewinnt bei Konflikt
+                </td>
+              </tr>
+              <tr className="border-t border-zinc-100">
+                <td className="px-3 py-2.5 font-extrabold text-zinc-900">
+                  2. KI-Regelwerk
+                </td>
+                <td className="px-3 py-2.5">
+                  Allgemeine Handwerks-Regeln für alle Romane (Show don&apos;t
+                  tell, keine KI-Floskeln, Orthografie …). Hat einen Default.
+                </td>
+                <td className="px-3 py-2.5">
+                  Immer MUSS — Basis-Craft, selten pro Buch umschreiben
+                </td>
+              </tr>
+              <tr className="border-t border-zinc-100">
+                <td className="px-3 py-2.5 font-extrabold text-zinc-900">
+                  3. Stilbibel
+                </td>
+                <td className="px-3 py-2.5">
+                  Stimme dieses Buchs: Rhythmus, Bildsprache, Humor, Tabus,
+                  Beispielsätze. Optional.
+                </td>
+                <td className="px-3 py-2.5">
+                  MUSS nur wenn ausgefüllt — für Ton/Stimme, nicht für Verbote
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        <section className="space-y-4 rounded-2xl bg-zinc-50/80 p-4 ring-1 ring-zinc-950/8 sm:p-5">
-          <RomanEditorialSection
-            editorial={editorial}
-            onChange={setEditorial}
-            canSave={canSave}
-            busy={busy}
-            title={title}
-            genre={genre}
-            praemisse={praemisse}
-            tonalitaet={tonalitaet}
-            stilbibel={stilbibel}
-            kiRegelwerk={kiRegelwerk}
-            manuskriptRaw={manuskriptRaw}
-            charaktere={charaktere}
-            szenenRaster={szenenRaster}
-          />
-        </section>
+        <RomanEditorialSection
+          editorial={editorial}
+          onChange={setEditorial}
+          canSave={canSave}
+          busy={busy}
+          title={title}
+          genre={genre}
+          praemisse={praemisse}
+          tonalitaet={tonalitaet}
+          perspektive={perspektive}
+          zeitform={zeitform}
+          stilbibel={stilbibel}
+          kiRegelwerk={kiRegelwerk}
+          manuskriptRaw={manuskriptRaw}
+          charaktere={charaktere}
+          szenenRaster={szenenRaster}
+          parts={["regeln"]}
+          showHeadings={false}
+        />
 
         <Collapsible
-          title="5. KI-Regelwerk"
+          title="2. KI-Regelwerk (Handwerk, Default vorhanden)"
           open={openKi}
           onToggle={() => setOpenKi((v) => !v)}
         >
+          <RomanActionNote title="Wann anfassen?" tone="neutral">
+            Nur ändern, wenn du den Default bewusst ersetzen willst. Für
+            buchspezifische Verbote lieber die harten Verlagsregeln nutzen.
+          </RomanActionNote>
           <label className="block">
-            <FieldLabel>System-Vorgaben für Autor / Revision</FieldLabel>
+            <FieldLabel>KI-Regelwerk — allgemeine Craft-Regeln</FieldLabel>
             <textarea
               value={kiRegelwerk}
               onChange={(e) => setKiRegelwerk(e.target.value)}
@@ -1545,32 +1674,38 @@ export function RomanAdminWorkspace({
               className={textareaClass}
             />
             <span className="mt-1.5 block text-xs font-semibold text-zinc-500">
-              Standard: Show don&apos;t tell, keine KI-Floskeln, Dialoge,
-              Orthografie, Perspektive/Zeitform.
+              Fließt als „MUSS — KI-Regelwerk“ in Outline, Roadmap und jede Szene.
+              Leer = eingebauter Default (Show don&apos;t tell, keine Floskeln,
+              Dialoge, Orthografie, Perspektive/Zeitform, Stilkonsistenz).
             </span>
           </label>
           <label className="mt-3 block">
-            <FieldLabel>Zusätzliche Stilbibel (frei)</FieldLabel>
+            <FieldLabel>Stilbibel — Stimme dieses Buchs (optional)</FieldLabel>
             <textarea
               value={stilbibel}
               onChange={(e) => setStilbibel(e.target.value)}
               disabled={!canSave || busy}
-              rows={3}
+              rows={5}
               className={textareaClass}
-              placeholder="Weitere Stilhinweise …"
+              placeholder="z. B. kurze Sätze wie bei …; Humor trocken, nie zynisch; keine Metaphern aus dem Sport …"
             />
+            <span className="mt-1.5 block text-xs font-semibold text-zinc-500">
+              Fließt als „MUSS — Stilbibel“ nur wenn ausgefüllt. Geeignet für Ton,
+              Rhythmus und Vorbilder — nicht für harte Verbote (die gehören nach
+              oben zu den Verlagsregeln).
+            </span>
           </label>
         </Collapsible>
 
         <Collapsible
-          title="Fan-Persona (Testleser:in)"
+          title="3. Fan-Persona (Testleser — kein Prompt-Regelwerk)"
           open={openFan}
           onToggle={() => setOpenFan((v) => !v)}
         >
           <p className="mb-3 text-xs font-semibold text-zinc-500">
-            Eine KI-Rolle als Genre-Fan — später auch schon beim Einstieg der
-            Roman-Erstellung nutzbar. Leer = Vorschlag aus Genre/Tonalität zur
-            Laufzeit.
+            Keine Schreib-Anweisung, sondern die Stimme der Testleser-KI in Phase
+            1–3. Bewertet Emotion/Spannung — ersetzt keine der drei Regel-Felder
+            oben. Speichern über „Kontext speichern“.
           </p>
           <div className="mb-3 flex flex-wrap gap-2">
             <button
@@ -1604,12 +1739,33 @@ export function RomanAdminWorkspace({
             />
           </label>
         </Collapsible>
+      </RomanStepCard>
 
-        <div id="roman-stage-outline" className="scroll-mt-24 block">
+      <RomanStepCard
+        id="roman-stage-outline"
+        step={5}
+        title="Outline / Exposé"
+        task="Outline aus dem Fundament erzeugen, PDF laden oder selbst tippen. Danach gegenlesen und anpassen."
+        effect="„Outline aus Fundament“ schreibt nur ins Formularfeld — speichert nicht. Phase 0 und Schreiben brauchen dieses Feld als Handlungsgerüst."
+        save="kontext"
+        footer={
+          <RomanKontextSaveBar
+            onSave={() => void handleSaveOnly()}
+            disabled={!canSave || busy}
+            pending={savePending}
+            note="Speichert das Outline-Feld zusammen mit dem restlichen Kontext."
+          />
+        }
+      >
+        <RomanActionNote title="Outline erzeugen" tone="neutral">
+          Nutzt Fundament + Regeln + Umfang. Überschreibt bei Bestätigung den
+          aktuellen Outline-Text. Danach immer Kontext speichern, bevor du
+          Phase&nbsp;0 startest.
+        </RomanActionNote>
           <FieldLabel>Manuskript / Outline / Exposé</FieldLabel>
           <p className="mb-2 text-xs font-semibold text-zinc-500">
-            Brücke zwischen Fundament und Phase&nbsp;0: editierbares Outline —
-            darauf bauen Roadmap und Szenen auf. Kein fertiger Romantext.
+            Editierbare Brücke zwischen Fundament und Phase&nbsp;0 — kein fertiger
+            Romantext.
           </p>
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <input
@@ -1664,20 +1820,25 @@ export function RomanAdminWorkspace({
             disabled={!canSave || busy}
             rows={12}
             className="w-full rounded-2xl bg-gray-100 px-4 py-3 font-mono text-sm text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-            placeholder="Exposé / Handlungsoutline — nach dem Fundament erzeugen oder einfügen, dann Phase 0"
+            placeholder="Exposé / Handlungsoutline — nach dem Fundament erzeugen oder einfügen, dann speichern und Phase 0"
           />
-        </div>
+      </RomanStepCard>
 
-        <div className="space-y-3 rounded-2xl ring-1 ring-zinc-950/10 p-4">
+      <RomanStepCard
+        step="C"
+        title="Cover (optional, eigener Speichern-Button)"
+        task="Roman zuerst speichern (Schritt 1–5). Dann Cover erzeugen, prüfen und mit „Cover speichern“ ablegen."
+        effect="Erzeugen legt nur eine Vorschau an. Erst „Cover speichern“ schreibt Bild + Prompt in die DB. Unabhängig vom Kontext-Speichern."
+        save="eigen"
+      >
+        <div className="space-y-3">
           <div>
             <h3 className="text-sm font-extrabold text-zinc-950">
-              Buch-Cover (nach Manuskript)
+              Buch-Cover
             </h3>
             <p className="mt-1 text-xs font-semibold text-zinc-500">
               Gemini beschreibt eine Cover-Szene aus Manuskript/Fundament, Flux
-              erzeugt das Bild im Amazon-eBook-Format 5:8 / 1600×2560
-              (Hochformat, vollflächig, ohne Text) — Titel wird danach als
-              Overlay gesetzt. Roman zuerst speichern.
+              erzeugt das Bild (Amazon-eBook 5:8 / 1600×2560). Titel als Overlay.
             </p>
           </div>
           <label className="block">
@@ -1755,18 +1916,31 @@ export function RomanAdminWorkspace({
             </p>
           )}
         </div>
+      </RomanStepCard>
 
-        <div id="roman-stage-roadmap" className="scroll-mt-24 flex flex-wrap gap-2">
+      <RomanStepCard
+        id="roman-stage-roadmap"
+        step={6}
+        title="Kontext speichern & Szenen-Roadmap"
+        task="Wenn Schritte 1–5 stehen: zuerst Kontext speichern (oder direkt Phase 0). Dann Roadmap erzeugen und Briefings spot-checken."
+        effect="Phase 0 speichert den Kontext, löscht alle nicht-fertigen Szenen und legt eine neue Roadmap an. COMPLETED-Szenen bleiben. Dauer oft 1–3 Minuten."
+        save="phase0"
+      >
+        <RomanActionNote title="Wichtig vor Phase 0" tone="warn">
+          Outline und Regeln sollten gespeichert und gegenlesen sein. Phase 0
+          überschreibt offene Szenen unwiderruflich (nicht die fertigen).
+        </RomanActionNote>
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             disabled={!canSave || busy}
             onClick={() => void handleSaveOnly()}
             className={cn(
-              "rounded-full bg-gray-100 px-5 py-2.5 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white",
+              "rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-zinc-800",
               (!canSave || busy) && "opacity-70",
             )}
           >
-            {savePending ? "Speichern …" : "Nur speichern"}
+            {savePending ? "Speichern …" : "Kontext speichern"}
           </button>
           <button
             type="button"
@@ -1779,25 +1953,26 @@ export function RomanAdminWorkspace({
           >
             {phase0Pending
               ? "Roadmap wird erzeugt …"
-              : "Phase 0: Szenen-Roadmap (KI)"}
+              : "Phase 0: Szenen-Roadmap erzeugen"}
           </button>
         </div>
         <p className="text-xs font-semibold text-zinc-500">
-          Phase 0 ersetzt alle nicht fertigen Szenen. Fertige (COMPLETED)
-          bleiben erhalten. Dauer: oft 1–3 Minuten.
+          „Kontext speichern“ ändert keine Szenen. „Phase 0“ speichert + ersetzt
+          die Roadmap.
         </p>
-      </section>
+      </RomanStepCard>
 
       {roman ? (
         <>
-          <section
+          <RomanStepCard
             id="roman-stage-schreiben"
-            className="scroll-mt-24 space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6"
+            step={7}
+            title="Szenen schreiben (Phase 1–3)"
+            task="Schreibmodell wählen. Eine Szene oder alle offenen Szenen schreiben lassen. Ergebnisse in der Liste prüfen."
+            effect="Jede Szene läuft Autor → Lektor/Fan → Revision und speichert automatisch. PDF exportiert nur — ändert nichts in der DB."
+            save="auto"
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-extrabold text-zinc-950">
-                Phase 1–3 — Nächste Szene
-              </h2>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -1912,9 +2087,13 @@ export function RomanAdminWorkspace({
                 </pre>
               </div>
             ) : null}
-          </section>
 
-          <section className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,16rem)_1fr]">
+            <RomanActionNote title="Nächste Szene / Alle offenen" tone="ok">
+              Speichert Entwurf, Feedback und Revision automatisch pro Schritt.
+              Stoppen bei Batch wirkt erst nach der laufenden Szene.
+            </RomanActionNote>
+
+          <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,16rem)_1fr]">
             <div className="flex min-h-[28rem] flex-col rounded-3xl bg-white p-3 ring-1 ring-zinc-950/10 lg:h-0 lg:min-h-full">
               <p className="mb-2 shrink-0 px-2 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
                 Szenen
@@ -2091,23 +2270,21 @@ export function RomanAdminWorkspace({
                 </div>
               )}
             </div>
-          </section>
+          </div>
+          </RomanStepCard>
 
-          <section
+          <RomanStepCard
             id="roman-stage-abschluss"
-            className="scroll-mt-24 space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6"
+            step={8}
+            title="Abschluss — Buchrücken, Vorsatz & Export"
+            task="Autor setzen, Buchrücken/Vorsatz erzeugen, prüfen und mit „Abschluss speichern“ ablegen. Danach EPUB/PDF exportieren."
+            effect="Erzeugen füllt nur die Formulare. „Abschluss speichern“ schreibt Vorsatz/Buchrücken. EPUB/PDF sind Downloads ohne DB-Änderung."
+            save="eigen"
           >
-            <div>
-              <h2 className="text-lg font-extrabold text-zinc-950">
-                Abschluss — Buchrücken & Vorsatz
-              </h2>
-              <p className="mt-1 text-sm font-semibold text-zinc-600">
-                Am Ende: Gemini gestaltet den Buchrücken (Druck) und minimale
-                eBook-Vorsatzseiten (Titelseite, Impressum, optional Widmung /
-                Motto) — so wenig wie möglich vor Seite&nbsp;1. Im PDF landen
-                Cover + Vorsatz vor dem ersten Kapitel.
-              </p>
-            </div>
+            <RomanActionNote title="Eigene Speichern-Buttons" tone="warn">
+              Nicht über „Kontext speichern“. Cover (Schritt C) und Abschluss haben
+              jeweils eigene Speichern-Aktionen.
+            </RomanActionNote>
 
             <label className="block">
               <FieldLabel>Autor:in</FieldLabel>
@@ -2353,75 +2530,102 @@ export function RomanAdminWorkspace({
                 </label>
               </div>
             </div>
-          </section>
 
-          <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
-            <div>
-              <h2 className="text-lg font-extrabold text-zinc-950">
+            <div className="space-y-3 border-t border-zinc-100 pt-4">
+              <h3 className="text-base font-extrabold text-zinc-950">
                 Publikation — EPUB für Amazon KDP
-              </h2>
-              <p className="mt-1 text-sm font-semibold text-zinc-600">
-                Reflowable EPUB&nbsp;3 aus Cover, Vorsatz und revidierten
-                Kapiteln — geeignet zum Hochladen bei Kindle Direct Publishing
-                und zum Sideloaden aufs Kindle. Cover separat als JPG
-                (1600×2560) zusätzlich in KDP hochladen.
+              </h3>
+              <p className="text-sm font-semibold text-zinc-600">
+                Nur Download — schreibt nichts in die Datenbank. Vorher
+                „Abschluss speichern“, damit Autor/Impressum stimmen.
               </p>
+              <ul className="list-disc space-y-1 pl-5 text-xs font-semibold text-zinc-500">
+                <li>
+                  Inhalt: Cover (falls vorhanden) → Titelseite → Impressum →
+                  optional Widmung/Motto → Kapitel
+                </li>
+                <li>
+                  Cover separat als JPG (1600×2560) zusätzlich in KDP hochladen
+                </li>
+              </ul>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={
+                    !roman || epubPending || revisedCount === 0 || busy
+                  }
+                  onClick={() => void handleExportRomanEpub()}
+                  className={cn(
+                    "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800",
+                    (epubPending || revisedCount === 0 || busy) && "opacity-70",
+                  )}
+                >
+                  {epubPending
+                    ? "EPUB wird erzeugt …"
+                    : "EPUB herunterladen (KDP)"}
+                </button>
+              </div>
+              {revisedCount === 0 ? (
+                <p className="text-xs font-semibold text-amber-800">
+                  Noch keine revidierten Szenen — zuerst Phase&nbsp;1–3
+                  abschließen.
+                </p>
+              ) : (
+                <p className="text-xs font-semibold text-zinc-500">
+                  {revisedCount} revidierte Szene(n) ·{" "}
+                  {coverImageDataUrl.trim()
+                    ? "mit Cover"
+                    : "ohne Cover (optional vorher erzeugen)"}
+                  {" · "}
+                  {vorsatz.titelseite.titel.trim()
+                    ? "Vorsatz vorhanden"
+                    : "Titel aus Kontext — Vorsatz optional nachziehen"}
+                </p>
+              )}
             </div>
-            <ul className="list-disc space-y-1 pl-5 text-xs font-semibold text-zinc-500">
-              <li>
-                Inhalt: Cover (falls vorhanden) → Titelseite → Impressum →
-                optional Widmung/Motto → Kapitel
-              </li>
-              <li>
-                Vorher Abschluss speichern, damit Autor/Impressum im EPUB
-                stimmen
-              </li>
-              <li>
-                Nach dem Download: in KDP prüfen (Previewer), Preis setzen,
-                veröffentlichen
-              </li>
-            </ul>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={
-                  !roman || epubPending || revisedCount === 0 || busy
-                }
-                onClick={() => void handleExportRomanEpub()}
-                className={cn(
-                  "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800",
-                  (epubPending || revisedCount === 0 || busy) && "opacity-70",
-                )}
-              >
-                {epubPending
-                  ? "EPUB wird erzeugt …"
-                  : "EPUB herunterladen (KDP)"}
-              </button>
-            </div>
-            {revisedCount === 0 ? (
-              <p className="text-xs font-semibold text-amber-800">
-                Noch keine revidierten Szenen — zuerst Phase&nbsp;1–3
-                abschließen.
-              </p>
-            ) : (
-              <p className="text-xs font-semibold text-zinc-500">
-                {revisedCount} revidierte Szene(n) ·{" "}
-                {coverImageDataUrl.trim()
-                  ? "mit Cover"
-                  : "ohne Cover (optional vorher erzeugen)"}
-                {" · "}
-                {vorsatz.titelseite.titel.trim()
-                  ? "Vorsatz vorhanden"
-                  : "Titel aus Kontext — Vorsatz optional nachziehen"}
-              </p>
-            )}
-          </section>
+          </RomanStepCard>
         </>
-      ) : null}
+      ) : (
+        <RomanStepCard
+          step={7}
+          title="Szenen & Abschluss"
+          task="Zuerst Schritte 1–6 erledigen und Phase 0 ausführen — danach erscheinen Schreiben und Export hier."
+          effect="Ohne gespeicherten Roman und Roadmap gibt es noch keine Szenen."
+          save="none"
+        >
+          <p className="text-sm font-semibold text-zinc-600">
+            Speichere den Kontext und starte Phase&nbsp;0, um die Szenen-Pipeline
+            freizuschalten.
+          </p>
+        </RomanStepCard>
+      )}
         </div>
 
         <aside className="space-y-6 lg:sticky lg:top-24">
           <RomanValidationPanel items={validationItems} />
+          <section className="rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+            <h2 className="text-base font-extrabold text-zinc-950">
+              Speichern — Kurzüberblick
+            </h2>
+            <ul className="mt-3 space-y-2 text-xs font-semibold text-zinc-600">
+              <li>
+                <span className="font-extrabold text-amber-900">Kontext:</span>{" "}
+                Titel, Fundament, Regeln, Umfang, Outline, Fan
+              </li>
+              <li>
+                <span className="font-extrabold text-sky-900">Eigen:</span> Cover,
+                Buchrücken/Vorsatz, Ideen-Chat
+              </li>
+              <li>
+                <span className="font-extrabold text-orange-900">Phase 0:</span>{" "}
+                Kontext + neue Roadmap
+              </li>
+              <li>
+                <span className="font-extrabold text-emerald-900">Auto:</span>{" "}
+                Szenen-Text bei Phase 1–3
+              </li>
+            </ul>
+          </section>
         </aside>
       </div>
 
