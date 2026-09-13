@@ -17,7 +17,12 @@ import {
 } from "@/lib/roman/idea-finder";
 import { generateMehrteilerBeratung } from "@/lib/roman/mehrteiler-beratung";
 import { runRomanPhase0 } from "@/lib/roman/phase0";
-import { processNextRomanSzene, advanceRomanSzeneStep } from "@/lib/roman/process-scene";
+import {
+  processNextRomanSzene,
+  advanceRomanSzeneStep,
+  type RomanSzeneProgress,
+  type RomanSzeneStepResult,
+} from "@/lib/roman/process-scene";
 import {
   clearRomanCover,
   clearRomanKapitelContent,
@@ -214,20 +219,7 @@ export async function runRomanPhase0Action(
  */
 export async function advanceRomanSzeneStepAction(
   input: unknown,
-): Promise<
-  ActionResult<{
-    done: boolean;
-    sceneDone: boolean;
-    phase: string;
-    szene: {
-      id: string;
-      kapitelNr: number;
-      szenenNr: number;
-      status: string;
-    } | null;
-    message: string;
-  }>
-> {
+): Promise<ActionResult<RomanSzeneStepResult>> {
   const denied = await denyUnlessAdmin();
   if (denied) return { success: false, error: denied };
 
@@ -268,12 +260,7 @@ export async function processNextRomanSzeneAction(
 ): Promise<
   ActionResult<{
     done: boolean;
-    szene: {
-      id: string;
-      kapitelNr: number;
-      szenenNr: number;
-      status: string;
-    } | null;
+    szene: RomanSzeneProgress | null;
     message: string;
   }>
 > {
