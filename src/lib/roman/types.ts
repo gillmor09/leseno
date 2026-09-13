@@ -6,6 +6,7 @@ import type {
   RomanBuchruecken,
   RomanVorsatz,
 } from "@/lib/roman/front-matter";
+import type { RomanEditorial } from "@/lib/roman/editorial";
 
 export type { RomanBuchruecken, RomanVorsatz };
 
@@ -68,6 +69,8 @@ export type RomanKontext = {
   /** Fan test-reader persona */
   fanPersonaName: string;
   fanPersonaProfil: string;
+  /** Publisher controls: length, age, series, checklist */
+  editorial: RomanEditorial;
   /** Book cover (Flux data URL) + last Gemini/Flux prompt debug */
   coverImageDataUrl: string;
   coverPrompt: string;
@@ -120,6 +123,7 @@ export type ClaimedSzene = Szene & {
   kiRegelwerk: string;
   fanPersonaName: string;
   fanPersonaProfil: string;
+  editorial: RomanEditorial;
 };
 
 export type SzeneRoadmapItem = {
@@ -145,4 +149,5 @@ export type RomanUpsertInput = {
   kiRegelwerk: string;
   fanPersonaName: string;
   fanPersonaProfil: string;
+  editorial?: RomanEditorial;
 };

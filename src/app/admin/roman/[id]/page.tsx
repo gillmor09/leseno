@@ -5,7 +5,7 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import {
   listRomanSchreibModels,
-  resolveRomanTextModel,
+  resolveDefaultRomanSchreibModel,
 } from "@/lib/roman/model";
 import {
   getRomanKontext,
@@ -34,7 +34,7 @@ export async function generateMetadata({
 }
 
 /** Author + dual feedback + revision can exceed default timeouts. */
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 /**
  * Existing roman: Phase 0 re-run + iterative scene writing.
@@ -54,11 +54,11 @@ export default async function RomanAdminDetailPage({ params }: PageProps) {
     const [scenes, models, defaultModel] = await Promise.all([
       listSzenen(id),
       listRomanSchreibModels(),
-      resolveRomanTextModel(),
+      resolveDefaultRomanSchreibModel(),
     ]);
     szenen = scenes;
     schreibModels = models;
-    defaultSchreibModelId = defaultModel.id;
+    defaultSchreibModelId = defaultModel.modelSlug;
   } catch {
     notFound();
   }
@@ -80,7 +80,7 @@ export default async function RomanAdminDetailPage({ params }: PageProps) {
               initialSzenen={szenen}
               canSave={canSave}
               schreibModels={schreibModels.map((m) => ({
-                id: m.id,
+                id: m.modelSlug,
                 label: m.label,
                 modelSlug: m.modelSlug,
               }))}

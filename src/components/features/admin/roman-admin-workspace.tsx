@@ -17,7 +17,7 @@ import {
   generateRomanCoverAction,
   generateRomanFrontMatterAction,
   generateRomanOutlineAction,
-  processNextRomanSzeneAction,
+  advanceRomanSzeneStepAction,
   resetRomanSzeneAction,
   runRomanPhase0Action,
   saveRomanCoverAction,
@@ -26,6 +26,12 @@ import {
   saveRomanKontextAction,
 } from "@/app/actions/roman-admin";
 import { RomanIdeaFinder } from "@/components/features/admin/roman-idea-finder";
+import {
+  RomanEditorialSection,
+  RomanPipelineNav,
+  RomanValidationPanel,
+  RomanWordStats,
+} from "@/components/features/admin/roman-editorial-panel";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -40,6 +46,11 @@ import {
   romanEpubFilename,
 } from "@/lib/roman/export-roman-epub";
 import {
+  buildRomanValidation,
+  emptyRomanEditorial,
+  type RomanEditorial,
+} from "@/lib/roman/editorial";
+import {
   emptyBuchruecken,
   emptyVorsatz,
   type RomanBuchruecken,
@@ -52,7 +63,10 @@ import {
   suggestFanPersona,
 } from "@/lib/roman/fundament";
 import type { RomanIdeaFoundationFill } from "@/lib/roman/idea-finder";
-import { runAllReadyRomanSzenen } from "@/lib/roman/run-all-scenes";
+import {
+  processOneRomanSzeneViaSteps,
+  runAllReadyRomanSzenen,
+} from "@/lib/roman/run-all-scenes";
 import type {
   RomanCharakter,
   RomanIdeaChatMessage,
@@ -142,14 +156,15 @@ export function RomanAdminWorkspace({
   canSave,
   isNew = false,
   schreibModels = [],
-  defaultSchreibModelId = "story-default",
+  defaultSchreibModelId = "gemini-3.8-flash",
 }: {
   initialRoman: RomanKontext | null;
   initialSzenen: Szene[];
   canSave: boolean;
   isNew?: boolean;
-  /** Active text LLMs for Phase 1–3 (from AI model catalog). */
+  /** Wired text LLMs (label = model name, id = modelSlug). */
   schreibModels?: SchreibModelOption[];
+  /** Default wired modelSlug. */
   defaultSchreibModelId?: string;
 }) {
   const [roman, setRoman] = useState<RomanKontext | null>(initialRoman);
@@ -190,6 +205,9 @@ export function RomanAdminWorkspace({
   );
   const [fanPersonaProfil, setFanPersonaProfil] = useState(
     initialRoman?.fanPersonaProfil ?? "",
+  );
+  const [editorial, setEditorial] = useState<RomanEditorial>(
+    initialRoman?.editorial ?? emptyRomanEditorial(),
   );
   const [coverImageDataUrl, setCoverImageDataUrl] = useState(
     initialRoman?.coverImageDataUrl ?? "",
@@ -288,6 +306,11 @@ export function RomanAdminWorkspace({
   const readyCount = szenen.filter(
     (s) => s.status === "READY_FOR_WRITING",
   ).length;
+  const openWriteCount = szenen.filter(
+    (s) =>
+      s.status === "READY_FOR_WRITING" ||
+      ["DRAFTING", "REVIEWING", "REVISING"].includes(s.status),
+  ).length;
   const completedCount = szenen.filter((s) => s.status === "COMPLETED").length;
   const revisedCount = useMemo(
     () => collectRevisedScenes(szenen).length,
@@ -310,6 +333,45 @@ export function RomanAdminWorkspace({
     frontMatterPending ||
     frontMatterSavePending ||
     epubPending;
+
+  const validationItems = useMemo(
+    () =>
+      buildRomanValidation({
+        title,
+        praemisse,
+        genre,
+        tonalitaet,
+        stilbibel,
+        kiRegelwerk,
+        manuskriptRaw,
+        charaktere,
+        szenenRaster,
+        szenen,
+        hasCover: Boolean(coverImageDataUrl.trim()),
+        hasVorsatz: Boolean(
+          vorsatz.titelseite.titel.trim() ||
+            vorsatz.impressum.hinweis.trim() ||
+            buchruecken.titelKurz.trim(),
+        ),
+        editorial,
+      }),
+    [
+      title,
+      praemisse,
+      genre,
+      tonalitaet,
+      stilbibel,
+      kiRegelwerk,
+      manuskriptRaw,
+      charaktere,
+      szenenRaster,
+      szenen,
+      coverImageDataUrl,
+      vorsatz,
+      buchruecken,
+      editorial,
+    ],
+  );
 
   const chapters = useMemo(() => {
     const map = new Map<number, Szene[]>();
@@ -360,6 +422,7 @@ export function RomanAdminWorkspace({
       kiRegelwerk,
       fanPersonaName,
       fanPersonaProfil,
+      editorial,
     };
   }
 
@@ -413,6 +476,7 @@ export function RomanAdminWorkspace({
       kiRegelwerk,
       fanPersonaName,
       fanPersonaProfil,
+      editorial,
     });
     setOutlinePending(false);
     if (!result.success) {
@@ -489,6 +553,7 @@ export function RomanAdminWorkspace({
     }
     setSavePending(false);
     setRoman({ ...saved, ideenChat });
+    setEditorial(saved.editorial ?? emptyRomanEditorial());
     toast.success("Kontext gespeichert.");
     if (isNew && saved.id) {
       window.location.href = `/admin/roman/${saved.id}`;
@@ -512,6 +577,7 @@ export function RomanAdminWorkspace({
       });
     }
     setRoman({ ...saved, ideenChat });
+    setEditorial(saved.editorial ?? emptyRomanEditorial());
     toast.success(`Roadmap: ${result.data!.szenenCount} Szenen angelegt.`);
     window.location.href = `/admin/roman/${saved.id}`;
   }
@@ -522,38 +588,46 @@ export function RomanAdminWorkspace({
       toast.error("Schreibmodell wählen.");
       return;
     }
-    const next = szenen.find((s) => s.status === "READY_FOR_WRITING");
+    const next = szenen.find(
+      (s) =>
+        s.status === "READY_FOR_WRITING" ||
+        ["DRAFTING", "REVIEWING", "REVISING"].includes(s.status),
+    );
     if (next) {
       setSzenen((current) =>
         current.map((s) =>
-          s.id === next.id ? { ...s, status: "DRAFTING" as const } : s,
+          s.id === next.id && s.status === "READY_FOR_WRITING"
+            ? { ...s, status: "DRAFTING" as const }
+            : s,
         ),
       );
       setSelectedId(next.id);
     }
     setScenePending(true);
-    const result = await processNextRomanSzeneAction({
+    const modelId = schreibModelId;
+    const result = await processOneRomanSzeneViaSteps({
       romanId: roman.id,
-      modelId: schreibModelId,
+      advanceStep: (romanId) =>
+        advanceRomanSzeneStepAction({ romanId, modelId }),
+      onStep: (message) => {
+        setBatchProgressLabel(message);
+      },
     });
     setScenePending(false);
+    setBatchProgressLabel(null);
     if (!result.success) {
       toast.error(result.error ?? "Szenen-Lauf fehlgeschlagen.");
-      if (next) {
-        setSzenen((current) =>
-          current.map((s) =>
-            s.id === next.id
-              ? { ...s, status: "READY_FOR_WRITING" as const }
-              : s,
-          ),
-        );
-      }
+      window.location.reload();
       return;
     }
     if (result.data!.szene) {
       const done = result.data!.szene;
       setSzenen((current) =>
-        current.map((s) => (s.id === done.id ? done : s)),
+        current.map((s) =>
+          s.id === done.id
+            ? { ...s, status: done.status as typeof s.status }
+            : s,
+        ),
       );
       setSelectedId(done.id);
     }
@@ -568,10 +642,12 @@ export function RomanAdminWorkspace({
       return;
     }
     const totalAtStart = szenen.filter(
-      (s) => s.status === "READY_FOR_WRITING",
+      (s) =>
+        s.status === "READY_FOR_WRITING" ||
+        ["DRAFTING", "REVIEWING", "REVISING"].includes(s.status),
     ).length;
     if (totalAtStart === 0) {
-      toast.message("Keine offenen Szenen (READY).");
+      toast.message("Keine offenen Szenen.");
       return;
     }
 
@@ -586,23 +662,40 @@ export function RomanAdminWorkspace({
       totalAtStart,
       shouldStop: () => batchStopRef.current,
       processOne: async (romanId) =>
-        processNextRomanSzeneAction({ romanId, modelId }),
+        processOneRomanSzeneViaSteps({
+          romanId,
+          advanceStep: (id) =>
+            advanceRomanSzeneStepAction({ romanId: id, modelId }),
+          onStep: (message) => {
+            setBatchProgressLabel(message);
+          },
+        }),
       onProgress: (progress) => {
         setBatchProgressLabel(progress.label);
         if (progress.lastSzene) {
           const done = progress.lastSzene;
           setSzenen((current) =>
-            current.map((s) => (s.id === done.id ? done : s)),
+            current.map((s) =>
+              s.id === done.id
+                ? { ...s, status: done.status as typeof s.status }
+                : s,
+            ),
           );
           setSelectedId(done.id);
           return;
         }
         setSzenen((current) => {
-          const next = current.find((s) => s.status === "READY_FOR_WRITING");
+          const next = current.find(
+            (s) =>
+              s.status === "READY_FOR_WRITING" ||
+              ["DRAFTING", "REVIEWING", "REVISING"].includes(s.status),
+          );
           if (next) {
             setSelectedId(next.id);
             return current.map((s) =>
-              s.id === next.id ? { ...s, status: "DRAFTING" as const } : s,
+              s.id === next.id && s.status === "READY_FOR_WRITING"
+                ? { ...s, status: "DRAFTING" as const }
+                : s,
             );
           }
           return current;
@@ -629,7 +722,7 @@ export function RomanAdminWorkspace({
       toast.success(
         outcome.processed > 0
           ? `Alle offenen Szenen fertig (${outcome.processed}).`
-          : "Keine Szene mehr mit Status READY_FOR_WRITING.",
+          : "Keine Szene mehr offen.",
       );
     }
     window.location.reload();
@@ -946,6 +1039,16 @@ export function RomanAdminWorkspace({
         ) : null}
       </div>
 
+      <RomanPipelineNav validation={validationItems} />
+
+      <RomanWordStats
+        szenen={szenen}
+        editorial={editorial}
+        manuskriptRaw={manuskriptRaw}
+      />
+
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+        <div className="space-y-8 min-w-0">
       {roman && totalCount > 0 ? (
         <section className="rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
           <ProgressBar
@@ -956,14 +1059,18 @@ export function RomanAdminWorkspace({
         </section>
       ) : null}
 
-      <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+      <section
+        id="roman-stage-idee"
+        className="scroll-mt-24 space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6"
+      >
         <div>
           <h2 className="text-lg font-extrabold text-zinc-950">
             Roman-Kontext
           </h2>
           <p className="mt-1 text-sm font-semibold text-zinc-600">
-            Ideen-Finder → Fundament (1–4) → Outline/Exposé → speichern →
-            Phase&nbsp;0. Manuskript-Feld ist die editierbare Brücke.
+            Ideen-Finder → Fundament → Regeln/Umfang → Outline → speichern →
+            Phase&nbsp;0 → Schreiben → Abschluss. Die Pipeline-Leiste oben
+            begleitet den Verlagsweg.
           </p>
         </div>
 
@@ -987,6 +1094,7 @@ export function RomanAdminWorkspace({
           />
         </label>
 
+        <div id="roman-stage-fundament" className="scroll-mt-24">
         <Collapsible
           title="1. Buch-Fundament (optional)"
           open={openFundament}
@@ -1402,6 +1510,25 @@ export function RomanAdminWorkspace({
             </button>
           </div>
         </Collapsible>
+        </div>
+
+        <section className="space-y-4 rounded-2xl bg-zinc-50/80 p-4 ring-1 ring-zinc-950/8 sm:p-5">
+          <RomanEditorialSection
+            editorial={editorial}
+            onChange={setEditorial}
+            canSave={canSave}
+            busy={busy}
+            title={title}
+            genre={genre}
+            praemisse={praemisse}
+            tonalitaet={tonalitaet}
+            stilbibel={stilbibel}
+            kiRegelwerk={kiRegelwerk}
+            manuskriptRaw={manuskriptRaw}
+            charaktere={charaktere}
+            szenenRaster={szenenRaster}
+          />
+        </section>
 
         <Collapsible
           title="5. KI-Regelwerk"
@@ -1478,7 +1605,7 @@ export function RomanAdminWorkspace({
           </label>
         </Collapsible>
 
-        <div className="block">
+        <div id="roman-stage-outline" className="scroll-mt-24 block">
           <FieldLabel>Manuskript / Outline / Exposé</FieldLabel>
           <p className="mb-2 text-xs font-semibold text-zinc-500">
             Brücke zwischen Fundament und Phase&nbsp;0: editierbares Outline —
@@ -1629,7 +1756,7 @@ export function RomanAdminWorkspace({
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div id="roman-stage-roadmap" className="scroll-mt-24 flex flex-wrap gap-2">
           <button
             type="button"
             disabled={!canSave || busy}
@@ -1663,7 +1790,10 @@ export function RomanAdminWorkspace({
 
       {roman ? (
         <>
-          <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+          <section
+            id="roman-stage-schreiben"
+            className="scroll-mt-24 space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6"
+          >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-extrabold text-zinc-950">
                 Phase 1–3 — Nächste Szene
@@ -1689,7 +1819,7 @@ export function RomanAdminWorkspace({
                     !canSave ||
                     scenePending ||
                     batchPending ||
-                    readyCount === 0 ||
+                    openWriteCount === 0 ||
                     phase0Pending ||
                     !schreibModelId
                   }
@@ -1698,7 +1828,7 @@ export function RomanAdminWorkspace({
                     "rounded-full bg-yellow-400 px-5 py-2.5 text-sm font-extrabold text-zinc-950 hover:bg-yellow-300",
                     (scenePending ||
                       batchPending ||
-                      readyCount === 0 ||
+                      openWriteCount === 0 ||
                       !canSave ||
                       !schreibModelId) &&
                       "opacity-70",
@@ -1714,7 +1844,7 @@ export function RomanAdminWorkspace({
                     !canSave ||
                     scenePending ||
                     batchPending ||
-                    readyCount === 0 ||
+                    openWriteCount === 0 ||
                     phase0Pending ||
                     !schreibModelId
                   }
@@ -1723,7 +1853,7 @@ export function RomanAdminWorkspace({
                     "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800",
                     (scenePending ||
                       batchPending ||
-                      readyCount === 0 ||
+                      openWriteCount === 0 ||
                       !canSave ||
                       !schreibModelId) &&
                       "opacity-70",
@@ -1731,7 +1861,7 @@ export function RomanAdminWorkspace({
                 >
                   {batchPending
                     ? "Alle Szenen laufen …"
-                    : `Alle offenen Szenen (${readyCount})`}
+                    : `Alle offenen Szenen (${openWriteCount})`}
                 </button>
               </div>
             </div>
@@ -1757,11 +1887,11 @@ export function RomanAdminWorkspace({
                 className={inputClass}
               >
                 {schreibModels.length === 0 ? (
-                  <option value="">Keine Text-LLMs im Katalog</option>
+                  <option value="">Keine Text-LLMs angebunden</option>
                 ) : (
                   schreibModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.label} · {model.modelSlug}
+                    <option key={model.modelSlug} value={model.modelSlug}>
+                      {model.label}
                     </option>
                   ))
                 )}
@@ -1963,7 +2093,10 @@ export function RomanAdminWorkspace({
             </div>
           </section>
 
-          <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+          <section
+            id="roman-stage-abschluss"
+            className="scroll-mt-24 space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6"
+          >
             <div>
               <h2 className="text-lg font-extrabold text-zinc-950">
                 Abschluss — Buchrücken & Vorsatz
@@ -2285,6 +2418,12 @@ export function RomanAdminWorkspace({
           </section>
         </>
       ) : null}
+        </div>
+
+        <aside className="space-y-6 lg:sticky lg:top-24">
+          <RomanValidationPanel items={validationItems} />
+        </aside>
+      </div>
 
       <ConfirmDeleteDialog
         open={outlineOverwriteOpen}

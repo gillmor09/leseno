@@ -2,6 +2,10 @@
  * Book foundation helpers: compose prompt context, default fan persona, empty sheets.
  */
 
+import {
+  buildEditorialMustBlock,
+  type RomanEditorial,
+} from "@/lib/roman/editorial";
 import type {
   RomanCharakter,
   RomanSzenenRasterItem,
@@ -38,7 +42,36 @@ Dialoge glaubwürdig und figurenbezogen; Anteil dem Genre anpassen.
 Orthografie und Zeichensetzung sauber.
 Perspektive und Zeitform strikt einhalten.
 Tonalität und Stilmittel im gesamten Roman identisch halten — kein Stilbruch zwischen Szenen.
-Wortwahl und Satzrhythmus an Stil-Anker / Stilbibel angleichen.`;
+Wortwahl und Satzrhythmus an Stil-Anker / Stilbibel angleichen.
+Alters- und Lesestufe aus Stilbibel/Regelwerk strikt einhalten (z. B. 8–10 Jahre = kurze Sätze, bekannte Wörter, keine Erwachsenensprache).`;
+
+/**
+ * KI-Regelwerk + Stilbibel as hard MUST (outline, Phase 0, scene prompts).
+ */
+export function buildStyleMustBlocks(roman: {
+  kiRegelwerk: string;
+  stilbibel: string;
+  editorial?: RomanEditorial;
+}): string {
+  const rules = roman.kiRegelwerk.trim() || DEFAULT_KI_REGELWERK;
+  const stil = roman.stilbibel.trim();
+  const parts: string[] = [];
+  if (roman.editorial) {
+    const editorialBlock = buildEditorialMustBlock(roman.editorial);
+    if (editorialBlock) parts.push(editorialBlock);
+  }
+  parts.push(`## MUSS — KI-Regelwerk (verbindlich, keine Ausnahme)
+Jeder Satz, jede Formulierung und jede Idee muss zu diesen Regeln passen. Bei Konflikt mit Eleganz, „literarischem“ Ton oder Dramaturgie gewinnen DIESE Regeln.
+
+${rules}`);
+  if (stil) {
+    parts.push(`## MUSS — Zusätzliche Stilbibel (verbindlich, keine Ausnahme)
+Die Stilbibel ist Pflicht, kein Vorschlag. Zielalter, Lesestufe, Wortwahl, Satzlänge und Ton daraus sind hart: kein Abweichen, kein „erwachsenerer“ Ersatzstil.
+
+${stil}`);
+  }
+  return parts.join("\n\n");
+}
 
 /**
  * Suggests a fan persona from genre/tonality when the user has not set one yet.
@@ -116,18 +149,22 @@ type ContextSource = {
   kiRegelwerk: string;
   fanPersonaName: string;
   fanPersonaProfil: string;
+  editorial?: RomanEditorial;
   manuskriptRaw?: string;
 };
 
 /**
  * Builds the shared bible block for Gemini (foundation + optional manuscript).
  * Empty sections are omitted so early/late entry both work.
+ * Style MUST blocks come first so models weigh them hardest.
  */
 export function buildRomanPromptContext(
   roman: ContextSource,
   options?: { includeManuskript?: boolean; maxManuskriptChars?: number },
 ): string {
   const blocks: string[] = [];
+
+  blocks.push(buildStyleMustBlocks(roman));
 
   const meta = [
     roman.title?.trim() && `Arbeitstitel: ${roman.title.trim()}`,
@@ -152,13 +189,6 @@ export function buildRomanPromptContext(
 
   const raster = formatSzenenRaster(roman.szenenRaster);
   if (raster) blocks.push(`## Szenen-Raster (Plot-Plan)\n${raster}`);
-
-  const rules = roman.kiRegelwerk.trim() || DEFAULT_KI_REGELWERK;
-  blocks.push(`## KI-Regelwerk\n${rules}`);
-
-  if (roman.stilbibel.trim()) {
-    blocks.push(`## Zusätzliche Stilbibel\n${roman.stilbibel.trim()}`);
-  }
 
   if (options?.includeManuskript && roman.manuskriptRaw?.trim()) {
     let ms = roman.manuskriptRaw.trim();
@@ -248,5 +278,6 @@ export function emptyRomanUpsertFields(
     kiRegelwerk: partial?.kiRegelwerk ?? DEFAULT_KI_REGELWERK,
     fanPersonaName: partial?.fanPersonaName ?? "",
     fanPersonaProfil: partial?.fanPersonaProfil ?? "",
+    editorial: partial?.editorial,
   };
 }

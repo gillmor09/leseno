@@ -23,6 +23,7 @@ import type {
 const ANALYSE_SYSTEM = `Du bist Dramaturg:in und Story-Editor für Belletristik.
 Zerlege Manuskript, Exposé, Outline und/oder Buch-Fundament in eine chronologische Szenen-Roadmap.
 Briefings sollen Plot und dramaturgische Ziele nennen — Tonalität/Stil nicht neu erfinden, sondern die vorgegebene Buchstimme voraussetzen.
+Die Abschnitte „MUSS — KI-Regelwerk“ und „MUSS — Zusätzliche Stilbibel“ sind verbindlich (Zielalter/Lesestufe inklusive). Briefings in dazu passender, altersgerechter Sprache formulieren.
 Antworte ausschließlich mit JSON (kein Markdown außerhalb des JSON).`;
 
 function hasEnoughMaterial(input: RomanUpsertInput): boolean {
@@ -52,6 +53,7 @@ Jede Szene zielt auf etwa 1.500–2.500 Wörter Fließtext (nur als Planungsgrö
 Wenn ein Szenen-Raster vorliegt, richte Kapitel/Szenen daran aus und ergänze fehlende Brücken.
 Wenn nur Fundament ohne langes Manuskript vorliegt, leite eine dramaturgisch sinnvolle Roadmap aus Prämisse, Figuren und Raster ab.
 Briefings: klare Handlungsziele; keine neue Tonalität erfinden — die Stimme kommt aus Fundament/Stilbibel und bleibt romanweit gleich.
+Formuliere Briefings altersgerecht gemäß MUSS-Stilbibel/Regelwerk (z. B. 8–10 Jahre: einfache, konkrete Sprache).
 
 Gib ein JSON-Objekt zurück:
 {

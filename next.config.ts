@@ -11,6 +11,12 @@ const modernPolyfill = path.join(__dirname, "src/lib/modern-polyfill.js");
  */
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  /**
+   * Next 16.3 gzip + large Server Action bodies leak `drain` listeners on [Gzip]
+   * (`MaxListenersExceededWarning`). Let Coolify/nginx compress instead.
+   * @see https://github.com/vercel/next.js/pull/97698
+   */
+  compress: false,
   // Native canvas must stay external for social image text overlay.
   serverExternalPackages: ["@napi-rs/canvas", "sharp", "opentype.js", "unpdf"],
   // Vendored Nunito TTF + Frage background for social overlays.

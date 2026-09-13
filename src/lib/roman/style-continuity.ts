@@ -3,6 +3,7 @@
  * Keeps tonality / devices / diction consistent across scenes (soft constraint via prompts).
  */
 
+import { buildEditorialMustBlock } from "@/lib/roman/editorial";
 import type { ClaimedSzene, Szene } from "@/lib/roman/types";
 
 const MAX_EXCERPT_CHARS = 1_200;
@@ -45,6 +46,7 @@ type StyleSource = Pick<
   | "stilbibel"
   | "kiRegelwerk"
   | "charaktere"
+  | "editorial"
 >;
 
 /**
@@ -56,6 +58,8 @@ export function buildStilpflichtBlock(source: StyleSource): string {
     .map((c) => `– ${c.name}: ${c.sprachstil.trim()}`)
     .join("\n");
 
+  const editorialBlock = buildEditorialMustBlock(source.editorial);
+
   const lines = [
     source.tonalitaet.trim() &&
       `Tonalität (verbindlich, überall gleich): ${source.tonalitaet.trim()}`,
@@ -64,23 +68,27 @@ export function buildStilpflichtBlock(source: StyleSource): string {
     source.zeitform.trim() &&
       `Zeitform (nicht wechseln): ${source.zeitform.trim()}`,
     source.genre.trim() && `Genre-Register: ${source.genre.trim()}`,
-    source.stilbibel.trim() &&
-      `Stilbibel / Stilmittel:\n${source.stilbibel.trim()}`,
     source.kiRegelwerk.trim() &&
-      `KI-Regelwerk:\n${source.kiRegelwerk.trim()}`,
+      `MUSS — KI-Regelwerk:\n${source.kiRegelwerk.trim()}`,
+    source.stilbibel.trim() &&
+      `MUSS — Zusätzliche Stilbibel (Zielalter/Lesestufe/Wortwahl hart):\n${source.stilbibel.trim()}`,
     speech && `Figuren-Sprachstil:\n${speech}`,
   ].filter(Boolean);
 
+  const head = editorialBlock ? `${editorialBlock}\n\n` : "";
+
   if (!lines.length) {
-    return `## Stil-Pflicht
+    return `${head}## Stil-Pflicht
 Halte Tonalität, Stilmittel und Wortwahl über den gesamten Roman hinweg identisch.
-Kein Stilbruch, kein generischer KI-Ton.`;
+Kein Stilbruch, kein generischer KI-Ton. Altersstufe aus Fundament/Stilbibel einhalten.`;
   }
 
-  return `## Stil-Pflicht (überall gleich)
+  return `${head}## Stil-Pflicht (überall gleich — MUSS)
 ${lines.join("\n\n")}
 
-Regel: Dieselbe Stimme in JEDER Szene — Rhythmus, Bildsprache, Humor/Ernst, Dialog-Register und Wortwahl wie oben. Keine Aufweichung, keine neue „Stimme“.`;
+Regel: Dieselbe Stimme in JEDER Szene — Rhythmus, Bildsprache, Humor/Ernst, Dialog-Register und Wortwahl wie oben.
+Stilbibel und KI-Regelwerk sind Pflicht: bei Zielalter (z. B. 8–10) kurze Sätze, bekannte Wörter, keine Erwachsenensprache.
+Keine Aufweichung, keine neue „Stimme“.`;
 }
 
 /**

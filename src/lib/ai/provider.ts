@@ -13,6 +13,8 @@ export type GenerateTextInput = {
   systemInstruction?: string;
   userText: string;
   preferJson?: boolean;
+  /** Optional output cap (passed to Claude; ignored by some providers). */
+  maxTokens?: number;
 };
 
 function buildUserText(
@@ -58,6 +60,7 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
       systemInstruction: prompt.systemInstruction,
       userText: prompt.userText,
       jsonOutput,
+      maxTokens: input.maxTokens,
     });
     return result.text;
   }

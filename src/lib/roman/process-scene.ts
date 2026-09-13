@@ -1,6 +1,7 @@
 /**
- * Phase 1–3 for one scene: author → lektor∥fan → revision → summary.
- * Enforces tonality / stylistic devices via Stil-Pflicht + prose Stil-Anker.
+ * Phase 1–3 for one scene, one LLM phase per HTTP call.
+ * Client chains draft → review → revise so each request stays under ~2 min
+ * (avoids browser "Failed to fetch" on ~3 min monolith actions).
  */
 
 import { generateText } from "@/lib/ai/provider";
@@ -14,6 +15,7 @@ import {
   claimNextSzene,
   getRomanKontext,
   listSzenen,
+  recoverStuckRomanSzenen,
   updateSzene,
 } from "@/lib/roman/repository";
 import {
@@ -46,6 +48,35 @@ Korrigiere Orthografie/Grammatik/Zeichensetzung. Gib nur die finale Szene als Fl
 const SUMMARY_SYSTEM = `Du fasst Szenen für eine laufende Manuskript-Zusammenfassung zusammen.
 Genau drei kurze Sätze auf Deutsch. Keine Spoiler-Warnung, kein Meta.`;
 
+export type RomanSzeneStepPhase = "draft" | "review" | "revise" | "idle";
+
+/** Slim scene handle for Server Actions — avoids shipping full drafts over the wire. */
+export type RomanSzeneProgress = {
+  id: string;
+  kapitelNr: number;
+  szenenNr: number;
+  status: Szene["status"];
+};
+
+export type RomanSzeneStepResult = {
+  /** No READY and no in-progress scene left. */
+  done: boolean;
+  /** This scene just reached COMPLETED. */
+  sceneDone: boolean;
+  phase: RomanSzeneStepPhase;
+  szene: RomanSzeneProgress | null;
+  message: string;
+};
+
+function toProgress(szene: Szene): RomanSzeneProgress {
+  return {
+    id: szene.id,
+    kapitelNr: szene.kapitelNr,
+    szenenNr: szene.szenenNr,
+    status: szene.status,
+  };
+}
+
 function sceneBible(scene: ClaimedSzene): string {
   return buildRomanPromptContext(scene, { includeManuskript: false });
 }
@@ -63,16 +94,74 @@ async function loadStylePackage(scene: ClaimedSzene): Promise<string> {
   });
 }
 
+function asClaimed(scene: Szene, roman: NonNullable<Awaited<ReturnType<typeof getRomanKontext>>>): ClaimedSzene {
+  return {
+    ...scene,
+    stilbibel: roman.stilbibel,
+    aktuelleZusammenfassung: roman.aktuelleZusammenfassung,
+    genre: roman.genre,
+    praemisse: roman.praemisse,
+    perspektive: roman.perspektive,
+    zeitform: roman.zeitform,
+    tonalitaet: roman.tonalitaet,
+    charaktere: roman.charaktere,
+    weltSchauplaetze: roman.weltSchauplaetze,
+    weltRegeln: roman.weltRegeln,
+    szenenRaster: roman.szenenRaster,
+    kiRegelwerk: roman.kiRegelwerk,
+    fanPersonaName: roman.fanPersonaName,
+    fanPersonaProfil: roman.fanPersonaProfil,
+    editorial: roman.editorial,
+  };
+}
+
+/**
+ * Pick the earliest in-progress scene, or claim the next READY one.
+ */
+async function pickWorkScene(
+  romanId: string,
+): Promise<ClaimedSzene | null> {
+  await recoverStuckRomanSzenen(romanId);
+
+  const [roman, scenes] = await Promise.all([
+    getRomanKontext(romanId),
+    listSzenen(romanId),
+  ]);
+  if (!roman) throw new Error("Roman nicht gefunden.");
+
+  const inProgress = [...scenes]
+    .filter((s) =>
+      ["DRAFTING", "REVIEWING", "REVISING"].includes(s.status),
+    )
+    .sort(
+      (a, b) =>
+        a.kapitelNr - b.kapitelNr || a.szenenNr - b.szenenNr,
+    )[0];
+
+  if (inProgress) return asClaimed(inProgress, roman);
+
+  return claimNextSzene(romanId);
+}
+
+function clipText(text: string, maxChars: number): string {
+  const clean = text.trim();
+  if (clean.length <= maxChars) return clean;
+  return `${clean.slice(0, maxChars)}\n\n[… gekürzt …]`;
+}
+
 async function writeAuthorDraft(
   scene: ClaimedSzene,
   stylePackage: string,
   model: AiModelConfig,
 ): Promise<string> {
   const bible = sceneBible(scene);
+  const minW = scene.editorial.zielWortzahlSzeneMin ?? 1800;
+  const maxW = scene.editorial.zielWortzahlSzeneMax ?? 2500;
   return generateText({
     model,
     systemInstruction: AUTHOR_SYSTEM,
-    userText: `Schreibe diese Szene in voller Länge aus (Ziel ca. 1.800–2.500 Wörter).
+    maxTokens: 8192,
+    userText: `Schreibe diese Szene in voller Länge aus (Ziel ca. ${minW}–${maxW} Wörter).
 Dieselbe Stimme wie Stil-Anker — Tonalität und Stilmittel überall gleich.
 
 Kapitel ${scene.kapitelNr}, Szene ${scene.szenenNr}
@@ -81,12 +170,12 @@ ${stylePackage}
 
 Buch-Fundament / Welt / Figuren / weiteres Regelwerk:
 ---
-${bible || scene.stilbibel.trim() || "(kein extra Kontext)"}
+${clipText(bible || scene.stilbibel.trim() || "(kein extra Kontext)", 40_000)}
 ---
 
 Was bisher geschah (nur Inhalt, kein Freibrief für Stilwechsel):
 ---
-${scene.aktuelleZusammenfassung.trim() || "(Anfang des Romans)"}
+${clipText(scene.aktuelleZusammenfassung.trim() || "(Anfang des Romans)", 8_000)}
 ---
 
 Szenen-Briefing:
@@ -106,11 +195,12 @@ async function writeLektorFeedback(
   return generateText({
     model,
     systemInstruction: LEKTOR_SYSTEM,
+    maxTokens: 2500,
     userText: `${stylePackage}
 
 Weiterer Kontext:
 ---
-${bible || "(kein extra Kontext)"}
+${clipText(bible || "(kein extra Kontext)", 20_000)}
 ---
 
 Szenen-Entwurf zur Prüfung:
@@ -140,6 +230,7 @@ Du bist keine Lektor:in — dich interessiert, ob du weiterlesen würdest.`;
   return generateText({
     model,
     systemInstruction,
+    maxTokens: 2000,
     userText: `Szenen-Entwurf als Testleser:\n\n${entwurf}`,
   });
 }
@@ -156,11 +247,12 @@ async function writeRevision(input: {
   return generateText({
     model: input.model,
     systemInstruction: REVISION_SYSTEM,
+    maxTokens: 8192,
     userText: `${input.stylePackage}
 
 Weiteres Fundament (einhalten):
 ---
-${bible || "(kein extra Kontext)"}
+${clipText(bible || "(kein extra Kontext)", 20_000)}
 ---
 
 Ursprünglicher Entwurf:
@@ -170,12 +262,12 @@ ${input.entwurf}
 
 Feedback Verlagslektor:
 ---
-${input.lektor}
+${clipText(input.lektor, 6_000)}
 ---
 
 Feedback Fan-Persona:
 ---
-${input.fan}
+${clipText(input.fan, 4_000)}
 ---
 
 Schreibe die überarbeitete, finale Szene — stilistisch wie die Anker, inhaltlich verbessert.`,
@@ -189,55 +281,90 @@ async function writeSceneSummary(
   return generateText({
     model,
     systemInstruction: SUMMARY_SYSTEM,
-    userText: `Finale Szene:\n\n${finalText}`,
+    maxTokens: 400,
+    userText: `Finale Szene:\n\n${clipText(finalText, 12_000)}`,
   });
 }
 
 /**
- * Processes the next READY scene for a roman (one scene per call).
- * Uses one shared text LLM for author, reviews, revision, and summary.
- * Returns null when nothing is left to write.
+ * Runs exactly one pipeline phase for the next (or in-progress) scene.
+ * Call repeatedly from the client until `sceneDone` or `done`.
  */
-export async function processNextRomanSzene(
+export async function advanceRomanSzeneStep(
   romanId: string,
   modelId?: string | null,
-): Promise<{ szene: Szene; summaryAppended: string } | null> {
-  const claimed = await claimNextSzene(romanId);
-  if (!claimed) return null;
+): Promise<RomanSzeneStepResult> {
+  const claimed = await pickWorkScene(romanId);
+  if (!claimed) {
+    return {
+      done: true,
+      sceneDone: false,
+      phase: "idle",
+      szene: null,
+      message: "Keine Szene mehr offen (READY / Entwurf / Review / Revision).",
+    };
+  }
 
   const model = await resolveRomanSchreibModel(modelId);
+  const label = `Kap. ${claimed.kapitelNr}.${claimed.szenenNr}`;
+  const hasDraft = claimed.entwurfRaw.trim().length > 0;
+  const hasFeedback =
+    claimed.feedbackLektor.trim().length > 0 &&
+    claimed.feedbackFan.trim().length > 0;
 
   try {
+    // Phase A: author draft
+    if (!hasDraft) {
+      const stylePackage = await loadStylePackage(claimed);
+      const entwurf = (await writeAuthorDraft(claimed, stylePackage, model)).trim();
+      if (!entwurf) throw new Error("Autor lieferte leeren Entwurf.");
+      const szene = await updateSzene({
+        id: claimed.id,
+        entwurfRaw: entwurf,
+        status: "REVIEWING",
+      });
+      return {
+        done: false,
+        sceneDone: false,
+        phase: "draft",
+        szene: toProgress(szene),
+        message: `${label}: Entwurf fertig — als Nächstes Lektor/Fan.`,
+      };
+    }
+
+    // Phase B: lektor then fan (sequential — parallel doubles peak RAM / sockets).
+    if (!hasFeedback) {
+      const stylePackage = await loadStylePackage(claimed);
+      const entwurf = claimed.entwurfRaw.trim();
+      const lektor = await writeLektorFeedback(
+        entwurf,
+        claimed,
+        stylePackage,
+        model,
+      );
+      const fan = await writeFanFeedback(entwurf, claimed, model);
+      const szene = await updateSzene({
+        id: claimed.id,
+        feedbackLektor: lektor.trim(),
+        feedbackFan: fan.trim(),
+        status: "REVISING",
+      });
+      return {
+        done: false,
+        sceneDone: false,
+        phase: "review",
+        szene: toProgress(szene),
+        message: `${label}: Feedback fertig — als Nächstes Revision.`,
+      };
+    }
+
+    // Phase C: revision + summary
     const stylePackage = await loadStylePackage(claimed);
-
-    const entwurf = (
-      await writeAuthorDraft(claimed, stylePackage, model)
-    ).trim();
-    if (!entwurf) throw new Error("Autor lieferte leeren Entwurf.");
-
-    await updateSzene({
-      id: claimed.id,
-      entwurfRaw: entwurf,
-      status: "REVIEWING",
-    });
-
-    const [lektor, fan] = await Promise.all([
-      writeLektorFeedback(entwurf, claimed, stylePackage, model),
-      writeFanFeedback(entwurf, claimed, model),
-    ]);
-
-    await updateSzene({
-      id: claimed.id,
-      feedbackLektor: lektor.trim(),
-      feedbackFan: fan.trim(),
-      status: "REVISING",
-    });
-
     const revised = (
       await writeRevision({
-        entwurf,
-        lektor: lektor.trim(),
-        fan: fan.trim(),
+        entwurf: claimed.entwurfRaw.trim(),
+        lektor: claimed.feedbackLektor.trim(),
+        fan: claimed.feedbackFan.trim(),
         scene: claimed,
         stylePackage,
         model,
@@ -246,24 +373,47 @@ export async function processNextRomanSzene(
     if (!revised) throw new Error("Revision lieferte leeren Text.");
 
     const summary = (await writeSceneSummary(revised, model)).trim();
-    const summaryAppended = await appendRomanZusammenfassung(
+    await appendRomanZusammenfassung(
       romanId,
       `Kap. ${claimed.kapitelNr} / Szene ${claimed.szenenNr}: ${summary}`,
     );
-
     const szene = await updateSzene({
       id: claimed.id,
       entwurfRevidiert: revised,
       status: "COMPLETED",
     });
-
-    return { szene, summaryAppended };
+    return {
+      done: false,
+      sceneDone: true,
+      phase: "revise",
+      szene: toProgress(szene),
+      message: `${label}: Szene abgeschlossen.`,
+    };
   } catch (error) {
-    // Leave scene in a recoverable non-READY state; admin can reset.
-    await updateSzene({
-      id: claimed.id,
-      status: "DRAFTING",
-    }).catch(() => undefined);
+    // Keep partial progress: empty draft → READY; otherwise stay for retry.
+    if (!hasDraft) {
+      await updateSzene({
+        id: claimed.id,
+        status: "READY_FOR_WRITING",
+      }).catch(() => undefined);
+    }
     throw error;
   }
+}
+
+/**
+ * Legacy: runs all phases of one scene in a single call (prefer step API).
+ */
+export async function processNextRomanSzene(
+  romanId: string,
+  modelId?: string | null,
+): Promise<{ szene: RomanSzeneProgress; summaryAppended: string } | null> {
+  for (let i = 0; i < 8; i += 1) {
+    const step = await advanceRomanSzeneStep(romanId, modelId);
+    if (step.done) return null;
+    if (step.sceneDone && step.szene) {
+      return { szene: step.szene, summaryAppended: "" };
+    }
+  }
+  throw new Error("Szenen-Pipeline: zu viele Schritte ohne Abschluss.");
 }

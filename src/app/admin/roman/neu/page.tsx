@@ -4,7 +4,7 @@ import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import {
   listRomanSchreibModels,
-  resolveRomanTextModel,
+  resolveDefaultRomanSchreibModel,
 } from "@/lib/roman/model";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 /** Long Gemini roadmap call. */
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 /**
  * Create a new roman (Phase 0 entry).
@@ -22,7 +22,7 @@ export default async function RomanAdminNewPage() {
   const canSave = hasServiceRoleConfig();
   const [schreibModels, defaultModel] = await Promise.all([
     listRomanSchreibModels(),
-    resolveRomanTextModel(),
+    resolveDefaultRomanSchreibModel(),
   ]);
 
   return (
@@ -43,11 +43,11 @@ export default async function RomanAdminNewPage() {
               canSave={canSave}
               isNew
               schreibModels={schreibModels.map((m) => ({
-                id: m.id,
+                id: m.modelSlug,
                 label: m.label,
                 modelSlug: m.modelSlug,
               }))}
-              defaultSchreibModelId={defaultModel.id}
+              defaultSchreibModelId={defaultModel.modelSlug}
             />
           </div>
         </section>

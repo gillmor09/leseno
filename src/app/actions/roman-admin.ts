@@ -15,8 +15,9 @@ import {
   type RomanIdeaChatMessage,
   type RomanIdeaFoundationFill,
 } from "@/lib/roman/idea-finder";
+import { generateMehrteilerBeratung } from "@/lib/roman/mehrteiler-beratung";
 import { runRomanPhase0 } from "@/lib/roman/phase0";
-import { processNextRomanSzene } from "@/lib/roman/process-scene";
+import { processNextRomanSzene, advanceRomanSzeneStep } from "@/lib/roman/process-scene";
 import {
   clearRomanCover,
   clearRomanKapitelContent,
@@ -47,6 +48,7 @@ import {
   romanIdeaChatSchema,
   romanIdeenChatSaveSchema,
   romanKapitelClearSchema,
+  romanMehrteilerAdviceSchema,
   romanOutlineGenerateSchema,
   romanPhase0Schema,
   romanProcessSceneSchema,
@@ -75,6 +77,7 @@ function toUpsertInput(
     kiRegelwerk: data.kiRegelwerk,
     fanPersonaName: data.fanPersonaName,
     fanPersonaProfil: data.fanPersonaProfil,
+    editorial: data.editorial,
   };
 }
 
@@ -205,14 +208,72 @@ export async function runRomanPhase0Action(
 }
 
 /**
+ * One LLM phase of the next/in-progress scene (draft | review | revise).
+ * Client chains until sceneDone — keeps each HTTP call under ~2 minutes.
+ * Returns a slim scene handle (no full draft text) to avoid Next gzip drain leaks.
+ */
+export async function advanceRomanSzeneStepAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    done: boolean;
+    sceneDone: boolean;
+    phase: string;
+    szene: {
+      id: string;
+      kapitelNr: number;
+      szenenNr: number;
+      status: string;
+    } | null;
+    message: string;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanProcessSceneSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe.",
+    };
+  }
+
+  try {
+    const result = await advanceRomanSzeneStep(
+      parsed.data.romanId,
+      parsed.data.modelId,
+    );
+    // Intermediate steps skip revalidate — large RSC payloads worsen gzip listener leaks.
+    if (result.sceneDone || result.done) {
+      revalidateRoman(parsed.data.romanId);
+    }
+    return { success: true, data: result };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Szenen-Schritt fehlgeschlagen.";
+    console.error("[roman] advanceRomanSzeneStep failed:", message, error);
+    return { success: false, error: message };
+  }
+}
+
+/**
  * Phase 1–3 for the next READY scene (one scene per invocation).
+ * Prefer `advanceRomanSzeneStepAction` from the UI (shorter requests).
  */
 export async function processNextRomanSzeneAction(
   input: unknown,
 ): Promise<
   ActionResult<{
     done: boolean;
-    szene: Szene | null;
+    szene: {
+      id: string;
+      kapitelNr: number;
+      szenenNr: number;
+      status: string;
+    } | null;
     message: string;
   }>
 > {
@@ -252,12 +313,14 @@ export async function processNextRomanSzeneAction(
       },
     };
   } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Szenen-Pipeline fehlgeschlagen.";
+    console.error("[roman] processNextRomanSzene failed:", message, error);
     return {
       success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Szenen-Pipeline fehlgeschlagen.",
+      error: message,
     };
   }
 }
@@ -778,6 +841,37 @@ export async function generateRomanOutlineAction(
         error instanceof Error
           ? error.message
           : "Outline-Generierung fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Verlagsberatung: Einzelband vs. Mehrteiler (editierbar im Editorial-Profil).
+ */
+export async function generateRomanMehrteilerAdviceAction(
+  input: unknown,
+): Promise<ActionResult<{ advice: string }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanMehrteilerAdviceSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+    };
+  }
+
+  try {
+    const advice = await generateMehrteilerBeratung(parsed.data);
+    return { success: true, data: { advice } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Mehrteiler-Beratung fehlgeschlagen.",
     };
   }
 }

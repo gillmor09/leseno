@@ -11,6 +11,11 @@ import {
   type RomanVorsatz,
 } from "@/lib/roman/front-matter";
 import {
+  emptyRomanEditorial,
+  parseRomanEditorial,
+  type RomanEditorial,
+} from "@/lib/roman/editorial";
+import {
   parseCharaktereJson,
   parseSzenenRasterJson,
 } from "@/lib/roman/fundament";
@@ -46,6 +51,7 @@ type KontextRow = {
   ki_regelwerk?: string;
   fan_persona_name?: string;
   fan_persona_profil?: string;
+  editorial?: unknown;
   cover_image_data_url?: string;
   cover_prompt?: string;
   autor_name?: string;
@@ -121,6 +127,7 @@ function mapKontext(row: KontextRow): RomanKontext {
     kiRegelwerk: row.ki_regelwerk ?? "",
     fanPersonaName: row.fan_persona_name ?? "",
     fanPersonaProfil: row.fan_persona_profil ?? "",
+    editorial: parseRomanEditorial(row.editorial),
     coverImageDataUrl: row.cover_image_data_url ?? "",
     coverPrompt: row.cover_prompt ?? "",
     autorName: row.autor_name ?? "",
@@ -191,6 +198,20 @@ export async function listSzenen(romanId: string): Promise<Szene[]> {
   return ((data ?? []) as SzeneRow[]).map(mapSzene);
 }
 
+/** Persist publisher editorial jsonb (length, series, checklist). */
+export async function setRomanEditorial(
+  id: string,
+  editorial: RomanEditorial,
+): Promise<boolean> {
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc("admin_set_roman_editorial", {
+    p_id: id,
+    p_editorial: editorial,
+  });
+  if (error) throw new Error(error.message);
+  return Boolean(data);
+}
+
 /** Create or update roman context including optional foundation. */
 export async function upsertRomanKontext(
   input: RomanUpsertInput,
@@ -217,7 +238,12 @@ export async function upsertRomanKontext(
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) throw new Error("Roman konnte nicht gespeichert werden.");
-  return mapKontext(row as KontextRow);
+  const mapped = mapKontext(row as KontextRow);
+  if (input.editorial) {
+    await setRomanEditorial(mapped.id, input.editorial);
+    return { ...mapped, editorial: input.editorial };
+  }
+  return mapped;
 }
 
 /** Replace non-completed scenes with a fresh roadmap. */
@@ -249,6 +275,7 @@ export async function claimNextSzene(
   if (!row) return null;
   const mapped = mapSzene(row as SzeneRow);
   const raw = row as SzeneRow;
+  const roman = await getRomanKontext(mapped.romanId);
   return {
     ...mapped,
     stilbibel: raw.stilbibel ?? "",
@@ -265,6 +292,7 @@ export async function claimNextSzene(
     kiRegelwerk: raw.ki_regelwerk ?? "",
     fanPersonaName: raw.fan_persona_name ?? "",
     fanPersonaProfil: raw.fan_persona_profil ?? "",
+    editorial: roman?.editorial ?? emptyRomanEditorial(),
   };
 }
 
@@ -498,4 +526,32 @@ export async function resetSzeneToReady(id: string): Promise<boolean> {
   });
   if (error) throw new Error(error.message);
   return Boolean(data);
+}
+
+/**
+ * Re-queue empty DRAFTING scenes; repair DRAFTING that already has a draft.
+ * REVIEWING / REVISING with content are left alone so step-retry can continue.
+ */
+export async function recoverStuckRomanSzenen(
+  romanId: string,
+): Promise<{ resetCount: number; labels: string[] }> {
+  const scenes = await listSzenen(romanId);
+  const labels: string[] = [];
+  let resetCount = 0;
+
+  for (const scene of scenes) {
+    if (scene.status !== "DRAFTING") continue;
+    const label = `Kap. ${scene.kapitelNr}.${scene.szenenNr}`;
+    if (!scene.entwurfRaw.trim()) {
+      await resetSzeneToReady(scene.id);
+      labels.push(label);
+      resetCount += 1;
+      continue;
+    }
+    await updateSzene({ id: scene.id, status: "REVIEWING" });
+    labels.push(`${label}→REVIEWING`);
+    resetCount += 1;
+  }
+
+  return { resetCount, labels };
 }

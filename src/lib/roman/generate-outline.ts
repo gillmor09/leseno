@@ -1,9 +1,11 @@
 /**
  * Generates an editable outline/exposé from book foundation (steps 1–4).
  * Written into `manuskriptRaw` so Phase 0 and later scenes can build on it.
+ * KI-Regelwerk + Stilbibel are hard MUST (age/reading level included).
  */
 
 import { generateText } from "@/lib/ai/provider";
+import type { RomanEditorial } from "@/lib/roman/editorial";
 import { buildRomanPromptContext } from "@/lib/roman/fundament";
 import { resolveRomanTextModel } from "@/lib/roman/model";
 import type { RomanCharakter, RomanSzenenRasterItem } from "@/lib/roman/types";
@@ -23,6 +25,7 @@ export type RomanOutlineGenerateInput = {
   kiRegelwerk: string;
   fanPersonaName: string;
   fanPersonaProfil: string;
+  editorial?: RomanEditorial;
 };
 
 function hasEnoughFoundation(input: RomanOutlineGenerateInput): boolean {
@@ -62,26 +65,34 @@ export async function generateRomanOutlineFromFoundation(
     systemInstruction: `Du bist Dramaturg:in und Ghostwriter für Belletristik-Outlines (deutscher Markt).
 Aufgabe: Aus dem Buch-Fundament ein editierbares Exposé / Handlungsoutline erzeugen — kein fertiger Roman, keine ausformulierten Szenenprosa.
 
-Regeln:
-- Deutsch, klar, dramaturgisch.
+ABSOLUTE PFLICHT (höher als „literarische“ Eleganz oder Erwachsenen-Dramaturgie):
+- Die Abschnitte „MUSS — KI-Regelwerk“ und „MUSS — Zusätzliche Stilbibel“ im Kontext sind verbindlich. Kein Abweichen.
+- Steht dort ein Zielalter / eine Lesestufe (z. B. 8–10 Jahre): Schreibe das GESAMTE Outline in genau dieser Sprache — kurze Sätze, einfache Wörter, konkrete Bilder, keine Schachtelsätze, kein Feuilleton, keine Fach- oder Erwachsenensprache.
+- Das gilt auch für Logline, Figurenbeschreibungen und Beat-Outline: Alles muss für diese Altersstufe verständlich sein (Eltern/Vorlesen ok, aber Wortwahl kindgerecht).
+- Bei Konflikt: Stilbibel + Regelwerk gewinnen immer.
+
+Weitere Regeln:
+- Deutsch, klar, dramaturgisch — aber nur innerhalb der Stilbibel.
 - Struktur als Markdown-ähnlicher Klartext (Überschriften mit # / ## ok).
 - Keine Meta-Kommentare („Hier ist das Outline“), kein JSON.
 - Widersprich dem Fundament nicht; fülle Lücken sinnvoll.
 - Länge: etwa 1.500–4.000 Wörter — kompakt genug zum Überarbeiten, reich genug für Phase-0-Roadmap.`,
     userText: `Erzeuge ein editierbares Exposé/Outline für diesen Roman.
 
+Vor dem Schreiben: Lies zuerst die MUSS-Blöcke (KI-Regelwerk + Stilbibel) und halte dich strikt daran — besonders Zielalter und Sprachstufe.
+
 Inhalt soll enthalten:
-1. Arbeitstitel & Logline
+1. Arbeitstitel & Logline (altersgerecht formuliert)
 2. Genre, Ton, Perspektive, Zeitform (kurz)
-3. Figuren (Ziele, Konflikte, Beziehungen)
-4. Welt / Schauplätze / Regeln (knapp)
-5. Handungsbogen in 3 Akten (oder vergleichbar)
+3. Figuren (Ziele, Konflikte, Beziehungen) — in einfacher, klarer Sprache
+4. Welt / Schauplätze / Regeln (knapp, kindverständlich wenn Stilbibel das verlangt)
+5. Handlungsbogen in 3 Akten (oder vergleichbar)
 6. Kapitel- oder Beat-Outline chronologisch — an vorhandenes Szenen-Raster anlehnen und erweitern
 7. Offene Fragen / Spannungsanker für die spätere Ausarbeitung
 
 Das Ergebnis landet im Feld „Manuskript / Outline“ und wird Grundlage für Szenen-Roadmap und Schreibpipeline.
 
-# Fundament
+# Fundament (MUSS-Blöcke stehen zuerst)
 ${context || "(leer)"}`,
   });
 

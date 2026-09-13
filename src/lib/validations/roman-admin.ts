@@ -20,6 +20,41 @@ const szenenRasterSchema = z.object({
   kapitelNr: z.number().int().min(1).max(500).optional(),
 });
 
+const editorialChecklistSchema = z.object({
+  ideeKlar: z.boolean(),
+  fundamentVoll: z.boolean(),
+  regelnHart: z.boolean(),
+  umfangGesetzt: z.boolean(),
+  outlineGeprueft: z.boolean(),
+  roadmapGeprueft: z.boolean(),
+  stilStichprobe: z.boolean(),
+  coverOk: z.boolean(),
+  vorsatzOk: z.boolean(),
+  readyToPublish: z.boolean(),
+});
+
+export const romanEditorialSchema = z.object({
+  zielAlterMin: z.number().int().min(0).max(120).nullable(),
+  zielAlterMax: z.number().int().min(0).max(120).nullable(),
+  lesestufe: z.string().max(500),
+  zielWortzahlRoman: z.number().int().min(500).max(500_000).nullable(),
+  zielWortzahlSzeneMin: z.number().int().min(100).max(20_000).nullable(),
+  zielWortzahlSzeneMax: z.number().int().min(100).max(20_000).nullable(),
+  serieTitel: z.string().max(300),
+  bandNr: z.number().int().min(1).max(99).nullable(),
+  mehrteilerForm: z.enum([
+    "unbekannt",
+    "einzelband",
+    "duologie",
+    "trilogie",
+    "serie",
+  ]),
+  mehrteilerNotizen: z.string().max(20_000),
+  mehrteilerBeratung: z.string().max(50_000),
+  harteRegeln: z.array(z.string().max(2000)).max(40),
+  checklist: editorialChecklistSchema,
+});
+
 /** Save foundation and/or manuscript — entry open at any stage. */
 export const romanUpsertSchema = z.object({
   id: z.string().uuid().nullable().optional(),
@@ -42,6 +77,7 @@ export const romanUpsertSchema = z.object({
   kiRegelwerk: z.string().max(50_000),
   fanPersonaName: z.string().max(200),
   fanPersonaProfil: z.string().max(20_000),
+  editorial: romanEditorialSchema.optional(),
 });
 
 /** Phase 0 needs enough story raw material (manuscript and/or foundation). */
@@ -74,7 +110,7 @@ export const romanProcessSceneSchema = z.object({
     .string()
     .trim()
     .min(1, { message: "Schreibmodell wählen." })
-    .max(80),
+    .max(120),
 });
 
 export const szeneIdSchema = z.object({
@@ -199,4 +235,19 @@ export const romanOutlineGenerateSchema = z.object({
   kiRegelwerk: z.string().max(50_000),
   fanPersonaName: z.string().max(200),
   fanPersonaProfil: z.string().max(20_000),
+  editorial: romanEditorialSchema.optional(),
+});
+
+/** Mehrteiler / series advice from current foundation + editorial. */
+export const romanMehrteilerAdviceSchema = z.object({
+  title: z.string().max(200),
+  genre: z.string().max(200),
+  praemisse: z.string().max(4000),
+  tonalitaet: z.string().max(2000),
+  stilbibel: z.string().max(100_000),
+  kiRegelwerk: z.string().max(50_000),
+  manuskriptRaw: z.string().max(500_000),
+  charaktere: z.array(charakterSchema).max(40),
+  szenenRaster: z.array(szenenRasterSchema).max(200),
+  editorial: romanEditorialSchema,
 });
