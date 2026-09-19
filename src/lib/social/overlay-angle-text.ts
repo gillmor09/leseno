@@ -3,6 +3,7 @@
  * Winkel: white type on dark edge gradient.
  * Marketing: zinc-700/80 dark card + light orange checklist, solid zinc-700 footer.
  * Frage: bg3 + orange-800 question + same brand footer (logo + leseno).
+ * Cover-title: dominant marketing type (adaptive color / heavy outline / glow).
  */
 
 import { readFileSync } from "node:fs";
@@ -642,7 +643,7 @@ async function overlayFrageStyle(input: {
 export async function overlayExactAngleTextOnImage(input: {
   imageDataUrl: string;
   overlayText: string;
-  style?: "winkel" | "marketing" | "frage";
+  style?: "winkel" | "marketing" | "frage" | "cover-title";
 }): Promise<string> {
   if (input.style === "marketing") {
     return overlayMarketingStyle(input);
@@ -653,7 +654,165 @@ export async function overlayExactAngleTextOnImage(input: {
       imageDataUrl: input.imageDataUrl,
     });
   }
+  if (input.style === "cover-title") {
+    return overlayCoverTitleStyle(input);
+  }
   return overlayWinkelStyle(input);
+}
+
+/**
+ * eBook cover: dominant marketing title in the lower third.
+ * Size / color / shadow adapt to the artwork so the type pulls attention
+ * and motivates reading (not a quiet literary caption).
+ */
+async function overlayCoverTitleStyle(input: {
+  imageDataUrl: string;
+  overlayText: string;
+}): Promise<string> {
+  const raw = input.overlayText.trim();
+  if (!raw) return input.imageDataUrl;
+
+  const font = getNunitoFont();
+  const { buffer } = parseDataUrl(input.imageDataUrl);
+  const image = await loadImage(buffer);
+  const width = image.width;
+  const height = image.height;
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
+
+  ctx.drawImage(image, 0, 0, width, height);
+
+  // Deep marketing scrim — title stays readable, art still shows above.
+  const bandH = Math.round(height * 0.44);
+  const gradient = ctx.createLinearGradient(0, height - bandH, 0, height);
+  gradient.addColorStop(0, "rgba(0,0,0,0)");
+  gradient.addColorStop(0.35, "rgba(0,0,0,0.28)");
+  gradient.addColorStop(0.7, "rgba(0,0,0,0.55)");
+  gradient.addColorStop(1, "rgba(0,0,0,0.78)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, height - bandH, width, bandH);
+
+  const luma = meanBandLuminance(
+    ctx,
+    width,
+    height - Math.round(bandH * 0.75),
+    Math.round(bandH * 0.75),
+  );
+
+  // Adaptive fill / outline / glow for attention + contrast.
+  let fillColor: string;
+  let outlineColor: string;
+  let shadowColor: string;
+  if (luma >= 155) {
+    fillColor = "#18181b";
+    outlineColor = "rgba(255, 247, 237, 0.95)";
+    shadowColor = "rgba(255, 255, 255, 0.55)";
+  } else if (luma >= 95) {
+    fillColor = "#fff7ed"; // warm cream — brand energy
+    outlineColor = "rgba(0, 0, 0, 0.82)";
+    shadowColor = "rgba(0, 0, 0, 0.7)";
+  } else {
+    fillColor = "#ffffff";
+    outlineColor = "rgba(0, 0, 0, 0.88)";
+    shadowColor = "rgba(0, 0, 0, 0.85)";
+  }
+
+  const padX = Math.round(width * 0.07);
+  const maxTextWidth = width - padX * 2;
+  // Dominant cover type (~10.5% of width on 1200px ≈ 126px).
+  let fontSize = Math.round(width * 0.105);
+  fontSize = Math.min(132, Math.max(56, fontSize));
+
+  const explicit = raw
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  let lines: string[] = [];
+  for (let attempt = 0; attempt < 12; attempt++) {
+    if (explicit.length > 1) {
+      lines = explicit;
+      const tooWide = lines.some(
+        (l) => measureLineWidth(font, l, fontSize) > maxTextWidth,
+      );
+      if (!tooWide && lines.length <= 3) break;
+      if (tooWide) {
+        fontSize = Math.max(40, fontSize - 5);
+        continue;
+      }
+      break;
+    }
+    lines = wrapLines(font, raw.replace(/\s+/g, " "), fontSize, maxTextWidth);
+    if (lines.length <= 3) break;
+    fontSize = Math.max(40, fontSize - 5);
+  }
+
+  const lineHeight = Math.round(fontSize * 1.12);
+  const blockHeight = lines.length * lineHeight;
+  const edgePad = Math.round(height * 0.065);
+  const firstBaseline =
+    height - edgePad - blockHeight + fontSize * 0.88;
+
+  ctx.shadowColor = shadowColor;
+  ctx.shadowBlur = Math.round(fontSize * 0.42);
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = Math.round(fontSize * 0.08);
+
+  for (let i = 0; i < lines.length; i++) {
+    fillNunitoCoverTitleLine(
+      ctx,
+      font,
+      lines[i]!,
+      fontSize,
+      width / 2,
+      firstBaseline + i * lineHeight,
+      fillColor,
+      outlineColor,
+    );
+  }
+
+  const out = canvas.toBuffer("image/png");
+  return `data:image/png;base64,${out.toString("base64")}`;
+}
+
+/**
+ * Heavy outline + fill — marketing-weight title without a separate ExtraBold TTF.
+ */
+function fillNunitoCoverTitleLine(
+  ctx: SKRSContext2D,
+  font: OtFont,
+  text: string,
+  fontSize: number,
+  centerX: number,
+  baselineY: number,
+  fillColor: string,
+  outlineColor: string,
+): void {
+  const scale = fontSize / font.unitsPerEm;
+  let x = centerX - measureLineWidth(font, text, fontSize) / 2;
+  const outlineW = Math.max(3, fontSize * 0.09);
+
+  for (const ch of text) {
+    const glyph = font.charToGlyph(ch);
+    const otPath = glyph.getPath(x, baselineY, fontSize);
+    ctx.beginPath();
+    for (const cmd of otPath.commands) {
+      if (cmd.type === "M") ctx.moveTo(cmd.x, cmd.y);
+      else if (cmd.type === "L") ctx.lineTo(cmd.x, cmd.y);
+      else if (cmd.type === "C") {
+        ctx.bezierCurveTo(cmd.x1, cmd.y1, cmd.x2, cmd.y2, cmd.x, cmd.y);
+      } else if (cmd.type === "Q") {
+        ctx.quadraticCurveTo(cmd.x1, cmd.y1, cmd.x, cmd.y);
+      } else if (cmd.type === "Z") ctx.closePath();
+    }
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = outlineW;
+    ctx.strokeStyle = outlineColor;
+    ctx.fillStyle = fillColor;
+    ctx.stroke();
+    ctx.fill();
+    x += (glyph.advanceWidth ?? 0) * scale;
+  }
 }
 
 /**

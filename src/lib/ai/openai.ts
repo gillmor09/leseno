@@ -1,5 +1,5 @@
 /**
- * OpenAI API credentials (TTS and future chat).
+ * OpenAI API credentials (TTS, Whisper, Chat / GPT-6 Astra).
  * Key: `OPENAI_API_KEY` in `.env.local` / Coolify.
  */
 
@@ -11,7 +11,7 @@ export function getOpenAiApiKey(): string {
   const key = process.env.OPENAI_API_KEY?.trim() ?? "";
   if (!key) {
     throw new UserFacingError(
-      "Vorlesen ist noch nicht eingerichtet (OPENAI_API_KEY fehlt).",
+      "OPENAI_API_KEY fehlt. Bitte in .env.local und Coolify setzen (Chat / GPT-6 Astra / GPT-5.6 Luna / TTS).",
     );
   }
   return key;

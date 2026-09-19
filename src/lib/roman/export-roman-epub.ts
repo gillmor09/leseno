@@ -1,6 +1,7 @@
 /**
- * Amazon/KDP-oriented EPUB 3 export from revised roman scenes.
- * Reflowable XHTML + optional cover image; client-side via JSZip.
+ * Amazon/KDP-oriented EPUB 3 export from Manuskript chapters
+ * (or legacy revised scenes). Reflowable XHTML; no cover image
+ * (PDF keeps the cover). Client-side via JSZip.
  */
 
 import JSZip from "jszip";
@@ -10,7 +11,12 @@ import {
   type RomanVorsatz,
 } from "@/lib/roman/front-matter";
 import {
-  collectRevisedScenes,
+  formatManuskriptChapterHeading,
+  type PlotChapter,
+} from "@/lib/roman/plot-chapters";
+import {
+  resolveExportChapters,
+  type RomanExportChapter,
   type RomanExportScene,
 } from "@/lib/roman/export-roman-pdf";
 
@@ -20,8 +26,10 @@ export type RomanEpubInput = {
   autorName: string;
   language?: string;
   vorsatz?: RomanVorsatz;
-  coverImageDataUrl?: string;
-  szenen: RomanExportScene[];
+  /** Manuskript chapters (preferred). */
+  chapters?: RomanExportChapter[];
+  /** Legacy: revised scenes grouped into chapters. */
+  szenen?: RomanExportScene[];
 };
 
 function escapeXml(value: string): string {
@@ -46,6 +54,14 @@ function slugifyFilename(title: string): string {
 
 export function romanEpubFilename(title: string): string {
   return `${slugifyFilename(title)}.epub`;
+}
+
+function chapterHeadingLabel(chapter: RomanExportChapter): string {
+  return formatManuskriptChapterHeading({
+    number: chapter.number,
+    title: chapter.title,
+    body: "",
+  } satisfies PlotChapter);
 }
 
 function paragraphsToXhtml(text: string): string {
@@ -83,8 +99,10 @@ ${body}
 </html>`;
 }
 
+/** Chapter heading one type step above body, bold; one blank line before prose. */
 const EPUB_CSS = `body {
   font-family: serif;
+  font-size: 1em;
   line-height: 1.5;
   margin: 1em;
 }
@@ -96,8 +114,11 @@ h1 {
   page-break-before: always;
 }
 h1.chapter {
+  font-size: 1.15em;
+  font-weight: bold;
   text-align: left;
-  margin-top: 0;
+  margin: 0 0 1em;
+  page-break-before: always;
 }
 .subtitle, .author, .imprint {
   text-align: center;
@@ -118,68 +139,27 @@ p {
   text-indent: 1.2em;
   text-align: justify;
 }
-.titlepage p, .copyright p, .dedication p, .epigraph p, h1 + p {
+.titlepage p, .copyright p, .dedication p, .epigraph p, h1.chapter + p {
   text-indent: 0;
 }
-.cover {
-  text-align: center;
-  margin: 0;
-  padding: 0;
-}
-.cover img {
-  max-width: 100%;
-  height: auto;
-}
 `;
-
-type CoverAsset = {
-  path: string;
-  mediaType: string;
-  bytes: Uint8Array;
-};
-
-function parseCoverDataUrl(dataUrl: string): CoverAsset | null {
-  const trimmed = dataUrl.trim();
-  const match = /^data:(image\/(?:jpeg|jpg|png|webp));base64,(.+)$/i.exec(
-    trimmed,
-  );
-  if (!match) return null;
-  const mime = match[1]!.toLowerCase().replace("image/jpg", "image/jpeg");
-  const b64 = match[2]!;
-  try {
-    const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const ext =
-      mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
-    return {
-      path: `images/cover.${ext}`,
-      mediaType: mime,
-      bytes,
-    };
-  } catch {
-    return null;
-  }
-}
 
 type SpineItem = {
   id: string;
   href: string;
   title: string;
-  landmark?: "cover" | "titlepage" | "bodymatter";
+  landmark?: "titlepage" | "bodymatter";
 };
 
 /**
- * Builds a reflowable EPUB 3 blob suitable for KDP upload / Kindle sideload.
+ * Builds a reflowable EPUB 3 blob (Manuskript, ohne Cover).
  */
 export async function buildRomanEpubBlob(
   input: RomanEpubInput,
 ): Promise<Blob> {
-  const revised = collectRevisedScenes(input.szenen);
-  if (!revised.length) {
-    throw new Error("Noch keine revidierte Szene für das EPUB.");
+  const chapters = resolveExportChapters(input);
+  if (!chapters.length) {
+    throw new Error("Noch kein Manuskript für das EPUB.");
   }
 
   const vorsatz = input.vorsatz ?? emptyVorsatz();
@@ -199,10 +179,6 @@ export async function buildRomanEpubBlob(
   }`;
   const modified = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
-  const cover = input.coverImageDataUrl
-    ? parseCoverDataUrl(input.coverImageDataUrl)
-    : null;
-
   const zip = new JSZip();
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
   zip.file(
@@ -221,29 +197,6 @@ export async function buildRomanEpubBlob(
   oebps.file("styles.css", EPUB_CSS);
 
   const spine: SpineItem[] = [];
-  const manifestExtra: string[] = [];
-
-  if (cover) {
-    oebps.file(cover.path, cover.bytes);
-    manifestExtra.push(
-      `<item id="cover-image" href="${cover.path}" media-type="${cover.mediaType}" properties="cover-image"/>`,
-    );
-    oebps.file(
-      "cover.xhtml",
-      xhtmlDoc(
-        "Cover",
-        `<section class="cover" epub:type="cover">
-  <img src="${cover.path}" alt="Cover: ${escapeXml(title)}" />
-</section>`,
-      ),
-    );
-    spine.push({
-      id: "cover",
-      href: "cover.xhtml",
-      title: "Cover",
-      landmark: "cover",
-    });
-  }
 
   if (hasUsableVorsatz(vorsatz) || title) {
     const t = vorsatz.titelseite;
@@ -334,28 +287,18 @@ export async function buildRomanEpubBlob(
     }
   }
 
-  const byChapter = new Map<number, RomanExportScene[]>();
-  for (const scene of revised) {
-    const list = byChapter.get(scene.kapitelNr) ?? [];
-    list.push(scene);
-    byChapter.set(scene.kapitelNr, list);
-  }
-
   let firstChapter = true;
-  for (const [kapitelNr, scenes] of byChapter) {
-    const href = `chapter-${String(kapitelNr).padStart(2, "0")}.xhtml`;
-    const id = `chapter-${kapitelNr}`;
-    const chapterTitle = `Kapitel ${kapitelNr}`;
-    const bodyParts = scenes
-      .map((s) => paragraphsToXhtml(s.entwurfRevidiert))
-      .join("\n");
+  for (const chapter of chapters) {
+    const href = `chapter-${String(chapter.number).padStart(2, "0")}.xhtml`;
+    const id = `chapter-${chapter.number}`;
+    const chapterTitle = chapterHeadingLabel(chapter);
     oebps.file(
       href,
       xhtmlDoc(
         chapterTitle,
         `<section epub:type="chapter">
   <h1 class="chapter">${escapeXml(chapterTitle)}</h1>
-  ${bodyParts}
+  ${paragraphsToXhtml(chapter.body)}
 </section>`,
       ),
     );
@@ -380,11 +323,7 @@ export async function buildRomanEpubBlob(
     .filter((s) => s.landmark)
     .map((s) => {
       const type =
-        s.landmark === "cover"
-          ? "cover"
-          : s.landmark === "titlepage"
-            ? "titlepage"
-            : "bodymatter";
+        s.landmark === "titlepage" ? "titlepage" : "bodymatter";
       return `    <li><a epub:type="${type}" href="${s.href}">${escapeXml(s.title)}</a></li>`;
     })
     .join("\n");
@@ -419,7 +358,6 @@ ${navLandmarks}
   const manifestXml = [
     `<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
     `<item id="css" href="styles.css" media-type="text/css"/>`,
-    ...manifestExtra,
     ...spine.map(
       (s) =>
         `<item id="${s.id}" href="${s.href}" media-type="application/xhtml+xml"/>`,
@@ -427,10 +365,6 @@ ${navLandmarks}
   ].join("\n    ");
 
   const spineXml = spine.map((s) => `<itemref idref="${s.id}"/>`).join("\n    ");
-
-  const metaCover = cover
-    ? `<meta name="cover" content="cover-image"/>`
-    : "";
 
   oebps.file(
     "content.opf",
@@ -445,7 +379,6 @@ ${navLandmarks}
       vorsatz.titelseite.imprint.trim() || "Eigenverlag",
     )}</dc:publisher>
     <meta property="dcterms:modified">${modified}</meta>
-    ${metaCover}
   </metadata>
   <manifest>
     ${manifestXml}

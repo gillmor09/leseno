@@ -14,6 +14,11 @@ export type AiModelConfig = {
   notes: string | null;
   /** Optional TTS voice id (provider-specific); null for non-TTS roles. */
   ttsVoiceId: string | null;
+  /**
+   * Optional reasoning depth from roman_ki_rollen.reasoning_effort:
+   * OpenAI → reasoning_effort; Gemini → thinking_level; else ignored.
+   */
+  reasoningEffort?: string | null;
 };
 
 export type PromptTemplateConfig = {

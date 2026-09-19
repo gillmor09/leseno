@@ -53,7 +53,7 @@ export function RomanAdminList({
       current.filter((roman) => roman.id !== deleteTarget.id),
     );
     setDeleteTarget(null);
-    toast.success("Roman gelöscht.");
+    toast.success("Buch gelöscht.");
   }
 
   return (
@@ -66,7 +66,9 @@ export function RomanAdminList({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-semibold text-zinc-600">
-          {romane.length} Roman{romane.length === 1 ? "" : "e"}
+          {romane.length === 1
+            ? "1 Buch"
+            : `${romane.length} Bücher`}
         </p>
         <Link
           href="/admin/roman/neu"
@@ -76,14 +78,14 @@ export function RomanAdminList({
           )}
         >
           <Plus className="size-4" aria-hidden />
-          Neuer Roman
+          Neues Buch
         </Link>
       </div>
 
       {romane.length === 0 ? (
         <p className="rounded-2xl bg-white px-5 py-8 text-center text-sm font-semibold text-zinc-500 ring-1 ring-zinc-950/10">
-          Noch kein Roman. Manuskript hochladen und Phase 0 (Szenen-Roadmap)
-          starten.
+          Noch kein Buch. Mit „Neues Buch“ anlegen — Pipeline-Schritte folgen
+          später.
         </p>
       ) : (
         <ul className="space-y-3">
@@ -100,8 +102,8 @@ export function RomanAdminList({
                   {roman.title}
                 </Link>
                 <p className="mt-1 text-xs font-semibold text-zinc-500">
-                  {formatDate(roman.updatedAt)} · {roman.szenenCompleted}/
-                  {roman.szenenTotal} fertig · {roman.szenenReady} bereit
+                  Zuletzt bearbeitet: {formatDate(roman.updatedAt)}
+                  {roman.hasCover ? " · Cover vorhanden" : ""}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -128,7 +130,7 @@ export function RomanAdminList({
 
       <ConfirmDeleteDialog
         open={Boolean(deleteTarget)}
-        title="Roman löschen?"
+        title="Buch löschen?"
         description={
           deleteTarget
             ? `„${deleteTarget.title}“ und alle Szenen werden unwiderruflich gelöscht.`

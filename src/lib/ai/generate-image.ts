@@ -58,8 +58,8 @@ function ionosSizeForAspect(
     case "2:3":
       return large ? "1024x1536" : "512x768";
     case "5:8":
-      // Amazon cover ratio 1600×2560 (=5:8). 1000×1600 is invalid (1000 % 16 ≠ 0).
-      return large ? "960x1536" : "640x1024";
+      // eBook cover 1200×1920 (=5:8). Both sides multiples of 16 (IONOS FLUX).
+      return large ? "1200x1920" : "640x1024";
     case "3:2":
       return large ? "1536x1024" : "768x512";
     case "4:5":

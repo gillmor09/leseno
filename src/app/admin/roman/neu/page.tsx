@@ -1,29 +1,18 @@
 import type { Metadata } from "next";
-import { RomanAdminWorkspace } from "@/components/features/admin/roman-admin-workspace";
+import { RomanCreateForm } from "@/components/features/admin/roman-create-form";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
-import {
-  listRomanSchreibModels,
-  resolveDefaultRomanSchreibModel,
-} from "@/lib/roman/model";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
-  title: "Neuer Roman — Leseno Admin",
+  title: "Neues Buch — Leseno Admin",
 };
 
-/** Long Gemini roadmap call. */
-export const maxDuration = 600;
-
 /**
- * Create a new roman (Phase 0 entry).
+ * Create a new book shell (title only); pipeline steps come later.
  */
 export default async function RomanAdminNewPage() {
   const canSave = hasServiceRoleConfig();
-  const [schreibModels, defaultModel] = await Promise.all([
-    listRomanSchreibModels(),
-    resolveDefaultRomanSchreibModel(),
-  ]);
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -34,21 +23,10 @@ export default async function RomanAdminNewPage() {
             Admin
           </p>
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            Neuer Roman
+            Neues Buch
           </h1>
           <div className="mt-8">
-            <RomanAdminWorkspace
-              initialRoman={null}
-              initialSzenen={[]}
-              canSave={canSave}
-              isNew
-              schreibModels={schreibModels.map((m) => ({
-                id: m.modelSlug,
-                label: m.label,
-                modelSlug: m.modelSlug,
-              }))}
-              defaultSchreibModelId={defaultModel.modelSlug}
-            />
+            <RomanCreateForm canSave={canSave} />
           </div>
         </section>
       </main>

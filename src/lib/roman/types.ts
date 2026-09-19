@@ -1,5 +1,6 @@
 /**
- * Admin novel pipeline types (`leseno.roman_kontext` / `leseno.szenen`).
+ * Admin novel pipeline types (`leseno.roman_kontext`).
+ * `Szene` remains for Cover/Export rebuild (legacy `leseno.szenen` rows).
  */
 
 import type {
@@ -28,8 +29,15 @@ export type RomanCharakter = {
   name: string;
   alter: string;
   rolle: string;
+  /** Traits / temperament (Wesenszüge). */
+  wesenszuege: string;
   motivation: string;
   schwaeche: string;
+  /**
+   * Arc / stance change through the book (or conscious non-change).
+   * Not motivation (want now) and not weakness (flaw) — e.g. belief shifts by end.
+   */
+  bogen: string;
   sprachstil: string;
 };
 
@@ -106,30 +114,6 @@ export type Szene = {
   status: SzeneStatus;
   createdAt?: string;
   updatedAt?: string;
-};
-
-export type ClaimedSzene = Szene & {
-  stilbibel: string;
-  aktuelleZusammenfassung: string;
-  genre: string;
-  praemisse: string;
-  perspektive: string;
-  zeitform: string;
-  tonalitaet: string;
-  charaktere: RomanCharakter[];
-  weltSchauplaetze: string;
-  weltRegeln: string;
-  szenenRaster: RomanSzenenRasterItem[];
-  kiRegelwerk: string;
-  fanPersonaName: string;
-  fanPersonaProfil: string;
-  editorial: RomanEditorial;
-};
-
-export type SzeneRoadmapItem = {
-  kapitel_nr: number;
-  szenen_nr: number;
-  briefing: string;
 };
 
 export type RomanUpsertInput = {

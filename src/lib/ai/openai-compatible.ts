@@ -2,13 +2,19 @@
  * OpenAI-compatible chat completions client for IONOS AI Model Hub.
  */
 
+import { aiFetchSignal, mapAiFetchError } from "@/lib/ai/fetch-timeout";
 import { getIonosApiToken, getIonosBaseUrl } from "@/lib/ai/ionos";
+import { recordAiUsage } from "@/lib/ai/usage";
 
 export type OpenAiCompatibleGenerateInput = {
   modelSlug: string;
   systemInstruction?: string;
   userText: string;
   jsonOutput?: boolean;
+  /** Cap completion length when the provider supports it. */
+  maxTokens?: number;
+  /** Optional per-call wall-clock budget (ms). */
+  timeoutMs?: number;
 };
 
 export type OpenAiCompatibleGenerateResult = {
@@ -24,6 +30,10 @@ type ChatCompletionResponse = {
     };
     finish_reason?: string;
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
   error?: {
     message?: string;
     type?: string;
@@ -54,33 +64,50 @@ export async function generateWithOpenAiCompatible(
     messages,
   };
 
+  if (input.maxTokens != null && input.maxTokens > 0) {
+    body.max_tokens = Math.round(input.maxTokens);
+  }
+
   if (input.jsonOutput) {
     body.response_format = { type: "json_object" };
   }
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: aiFetchSignal(input.timeoutMs),
+    });
 
-  const payload = (await response.json()) as ChatCompletionResponse;
+    const payload = (await response.json()) as ChatCompletionResponse;
 
-  if (!response.ok || payload.error) {
-    throw new Error(
-      payload.error?.message ??
-        `IONOS-Anfrage fehlgeschlagen (${response.status}).`,
-    );
+    if (!response.ok || payload.error) {
+      throw new Error(
+        payload.error?.message ??
+          `IONOS-Anfrage fehlgeschlagen (${response.status}).`,
+      );
+    }
+
+    const text = payload.choices?.[0]?.message?.content?.trim() ?? "";
+
+    if (!text) {
+      throw new Error("IONOS hat keinen Text zurückgegeben.");
+    }
+
+    const usage = payload.usage;
+    if (usage) {
+      recordAiUsage({
+        inputTokens: usage.prompt_tokens ?? 0,
+        outputTokens: usage.completion_tokens ?? 0,
+      });
+    }
+
+    return { text, modelSlug: input.modelSlug };
+  } catch (error) {
+    throw mapAiFetchError(error, "IONOS", input.timeoutMs);
   }
-
-  const text = payload.choices?.[0]?.message?.content?.trim() ?? "";
-
-  if (!text) {
-    throw new Error("IONOS hat keinen Text zurückgegeben.");
-  }
-
-  return { text, modelSlug: input.modelSlug };
 }

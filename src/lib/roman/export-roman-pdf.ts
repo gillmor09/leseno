@@ -1,7 +1,7 @@
 /**
  * Admin roman export: HTML preview + text PDF (jsPDF + embedded Nunito).
- * Order: optional cover image → eBook front matter → revised scenes.
- * Text PDFs avoid blank html2canvas captures on long novels.
+ * Order: optional cover image → eBook front matter → Manuskript chapters
+ * (or legacy revised scenes). Text PDFs avoid blank html2canvas captures.
  */
 
 import { jsPDF } from "jspdf";
@@ -16,12 +16,25 @@ import {
   hasUsableVorsatz,
   type RomanVorsatz,
 } from "@/lib/roman/front-matter";
+import {
+  formatManuskriptChapterHeading,
+  parsePlotChapters,
+  stripLeadingChapterHeadings,
+  type PlotChapter,
+} from "@/lib/roman/plot-chapters";
 import type { Szene } from "@/lib/roman/types";
 
 export type RomanExportScene = Pick<
   Szene,
   "kapitelNr" | "szenenNr" | "entwurfRevidiert" | "status"
 >;
+
+/** One print chapter for PDF / EPUB (from Manuskript or grouped scenes). */
+export type RomanExportChapter = {
+  number: number;
+  title: string;
+  body: string;
+};
 
 function escapeHtml(value: string): string {
   return value
@@ -54,6 +67,60 @@ export function collectRevisedScenes(
     );
 }
 
+/**
+ * Chapters with prose from `editorial.manuskriptText` (print-style headings).
+ */
+export function collectManuskriptExportChapters(
+  manuskriptText: string,
+): RomanExportChapter[] {
+  return parsePlotChapters(manuskriptText)
+    .map((chapter) => ({
+      number: chapter.number,
+      title: chapter.title,
+      body: stripLeadingChapterHeadings(chapter.body, chapter.number).trim(),
+    }))
+    .filter((chapter) => chapter.body.length > 0);
+}
+
+function chaptersFromRevisedScenes(
+  szenen: RomanExportScene[],
+): RomanExportChapter[] {
+  const revised = collectRevisedScenes(szenen);
+  const byChapter = new Map<number, string[]>();
+  for (const scene of revised) {
+    const list = byChapter.get(scene.kapitelNr) ?? [];
+    list.push(scene.entwurfRevidiert.trim());
+    byChapter.set(scene.kapitelNr, list);
+  }
+  return [...byChapter.entries()].map(([number, bodies]) => ({
+    number,
+    title: "",
+    body: bodies.join("\n\n"),
+  }));
+}
+
+/** Prefer explicit chapters; fall back to legacy revised scenes. */
+export function resolveExportChapters(input: {
+  chapters?: RomanExportChapter[];
+  szenen?: RomanExportScene[];
+}): RomanExportChapter[] {
+  if (input.chapters?.length) {
+    return input.chapters.filter((c) => c.body.trim().length > 0);
+  }
+  if (input.szenen?.length) {
+    return chaptersFromRevisedScenes(input.szenen);
+  }
+  return [];
+}
+
+function chapterHeadingLabel(chapter: RomanExportChapter): string {
+  return formatManuskriptChapterHeading({
+    number: chapter.number,
+    title: chapter.title,
+    body: "",
+  } satisfies PlotChapter);
+}
+
 function paragraphsToHtml(text: string): string {
   const parts = text
     .replace(/\r\n/g, "\n")
@@ -76,7 +143,10 @@ function paragraphsPlain(text: string): string[] {
 
 export type RomanExportInput = {
   title: string;
-  szenen: RomanExportScene[];
+  /** Manuskript chapters (preferred). */
+  chapters?: RomanExportChapter[];
+  /** Legacy: revised scenes grouped into chapters. */
+  szenen?: RomanExportScene[];
   /** Total scene count (unused in body; kept for callers). */
   totalSzenen?: number;
   /** Optional Flux cover data URL (first full-bleed page). */
@@ -84,6 +154,11 @@ export type RomanExportInput = {
   /** Minimal eBook front matter after cover, before chapter 1. */
   vorsatz?: RomanVorsatz;
 };
+
+/** Body vs chapter: one type step (11 → 13 pt), heading bold. */
+const PDF_BODY_PT = 11;
+const PDF_HEADING_PT = 13;
+const PDF_BODY_LINE_MM = 5.8;
 
 const ROMAN_EXPORT_CSS = `
   * { box-sizing: border-box; }
@@ -159,17 +234,17 @@ const ROMAN_EXPORT_CSS = `
     font-weight: 600;
     color: #71717a;
   }
-  .chapter { margin: 0 0 2.5rem; }
+  .chapter { margin: 0 0 2.5rem; break-before: page; }
   .chapter-title {
-    margin: 0 0 1.25rem;
-    font-size: 1.35rem;
-    font-weight: 800;
+    margin: 0 0 1em;
+    font-size: 1.15em;
+    font-weight: 700;
     color: #09090b;
   }
   .scene { margin: 0 0 1.75rem; }
   .scene-body p {
     margin: 0 0 0.9rem;
-    font-size: 1rem;
+    font-size: 1em;
     font-weight: 400;
     line-height: 1.7;
     text-align: justify;
@@ -262,33 +337,20 @@ function coverHtmlBlock(cover: string): string {
  * Self-contained HTML document for preview / print.
  */
 export function buildRomanExportDocument(input: RomanExportInput): string {
-  const revised = collectRevisedScenes(input.szenen);
+  const chapters = resolveExportChapters(input);
   const title = input.title.trim() || "Unbenannter Roman";
   const vorsatz = input.vorsatz ?? emptyVorsatz();
   const cover = (input.coverImageDataUrl ?? "").trim();
 
-  const byChapter = new Map<number, RomanExportScene[]>();
-  for (const scene of revised) {
-    const list = byChapter.get(scene.kapitelNr) ?? [];
-    list.push(scene);
-    byChapter.set(scene.kapitelNr, list);
-  }
-
-  const chaptersHtml = [...byChapter.entries()]
-    .map(([kapitelNr, scenes]) => {
-      const scenesHtml = scenes
-        .map((scene) => {
-          const body = paragraphsToHtml(scene.entwurfRevidiert);
-          return `
-    <article class="scene">
-      <div class="scene-body">${body}</div>
-    </article>`;
-        })
-        .join("\n");
+  const chaptersHtml = chapters
+    .map((chapter) => {
+      const body = paragraphsToHtml(chapter.body);
       return `
   <section class="chapter">
-    <h2 class="chapter-title">Kapitel ${kapitelNr}</h2>
-    ${scenesHtml}
+    <h2 class="chapter-title">${escapeHtml(chapterHeadingLabel(chapter))}</h2>
+    <article class="scene">
+      <div class="scene-body">${body}</div>
+    </article>
   </section>`;
     })
     .join("\n");
@@ -310,7 +372,7 @@ export function buildRomanExportDocument(input: RomanExportInput): string {
     <div class="page">
       ${coverHtmlBlock(cover)}
       ${frontMatterHtml(vorsatz)}
-      ${chaptersHtml || `<p class="meta">Noch keine revidierten Szenen.</p>`}
+      ${chaptersHtml || `<p class="meta">Noch kein Manuskript zum Export.</p>`}
     </div>
   </div>
 </body>
@@ -343,10 +405,7 @@ type WriteCtx = {
 
 function ensureSpace(ctx: WriteCtx, neededMm: number): void {
   if (ctx.y + neededMm <= ctx.pageHeight - ctx.marginBottom) return;
-  ctx.pdf.addPage(
-    [ctx.pageWidth, ctx.pageHeight],
-    "portrait",
-  );
+  ctx.pdf.addPage([ctx.pageWidth, ctx.pageHeight], "portrait");
   ctx.y = ctx.marginTop;
 }
 
@@ -527,15 +586,16 @@ function drawFullBleedCover(
 }
 
 /**
- * Builds a real text PDF (Nunito embedded) from revised scenes.
- * Amazon eBook page size (1:1.6); page numbers from first story page only.
+ * Builds a real text PDF (Nunito embedded) from Manuskript chapters.
+ * Amazon eBook page size (1:1.6); optional cover; chapter = new page;
+ * heading one type step larger + bold, one blank line before body.
  */
 export async function buildRomanPdfBlob(
   input: RomanExportInput,
 ): Promise<Blob> {
-  const revised = collectRevisedScenes(input.szenen);
-  if (!revised.length) {
-    throw new Error("Noch keine revidierte Szene zum Export.");
+  const chapters = resolveExportChapters(input);
+  if (!chapters.length) {
+    throw new Error("Noch kein Manuskript zum Export.");
   }
 
   const vorsatz = input.vorsatz ?? emptyVorsatz();
@@ -585,42 +645,39 @@ export async function buildRomanPdfBlob(
     pageUsed = true;
   }
 
-  let lastKapitel: number | null = null;
   /** 1-based jsPDF page index where story numbering starts; 0 = not yet. */
   let storyStartPdfPage = 0;
 
-  for (const scene of revised) {
-    const paras = paragraphsPlain(scene.entwurfRevidiert);
+  for (const chapter of chapters) {
+    const paras = paragraphsPlain(chapter.body);
     if (!paras.length) continue;
 
-    if (lastKapitel !== scene.kapitelNr) {
-      if (pageUsed || lastKapitel !== null) {
-        startNewPage(ctx);
-      }
-      if (storyStartPdfPage === 0) {
-        storyStartPdfPage = pdf.getNumberOfPages();
-      }
-      setNunito(pdf, "extrabold", 14);
-      pdf.setTextColor(9, 9, 11);
-      writeLines(ctx, [`Kapitel ${scene.kapitelNr}`], 7);
-      ctx.y += 3;
-      lastKapitel = scene.kapitelNr;
-      pageUsed = true;
-    } else if (storyStartPdfPage === 0) {
+    if (pageUsed || storyStartPdfPage !== 0) {
+      startNewPage(ctx);
+    }
+    if (storyStartPdfPage === 0) {
       storyStartPdfPage = pdf.getNumberOfPages();
     }
 
-    setNunito(pdf, "normal", 10);
+    setNunito(pdf, "bold", PDF_HEADING_PT);
+    pdf.setTextColor(9, 9, 11);
+    const headingLines = pdf.splitTextToSize(
+      chapterHeadingLabel(chapter),
+      contentWidth,
+    ) as string[];
+    writeLines(ctx, headingLines, PDF_BODY_LINE_MM);
+    // One blank line between Kapitelüberschrift and body.
+    ctx.y += PDF_BODY_LINE_MM;
+    pageUsed = true;
+
+    setNunito(pdf, "normal", PDF_BODY_PT);
     pdf.setTextColor(24, 24, 27);
-    const lineHeight = 5.4;
 
     for (const para of paras) {
       const lines = pdf.splitTextToSize(para, contentWidth) as string[];
-      writeLines(ctx, lines, lineHeight);
+      writeLines(ctx, lines, PDF_BODY_LINE_MM);
       ctx.y += 2.5;
     }
-
-    ctx.y += 3;
   }
 
   if (storyStartPdfPage > 0) {

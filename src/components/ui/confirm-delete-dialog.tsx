@@ -56,7 +56,7 @@ export function ConfirmDeleteDialog({
       aria-modal="true"
       aria-labelledby="confirm-delete-title"
       aria-describedby="confirm-delete-desc"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/55 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[110] flex items-center justify-center bg-zinc-950/55 p-4 backdrop-blur-sm"
       onClick={() => {
         if (!pending) onCancel();
       }}

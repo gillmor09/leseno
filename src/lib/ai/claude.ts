@@ -4,10 +4,21 @@
  * Retries transient network drops (ECONNRESET) — common on long Sonnet runs.
  */
 
+import {
+  AI_FETCH_TIMEOUT_MAX_MS,
+  AI_FETCH_TIMEOUT_MS,
+  aiFetchSignal,
+  isAiAbortError,
+  mapAiFetchError,
+} from "@/lib/ai/fetch-timeout";
+import { recordAiUsage } from "@/lib/ai/usage";
+
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const MAX_ATTEMPTS = 3;
-const RETRY_BASE_MS = 2_000;
+/** At most one retry — shared wall-clock budget must not multiply to minutes. */
+const MAX_ATTEMPTS = 2;
+const RETRY_BASE_MS = 1_500;
+const MIN_RETRY_BUDGET_MS = 12_000;
 
 export type ClaudeGenerateInput = {
   modelSlug: string;
@@ -16,11 +27,15 @@ export type ClaudeGenerateInput = {
   jsonOutput?: boolean;
   /** Cap output size (default 8192). Lower for feedback/summary. */
   maxTokens?: number;
+  /** Optional per-call wall-clock budget (ms). */
+  timeoutMs?: number;
 };
 
 export type ClaudeGenerateResult = {
   text: string;
   modelSlug: string;
+  /** Anthropic `stop_reason` — e.g. end_turn | max_tokens. */
+  stopReason?: string;
 };
 
 function getClaudeApiKey(): string {
@@ -48,6 +63,13 @@ type ClaudeContentBlock = {
 
 type ClaudeMessagesResponse = {
   content?: ClaudeContentBlock[];
+  stop_reason?: string | null;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
   error?: {
     type?: string;
     message?: string;
@@ -131,8 +153,29 @@ export async function generateWithClaude(
 
   const bodyJson = JSON.stringify(body);
   let lastError: unknown;
+  const budgetMs = Math.min(
+    input.timeoutMs ?? AI_FETCH_TIMEOUT_MS,
+    AI_FETCH_TIMEOUT_MAX_MS,
+  );
+  const deadline = Date.now() + budgetMs;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const remaining = deadline - Date.now();
+    if (remaining < MIN_RETRY_BUDGET_MS && attempt > 1) {
+      throw mapAiFetchError(
+        new DOMException("Timeout", "TimeoutError"),
+        "Claude",
+        budgetMs,
+      );
+    }
+    if (remaining < 1_000) {
+      throw mapAiFetchError(
+        new DOMException("Timeout", "TimeoutError"),
+        "Claude",
+        budgetMs,
+      );
+    }
+
     try {
       const response = await fetch(ANTHROPIC_MESSAGES_URL, {
         method: "POST",
@@ -142,14 +185,20 @@ export async function generateWithClaude(
           "anthropic-version": ANTHROPIC_VERSION,
         },
         body: bodyJson,
+        signal: aiFetchSignal(remaining),
       });
 
-      if (!response.ok && isRetryableHttpStatus(response.status) && attempt < MAX_ATTEMPTS) {
-        const wait = RETRY_BASE_MS * attempt;
+      if (
+        !response.ok &&
+        isRetryableHttpStatus(response.status) &&
+        attempt < MAX_ATTEMPTS &&
+        deadline - Date.now() > MIN_RETRY_BUDGET_MS
+      ) {
+        const wait = Math.min(RETRY_BASE_MS * attempt, deadline - Date.now() - MIN_RETRY_BUDGET_MS);
         console.warn(
           `[claude] HTTP ${response.status}, retry ${attempt}/${MAX_ATTEMPTS} in ${wait}ms`,
         );
-        await sleep(wait);
+        await sleep(Math.max(0, wait));
         continue;
       }
 
@@ -173,16 +222,41 @@ export async function generateWithClaude(
         throw new Error("Claude hat keinen Text zurückgegeben.");
       }
 
-      return { text, modelSlug: input.modelSlug };
+      const usage = payload.usage;
+      if (usage) {
+        recordAiUsage({
+          inputTokens: usage.input_tokens ?? 0,
+          outputTokens: usage.output_tokens ?? 0,
+          cacheReadTokens: usage.cache_read_input_tokens,
+          cacheWriteTokens: usage.cache_creation_input_tokens,
+        });
+      }
+
+      return {
+        text,
+        modelSlug: input.modelSlug,
+        stopReason: payload.stop_reason ?? undefined,
+      };
     } catch (error) {
       lastError = error;
-      if (isRetryableNetworkError(error) && attempt < MAX_ATTEMPTS) {
-        const wait = RETRY_BASE_MS * attempt;
+      // Timeouts / aborts: fail immediately (do not burn the whole budget on retries).
+      if (isAiAbortError(error)) {
+        throw mapAiFetchError(error, "Claude", budgetMs);
+      }
+      if (
+        isRetryableNetworkError(error) &&
+        attempt < MAX_ATTEMPTS &&
+        deadline - Date.now() > MIN_RETRY_BUDGET_MS
+      ) {
+        const wait = Math.min(
+          RETRY_BASE_MS * attempt,
+          deadline - Date.now() - MIN_RETRY_BUDGET_MS,
+        );
         console.warn(
           `[claude] network error, retry ${attempt}/${MAX_ATTEMPTS} in ${wait}ms:`,
           error instanceof Error ? error.message : error,
         );
-        await sleep(wait);
+        await sleep(Math.max(0, wait));
         continue;
       }
       break;

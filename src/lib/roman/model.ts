@@ -25,7 +25,8 @@ function wiredTextLlmToConfig(endpoint: WiredAiEndpoint): AiModelConfig {
     provider: endpoint.provider,
     modelSlug: endpoint.modelSlug,
     supportsSystemPrompt: true,
-    supportsJsonOutput: false,
+    // So preferJson activates provider JSON hints (Gemini mime, OpenAI json_object, Claude prompt).
+    supportsJsonOutput: true,
     isActive: true,
     notes: null,
     ttsVoiceId: null,
@@ -139,55 +140,6 @@ export async function resolveRomanSchreibModel(
   return resolveDefaultRomanSchreibModel();
 }
 
-/**
- * Gemini Flash for the Ideen-Finder chat (fast ideation).
- * Prefers flash-slug models from the catalog.
- */
-export async function resolveRomanIdeaChatModel(): Promise<AiModelConfig> {
-  try {
-    const catalog = await loadPromptAdminCatalog({ mergeFallback: true });
-    const flash = catalog.models.find(
-      (m) =>
-        m.isActive &&
-        m.provider.trim().toLowerCase() === "gemini" &&
-        m.modelSlug.toLowerCase().includes("flash"),
-    );
-    if (flash) return flash;
-  } catch {
-    // use shared roman text model
-  }
-  return resolveRomanTextModel();
-}
-
-/**
- * Mistral (IONOS openai-compatible) to map chat → foundation fields 1–4.
- */
-export async function resolveRomanIdeaFillModel(): Promise<AiModelConfig> {
-  try {
-    const catalog = await loadPromptAdminCatalog({ mergeFallback: true });
-    const mistral = catalog.models.find(
-      (m) =>
-        m.isActive &&
-        m.provider.trim().toLowerCase() === "openai-compatible" &&
-        m.modelSlug.toLowerCase().includes("mistral"),
-    );
-    if (mistral) return mistral;
-    const layout = catalog.models.find(
-      (m) => m.isActive && m.id === "layout-default",
-    );
-    if (layout) return layout;
-  } catch {
-    // use fallback
-  }
-  return (
-    FALLBACK_AI_MODELS.find((m) => m.id === "layout-default") ??
-    FALLBACK_AI_MODELS.find((m) =>
-      m.modelSlug.toLowerCase().includes("mistral"),
-    ) ??
-    FALLBACK_AI_MODELS[0]!
-  );
-}
-
 /** Pixel model for roman cover (same catalog row as story/social illustrations). */
 export async function resolveRomanImagesModel(): Promise<AiModelConfig> {
   try {
@@ -200,6 +152,24 @@ export async function resolveRomanImagesModel(): Promise<AiModelConfig> {
   const fallback = FALLBACK_AI_MODELS.find((m) => m.id === "images-default");
   if (!fallback) {
     throw new Error("Illustrationsmodell (images-default) fehlt im Katalog.");
+  }
+  return fallback;
+}
+
+/**
+ * Layout / typography helper (Mistral Small via layout-default) — e.g. cover title lines.
+ */
+export async function resolveRomanLayoutModel(): Promise<AiModelConfig> {
+  try {
+    const catalog = await loadPromptAdminCatalog({ mergeFallback: true });
+    const model = catalog.models.find((m) => m.id === "layout-default");
+    if (model?.isActive) return model;
+  } catch {
+    // use fallback
+  }
+  const fallback = FALLBACK_AI_MODELS.find((m) => m.id === "layout-default");
+  if (!fallback) {
+    throw new Error("Layout-Modell (layout-default) fehlt im Katalog.");
   }
   return fallback;
 }

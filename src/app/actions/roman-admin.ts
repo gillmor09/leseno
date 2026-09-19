@@ -1,72 +1,49 @@
 "use server";
 
 /**
- * Admin actions for the novel writing pipeline (Gemini + Supabase).
+ * Admin actions for Buch CRUD, cover, and front matter.
+ * Vertical pipeline KI lives in `roman-pipeline.ts` and stage suggest actions.
  */
 
 import { revalidatePath } from "next/cache";
+import type { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import { generateRomanCover } from "@/lib/roman/cover";
+import {
+  emptyRomanEditorial,
+  type RomanEditorial,
+} from "@/lib/roman/editorial";
 import { generateRomanFrontMatter } from "@/lib/roman/front-matter";
-import { generateRomanOutlineFromFoundation } from "@/lib/roman/generate-outline";
 import {
-  applyRomanIdeaToFoundation,
-  chatRomanIdea,
-  type RomanIdeaChatMessage,
-  type RomanIdeaFoundationFill,
-} from "@/lib/roman/idea-finder";
-import { generateMehrteilerBeratung } from "@/lib/roman/mehrteiler-beratung";
-import { generateHarteRegelnForBook } from "@/lib/roman/harte-regeln";
-import { runRomanPhase0 } from "@/lib/roman/phase0";
-import {
-  processNextRomanSzene,
-  advanceRomanSzeneStep,
-  type RomanSzeneProgress,
-  type RomanSzeneStepResult,
-} from "@/lib/roman/process-scene";
+  generateRomanMarketingCopy,
+  marketingCopySourceFromRoman,
+} from "@/lib/roman/marketing-copy";
 import {
   clearRomanCover,
-  clearRomanKapitelContent,
-  clearSzeneContent,
   deleteRoman,
   getRomanKontext,
-  listRomanKontexte,
-  listSzenen,
-  resetSzeneToReady,
   setRomanCover,
   setRomanFrontMatter,
-  setRomanIdeenChat,
   upsertRomanKontext,
 } from "@/lib/roman/repository";
 import type {
+  RomanCharakter,
   RomanKontext,
-  RomanKontextSummary,
-  Szene,
+  RomanSzenenRasterItem,
 } from "@/lib/roman/types";
 import type { ActionResult } from "@/lib/types/actions";
 import {
+  firstZodMessage,
   romanCoverGenerateSchema,
   romanCoverSaveSchema,
   romanFrontMatterGenerateSchema,
   romanFrontMatterSaveSchema,
   romanIdSchema,
-  romanIdeaApplySchema,
-  romanIdeaChatSchema,
-  romanIdeenChatSaveSchema,
-  romanKapitelClearSchema,
-  romanMehrteilerAdviceSchema,
-  romanHarteRegelnGenerateSchema,
-  romanOutlineGenerateSchema,
-  romanPhase0Schema,
-  romanProcessSceneSchema,
-  romanSzeneClearSchema,
+  romanMarketingCopyGenerateSchema,
   romanUpsertSchema,
-  szeneIdSchema,
 } from "@/lib/validations/roman-admin";
 
-function toUpsertInput(
-  data: ReturnType<typeof romanUpsertSchema.parse>,
-) {
+function toUpsertInput(data: z.infer<typeof romanUpsertSchema>) {
   return {
     id: data.id,
     title: data.title,
@@ -77,14 +54,14 @@ function toUpsertInput(
     perspektive: data.perspektive,
     zeitform: data.zeitform,
     tonalitaet: data.tonalitaet,
-    charaktere: data.charaktere,
+    charaktere: data.charaktere as RomanCharakter[],
     weltSchauplaetze: data.weltSchauplaetze,
     weltRegeln: data.weltRegeln,
-    szenenRaster: data.szenenRaster,
+    szenenRaster: data.szenenRaster as RomanSzenenRasterItem[],
     kiRegelwerk: data.kiRegelwerk,
     fanPersonaName: data.fanPersonaName,
     fanPersonaProfil: data.fanPersonaProfil,
-    editorial: data.editorial,
+    editorial: data.editorial as RomanEditorial | undefined,
   };
 }
 
@@ -93,57 +70,12 @@ function revalidateRoman(romanId?: string) {
   if (romanId) revalidatePath(`/admin/roman/${romanId}`);
 }
 
-export async function loadRomanAdminListAction(): Promise<
-  ActionResult<{ romane: RomanKontextSummary[] }>
-> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-  try {
-    const romane = await listRomanKontexte();
-    return { success: true, data: { romane } };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Romane laden fehlgeschlagen.",
-    };
-  }
-}
-
-export async function loadRomanWorkspaceAction(
-  input: unknown,
-): Promise<
-  ActionResult<{ roman: RomanKontext; szenen: Szene[] }>
-> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanIdSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültige ID.",
-    };
-  }
-
-  try {
-    const roman = await getRomanKontext(parsed.data.romanId);
-    if (!roman) {
-      return { success: false, error: "Roman nicht gefunden." };
-    }
-    const szenen = await listSzenen(roman.id);
-    return { success: true, data: { roman, szenen } };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Roman laden fehlgeschlagen.",
-    };
-  }
+/**
+ * List only — do not refresh the open `/admin/roman/[id]` workspace.
+ * Detail revalidation remounts RSC props and jumps the scroll after Speichern.
+ */
+function revalidateRomanListOnly() {
+  revalidatePath("/admin/roman");
 }
 
 /** Save kontext without regenerating the roadmap. */
@@ -157,13 +89,13 @@ export async function saveRomanKontextAction(
   if (!parsed.success) {
     return {
       success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+      error: firstZodMessage(parsed.error),
     };
   }
 
   try {
     const roman = await upsertRomanKontext(toUpsertInput(parsed.data));
-    revalidateRoman(roman.id);
+    revalidateRomanListOnly();
     return { success: true, data: { roman } };
   } catch (error) {
     return {
@@ -176,171 +108,7 @@ export async function saveRomanKontextAction(
   }
 }
 
-/**
- * Phase 0: save foundation/manuscript + Gemini scene roadmap.
- * Long-running — keep one roman per call. Entry open (manuscript and/or fundament).
- */
-export async function runRomanPhase0Action(
-  input: unknown,
-): Promise<
-  ActionResult<{ roman: RomanKontext; szenenCount: number }>
-> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanPhase0Schema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
-    };
-  }
-
-  try {
-    const result = await runRomanPhase0(toUpsertInput(parsed.data));
-    revalidateRoman(result.roman.id);
-    return {
-      success: true,
-      data: { roman: result.roman, szenenCount: result.szenenCount },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Szenen-Roadmap fehlgeschlagen.",
-    };
-  }
-}
-
-/**
- * One LLM phase of the next/in-progress scene (draft | review | revise).
- * Client chains until sceneDone — keeps each HTTP call under ~2 minutes.
- * Returns a slim scene handle (no full draft text) to avoid Next gzip drain leaks.
- */
-export async function advanceRomanSzeneStepAction(
-  input: unknown,
-): Promise<ActionResult<RomanSzeneStepResult>> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanProcessSceneSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe.",
-    };
-  }
-
-  try {
-    const result = await advanceRomanSzeneStep(
-      parsed.data.romanId,
-      parsed.data.modelId,
-    );
-    // Intermediate steps skip revalidate — large RSC payloads worsen gzip listener leaks.
-    if (result.sceneDone || result.done) {
-      revalidateRoman(parsed.data.romanId);
-    }
-    return { success: true, data: result };
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Szenen-Schritt fehlgeschlagen.";
-    console.error("[roman] advanceRomanSzeneStep failed:", message, error);
-    return { success: false, error: message };
-  }
-}
-
-/**
- * Phase 1–3 for the next READY scene (one scene per invocation).
- * Prefer `advanceRomanSzeneStepAction` from the UI (shorter requests).
- */
-export async function processNextRomanSzeneAction(
-  input: unknown,
-): Promise<
-  ActionResult<{
-    done: boolean;
-    szene: RomanSzeneProgress | null;
-    message: string;
-  }>
-> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanProcessSceneSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe.",
-    };
-  }
-
-  try {
-    const result = await processNextRomanSzene(
-      parsed.data.romanId,
-      parsed.data.modelId,
-    );
-    revalidateRoman(parsed.data.romanId);
-    if (!result) {
-      return {
-        success: true,
-        data: {
-          done: true,
-          szene: null,
-          message: "Keine Szene mehr mit Status READY_FOR_WRITING.",
-        },
-      };
-    }
-    return {
-      success: true,
-      data: {
-        done: false,
-        szene: result.szene,
-        message: `Szene Kap. ${result.szene.kapitelNr}/${result.szene.szenenNr} abgeschlossen.`,
-      },
-    };
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Szenen-Pipeline fehlgeschlagen.";
-    console.error("[roman] processNextRomanSzene failed:", message, error);
-    return {
-      success: false,
-      error: message,
-    };
-  }
-}
-
-export async function resetRomanSzeneAction(
-  input: unknown,
-): Promise<ActionResult<{ reset: boolean }>> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = szeneIdSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültige ID.",
-    };
-  }
-
-  try {
-    const reset = await resetSzeneToReady(parsed.data.szeneId);
-    revalidatePath("/admin/roman");
-    return { success: true, data: { reset } };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error ? error.message : "Reset fehlgeschlagen.",
-    };
-  }
-}
-
+/** Delete a roman and cascading scenes. */
 export async function deleteRomanAction(
   input: unknown,
 ): Promise<ActionResult<{ deleted: boolean }>> {
@@ -351,7 +119,7 @@ export async function deleteRomanAction(
   if (!parsed.success) {
     return {
       success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültige ID.",
+      error: firstZodMessage(parsed.error, "Ungültige ID."),
     };
   }
 
@@ -364,133 +132,6 @@ export async function deleteRomanAction(
       success: false,
       error:
         error instanceof Error ? error.message : "Löschen fehlgeschlagen.",
-    };
-  }
-}
-
-/** Clear scene writing content (keep row + briefing) and trim running summary. */
-export async function clearRomanSzeneAction(
-  input: unknown,
-): Promise<
-  ActionResult<{ cleared: boolean; aktuelleZusammenfassung: string }>
-> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanSzeneClearSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültige ID.",
-    };
-  }
-
-  try {
-    const result = await clearSzeneContent({
-      romanId: parsed.data.romanId,
-      szeneId: parsed.data.szeneId,
-    });
-    revalidateRoman(parsed.data.romanId);
-    return {
-      success: true,
-      data: {
-        cleared: true,
-        aktuelleZusammenfassung: result.aktuelleZusammenfassung,
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Inhalt löschen fehlgeschlagen.",
-    };
-  }
-}
-
-/** Clear writing content for all scenes in one chapter; rebuilds summary. */
-export async function clearRomanKapitelAction(
-  input: unknown,
-): Promise<
-  ActionResult<{ clearedCount: number; aktuelleZusammenfassung: string }>
-> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanKapitelClearSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe.",
-    };
-  }
-
-  try {
-    const result = await clearRomanKapitelContent(
-      parsed.data.romanId,
-      parsed.data.kapitelNr,
-    );
-    revalidateRoman(parsed.data.romanId);
-    return {
-      success: true,
-      data: {
-        clearedCount: result.clearedCount,
-        aktuelleZusammenfassung: result.aktuelleZusammenfassung,
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Kapitel-Inhalt löschen fehlgeschlagen.",
-    };
-  }
-}
-
-/**
- * Admin PDF upload → plain text for `manuskript_raw` (Stilbibel stays separate).
- */
-export async function extractRomanPdfAction(
-  formData: FormData,
-): Promise<
-  ActionResult<{ text: string; pageCount: number; fileName: string }>
-> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const file = formData.get("file");
-  if (!(file instanceof File)) {
-    return { success: false, error: "Keine PDF-Datei übergeben." };
-  }
-
-  const name = file.name || "manuskript.pdf";
-  const isPdf =
-    file.type === "application/pdf" ||
-    name.toLowerCase().endsWith(".pdf");
-  if (!isPdf) {
-    return { success: false, error: "Bitte eine PDF-Datei wählen." };
-  }
-
-  try {
-    const { extractTextFromPdfBuffer } = await import(
-      "@/lib/roman/extract-pdf-text"
-    );
-    const buffer = await file.arrayBuffer();
-    const { text, pageCount } = await extractTextFromPdfBuffer(buffer);
-    return {
-      success: true,
-      data: { text, pageCount, fileName: name },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "PDF konnte nicht gelesen werden.",
     };
   }
 }
@@ -514,7 +155,7 @@ export async function generateRomanCoverAction(
   if (!parsed.success) {
     return {
       success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+      error: firstZodMessage(parsed.error),
     };
   }
 
@@ -524,6 +165,16 @@ export async function generateRomanCoverAction(
       return { success: false, error: "Roman nicht gefunden." };
     }
 
+    const ed = roman.editorial;
+    const alterLabel =
+      ed?.zielAlterMin != null || ed?.zielAlterMax != null
+        ? ed.zielAlterMin != null && ed.zielAlterMax != null
+          ? `${ed.zielAlterMin}–${ed.zielAlterMax} Jahre`
+          : ed.zielAlterMin != null
+            ? `ab ${ed.zielAlterMin} Jahre`
+            : `bis ${ed.zielAlterMax} Jahre`
+        : "";
+
     const result = await generateRomanCover({
       title: roman.title,
       genre: roman.genre,
@@ -532,6 +183,9 @@ export async function generateRomanCoverAction(
       weltSchauplaetze: roman.weltSchauplaetze,
       charaktere: roman.charaktere,
       manuskriptRaw: roman.manuskriptRaw,
+      manuskriptText: ed?.manuskriptText ?? "",
+      ideeKurz: ed?.ideeKurz ?? "",
+      alterLabel,
       extraInstruction: parsed.data.extraInstruction,
       skipTitleOverlay: parsed.data.skipTitleOverlay,
     });
@@ -566,7 +220,7 @@ export async function saveRomanCoverAction(
   if (!parsed.success) {
     return {
       success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+      error: firstZodMessage(parsed.error),
     };
   }
 
@@ -600,7 +254,7 @@ export async function clearRomanCoverAction(
   if (!parsed.success) {
     return {
       success: false,
-      error: parsed.error.issues[0]?.message ?? "Ungültige ID.",
+      error: firstZodMessage(parsed.error, "Ungültige ID."),
     };
   }
 
@@ -638,7 +292,7 @@ export async function generateRomanFrontMatterAction(
   if (!parsed.success) {
     return {
       success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+      error: firstZodMessage(parsed.error),
     };
   }
 
@@ -681,7 +335,7 @@ export async function saveRomanFrontMatterAction(
   if (!parsed.success) {
     return {
       success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
+      error: firstZodMessage(parsed.error),
     };
   }
 
@@ -705,194 +359,73 @@ export async function saveRomanFrontMatterAction(
   }
 }
 
-/** Ideen-Finder chat turn (Gemini Flash). */
-export async function romanIdeaChatAction(
-  input: unknown,
-): Promise<ActionResult<{ reply: string }>> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanIdeaChatSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
-    };
-  }
-
-  try {
-    const reply = await chatRomanIdea({
-      history: parsed.data.history as RomanIdeaChatMessage[],
-      userMessage: parsed.data.userMessage,
-    });
-    return { success: true, data: { reply } };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Ideen-Chat fehlgeschlagen.",
-    };
-  }
-}
-
 /**
- * Mistral maps Ideen-Finder chat → foundation steps 1–4 (client applies to form).
+ * Gemini: Klappentext (Amazon-Beschreibung) + Einzeiler (Untertitel / Eyecatcher).
  */
-export async function romanIdeaApplyAction(
+export async function generateRomanMarketingCopyAction(
   input: unknown,
-): Promise<ActionResult<{ fill: RomanIdeaFoundationFill }>> {
+): Promise<
+  ActionResult<{
+    klappentext: string;
+    einzeiler: string;
+    roman: RomanKontext;
+  }>
+> {
   const denied = await denyUnlessAdmin();
   if (denied) return { success: false, error: denied };
 
-  const parsed = romanIdeaApplySchema.safeParse(input);
+  const parsed = romanMarketingCopyGenerateSchema.safeParse(input);
   if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
-    };
+    return { success: false, error: firstZodMessage(parsed.error) };
   }
 
   try {
-    const fill = await applyRomanIdeaToFoundation(
-      parsed.data.messages as RomanIdeaChatMessage[],
-    );
-    return { success: true, data: { fill } };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Übernahme ins Fundament fehlgeschlagen.",
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) {
+      return { success: false, error: "Roman nicht gefunden." };
+    }
+    const source = marketingCopySourceFromRoman(roman);
+    const copy = await generateRomanMarketingCopy(source);
+    const editorial: RomanEditorial = {
+      ...(roman.editorial as RomanEditorial),
+      klappentext: copy.klappentext,
+      einzeiler: copy.einzeiler,
     };
-  }
-}
-
-/** Persist Ideen-Finder chat history. */
-export async function saveRomanIdeenChatAction(
-  input: unknown,
-): Promise<ActionResult<{ saved: boolean }>> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanIdeenChatSaveSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
-    };
-  }
-
-  try {
-    const saved = await setRomanIdeenChat({
-      id: parsed.data.romanId,
-      messages: parsed.data.messages,
+    const saved = await upsertRomanKontext({
+      id: roman.id,
+      title: roman.title,
+      manuskriptRaw: roman.manuskriptRaw,
+      stilbibel: roman.stilbibel,
+      genre: roman.genre,
+      praemisse: roman.praemisse,
+      perspektive: roman.perspektive,
+      zeitform: roman.zeitform,
+      tonalitaet: roman.tonalitaet,
+      charaktere: roman.charaktere,
+      weltSchauplaetze: roman.weltSchauplaetze,
+      weltRegeln: roman.weltRegeln,
+      szenenRaster: roman.szenenRaster,
+      kiRegelwerk: roman.kiRegelwerk,
+      fanPersonaName: roman.fanPersonaName,
+      fanPersonaProfil: roman.fanPersonaProfil,
+      editorial,
     });
     revalidateRoman(parsed.data.romanId);
-    return { success: true, data: { saved } };
+    return {
+      success: true,
+      data: {
+        klappentext: copy.klappentext,
+        einzeiler: copy.einzeiler,
+        roman: saved,
+      },
+    };
   } catch (error) {
     return {
       success: false,
       error:
         error instanceof Error
           ? error.message
-          : "Ideen-Chat speichern fehlgeschlagen.",
-    };
-  }
-}
-
-/**
- * Gemini: foundation → editable outline/exposé for manuskriptRaw (before Phase 0).
- */
-export async function generateRomanOutlineAction(
-  input: unknown,
-): Promise<ActionResult<{ outline: string }>> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanOutlineGenerateSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
-    };
-  }
-
-  try {
-    const outline = await generateRomanOutlineFromFoundation(parsed.data);
-    return { success: true, data: { outline } };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Outline-Generierung fehlgeschlagen.",
-    };
-  }
-}
-
-/**
- * Verlagsberatung: Einzelband vs. Mehrteiler (editierbar im Editorial-Profil).
- */
-export async function generateRomanMehrteilerAdviceAction(
-  input: unknown,
-): Promise<ActionResult<{ advice: string }>> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanMehrteilerAdviceSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
-    };
-  }
-
-  try {
-    const advice = await generateMehrteilerBeratung(parsed.data);
-    return { success: true, data: { advice } };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Mehrteiler-Beratung fehlgeschlagen.",
-    };
-  }
-}
-
-/**
- * Book-specific hard rules (Claude Sonnet 5, Gemini 3.8 Flash fallback).
- * Replaces the editable harteRegeln list — user reviews, then Kontext speichern.
- */
-export async function generateRomanHarteRegelnAction(
-  input: unknown,
-): Promise<ActionResult<{ rules: string[]; modelLabel: string }>> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanHarteRegelnGenerateSchema.safeParse(input);
-  if (!parsed.success) {
-    return {
-      success: false,
-      error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
-    };
-  }
-
-  try {
-    const result = await generateHarteRegelnForBook(parsed.data);
-    return { success: true, data: result };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Harte Regeln erzeugen fehlgeschlagen.",
+          : "Marketing-Text fehlgeschlagen.",
     };
   }
 }

@@ -3,14 +3,7 @@ import { notFound } from "next/navigation";
 import { RomanAdminWorkspace } from "@/components/features/admin/roman-admin-workspace";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
-import {
-  listRomanSchreibModels,
-  resolveDefaultRomanSchreibModel,
-} from "@/lib/roman/model";
-import {
-  getRomanKontext,
-  listSzenen,
-} from "@/lib/roman/repository";
+import { getRomanKontext } from "@/lib/roman/repository";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 type PageProps = {
@@ -25,40 +18,28 @@ export async function generateMetadata({
     const roman = await getRomanKontext(id);
     return {
       title: roman
-        ? `${roman.title} — Roman-Pipeline`
-        : "Roman — Leseno Admin",
+        ? `${roman.title} — Buch`
+        : "Buch — Leseno Admin",
     };
   } catch {
-    return { title: "Roman — Leseno Admin" };
+    return { title: "Buch — Leseno Admin" };
   }
 }
 
-/** Author + dual feedback + revision can exceed default timeouts. */
-export const maxDuration = 600;
+/** Coach + Redakteur + Szenenplot-Kapitel können lange brauchen. */
+export const maxDuration = 800;
 
 /**
- * Existing roman: Phase 0 re-run + iterative scene writing.
+ * Book detail: Typ + Idee Q&A; later tabs placeholders.
  */
 export default async function RomanAdminDetailPage({ params }: PageProps) {
   const { id } = await params;
   const canSave = hasServiceRoleConfig();
 
   let roman: Awaited<ReturnType<typeof getRomanKontext>> = null;
-  let szenen: Awaited<ReturnType<typeof listSzenen>> = [];
-  let schreibModels: Awaited<ReturnType<typeof listRomanSchreibModels>> = [];
-  let defaultSchreibModelId = "story-default";
-
   try {
     roman = await getRomanKontext(id);
     if (!roman) notFound();
-    const [scenes, models, defaultModel] = await Promise.all([
-      listSzenen(id),
-      listRomanSchreibModels(),
-      resolveDefaultRomanSchreibModel(),
-    ]);
-    szenen = scenes;
-    schreibModels = models;
-    defaultSchreibModelId = defaultModel.modelSlug;
   } catch {
     notFound();
   }
@@ -76,15 +57,8 @@ export default async function RomanAdminDetailPage({ params }: PageProps) {
           </h1>
           <div className="mt-8">
             <RomanAdminWorkspace
-              initialRoman={roman}
-              initialSzenen={szenen}
+              initialRoman={roman!}
               canSave={canSave}
-              schreibModels={schreibModels.map((m) => ({
-                id: m.modelSlug,
-                label: m.label,
-                modelSlug: m.modelSlug,
-              }))}
-              defaultSchreibModelId={defaultSchreibModelId}
             />
           </div>
         </section>

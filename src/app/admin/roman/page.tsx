@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { RomanAdminList } from "@/components/features/admin/roman-admin-list";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
@@ -6,18 +7,18 @@ import { listRomanKontexte } from "@/lib/roman/repository";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
-  title: "Roman-Pipeline — Leseno Admin",
-  description: "Manuskript → Szenen-Roadmap → iterative KI-Szenen.",
+  title: "Buch — Leseno Admin",
+  description: "Buchprojekte und KI-Rollen der Buch-Pipeline.",
 };
 
 /**
- * Admin index for the internal novel writing pipeline.
+ * Admin index for the internal book writing pipeline.
  */
 export default async function RomanAdminPage() {
   let romane: Awaited<ReturnType<typeof listRomanKontexte>> = [];
   let canSave = false;
   let readOnlyNotice: string | undefined =
-    "Vorschau: Romane konnten nicht geladen werden. Bitte Migration `20260911160000_roman_pipeline.sql` ausführen.";
+    "Vorschau: Bücher konnten nicht geladen werden. Bitte Migration `20260911160000_roman_pipeline.sql` ausführen.";
 
   try {
     romane = await listRomanKontexte();
@@ -34,7 +35,7 @@ export default async function RomanAdminPage() {
         "Vorschau: `SUPABASE_SERVICE_ROLE_KEY` fehlt. Bitte `.env.local` prüfen.";
     } else {
       const message =
-        error instanceof Error ? error.message : "Roman-Pipeline nicht verfügbar.";
+        error instanceof Error ? error.message : "Buch-Modul nicht verfügbar.";
       readOnlyNotice = `Vorschau: ${message}`;
     }
   }
@@ -48,14 +49,20 @@ export default async function RomanAdminPage() {
             Admin
           </p>
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            Roman-Pipeline
+            Buch
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Internes Werkzeug: Manuskript analysieren, Szenen-Roadmap in
-            Supabase speichern, dann Szene für Szene mit Autor, Lektor und
-            Testleser (Gemini) ausarbeiten. Nicht Teil der öffentlichen
-            Kinder-App.
+            Internes Werkzeug für Buchprojekte. Pipeline wird neu aufgebaut —
+            KI-Rollen und Prompts verwaltest du hier im Modul.
           </p>
+          <div className="mt-4">
+            <Link
+              href="/admin/roman/rollen"
+              className="text-sm font-bold text-orange-800 hover:underline"
+            >
+              KI-Rollen verwalten
+            </Link>
+          </div>
           <div className="mt-8">
             <RomanAdminList
               initialRomane={romane}

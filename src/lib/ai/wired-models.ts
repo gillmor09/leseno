@@ -11,6 +11,7 @@ export type WiredAiEndpoint = {
     | "gemini-image"
     | "gemini-video"
     | "claude"
+    | "openai"
     | "openai-compatible"
     | "ionos-image"
     | "openai-tts"
@@ -47,6 +48,18 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     usage: "Text: Geschichten / Fakten (Anthropic)",
   },
   {
+    modelSlug: "gpt-6-astra",
+    provider: "openai",
+    label: "GPT-6 Astra (OpenAI)",
+    usage: "Text: starkes Reasoning (Roman / Admin)",
+  },
+  {
+    modelSlug: "gpt-5.6-luna",
+    provider: "openai",
+    label: "GPT-5.6 Luna (OpenAI)",
+    usage: "Text: schnell/günstig (Roman / Admin, hohe Volumen)",
+  },
+  {
     modelSlug: "gemini-3.1-flash-image",
     provider: "gemini-image",
     label: "Gemini 3.1 Flash Image (Nano Banana 2)",
@@ -74,7 +87,7 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     modelSlug: "openai/gpt-oss-120b",
     provider: "openai-compatible",
     label: "GPT-OSS 120B (IONOS)",
-    usage: "Fakt „Warum?“ / Vertiefung",
+    usage: "Fakt „Warum?“ / Vertiefung · Roman-Reifegrad (Bewerter)",
   },
   {
     modelSlug: "mistralai/Mistral-Small-24B-Instruct",
@@ -163,7 +176,12 @@ export function isTtsProvider(provider: string): boolean {
   return TTS_PROVIDERS.has(provider.trim().toLowerCase());
 }
 
-const TEXT_LLM_PROVIDERS = new Set(["gemini", "claude", "openai-compatible"]);
+const TEXT_LLM_PROVIDERS = new Set([
+  "gemini",
+  "claude",
+  "openai",
+  "openai-compatible",
+]);
 
 /** True when the provider is a text LLM (not image / TTS). */
 export function isTextLlmProvider(provider: string): boolean {

@@ -4,6 +4,7 @@
 
 import {
   buildEditorialMustBlock,
+  buildStrukturMustBlock,
   type RomanEditorial,
 } from "@/lib/roman/editorial";
 import type {
@@ -12,13 +13,21 @@ import type {
   RomanUpsertInput,
 } from "@/lib/roman/types";
 
+/**
+ * Hard rule for all prompts after Idee: person names only from Steckbriefe.
+ * Idea dossier / Finder chat may still contain placeholder or outdated names.
+ */
+export const ROMAN_NAME_SOURCE_RULE = `Figurennamen (HARTE REGEL): Verbindlich sind NUR die Namen aus den Charakter-Steckbriefen (Fundament). Namen in Ideendokumentation, Ideen-Finder-Chat oder sonstigen Ideen-Texten sind Platzhalter/veraltet — hart ignorieren, nicht übernehmen, nicht kritisieren, nicht angleichen. Rollen/Figurenkerne aus der Idee bleiben inhaltlich nutzbar; die Bezeichnung der Person kommt aus dem Steckbrief.`;
+
 export function emptyCharakter(): RomanCharakter {
   return {
     name: "",
     alter: "",
     rolle: "",
+    wesenszuege: "",
     motivation: "",
     schwaeche: "",
+    bogen: "",
     sprachstil: "",
   };
 }
@@ -59,6 +68,8 @@ export function buildStyleMustBlocks(roman: {
   if (roman.editorial) {
     const editorialBlock = buildEditorialMustBlock(roman.editorial);
     if (editorialBlock) parts.push(editorialBlock);
+    const strukturBlock = buildStrukturMustBlock(roman.editorial);
+    if (strukturBlock) parts.push(strukturBlock);
   }
   parts.push(`## MUSS — KI-Regelwerk (verbindlich, keine Ausnahme)
 Jeder Satz, jede Formulierung und jede Idee muss zu diesen Regeln passen. Bei Konflikt mit Eleganz, „literarischem“ Ton oder Dramaturgie gewinnen DIESE Regeln.
@@ -89,12 +100,25 @@ export function suggestFanPersona(input: {
 Du liest viel in genau diesem Genre, kennst typische Tropes und wirst ungeduldig bei Leerlauf.
 Tonalität, die dich anspricht: ${ton}.
 ${input.praemisse.trim() ? `Zur Prämisse dieses Buchs: ${input.praemisse.trim()}` : ""}
-Du gibst ehrliches Leser-Feedback: Emotionen, Spannung, Identifikation, Lesefluss.
-Du bist keine Lektor:in — dich interessiert, ob du die Szene weiterlesen würdest.`,
+Nenne 2–4 Lieblingsbücher / Autor:innen in diesem Genre als persönlichen Maßstab (realistisch, deutsch oder international bekannt).
+Du gibst ehrliches, auch kritisches Leser-Feedback: Emotionen, Spannung, Identifikation, Lesefluss — und wo es hinter deinen Lieblingsbüchern zurückbleibt.
+Du bist keine Lektor:in — dich interessiert, ob du weiterlesen und das Buch weiterempfehlen würdest.`,
   };
 }
 
-function formatCharaktere(list: RomanCharakter[]): string {
+/** True when at least one sheet has meaningful content. */
+export function hasFilledCharaktere(list: RomanCharakter[]): boolean {
+  return list.some(
+    (c) =>
+      c.name.trim().length >= 2 ||
+      c.rolle.trim().length >= 2 ||
+      c.motivation.trim().length >= 20 ||
+      (c.wesenszuege ?? "").trim().length >= 20,
+  );
+}
+
+/** Full character sheets for prompts / gate review. */
+export function formatCharaktere(list: RomanCharakter[]): string {
   const rows = list.filter((c) => c.name.trim() || c.rolle.trim());
   if (!rows.length) return "";
   return rows
@@ -103,16 +127,19 @@ function formatCharaktere(list: RomanCharakter[]): string {
         c.name && `Name: ${c.name}`,
         c.alter && `Alter: ${c.alter}`,
         c.rolle && `Rolle: ${c.rolle}`,
-        c.motivation && `Motivation/Ziel: ${c.motivation}`,
-        c.schwaeche && `Schwäche/Konflikt: ${c.schwaeche}`,
-        c.sprachstil && `Sprachstil: ${c.sprachstil}`,
+        c.wesenszuege && `Wesenszüge: ${c.wesenszuege}`,
+        c.motivation && `Ziel/Motiv: ${c.motivation}`,
+        c.schwaeche && `Schwäche/Hindernis: ${c.schwaeche}`,
+        c.bogen && `Bogen/Wandel: ${c.bogen}`,
+        c.sprachstil && `Tonalität/Sprache: ${c.sprachstil}`,
       ].filter(Boolean);
       return `Figur ${i + 1}:\n${parts.join("\n")}`;
     })
     .join("\n\n");
 }
 
-function formatSzenenRaster(list: RomanSzenenRasterItem[]): string {
+/** Scene grid rows for prompts / gate review. */
+export function formatSzenenRaster(list: RomanSzenenRasterItem[]): string {
   const rows = list.filter(
     (r) => r.szeneId.trim() || r.szenenziel.trim() || r.ort.trim(),
   );
@@ -179,7 +206,10 @@ export function buildRomanPromptContext(
   }
 
   const chars = formatCharaktere(roman.charaktere);
-  if (chars) blocks.push(`## Charakter-Steckbriefe\n${chars}`);
+  if (chars) {
+    blocks.push(`## Charakter-Steckbriefe\n${chars}`);
+    blocks.push(`## MUSS — Figurennamen\n${ROMAN_NAME_SOURCE_RULE}`);
+  }
 
   const welt = [
     roman.weltSchauplaetze && `Hauptschauplätze:\n${roman.weltSchauplaetze}`,
@@ -231,8 +261,10 @@ export function parseCharaktereJson(value: unknown): RomanCharakter[] {
       name: String(row.name ?? ""),
       alter: String(row.alter ?? ""),
       rolle: String(row.rolle ?? ""),
+      wesenszuege: String(row.wesenszuege ?? row.wesenszüge ?? ""),
       motivation: String(row.motivation ?? ""),
       schwaeche: String(row.schwaeche ?? ""),
+      bogen: String(row.bogen ?? ""),
       sprachstil: String(row.sprachstil ?? ""),
     };
   });
