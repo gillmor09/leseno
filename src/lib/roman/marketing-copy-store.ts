@@ -51,6 +51,7 @@ export async function patchRomanMarketingCopy(input: {
   id: string;
   klappentext: string;
   einzeiler: string;
+  amazonKeywords: string[];
 }): Promise<void> {
   const roman = await getRomanKontext(input.id, { omitCover: true });
   if (!roman) throw new Error("Roman nicht gefunden.");
@@ -59,6 +60,10 @@ export async function patchRomanMarketingCopy(input: {
     ...(roman.editorial ?? emptyRomanEditorial()),
     klappentext: input.klappentext.slice(0, 4_000),
     einzeiler: input.einzeiler.slice(0, 120),
+    amazonKeywords: input.amazonKeywords
+      .map((k) => k.trim().slice(0, 50))
+      .filter((k) => k.length >= 2)
+      .slice(0, 7),
   };
   await setRomanEditorial(roman.id, editorial);
 }

@@ -1,14 +1,15 @@
 "use server";
 
 /**
- * Verkaufstexte (Klappentext + Einzeiler) — isolated from roman-admin.ts
- * so Turbopack/cover payload issues cannot break this path.
+ * Verkaufstexte (Klappentext + Einzeiler + Amazon-Keywords) — isolated from
+ * roman-admin.ts so Turbopack/cover payload issues cannot break this path.
  */
 
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
   generateRomanMarketingCopy,
+  normalizeAmazonKeywords,
 } from "@/lib/roman/marketing-copy";
 import {
   getRomanMarketingSource,
@@ -26,6 +27,7 @@ const saveSchema = z.object({
   romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
   klappentext: z.string().max(4_000),
   einzeiler: z.string().max(120),
+  amazonKeywords: z.array(z.string().max(50)).max(7).default([]),
 });
 
 function alterLabelFromEditorial(ed: {
@@ -42,7 +44,13 @@ function alterLabelFromEditorial(ed: {
 
 export async function generateRomanMarketingCopyAction(
   input: unknown,
-): Promise<ActionResult<{ klappentext: string; einzeiler: string }>> {
+): Promise<
+  ActionResult<{
+    klappentext: string;
+    einzeiler: string;
+    amazonKeywords: string[];
+  }>
+> {
   const denied = await denyUnlessAdmin();
   if (denied) return { success: false, error: denied };
 
@@ -75,6 +83,7 @@ export async function generateRomanMarketingCopyAction(
       id: roman.id,
       klappentext: copy.klappentext,
       einzeiler: copy.einzeiler,
+      amazonKeywords: copy.amazonKeywords,
     });
     revalidateRomanAdminLists();
 
@@ -83,6 +92,7 @@ export async function generateRomanMarketingCopyAction(
       data: {
         klappentext: copy.klappentext,
         einzeiler: copy.einzeiler,
+        amazonKeywords: copy.amazonKeywords,
       },
     };
   } catch (error) {
@@ -113,6 +123,7 @@ export async function saveRomanMarketingCopyAction(
       id: parsed.data.romanId,
       klappentext: parsed.data.klappentext,
       einzeiler: parsed.data.einzeiler,
+      amazonKeywords: normalizeAmazonKeywords(parsed.data.amazonKeywords),
     });
     revalidateRomanAdminLists();
     return { success: true, data: { saved: true } };

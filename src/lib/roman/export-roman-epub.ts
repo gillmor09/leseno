@@ -141,7 +141,7 @@ h1.chapter {
 p {
   margin: 0 0 0.85em;
   text-indent: 1.2em;
-  text-align: justify;
+  text-align: left;
 }
 .titlepage p, .copyright p, .dedication p, .epigraph p, h1.chapter + p {
   text-indent: 0;
@@ -164,28 +164,71 @@ p {
 }
 .abenteuer-wissen {
   margin: 1.25em 0 0;
-  padding-top: 1em;
-  border-top: 1px solid #ccc;
+  padding: 1em 1.1em;
+  background: #f5fdf9;
+  border: 1px solid #d1fae5;
+  border-radius: 0.75em;
+  page-break-inside: avoid;
 }
 .abenteuer-wissen h2 {
   font-size: 1em;
   font-weight: bold;
-  margin: 0 0 0.4em;
+  margin: 0 0 0.35em;
   text-indent: 0;
+  color: #c2410c;
 }
 .abenteuer-wissen .hint {
   font-size: 0.95em;
-  margin: 0 0 0.75em;
+  margin: 0 0 1.25em;
   text-indent: 0;
+  color: #a16207;
 }
 .abenteuer-wissen ol {
   margin: 0;
   padding-left: 1.4em;
+  list-style: none;
 }
 .abenteuer-wissen li {
-  margin: 0 0 0.45em;
+  margin: 0 0 1.25em;
   text-indent: 0;
   text-align: left;
+  padding-left: 0.2em;
+  font-size: 14pt;
+}
+.abenteuer-wissen li:last-child {
+  margin-bottom: 0;
+}
+.abenteuer-wissen li::before {
+  content: "✓ ";
+  color: #16a34a;
+  font-weight: bold;
+}
+.toc {
+  page-break-before: always;
+  page-break-after: always;
+}
+.toc h1 {
+  font-size: 1.4em;
+  font-weight: bold;
+  text-align: left;
+  margin: 0 0 1em;
+  page-break-before: avoid;
+}
+.toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.toc li {
+  margin: 0;
+  text-indent: 0;
+  line-height: 2;
+}
+.toc a {
+  color: #9a3412;
+  font-weight: bold;
+  text-decoration: none;
+  line-height: 2;
 }
 `;
 
@@ -193,7 +236,7 @@ type SpineItem = {
   id: string;
   href: string;
   title: string;
-  landmark?: "titlepage" | "bodymatter";
+  landmark?: "titlepage" | "bodymatter" | "toc";
 };
 
 type ManifestExtra = {
@@ -242,7 +285,7 @@ function chapterBodyXhtml(
   );
   if (fakten.length > 0) {
     parts.push(`<aside class="abenteuer-wissen">
-  <h2>Abenteuer-Wissen</h2>
+  <h2>💡 Abenteuer-Wissen</h2>
   <p class="hint">Was du aus diesem Abenteuer mitnimmst:</p>
   <ol>
 ${fakten
@@ -396,6 +439,34 @@ export async function buildRomanEpubBlob(
     }
   }
 
+  // Readable TOC page (clickable links) before chapter 1 — separate from nav.xhtml.
+  {
+    const tocItems = chapters
+      .map((chapter) => {
+        const href = `chapter-${String(chapter.number).padStart(2, "0")}.xhtml`;
+        return `    <li><a href="${href}">${escapeXml(chapterHeadingLabel(chapter))}</a></li>`;
+      })
+      .join("\n");
+    oebps.file(
+      "toc.xhtml",
+      xhtmlDoc(
+        "Inhaltsverzeichnis",
+        `<section class="toc" epub:type="toc">
+  <h1>Inhaltsverzeichnis</h1>
+  <ol>
+${tocItems}
+  </ol>
+</section>`,
+      ),
+    );
+    spine.push({
+      id: "toc",
+      href: "toc.xhtml",
+      title: "Inhaltsverzeichnis",
+      landmark: "toc",
+    });
+  }
+
   let firstChapter = true;
   for (const chapter of chapters) {
     const href = `chapter-${String(chapter.number).padStart(2, "0")}.xhtml`;
@@ -428,7 +499,12 @@ export async function buildRomanEpubBlob(
   }
 
   const navToc = spine
-    .filter((s) => s.id.startsWith("chapter-") || s.landmark === "titlepage")
+    .filter(
+      (s) =>
+        s.id.startsWith("chapter-") ||
+        s.id === "toc" ||
+        s.landmark === "titlepage",
+    )
     .map(
       (s) =>
         `    <li><a href="${s.href}">${escapeXml(s.title)}</a></li>`,
@@ -439,7 +515,11 @@ export async function buildRomanEpubBlob(
     .filter((s) => s.landmark)
     .map((s) => {
       const type =
-        s.landmark === "titlepage" ? "titlepage" : "bodymatter";
+        s.landmark === "titlepage"
+          ? "titlepage"
+          : s.landmark === "toc"
+            ? "toc"
+            : "bodymatter";
       return `    <li><a epub:type="${type}" href="${s.href}">${escapeXml(s.title)}</a></li>`;
     })
     .join("\n");

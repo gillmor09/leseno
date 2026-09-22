@@ -68,6 +68,7 @@ import {
   applyCleverThemaTitlesToManuskript,
   hasFilledCleverUnterthemen,
 } from "@/lib/roman/clever-unterthemen";
+import { buildCleverThemaStanceForThema } from "@/lib/roman/clever-thema-stance";
 import { hasFilledWelt } from "@/lib/roman/suggest-welt";
 import type {
   RomanCharakter,
@@ -242,7 +243,7 @@ export function RomanAdminWorkspace({
     expose.trim().length >= 80 ||
     (hasFilledCharaktere(charaktere) && hasFilledWelt(welt));
   const hasSzenenplotDoc = isCleverErzaehlt
-    ? hasFilledCleverUnterthemen(editorial.cleverUnterthemen) ||
+    ? hasFilledCleverUnterthemen(editorial.cleverUnterthemen, editorial) ||
       szenenplot.trim().length >= 40
     : szenenplot.trim().length >= 80;
 
@@ -275,7 +276,7 @@ export function RomanAdminWorkspace({
         hasFilledWelt(welt) &&
         hasFilledExpose(expose),
       outline: isCleverErzaehlt
-        ? hasFilledCleverUnterthemen(editorial.cleverUnterthemen)
+        ? hasFilledCleverUnterthemen(editorial.cleverUnterthemen, editorial)
         : hasFilledSzenenplot(szenenplot),
       schreiben: hasFilledManuskript(manuskript),
       export:
@@ -379,6 +380,11 @@ export function RomanAdminWorkspace({
     if (isCleverErzaehlt) {
       nextEditorial.richtungen = [];
       nextEditorial.marktanalyse = null;
+      nextEditorial.cleverThemaStance =
+        fundament.cleverThemaStance ??
+        (fundament.genre.trim()
+          ? buildCleverThemaStanceForThema(fundament.genre)
+          : null);
     }
     setEditorial(nextEditorial);
     const directionTon = isCleverErzaehlt
@@ -1347,6 +1353,7 @@ export function RomanAdminWorkspace({
                       ...prev,
                       klappentext: patch.klappentext,
                       einzeiler: patch.einzeiler,
+                      amazonKeywords: patch.amazonKeywords,
                     }));
                     setRoman((prev) => ({
                       ...prev,
@@ -1354,6 +1361,7 @@ export function RomanAdminWorkspace({
                         ...(prev.editorial ?? emptyRomanEditorial()),
                         klappentext: patch.klappentext,
                         einzeiler: patch.einzeiler,
+                        amazonKeywords: patch.amazonKeywords,
                       },
                     }));
                   }}

@@ -35,7 +35,7 @@ const MARKTANALYSE_STEPS = [
 const CLEVER_UNTERTHEMEN_STEPS = [
   "Thema und Altersgruppe werden gelesen …",
   "Wissenssammler recherchiert (Google Search) …",
-  "10 Unterthemen werden chronologisch sortiert …",
+  "Unterthemen werden chronologisch sortiert …",
   "Fakten je Kapitel werden verdichtet …",
   "Unterthemen werden gespeichert …",
 ] as const;
@@ -354,7 +354,7 @@ function footerForVariant(variant: WaitVariant) {
     case "manuskript-chapter-critique":
       return "Nur Analyse — Manuskript bleibt unverändert. Tab offen lassen.";
     case "clever-unterthemen":
-      return "Wissenssammler: 10 Unterthemen + Fakten. Tab offen lassen.";
+      return "Wissenssammler: Unterthemen + Fakten. Tab offen lassen.";
     case "clever-faktencheck":
       return "Faktenchecker prüft jeden Fakt einzeln. Tab offen lassen.";
     case "clever-fakten-ersetzen":

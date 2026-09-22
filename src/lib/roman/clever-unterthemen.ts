@@ -1,11 +1,13 @@
 /**
- * Clever erzählt „Unterthemen“: 10 chapters with age-based fact counts
+ * Clever erzählt „Unterthemen“: age-based chapter + fact counts
  * via KI-Rolle `clever_wissenssammler` (+ Google Search),
  * and per-chapter Faktencheck via `clever_faktenchecker`.
+ * Manual chapters may go up to `CLEVER_KAPITEL_MAX`.
  */
 
 import { generateText } from "@/lib/ai/provider";
 import { formatCleverGeschichteBrief } from "@/lib/roman/clever-erzaehlt";
+import { formatCleverThemaStanceBrief } from "@/lib/roman/clever-thema-stance";
 import type {
   CleverFaktCheck,
   CleverFaktCheckStatus,
@@ -29,6 +31,9 @@ export type {
   CleverUnterthemen,
 };
 
+/** Hard cap including manually added chapters. */
+export const CLEVER_KAPITEL_MAX = 16;
+
 /** 8–10 → 5 Fakten; 10–12 → 10 Fakten. */
 export function cleverFaktenProKapitel(
   editorial: Pick<RomanEditorial, "zielAlterMin" | "zielAlterMax">,
@@ -40,6 +45,17 @@ export function cleverFaktenProKapitel(
   return 5;
 }
 
+/** 8–10 → 12 Kapitel; 10–12 → 10 Kapitel (Wissenssammler-Soll). */
+export function cleverKapitelSoll(
+  editorial: Pick<RomanEditorial, "zielAlterMin" | "zielAlterMax">,
+): 10 | 12 {
+  const max = editorial.zielAlterMax;
+  if (max != null && max <= 10) return 12;
+  const min = editorial.zielAlterMin;
+  if (min != null && min >= 10) return 10;
+  return 12;
+}
+
 /**
  * Length mandate for Abenteuer-Wissen facts (Wissenssammler / replace / Faktencheck).
  * ~30–50 German words ≈ one dense, checkable paragraph — not a half-sentence.
@@ -49,8 +65,35 @@ export const CLEVER_FAKT_LENGTH_MANDATE =
 
 export function hasFilledCleverUnterthemen(
   doc: CleverUnterthemen | null | undefined,
+  editorial?: Pick<RomanEditorial, "zielAlterMin" | "zielAlterMax">,
 ): boolean {
-  return Boolean(doc && doc.kapitel.length === 10);
+  if (!doc?.kapitel.length) return false;
+  const soll = editorial ? cleverKapitelSoll(editorial) : 10;
+  return doc.kapitel.length >= soll;
+}
+
+/** Append one empty Unterthema chapter (title placeholder, no facts yet). */
+export function appendEmptyCleverKapitel(
+  doc: CleverUnterthemen,
+): CleverUnterthemen {
+  if (doc.kapitel.length >= CLEVER_KAPITEL_MAX) {
+    throw new Error(
+      `Maximal ${CLEVER_KAPITEL_MAX} Kapitel — Limit erreicht.`,
+    );
+  }
+  const nummer =
+    doc.kapitel.reduce((m, k) => Math.max(m, k.nummer), 0) + 1;
+  const titel = `Neues Unterthema ${nummer}`;
+  const kapitel: CleverUnterthemaKapitel = {
+    nummer,
+    titel,
+    fakten: [],
+    ...emptyKapitelChecks([]),
+  };
+  return {
+    ...doc,
+    kapitel: [...doc.kapitel, kapitel],
+  };
 }
 
 function emptyKapitelChecks(fakten: string[]): Pick<
@@ -88,7 +131,7 @@ export function parseCleverUnterthemen(raw: unknown): CleverUnterthemen | null {
   const faktenProKapitel = Number(row.faktenProKapitel);
   const kapitelRaw = Array.isArray(row.kapitel) ? row.kapitel : [];
   const kapitel: CleverUnterthemaKapitel[] = [];
-  for (const item of kapitelRaw.slice(0, 12)) {
+  for (const item of kapitelRaw.slice(0, CLEVER_KAPITEL_MAX)) {
     if (!item || typeof item !== "object") continue;
     const k = item as Record<string, unknown>;
     const titel = String(k.titel ?? "").trim();
@@ -245,6 +288,7 @@ function extractJsonObject(raw: string): unknown {
 function parseKapitelFromAi(
   raw: unknown,
   faktenSoll: number,
+  kapitelSoll: number,
 ): CleverUnterthemaKapitel[] {
   if (!raw || typeof raw !== "object") return [];
   const list = Array.isArray((raw as { kapitel?: unknown }).kapitel)
@@ -253,7 +297,7 @@ function parseKapitelFromAi(
       ? raw
       : [];
   const out: CleverUnterthemaKapitel[] = [];
-  for (const item of list.slice(0, 10)) {
+  for (const item of list.slice(0, kapitelSoll)) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
     const titel = String(row.titel ?? row.title ?? "").trim();
@@ -276,7 +320,7 @@ function parseKapitelFromAi(
 }
 
 /**
- * Wissenssammler: exactly 10 subtopics + age-based facts, chronologically/logically ordered.
+ * Wissenssammler: age-based subtopic count + facts, chronologically/logically ordered.
  */
 export async function suggestCleverUnterthemen(input: {
   thema: string;
@@ -287,16 +331,20 @@ export async function suggestCleverUnterthemen(input: {
     throw new Error("Thema fehlt — bitte in Basics setzen.");
   }
   const faktenSoll = cleverFaktenProKapitel(input.editorial);
+  const kapitelSoll = cleverKapitelSoll(input.editorial);
   const alter =
     input.editorial.zielAlterMin != null &&
     input.editorial.zielAlterMax != null
       ? `${input.editorial.zielAlterMin}–${input.editorial.zielAlterMax} Jahre`
       : "Zielalter laut Buch";
   const laengeBrief = formatCleverGeschichteBrief(input.editorial);
+  const stanceBrief = formatCleverThemaStanceBrief(
+    input.editorial.cleverThemaStance,
+  );
   const { rolle, model } = await resolveRomanKiRolle("clever_wissenssammler");
 
   const userText = `# Aufgabe
-Erstelle für das Wissensgebiet unten GENAU 10 Kapitel-Unterthemen.
+Erstelle für das Wissensgebiet unten GENAU ${kapitelSoll} Kapitel-Unterthemen.
 Jedes Unterthema eignet sich als Stoff für eine eigene Kurzgeschichte.
 Sortiere chronologisch (oder logisch von grundlegend → aufbauend).
 
@@ -309,17 +357,19 @@ ${input.editorial.lesestufe ? `Lesestufe: ${input.editorial.lesestufe}` : ""}
 
 ${laengeBrief ? `# Buch-Vorgaben (Länge/Stil — nur Kontext, keine Geschichten schreiben)\n${laengeBrief}` : ""}
 
+${stanceBrief ? `${stanceBrief}\n` : ""}
 # Fakten
 Pro Unterthema GENAU ${faktenSoll} belastbare, altersgerechte Fakten.
 ${CLEVER_FAKT_LENGTH_MANDATE}
 Nutze Google Search. Keine erfundenen „Fakten“.
+Framing der Fakten: zur Themen-Haltung passend (würdigen + orientieren), nicht als Verbots- oder Schockliste.
 
 # Ausgabe
 NUR JSON, Schema:
-{"kapitel":[{"nummer":1,"titel":"…","fakten":["…", … ${faktenSoll} Stück]}, … genau 10 Einträge]}
+{"kapitel":[{"nummer":1,"titel":"…","fakten":["…", … ${faktenSoll} Stück]}, … genau ${kapitelSoll} Einträge]}
 
 Regeln:
-- Genau 10 kapitel, nummer 1–10.
+- Genau ${kapitelSoll} kapitel, nummer 1–${kapitelSoll}.
 - Pro kapitel genau ${faktenSoll} fakten (Strings, je ca. 30–50 Wörter).
 - Titel = Unterthema (kein ganzer Satz, kein Spoiler der Geschichte).
 - Keine fertigen Geschichten, keine Dialoge.
@@ -344,10 +394,10 @@ Regeln:
     );
   }
 
-  const kapitel = parseKapitelFromAi(parsed, faktenSoll);
-  if (kapitel.length !== 10) {
+  const kapitel = parseKapitelFromAi(parsed, faktenSoll, kapitelSoll);
+  if (kapitel.length !== kapitelSoll) {
     throw new Error(
-      `Es wurden ${kapitel.length} statt 10 Unterthemen geliefert. Bitte erneut versuchen.`,
+      `Es wurden ${kapitel.length} statt ${kapitelSoll} Unterthemen geliefert. Bitte erneut versuchen.`,
     );
   }
 
@@ -410,6 +460,9 @@ export async function checkCleverUnterthemaKapitel(input: {
       ? `${input.editorial.zielAlterMin}–${input.editorial.zielAlterMax} Jahre`
       : "Zielalter laut Buch";
   const { rolle, model } = await resolveRomanKiRolle("clever_faktenchecker");
+  const stanceBrief = formatCleverThemaStanceBrief(
+    input.editorial.cleverThemaStance,
+  );
 
   const faktenList = kapitel.fakten
     .map((f, i) => `${i + 1}. ${f}`)
@@ -421,6 +474,7 @@ Kapitel-Unterthema: „${kapitel.titel}“
 Gesamt-Thema: „${input.thema}“
 Zielalter: ${alter}
 
+${stanceBrief ? `${stanceBrief}\n` : ""}
 # Fakten
 ${faktenList}
 
@@ -609,6 +663,9 @@ export async function replaceCriticalCleverFakten(input: {
       ? `${input.editorial.zielAlterMin}–${input.editorial.zielAlterMax} Jahre`
       : "Zielalter laut Buch";
   const { rolle, model } = await resolveRomanKiRolle("clever_wissenssammler");
+  const stanceBrief = formatCleverThemaStanceBrief(
+    input.editorial.cleverThemaStance,
+  );
 
   const keepList = input.kapitel.fakten
     .map((f, i) => {
@@ -631,6 +688,9 @@ Ersetze NUR die kritischen Fakten unten durch neue, belastbare Fakten.
 Kapitel-Unterthema: „${input.kapitel.titel}“
 Gesamt-Thema: „${input.thema}“
 Zielalter: ${alter}
+
+${stanceBrief ? `${stanceBrief}\n` : ""}
+Neue Fakten: zur Themen-Haltung passend framed (würdigen + orientieren), nicht als Verbots- oder Schockliste.
 
 # Behalten (bereits ok / korrigiert — NICHT wiederholen, nicht umschreiben)
 ${keepList || "(keine)"}
@@ -698,6 +758,109 @@ Regeln:
       fakten: nextFakten,
       ...reset,
       checkHinweis: `${indices.length} kritische Fakten ersetzt — bitte erneut prüfen.`,
+    },
+  };
+}
+
+/**
+ * Wissenssammler: generate facts + a fitting Unterthema title for one chapter
+ * (e.g. manually added empty slot). Resets Faktencheck to ungeprüft.
+ */
+export async function fillCleverKapitelFakten(input: {
+  thema: string;
+  editorial: RomanEditorial;
+  kapitel: CleverUnterthemaKapitel;
+  andereTitel: string[];
+}): Promise<{ kapitel: CleverUnterthemaKapitel; modelLabel: string }> {
+  const bisherigerTitel = input.kapitel.titel.trim();
+  const faktenSoll = cleverFaktenProKapitel(input.editorial);
+  const alter =
+    input.editorial.zielAlterMin != null &&
+    input.editorial.zielAlterMax != null
+      ? `${input.editorial.zielAlterMin}–${input.editorial.zielAlterMax} Jahre`
+      : "Zielalter laut Buch";
+  const stanceBrief = formatCleverThemaStanceBrief(
+    input.editorial.cleverThemaStance,
+  );
+  const andere = input.andereTitel
+    .map((t) => t.trim())
+    .filter((t) => t && t !== bisherigerTitel)
+    .slice(0, CLEVER_KAPITEL_MAX);
+  const { rolle, model } = await resolveRomanKiRolle("clever_wissenssammler");
+
+  const userText = `# Aufgabe
+Erzeuge für EIN zusätzliches Kapitel:
+1) einen kurzen, passenden Unterthema-Titel
+2) GENAU ${faktenSoll} belastbare Fakten dazu
+Keine weiteren Kapitel.
+
+# Wissensgebiet / Thema
+${input.thema}
+
+# Bisheriger Platzhalter-Titel (darf ersetzt werden)
+${bisherigerTitel || "(leer)"}
+
+# Andere Kapitel (Titel nicht wiederholen, Stoff nicht doppeln)
+${andere.length ? andere.map((t, i) => `${i + 1}. ${t}`).join("\n") : "(keine)"}
+
+# Zielalter
+${alter}
+
+${stanceBrief ? `${stanceBrief}\n` : ""}
+${CLEVER_FAKT_LENGTH_MANDATE}
+Framing: zur Themen-Haltung passend (würdigen + orientieren), nicht als Verbots- oder Schockliste.
+Nutze Google Search. Keine erfundenen Fakten.
+
+# Ausgabe
+NUR JSON:
+{"titel":"…","fakten":["…", … genau ${faktenSoll} Strings]}
+
+Regeln:
+- titel = knappes Unterthema (kein ganzer Satz, kein Spoiler, max. ca. 8 Wörter), thematisch neu gegenüber den anderen Kapiteln.
+- Genau ${faktenSoll} fakten, je ca. 30–50 Wörter.
+- Deutsch. Keine Geschichten, keine Dialoge.`;
+
+  const text = await generateText({
+    model,
+    systemInstruction: rolle.systemPrompt,
+    userText,
+    googleSearch: true,
+    preferJson: true,
+    maxTokens: 6_000,
+    timeoutMs: 180_000,
+  });
+
+  let parsed: unknown;
+  try {
+    parsed = extractJsonObject(text);
+  } catch {
+    throw new Error("Fakten-JSON unlesbar. Bitte erneut versuchen.");
+  }
+
+  const obj = (parsed ?? {}) as Record<string, unknown>;
+  const titelRaw = String(obj.titel ?? obj.title ?? "").trim();
+  const titel =
+    (titelRaw.length >= 2 ? titelRaw : bisherigerTitel).slice(0, 200) ||
+    `Unterthema ${input.kapitel.nummer}`;
+  const fakten = Array.isArray(obj.fakten)
+    ? obj.fakten
+        .map((f) => String(f ?? "").trim())
+        .filter((f) => f.length >= 8)
+        .slice(0, faktenSoll)
+    : [];
+  if (fakten.length < Math.ceil(faktenSoll * 0.6)) {
+    throw new Error(
+      `Zu wenige Fakten (${fakten.length}/${faktenSoll}). Bitte erneut versuchen.`,
+    );
+  }
+
+  return {
+    modelLabel: model.label,
+    kapitel: {
+      ...input.kapitel,
+      titel,
+      fakten,
+      ...emptyKapitelChecks(fakten),
     },
   };
 }

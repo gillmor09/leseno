@@ -2,6 +2,7 @@
 
 /**
  * Basics fields: genre, title, age, length, optional Richtungen, Basis-Regeln.
+ * Clever: Themen-Haltung (Stance) on book level.
  * Basis-Regeln are auto-filled from the selected fields (standard presets).
  */
 
@@ -19,11 +20,22 @@ import {
   type RomanBuchTyp,
   type RomanEditorial,
 } from "@/lib/roman/editorial";
+import {
+  CLEVER_STANCE_ARCHETYPES,
+  buildCleverThemaStanceForThema,
+  formatStanceListText,
+  parseStanceListText,
+  stanceFromArchetype,
+  type CleverSensibilisierungsModus,
+  type CleverStanceArchetype,
+  type CleverThemaStance,
+} from "@/lib/roman/clever-thema-stance";
 import { cn } from "@/lib/utils";
 
 const inputClass =
   "w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700";
 const textareaClass = `${inputClass} font-sans min-h-[12rem] resize-none overflow-hidden`;
+const listTextareaClass = `${inputClass} font-sans min-h-[5.5rem] resize-y`;
 
 export type FundamentBasics = {
   title: string;
@@ -32,6 +44,8 @@ export type FundamentBasics = {
   zielWortzahlRoman: number | "";
   richtungen: string[];
   grobRegeln: string;
+  /** Clever only — book-level Themen-Stance. */
+  cleverThemaStance: CleverThemaStance | null;
 };
 
 export function fundamentBasicsFromState(input: {
@@ -51,6 +65,12 @@ export function fundamentBasicsFromState(input: {
     zielWortzahlRoman,
     richtungen,
   });
+  const isClever = input.editorial.buchTyp === "clever_erzaehlt";
+  const stance =
+    input.editorial.cleverThemaStance ??
+    (isClever && input.genre.trim()
+      ? buildCleverThemaStanceForThema(input.genre)
+      : null);
   return {
     title: input.title,
     genre: input.genre,
@@ -58,6 +78,7 @@ export function fundamentBasicsFromState(input: {
     zielWortzahlRoman,
     richtungen,
     grobRegeln: stored || generated,
+    cleverThemaStance: isClever ? stance : null,
   };
 }
 
@@ -94,6 +115,8 @@ export function RomanFundamentPanel({
   const showFields = mode === "fields";
   const showRules = mode === "rules-save";
   const showSave = mode === "fields";
+  const isClever = buchTyp === "clever_erzaehlt";
+  const stance = value.cleverThemaStance;
 
   const genreOptions = useMemo(() => {
     if (value.genre && !genres.includes(value.genre)) {
@@ -110,6 +133,13 @@ export function RomanFundamentPanel({
       withAutoBasisRegeln({
         ...value,
         genre: value.genre,
+        cleverThemaStance:
+          buchTyp === "clever_erzaehlt"
+            ? value.cleverThemaStance ??
+              (value.genre.trim()
+                ? buildCleverThemaStanceForThema(value.genre)
+                : null)
+            : null,
       }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to buchTyp switches
@@ -125,9 +155,7 @@ export function RomanFundamentPanel({
   }, [value.grobRegeln, showRules]);
 
   function withAutoBasisRegeln(next: FundamentBasics): FundamentBasics {
-    const richtungen = showRichtungen
-      ? next.richtungen
-      : [];
+    const richtungen = showRichtungen ? next.richtungen : [];
     return {
       ...next,
       richtungen,
@@ -144,6 +172,15 @@ export function RomanFundamentPanel({
   function patch(partial: Partial<FundamentBasics>, autoBasis = false) {
     const next = { ...value, ...partial };
     onChange(autoBasis ? withAutoBasisRegeln(next) : next);
+  }
+
+  function patchStance(partial: Partial<CleverThemaStance>) {
+    if (!stance) return;
+    patch({ cleverThemaStance: { ...stance, ...partial } });
+  }
+
+  function onArchetypeChange(archetype: CleverStanceArchetype) {
+    patch({ cleverThemaStance: stanceFromArchetype(archetype) });
   }
 
   function onAlterChange(alterPresetId: string) {
@@ -195,7 +232,7 @@ export function RomanFundamentPanel({
 
           <label className="block">
             <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-              Genre
+              {isClever ? "Thema" : "Genre"}
             </span>
             <select
               value={value.genre}
@@ -301,6 +338,150 @@ export function RomanFundamentPanel({
               </p>
             </div>
           ) : null}
+
+          {isClever && stance ? (
+            <div className="sm:col-span-2 space-y-4 rounded-2xl bg-zinc-50 px-4 py-4 ring-1 ring-zinc-950/8">
+              <div>
+                <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Themen-Haltung
+                </p>
+                <p className="mt-1 text-xs font-semibold text-zinc-500">
+                  Steuert Ton für Unterthemen, Fakten und Geschichten —
+                  Abenteuer bleibt, Sensibilisierung ohne Zeigefinger.
+                </p>
+              </div>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Archetyp
+                </span>
+                <select
+                  value={stance.archetype}
+                  onChange={(e) =>
+                    onArchetypeChange(
+                      e.target.value as CleverStanceArchetype,
+                    )
+                  }
+                  disabled={!canSave || busy}
+                  className={inputClass}
+                >
+                  {CLEVER_STANCE_ARCHETYPES.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs font-semibold text-zinc-500">
+                  {
+                    CLEVER_STANCE_ARCHETYPES.find(
+                      (a) => a.id === stance.archetype,
+                    )?.help
+                  }
+                </p>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Kind-Motiv (würdigen)
+                </span>
+                <input
+                  value={stance.kindMotiv}
+                  onChange={(e) => patchStance({ kindMotiv: e.target.value })}
+                  disabled={!canSave || busy}
+                  className={inputClass}
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Orientierungsziel
+                </span>
+                <input
+                  value={stance.orientierungsZiel}
+                  onChange={(e) =>
+                    patchStance({ orientierungsZiel: e.target.value })
+                  }
+                  disabled={!canSave || busy}
+                  className={inputClass}
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Sensibilisierung
+                </span>
+                <select
+                  value={stance.sensibilisierungsModus}
+                  onChange={(e) =>
+                    patchStance({
+                      sensibilisierungsModus: e.target
+                        .value as CleverSensibilisierungsModus,
+                    })
+                  }
+                  disabled={!canSave || busy}
+                  className={inputClass}
+                >
+                  <option value="erleben">Im Abenteuer erleben</option>
+                  <option value="mitgeben">Freundlich mitgeben</option>
+                </select>
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                    Darf
+                  </span>
+                  <textarea
+                    value={formatStanceListText(stance.darf)}
+                    onChange={(e) =>
+                      patchStance({
+                        darf: parseStanceListText(e.target.value),
+                      })
+                    }
+                    disabled={!canSave || busy}
+                    className={listTextareaClass}
+                    rows={4}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                    Muss nicht
+                  </span>
+                  <textarea
+                    value={formatStanceListText(stance.mussNicht)}
+                    onChange={(e) =>
+                      patchStance({
+                        mussNicht: parseStanceListText(e.target.value),
+                      })
+                    }
+                    disabled={!canSave || busy}
+                    className={listTextareaClass}
+                    rows={4}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                    Rotlinien
+                  </span>
+                  <textarea
+                    value={formatStanceListText(stance.rotlinien)}
+                    onChange={(e) =>
+                      patchStance({
+                        rotlinien: parseStanceListText(e.target.value),
+                      })
+                    }
+                    disabled={!canSave || busy}
+                    className={listTextareaClass}
+                    rows={4}
+                  />
+                </label>
+              </div>
+              <p className="text-[11px] font-semibold text-zinc-500">
+                Listen: eine Zeile pro Punkt. Archetyp wechseln setzt die
+                Vorlagen neu.
+              </p>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -320,7 +501,7 @@ export function RomanFundamentPanel({
       ) : null}
 
       {showRules ? (
-        <div className="space-y-5">
+        <div className="space-y-4">
           <label className="block">
             <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
               Basis-Regeln
@@ -330,20 +511,20 @@ export function RomanFundamentPanel({
               value={value.grobRegeln}
               onChange={(e) => patch({ grobRegeln: e.target.value })}
               disabled={!canSave || busy}
-              rows={10}
               className={textareaClass}
-              placeholder={
-                showRichtungen
-                  ? "Werden aus Genre, Richtung, Altersgruppe und Buchlänge mit Standard-Leitplanken befüllt — danach manuell anpassbar."
-                  : "Werden aus Genre, Altersgruppe und Buchlänge mit Standard-Leitplanken befüllt — danach manuell anpassbar."
-              }
+              rows={8}
             />
-            <span className="mt-1.5 block text-xs font-semibold text-zinc-500">
-              Automatisch aus den Feldern oben; optional manuell nachschärfen.
-              Mit „Speichern“ oben sicherst du Titel, Genre, Alter
-              {showRichtungen ? ", Richtung" : ""} und diese Regeln.
-            </span>
           </label>
+          <button
+            type="button"
+            disabled={!canSave || busy}
+            onClick={onSave}
+            className={cn(
+              "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50",
+            )}
+          >
+            {savePending ? "Speichern …" : "Speichern"}
+          </button>
         </div>
       ) : null}
     </div>

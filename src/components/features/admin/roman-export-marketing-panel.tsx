@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Export tab: Cover, Amazon Klappentext + Einzeiler, Manuskript PDF/EPUB.
+ * Export tab: Cover, Amazon Klappentext + Einzeiler + Keywords, Manuskript PDF/EPUB.
  * Clever chapters: prose → Infografik → Abenteuer-Wissen.
  * After PDF export: keep blob for inline reopen via StoryPdfPreviewDialog.
  */
@@ -19,6 +19,7 @@ import {
   buildRomanEpubBlob,
   romanEpubFilename,
 } from "@/lib/roman/export-roman-epub";
+import { normalizeAmazonKeywords } from "@/lib/roman/marketing-copy";
 import {
   buildRomanExportDocument,
   buildRomanPdfBlob,
@@ -37,6 +38,13 @@ function downloadBlob(blob: Blob, filename: string): void {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Always 7 slots for Amazon KDP keyword fields. */
+function padKeywordSlots(list: string[]): string[] {
+  const next = [...list.slice(0, 7)];
+  while (next.length < 7) next.push("");
+  return next;
 }
 
 type LastPdfPreview = {
@@ -60,10 +68,14 @@ export function RomanExportMarketingPanel({
   onComplete?: (patch: {
     klappentext: string;
     einzeiler: string;
+    amazonKeywords: string[];
   }) => void;
 }) {
   const [klappentext, setKlappentext] = useState(editorial.klappentext ?? "");
   const [einzeiler, setEinzeiler] = useState(editorial.einzeiler ?? "");
+  const [keywords, setKeywords] = useState(() =>
+    padKeywordSlots(editorial.amazonKeywords ?? []),
+  );
   const [pending, setPending] = useState<
     "generate" | "save" | "pdf" | "pdf-cover" | "epub" | null
   >(null);
@@ -73,7 +85,13 @@ export function RomanExportMarketingPanel({
   useEffect(() => {
     setKlappentext(editorial.klappentext ?? "");
     setEinzeiler(editorial.einzeiler ?? "");
-  }, [editorial.klappentext, editorial.einzeiler, roman.id]);
+    setKeywords(padKeywordSlots(editorial.amazonKeywords ?? []));
+  }, [
+    editorial.klappentext,
+    editorial.einzeiler,
+    editorial.amazonKeywords,
+    roman.id,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -102,6 +120,14 @@ export function RomanExportMarketingPanel({
     });
   }
 
+  function setKeywordAt(index: number, value: string) {
+    setKeywords((prev) => {
+      const next = [...prev];
+      next[index] = value.slice(0, 50);
+      return next;
+    });
+  }
+
   async function runGenerate() {
     if (!canSave || busy) return;
     setPending("generate");
@@ -115,11 +141,13 @@ export function RomanExportMarketingPanel({
       }
       setKlappentext(result.data.klappentext);
       setEinzeiler(result.data.einzeiler);
+      setKeywords(padKeywordSlots(result.data.amazonKeywords));
       onComplete?.({
         klappentext: result.data.klappentext,
         einzeiler: result.data.einzeiler,
+        amazonKeywords: result.data.amazonKeywords,
       });
-      toast.success("Klappentext und Einzeiler erzeugt.");
+      toast.success("Klappentext, Einzeiler und Keywords erzeugt.");
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -135,9 +163,11 @@ export function RomanExportMarketingPanel({
     if (!canSave || busy) return;
     setPending("save");
     try {
+      const amazonKeywords = normalizeAmazonKeywords(keywords);
       const next = {
         klappentext: klappentext.trim(),
         einzeiler: einzeiler.trim(),
+        amazonKeywords,
       };
       const result = await saveRomanMarketingCopyAction({
         romanId: roman.id,
@@ -147,6 +177,7 @@ export function RomanExportMarketingPanel({
         toast.error(result.error ?? "Speichern fehlgeschlagen.");
         return;
       }
+      setKeywords(padKeywordSlots(amazonKeywords));
       onComplete?.(next);
       toast.success("Verkaufstexte gespeichert.");
     } catch (error) {
@@ -211,13 +242,27 @@ export function RomanExportMarketingPanel({
     }
   }
 
+  async function copyKeywords() {
+    const filled = normalizeAmazonKeywords(keywords);
+    if (filled.length === 0) {
+      toast.error("Keine Keywords zum Kopieren.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(filled.join("\n"));
+      toast.success("Keywords kopiert (eine Zeile je Slot).");
+    } catch {
+      toast.error("Zwischenablage nicht verfügbar.");
+    }
+  }
+
   return (
     <div className="space-y-8">
       <RomanSceneWaitDialog
         open={pending === "generate"}
         variant="pipeline-generate"
         title="Verkaufstexte werden geschrieben"
-        progressLabel="Klappentext + Einzeiler (Amazon) …"
+        progressLabel="Klappentext + Einzeiler + Keywords (Amazon) …"
       />
       <RomanSceneWaitDialog
         open={pending === "pdf" || pending === "pdf-cover" || pending === "epub"}
@@ -251,7 +296,7 @@ export function RomanExportMarketingPanel({
             Manuskript herunterladen
           </h3>
           <p className="mt-1 text-sm font-semibold text-zinc-600">
-            PDF im eBook-Seitenformat — mit oder ohne Cover
+            PDF als Taschenbuch 6×9 Zoll — mit oder ohne Cover
             {!hasCover ? " (oben zuerst ein Cover anlegen)" : ""}. EPUB ohne
             Buch-Cover; Clever-Infografiken und Abenteuer-Wissen gehören zum
             Kapitel (Geschichte → Infografik → Liste). Kapitel starten jeweils
@@ -310,8 +355,8 @@ export function RomanExportMarketingPanel({
       <div className="space-y-5 border-t border-zinc-200 pt-8">
         <p className="text-sm font-semibold text-zinc-600">
           Klappentext = Rückseite / Amazon-Beschreibung. Einzeiler = Untertitel /
-          Eyecatcher in der Suche. Beide Texte speicherst du hier und kannst sie
-          später in KDP einfügen.
+          Eyecatcher. Keywords = die 7 KDP-Suchfelder (Backend). Alles speichern
+          und später in KDP einfügen.
         </p>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -364,6 +409,43 @@ export function RomanExportMarketingPanel({
             placeholder="Rückseitentext …"
           />
         </label>
+
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+              Amazon-Keywords (7 KDP-Felder)
+            </span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void copyKeywords()}
+              className="text-xs font-bold text-orange-800 hover:underline disabled:opacity-50"
+            >
+              Alle kopieren
+            </button>
+          </div>
+          <p className="text-xs font-semibold text-zinc-500">
+            Je Feld max. 50 Zeichen — Suchphrasen, kein Buchtitel.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {keywords.map((kw, i) => (
+              <label key={i} className="block space-y-1">
+                <span className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">
+                  Keyword {i + 1}
+                </span>
+                <input
+                  type="text"
+                  value={kw}
+                  maxLength={50}
+                  disabled={busy}
+                  onChange={(e) => setKeywordAt(i, e.target.value)}
+                  className="w-full rounded-xl bg-gray-100 px-3 py-2 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-50"
+                  placeholder={`Suchphrase ${i + 1} …`}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

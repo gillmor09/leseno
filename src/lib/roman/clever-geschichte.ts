@@ -5,6 +5,7 @@
 
 import { generateText } from "@/lib/ai/provider";
 import { formatCleverGeschichteBrief } from "@/lib/roman/clever-erzaehlt";
+import { formatCleverThemaStanceBrief } from "@/lib/roman/clever-thema-stance";
 import type { CleverUnterthemaKapitel } from "@/lib/roman/editorial";
 import type { RomanEditorial } from "@/lib/roman/editorial";
 import { countWords, emptyRomanEditorial } from "@/lib/roman/editorial";
@@ -149,6 +150,9 @@ export async function writeCleverGeschichte(input: {
   }
 
   const brief = formatCleverGeschichteBrief(input.editorial);
+  const stanceBrief = formatCleverThemaStanceBrief(
+    input.editorial.cleverThemaStance,
+  );
   const { rolle, model } = await resolveRomanKiRolle("clever_erzaehler");
   const faktenList = fakten.map((f, i) => `${i + 1}. ${f}`).join("\n");
 
@@ -168,11 +172,12 @@ ${faktenList}
 # Länge & Stil (verbindlich)
 ${brief || "Altersgerechte Kurzgeschichte laut Buch-Auswahl."}
 
+${stanceBrief ? `${stanceBrief}\n` : ""}
 # Regeln
 - Deutsch. Keine Meta-Kommentare im Fließtext.
 - Abenteuer-Charakter: Figur(en) mit Ziel, sichtbares Hindernis, Wendepunkt, Erkenntnis — kein reiner Erklärtext.
 - Fachlich korrekt: nur die gelieferten Fakten; nichts erfinden.
-- Am Ende der Handlung die Erkenntnis spürbar machen (ohne Lehrbuch-Absatz und ohne eigenen „Lernpunkt“-Block).
+- Am Ende der Handlung die Erkenntnis spürbar machen (ohne Lehrbuch-Absatz und ohne eigenen „Lernpunkt“-Block) — als Handlungsmacht, nicht als Predigt.
 - Schreibe KEINE Faktliste und kein „Abenteuer-Wissen“ in den Text — das kommt separat in UI/Export.
 - KEINE Marker wie ===GESCHICHTE===, ===LERNPUNKT=== oder ===ENDE===.
 

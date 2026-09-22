@@ -7,6 +7,7 @@ import {
   type RomanEditorial,
   buildBasisRegeln,
 } from "@/lib/roman/editorial";
+import { buildCleverThemaStanceForThema } from "@/lib/roman/clever-thema-stance";
 
 /** Story length chosen at book create (drives Erzähler length + style). */
 export type CleverGeschichteMinuten = 5 | 10;
@@ -192,6 +193,7 @@ export function buildCleverCreateEditorial(input: {
     zielWortzahlSzeneMax: opt.wortMax,
     zielWortzahlRoman: opt.geschichteMinuten === 5 ? 12_000 : 15_000,
     ideeKurz: `Wissensgebiet / Thema: ${thema}.\nDas Buch erzählt dieses Gebiet in mehreren Kurzgeschichten (je ca. ${opt.geschichteMinuten} Min.).`,
+    cleverThemaStance: buildCleverThemaStanceForThema(thema),
   };
 
   const grobRegeln = buildBasisRegeln({

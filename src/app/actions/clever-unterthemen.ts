@@ -1,14 +1,17 @@
 "use server";
 
 /**
- * Clever erzählt: Wissenssammler → 10 Unterthemen + Fakten;
+ * Clever erzählt: Wissenssammler → Unterthemen + Fakten (altersabhängig);
  * Faktenchecker → per-chapter fact verification.
  */
 
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
+  appendEmptyCleverKapitel,
   checkCleverUnterthemaKapitel,
+  CLEVER_KAPITEL_MAX,
+  fillCleverKapitelFakten,
   formatCleverUnterthemenMarkdown,
   applyCleverThemaTitlesToManuskript,
   replaceCriticalCleverFakten,
@@ -34,7 +37,7 @@ const idSchema = z.object({
 });
 
 const checkKapitelSchema = idSchema.extend({
-  kapitelNummer: z.number().int().min(1).max(12),
+  kapitelNummer: z.number().int().min(1).max(CLEVER_KAPITEL_MAX),
 });
 
 /**
@@ -150,7 +153,7 @@ async function persistUnterthemen(
 }
 
 /**
- * Generate 10 Unterthemen via Wissenssammler and save on editorial + manuskriptRaw.
+ * Generate Unterthemen via Wissenssammler and save on editorial + manuskriptRaw.
  */
 export async function cleverUnterthemenGenerateAction(
   input: unknown,
@@ -226,6 +229,226 @@ export async function cleverUnterthemenGenerateAction(
         error instanceof Error
           ? error.message
           : "Unterthemen erzeugen fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Append one empty Unterthema chapter (manual; title placeholder, no facts).
+ */
+export async function cleverUnterthemenKapitelAddAction(
+  input: unknown,
+): Promise<
+  ActionResult<{ roman: RomanKontext; unterthemen: CleverUnterthemen }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = idSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Eingabe ungültig.",
+    };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) {
+      return { success: false, error: "Buch nicht gefunden." };
+    }
+
+    const editorial = roman.editorial ?? emptyRomanEditorial();
+    if (editorial.buchTyp !== "clever_erzaehlt") {
+      return { success: false, error: "Nur für Clever-erzählt-Bücher." };
+    }
+
+    const doc = editorial.cleverUnterthemen;
+    if (!doc || doc.kapitel.length === 0) {
+      return { success: false, error: "Zuerst Unterthemen erzeugen." };
+    }
+    if (doc.kapitel.length >= CLEVER_KAPITEL_MAX) {
+      return {
+        success: false,
+        error: `Maximal ${CLEVER_KAPITEL_MAX} Kapitel.`,
+      };
+    }
+
+    const unterthemen = appendEmptyCleverKapitel(doc);
+    const saved = await persistUnterthemen(roman, unterthemen);
+    revalidateRomanAdmin(roman.id);
+    return {
+      success: true,
+      data: { roman: saved, unterthemen },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Kapitel hinzufügen fehlgeschlagen.",
+    };
+  }
+}
+
+const titelUpdateSchema = idSchema.extend({
+  kapitelNummer: z.number().int().min(1).max(CLEVER_KAPITEL_MAX),
+  titel: z
+    .string()
+    .trim()
+    .min(2, "Titel zu kurz.")
+    .max(200, "Titel zu lang."),
+});
+
+/**
+ * Rename one Unterthema chapter (manual edit). Syncs Manuskript headings via persist.
+ */
+export async function cleverUnterthemenKapitelTitelUpdateAction(
+  input: unknown,
+): Promise<
+  ActionResult<{ roman: RomanKontext; unterthemen: CleverUnterthemen }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = titelUpdateSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Eingabe ungültig.",
+    };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) {
+      return { success: false, error: "Buch nicht gefunden." };
+    }
+
+    const editorial = roman.editorial ?? emptyRomanEditorial();
+    if (editorial.buchTyp !== "clever_erzaehlt") {
+      return { success: false, error: "Nur für Clever-erzählt-Bücher." };
+    }
+
+    const doc = editorial.cleverUnterthemen;
+    if (!doc || doc.kapitel.length === 0) {
+      return { success: false, error: "Zuerst Unterthemen erzeugen." };
+    }
+
+    const idx = doc.kapitel.findIndex(
+      (k) => k.nummer === parsed.data.kapitelNummer,
+    );
+    if (idx < 0) {
+      return {
+        success: false,
+        error: `Kapitel ${parsed.data.kapitelNummer} nicht gefunden.`,
+      };
+    }
+
+    const unterthemen: CleverUnterthemen = {
+      ...doc,
+      kapitel: doc.kapitel.map((k, i) =>
+        i === idx ? { ...k, titel: parsed.data.titel } : k,
+      ),
+    };
+    const saved = await persistUnterthemen(roman, unterthemen);
+    revalidateRomanAdmin(roman.id);
+    return {
+      success: true,
+      data: { roman: saved, unterthemen },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Titel speichern fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Wissenssammler: fill title + facts for one chapter (e.g. manually added empty slot).
+ */
+export async function cleverUnterthemenKapitelFaktenFillAction(
+  input: unknown,
+): Promise<
+  ActionResult<{ roman: RomanKontext; unterthemen: CleverUnterthemen }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = checkKapitelSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Eingabe ungültig.",
+    };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) {
+      return { success: false, error: "Buch nicht gefunden." };
+    }
+
+    const editorial = roman.editorial ?? emptyRomanEditorial();
+    if (editorial.buchTyp !== "clever_erzaehlt") {
+      return { success: false, error: "Nur für Clever-erzählt-Bücher." };
+    }
+
+    const doc = editorial.cleverUnterthemen;
+    if (!doc || doc.kapitel.length === 0) {
+      return { success: false, error: "Zuerst Unterthemen erzeugen." };
+    }
+
+    const kapitel = doc.kapitel.find(
+      (k) => k.nummer === parsed.data.kapitelNummer,
+    );
+    if (!kapitel) {
+      return {
+        success: false,
+        error: `Kapitel ${parsed.data.kapitelNummer} nicht gefunden.`,
+      };
+    }
+
+    const thema = (roman.genre ?? "").trim() || doc.thema;
+    const { kapitel: filled, modelLabel } = await fillCleverKapitelFakten({
+      thema,
+      editorial,
+      kapitel,
+      andereTitel: doc.kapitel.map((k) => k.titel),
+    });
+
+    const unterthemen: CleverUnterthemen = {
+      ...doc,
+      modelLabel: modelLabel || doc.modelLabel,
+      kapitel: doc.kapitel.map((k) =>
+        k.nummer === filled.nummer ? filled : k,
+      ),
+    };
+
+    const plotMd = formatCleverUnterthemenMarkdown(unterthemen);
+    const cleared = clearCleverGeschichteForKapitel(
+      editorial,
+      plotMd,
+      filled.nummer,
+    );
+    const saved = await persistUnterthemen(roman, unterthemen, cleared);
+    revalidateRomanAdmin(roman.id);
+    return {
+      success: true,
+      data: { roman: saved, unterthemen },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Fakten erzeugen fehlgeschlagen.",
     };
   }
 }

@@ -14,6 +14,10 @@ import {
   buildCleverCreateEditorial,
   topThemenForCleverAlter,
 } from "@/lib/roman/clever-erzaehlt";
+import {
+  CLEVER_STANCE_ARCHETYPES,
+  suggestCleverStanceArchetype,
+} from "@/lib/roman/clever-thema-stance";
 import { emptyRomanEditorial } from "@/lib/roman/editorial";
 import { emptyRomanUpsertFields } from "@/lib/roman/fundament";
 import { cn } from "@/lib/utils";
@@ -38,6 +42,14 @@ export function CleverErzaehltCreateForm({ canSave }: { canSave: boolean }) {
   );
 
   const selectedAlter = CLEVER_ALTER_OPTIONS.find((o) => o.id === alterOptionId);
+
+  const themaPreview =
+    themaMode === "top20" ? themaTop.trim() : themaCustom.trim();
+  const stancePreviewLabel = useMemo(() => {
+    if (!themaPreview) return null;
+    const id = suggestCleverStanceArchetype(themaPreview);
+    return CLEVER_STANCE_ARCHETYPES.find((a) => a.id === id)?.label ?? null;
+  }, [themaPreview]);
 
   function onAlterChange(nextId: string) {
     setAlterOptionId(nextId);
@@ -234,6 +246,12 @@ export function CleverErzaehltCreateForm({ canSave }: { canSave: boolean }) {
             />
           </label>
         )}
+        {stancePreviewLabel ? (
+          <p className="text-xs font-semibold text-zinc-500">
+            Themen-Haltung (vorausgewählt): {stancePreviewLabel} — in Basics
+            anpassbar.
+          </p>
+        ) : null}
       </fieldset>
 
       <button

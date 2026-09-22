@@ -540,8 +540,7 @@ export function RomanManuskriptChapterControl({
                 Kurzgeschichte wählen
               </span>
             </div>
-            <div className="max-h-[18rem] overflow-y-auto">
-              <div className="grid gap-2.5 p-1 sm:grid-cols-2">
+            <div className="grid gap-2.5 p-1 sm:grid-cols-2">
               {plotChapters.map((c) => {
                 const prose = msByNum.get(c.number) ?? "";
                 const st = cleverStatusFor(
@@ -625,7 +624,6 @@ export function RomanManuskriptChapterControl({
                   </button>
                 );
               })}
-              </div>
             </div>
             <p className="text-xs font-semibold text-zinc-500">
               {hasProse

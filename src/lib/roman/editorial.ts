@@ -14,6 +14,12 @@ import {
   parseRomanSzenenplotStructured,
   type RomanSzenenplotStructured,
 } from "@/lib/roman/szenenplot-structured";
+import {
+  parseCleverThemaStanceField,
+  type CleverThemaStance,
+} from "@/lib/roman/clever-thema-stance";
+
+export type { CleverThemaStance } from "@/lib/roman/clever-thema-stance";
 
 /** Clever erzählt: per-fact Faktenchecker result. */
 export type CleverFaktCheckStatus =
@@ -52,7 +58,7 @@ export type CleverUnterthemaKapitel = {
   infografikModelLabel: string;
 };
 
-/** Clever erzählt: 10 Unterthemen document from Wissenssammler. */
+/** Clever erzählt: Unterthemen document from Wissenssammler (age-based count). */
 export type CleverUnterthemen = {
   thema: string;
   faktenProKapitel: number;
@@ -447,6 +453,10 @@ export type RomanEditorial = {
    * Amazon Untertitel / Eyecatcher — one short hook line (Export tab).
    */
   einzeiler: string;
+  /**
+   * Amazon KDP search keywords — up to 7 phrases (Export tab), each ≤50 chars.
+   */
+  amazonKeywords: string[];
   gates: RomanEditorialGates;
   zielAlterMin: number | null;
   zielAlterMax: number | null;
@@ -460,7 +470,7 @@ export type RomanEditorial = {
    */
   cleverGeschichteMinuten: 5 | 10 | null;
   /**
-   * Clever erzählt: 10 Unterthemen (+ Fakten) from Wissenssammler.
+   * Clever erzählt: Unterthemen (+ Fakten) from Wissenssammler.
    * See `src/lib/roman/clever-unterthemen.ts`.
    */
   cleverUnterthemen: CleverUnterthemen | null;
@@ -479,6 +489,11 @@ export type RomanEditorial = {
    * Key = chapter number string.
    */
   cleverGeschichteOk: Record<string, true> | null;
+  /**
+   * Clever erzählt: book-level Themen-Stance (pedagogical orientation).
+   * See `src/lib/roman/clever-thema-stance.ts`.
+   */
+  cleverThemaStance: CleverThemaStance | null;
   serieTitel: string;
   bandNr: number | null;
   mehrteilerForm: RomanMehrteilerForm;
@@ -592,6 +607,7 @@ export function emptyRomanEditorial(): RomanEditorial {
     manuskriptOriginalSavedAt: null,
     klappentext: "",
     einzeiler: "",
+    amazonKeywords: [],
     gates: emptyEditorialGates(),
     zielAlterMin: null,
     zielAlterMax: null,
@@ -604,6 +620,7 @@ export function emptyRomanEditorial(): RomanEditorial {
     cleverGeschichteImprove: null,
     cleverGeschichteImproveCount: null,
     cleverGeschichteOk: null,
+    cleverThemaStance: null,
     serieTitel: "",
     bandNr: null,
     mehrteilerForm: "unbekannt",
@@ -1312,6 +1329,7 @@ function buchTypLeitplanken(buchTyp: RomanBuchTyp): string[] {
       "Clever erzählt: Abenteuer-Geschichten — Fakten erlebt; Abenteuer-Wissen separat für UI/Export.",
       "Erzählung trägt das Wissen: Figuren und Plot dienen dem Verständnis, nicht umgekehrt.",
       "Fachlich korrekt, aber lebendig — kein Lehrbuch-Ton, keine Roman-Spannung ohne Erkenntnis.",
+      "Themen-Haltung beachten: Kind-Motiv würdigen; Sensibilisierung als Handlungsmacht im Plot — nie predigen.",
     ];
   }
   if (buchTyp === "serie_welt") {
@@ -1516,6 +1534,28 @@ function asInt(value: unknown): number | null {
   return Math.round(n);
 }
 
+/** Amazon KDP: up to 7 keyword phrases, each ≤50 characters. */
+function parseAmazonKeywordsField(raw: unknown): string[] {
+  let list: string[] = [];
+  if (Array.isArray(raw)) {
+    list = raw.map((v) => String(v ?? "").trim());
+  } else if (typeof raw === "string" && raw.trim()) {
+    list = raw.split(/[\n,;]+/).map((s) => s.trim());
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of list) {
+    const k = item.slice(0, 50).trim();
+    if (k.length < 2) continue;
+    const key = k.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(k);
+    if (out.length >= 7) break;
+  }
+  return out;
+}
+
 function asForm(value: unknown): RomanMehrteilerForm {
   if (
     value === "einzelband" ||
@@ -1570,7 +1610,7 @@ function parseCleverUnterthemenField(raw: unknown): CleverUnterthemen | null {
   const faktenProKapitel = Number(row.faktenProKapitel);
   const kapitelRaw = Array.isArray(row.kapitel) ? row.kapitel : [];
   const kapitel: CleverUnterthemaKapitel[] = [];
-  for (const item of kapitelRaw.slice(0, 12)) {
+  for (const item of kapitelRaw.slice(0, 16)) {
     if (!item || typeof item !== "object") continue;
     const k = item as Record<string, unknown>;
     const titel = String(k.titel ?? "").trim();
@@ -3067,6 +3107,7 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
     })(),
     klappentext: String(row.klappentext ?? "").trim().slice(0, 4_000),
     einzeiler: String(row.einzeiler ?? "").trim().slice(0, 120),
+    amazonKeywords: parseAmazonKeywordsField(row.amazonKeywords),
     gates: parseGates(row.gates),
     zielAlterMin: asInt(row.zielAlterMin),
     zielAlterMax: asInt(row.zielAlterMax),
@@ -3089,6 +3130,7 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
       row.cleverGeschichteImproveCount,
     ),
     cleverGeschichteOk: parseCleverGeschichteOkField(row.cleverGeschichteOk),
+    cleverThemaStance: parseCleverThemaStanceField(row.cleverThemaStance),
     serieTitel: String(row.serieTitel ?? "").trim(),
     bandNr: asInt(row.bandNr),
     mehrteilerForm: asForm(row.mehrteilerForm),

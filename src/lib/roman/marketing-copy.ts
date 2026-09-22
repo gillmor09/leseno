@@ -1,8 +1,9 @@
 /**
  * Amazon / Klappentext marketing copy for a roman:
- * back-cover blurb + one-line eyecatcher (Untertitel / Search hook).
+ * back-cover blurb + one-line eyecatcher (Untertitel / Search hook)
+ * + up to 7 KDP backend search keywords.
  *
- * Einzeiler and Klappentext are generated in separate model calls so the
+ * Einzeiler, Klappentext and Keywords are generated in separate model calls so the
  * longer blurb is never truncated mid-JSON.
  */
 
@@ -16,7 +17,31 @@ import type { RomanCharakter, RomanKontext } from "@/lib/roman/types";
 export type RomanMarketingCopyResult = {
   klappentext: string;
   einzeiler: string;
+  /** Exactly up to 7 Amazon KDP keyword phrases (≤50 chars each). */
+  amazonKeywords: string[];
 };
+
+/** Normalize / clamp keyword list for Amazon KDP (max 7 × 50 chars). */
+export function normalizeAmazonKeywords(raw: unknown): string[] {
+  let list: string[] = [];
+  if (Array.isArray(raw)) {
+    list = raw.map((v) => String(v ?? "").trim());
+  } else if (typeof raw === "string" && raw.trim()) {
+    list = raw.split(/[\n,;]+/).map((s) => s.trim());
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of list) {
+    const k = item.replace(/\s+/g, " ").slice(0, 50).trim();
+    if (k.length < 2) continue;
+    const key = k.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(k);
+    if (out.length >= 7) break;
+  }
+  return out;
+}
 
 function formatChars(chars: RomanCharakter[]): string {
   return chars
@@ -340,9 +365,62 @@ ${extra ?? "Schreibe jetzt nur den vollständigen klappentext."}`,
   }
 }
 
+async function generateAmazonKeywords(
+  model: AiModelConfig,
+  brief: string,
+  einzeiler: string,
+): Promise<string[]> {
+  const raw = await generateText({
+    model,
+    preferJson: true,
+    maxTokens: 400,
+    timeoutMs: 60_000,
+    systemInstruction: `Du erzeugst Amazon-KDP-Suchkeywords (Backend-Keywords) für ein deutsches Kinder-/Jugendbuch.
+Antworte NUR als JSON: {"keywords":["…","…","…","…","…","…","…"]}
+Regeln:
+- GENAU 7 Einträge
+- Jeder Eintrag: Suchphrase auf Deutsch, max. 50 Zeichen
+- Kein Buchtitel, keine Autorennamen, keine Konkurrenz-ASINs
+- Mix aus Genre, Thema, Alter, Nutzen, Stimmung (z. B. „Kinderbuch Abenteuer 8 Jahre“)
+- Keine Hashtags, keine Anführungszeichen innerhalb der Phrasen
+- Keine Duplikate`,
+    userText: `${brief}
+
+# Einzeiler (Kontext)
+${einzeiler}
+
+Schreibe jetzt genau 7 keywords.`,
+  });
+  return parseKeywordsPayload(raw);
+}
+
+function parseKeywordsPayload(raw: string): string[] {
+  const parsed = tryParseModelJsonObject(raw);
+  if (parsed) {
+    const list =
+      (Array.isArray(parsed.keywords) && parsed.keywords) ||
+      (Array.isArray(parsed.amazonKeywords) && parsed.amazonKeywords) ||
+      (Array.isArray(parsed.schlagwoerter) && parsed.schlagwoerter) ||
+      null;
+    if (list) {
+      const normalized = normalizeAmazonKeywords(list);
+      if (normalized.length >= 5) return normalized.slice(0, 7);
+    }
+  }
+  // Fallback: lines / commas in free text
+  const fallback = normalizeAmazonKeywords(
+    raw
+      .replace(/```(?:json)?/gi, "")
+      .replace(/[{}"\[\]]/g, " ")
+      .replace(/keywords?\s*:/gi, " "),
+  );
+  if (fallback.length >= 5) return fallback.slice(0, 7);
+  throw new Error("Keywords nicht lesbar — bitte erneut erzeugen.");
+}
+
 /**
- * Model writes German Klappentext + Einzeiler from book materials.
- * Two separate calls avoid truncated JSON mid-blurb.
+ * Model writes German Klappentext + Einzeiler + 7 Amazon keywords from book materials.
+ * Separate calls avoid truncated JSON mid-blurb.
  */
 export async function generateRomanMarketingCopy(input: {
   title: string;
@@ -366,9 +444,20 @@ export async function generateRomanMarketingCopy(input: {
     einzeiler = synthesizeEinzeiler(klappentext);
   }
 
+  let amazonKeywords: string[] = [];
+  try {
+    amazonKeywords = await generateAmazonKeywords(model, brief, einzeiler);
+  } catch (error) {
+    console.warn(
+      "[generateRomanMarketingCopy] keywords:",
+      error instanceof Error ? error.message : error,
+    );
+  }
+
   return {
     klappentext,
     einzeiler: einzeiler.slice(0, 120),
+    amazonKeywords,
   };
 }
 
