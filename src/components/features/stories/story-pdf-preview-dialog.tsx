@@ -5,12 +5,13 @@
  * Preview uses the export HTML (readable). Download uses the generated PDF Blob.
  * Blob PDFs in iframes often render blank (Chrome viewer + large files/covers).
  * No backdrop-filter — Chrome PDF plugins break under filter ancestors.
- * Close via X / Escape / outside click; footer only „PDF speichern“.
+ * Close via X / Escape / outside click; footer „PDF speichern“.
+ * Fullscreen toggle expands the panel edge-to-edge.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { FileDown, Loader2, X } from "lucide-react";
+import { FileDown, Loader2, Maximize2, Minimize2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type StoryPdfPreviewDialogProps = {
@@ -27,7 +28,7 @@ type StoryPdfPreviewDialogProps = {
 };
 
 /**
- * 90vw × 90vh modal with HTML preview and PDF download action.
+ * Modal with HTML preview, fullscreen toggle, and PDF download action.
  */
 export function StoryPdfPreviewDialog({
   open,
@@ -40,11 +41,13 @@ export function StoryPdfPreviewDialog({
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [previewReady, setPreviewReady] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setPreviewReady(false);
       setIsSaving(false);
+      setFullscreen(false);
       return;
     }
     const previous = document.body.style.overflow;
@@ -58,12 +61,33 @@ export function StoryPdfPreviewDialog({
     if (!open) return;
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        if (fullscreen) {
+          setFullscreen(false);
+          return;
+        }
         onClose();
+      }
+      if (
+        (event.key === "f" || event.key === "F") &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        const target = event.target as HTMLElement | null;
+        if (
+          target?.tagName === "INPUT" ||
+          target?.tagName === "TEXTAREA" ||
+          target?.isContentEditable
+        ) {
+          return;
+        }
+        event.preventDefault();
+        setFullscreen((v) => !v);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  }, [open, onClose, fullscreen]);
 
   useLayoutEffect(() => {
     if (!open) {
@@ -153,37 +177,66 @@ export function StoryPdfPreviewDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="story-pdf-preview-title"
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/60 p-3 sm:p-4"
+      className={cn(
+        "fixed inset-0 z-[100] flex items-center justify-center bg-zinc-950/60",
+        fullscreen ? "p-0" : "p-3 sm:p-4",
+      )}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
+          if (fullscreen) {
+            setFullscreen(false);
+            return;
+          }
           onClose();
         }
       }}
     >
       <div
-        className="flex h-[90vh] w-[90vw] max-w-[90vw] flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-2xl ring-1 ring-zinc-950/10"
+        className={cn(
+          "flex flex-col overflow-hidden bg-white shadow-2xl ring-1 ring-zinc-950/10",
+          fullscreen
+            ? "h-full w-full max-w-none rounded-none"
+            : "h-[90vh] w-[90vw] max-w-[90vw] rounded-[1.75rem]",
+        )}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-950/10 px-5 py-4 sm:px-6">
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-extrabold tracking-wide text-orange-700 uppercase">
               PDF
             </p>
             <h2
               id="story-pdf-preview-title"
-              className="text-lg font-extrabold text-zinc-950 sm:text-xl"
+              className="truncate text-lg font-extrabold text-zinc-950 sm:text-xl"
             >
               {heading}
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Vorschau schließen"
-            className="inline-flex size-10 items-center justify-center rounded-full bg-gray-100 text-zinc-700 transition-all duration-200 ease-in-out hover:bg-zinc-200"
-          >
-            <X className="size-5" aria-hidden />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFullscreen((v) => !v)}
+              aria-label={
+                fullscreen ? "Vollbild beenden" : "Vollbild öffnen"
+              }
+              title={fullscreen ? "Vollbild beenden (Esc)" : "Vollbild (F)"}
+              className="inline-flex size-10 items-center justify-center rounded-full bg-gray-100 text-zinc-700 transition-all duration-200 ease-in-out hover:bg-zinc-200"
+            >
+              {fullscreen ? (
+                <Minimize2 className="size-5" aria-hidden />
+              ) : (
+                <Maximize2 className="size-5" aria-hidden />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Vorschau schließen"
+              className="inline-flex size-10 items-center justify-center rounded-full bg-gray-100 text-zinc-700 transition-all duration-200 ease-in-out hover:bg-zinc-200"
+            >
+              <X className="size-5" aria-hidden />
+            </button>
+          </div>
         </header>
 
         <div className="relative min-h-0 flex-1 bg-zinc-100">
@@ -205,7 +258,12 @@ export function StoryPdfPreviewDialog({
           />
         </div>
 
-        <footer className="flex shrink-0 justify-end border-t border-zinc-950/10 px-5 py-4 sm:px-6">
+        <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-zinc-950/10 px-5 py-4 sm:px-6">
+          <p className="text-xs font-semibold text-zinc-500">
+            {fullscreen
+              ? "Vollbild · Esc beendet Vollbild"
+              : "F = Vollbild"}
+          </p>
           <button
             type="button"
             onClick={handleSave}

@@ -5,33 +5,43 @@ import { RomanRolesPanel } from "@/components/features/admin/roman-roles-panel";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import {
+  getRomanAdminModule,
+  type RomanAdminModuleId,
+} from "@/lib/roman/admin-module";
+import {
   FALLBACK_PIPELINE_AUFGABEN,
+  filterAufgabenForAdminModule,
   loadPipelineAufgaben,
 } from "@/lib/roman/pipeline/tasks";
 import {
   FALLBACK_ROMAN_KI_ROLLEN,
+  filterRollenForAdminModule,
   listRomanRoleModelOptions,
   loadRomanKiRollen,
 } from "@/lib/roman/roles";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
-  title: "KI-Rollen — Buch — Leseno Admin",
+  title: "KI-Rollen — Roman — Leseno Admin",
   description:
-    "System-Prompts, Modelle und Pipeline-Aufgaben für die Buch-Pipeline.",
+    "System-Prompts, Modelle und Pipeline-Aufgaben für die Roman-Pipeline.",
 };
 
+const MODULE_ID: RomanAdminModuleId = "roman";
+
 /**
- * Module-level book KI roles (not tied to a single book instance).
+ * Module-level KI roles (shared DB; linked from Roman admin).
  */
 export default async function RomanRollenPage() {
+  const adminModule = getRomanAdminModule(MODULE_ID);
   const canSave = hasServiceRoleConfig();
   let rollen = FALLBACK_ROMAN_KI_ROLLEN;
   let aufgaben = FALLBACK_PIPELINE_AUFGABEN;
   let notice: string | undefined;
 
   try {
-    rollen = await loadRomanKiRollen({ mergeFallback: true });
+    const all = await loadRomanKiRollen({ mergeFallback: true });
+    rollen = filterRollenForAdminModule(all, MODULE_ID);
   } catch (error) {
     notice =
       error instanceof Error
@@ -40,7 +50,8 @@ export default async function RomanRollenPage() {
   }
 
   try {
-    aufgaben = await loadPipelineAufgaben({ mergeFallback: true });
+    const all = await loadPipelineAufgaben({ mergeFallback: true });
+    aufgaben = filterAufgabenForAdminModule(all, MODULE_ID);
   } catch {
     /* keep fallback */
   }
@@ -51,7 +62,7 @@ export default async function RomanRollenPage() {
       <main id="main" className="flex-1">
         <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
           <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-            Admin · Buch
+            Admin · {adminModule.label}
           </p>
           <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -60,14 +71,14 @@ export default async function RomanRollenPage() {
               </h1>
               <p className="mt-2 max-w-2xl text-sm font-semibold text-zinc-600">
                 System-Prompts, Modelle und Aufgaben-Zuordnung für die
-                vertikale Buch-Pipeline.
+                vertikale {adminModule.label}-Pipeline.
               </p>
             </div>
             <Link
-              href="/admin/roman"
+              href={adminModule.basePath}
               className="text-sm font-bold text-orange-800 hover:underline"
             >
-              ← Alle Bücher
+              ← Alle {adminModule.itemLabelPlural}
             </Link>
           </div>
           {notice ? (

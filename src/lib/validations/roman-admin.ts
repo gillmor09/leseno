@@ -103,7 +103,13 @@ const romanGateStateSchema = z.object({
 });
 
 export const romanEditorialSchema = z.object({
-  buchTyp: z.enum(["unbekannt", "belletristik", "serie_welt", "sachbuch"]),
+  buchTyp: z.enum([
+    "unbekannt",
+    "belletristik",
+    "serie_welt",
+    "sachbuch",
+    "clever_erzaehlt",
+  ]),
   ideeKurz: z.string().max(50_000),
   handlungsArchitektur: z.string().max(100_000),
   weltBibel: z.string().max(100_000),
@@ -124,6 +130,10 @@ export const romanEditorialSchema = z.object({
   zielWortzahlRoman: z.number().int().min(500).max(500_000).nullable(),
   zielWortzahlSzeneMin: z.number().int().min(100).max(20_000).nullable(),
   zielWortzahlSzeneMax: z.number().int().min(100).max(20_000).nullable(),
+  cleverGeschichteMinuten: z
+    .union([z.literal(5), z.literal(10), z.null()])
+    .optional()
+    .default(null),
   serieTitel: z.string().max(300),
   bandNr: z.number().int().min(1).max(99).nullable(),
   mehrteilerForm: z.enum([
@@ -277,22 +287,24 @@ export const romanIdSchema = z.object({
 export const romanCoverGenerateSchema = z.object({
   romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
   extraInstruction: z.string().max(2000).optional(),
-  skipTitleOverlay: z.boolean().optional(),
 });
 
 export const romanCoverSaveSchema = z.object({
   romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
-  coverImageDataUrl: z
-    .string()
-    .trim()
-    .min(32, { message: "Kein Cover-Bild." })
-    .max(12_000_000),
-  coverPrompt: z.string().max(20_000),
+  /** Optional; preferred path uses server-side pending stash from generate. */
+  coverPrompt: z.string().max(20_000).optional(),
 });
 
 /** Generate Amazon Klappentext + Einzeiler from saved book materials. */
 export const romanMarketingCopyGenerateSchema = z.object({
   romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+});
+
+/** Persist only Verkaufstexte (no full kontext upsert). */
+export const romanMarketingCopySaveSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
+  klappentext: z.string().max(4_000),
+  einzeiler: z.string().max(120),
 });
 
 const buchrueckenSchema = z.object({

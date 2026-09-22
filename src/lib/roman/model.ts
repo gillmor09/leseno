@@ -6,6 +6,7 @@
 import {
   WIRED_AI_ENDPOINTS,
   findWiredAiEndpoint,
+  isImageAiProvider,
   isTextLlmProvider,
   type WiredAiEndpoint,
 } from "@/lib/ai/wired-models";
@@ -154,6 +155,29 @@ export async function resolveRomanImagesModel(): Promise<AiModelConfig> {
     throw new Error("Illustrationsmodell (images-default) fehlt im Katalog.");
   }
   return fallback;
+}
+
+/** Cover artwork: Gemini 3 Pro Image (not the story/social FLUX default). */
+export const ROMAN_COVER_IMAGE_MODEL_SLUG = "gemini-3-pro-image";
+
+export async function resolveRomanCoverImagesModel(): Promise<AiModelConfig> {
+  const wired = findWiredAiEndpoint(ROMAN_COVER_IMAGE_MODEL_SLUG);
+  if (!wired || !isImageAiProvider(wired.provider)) {
+    throw new Error(
+      `Cover-Bildmodell „${ROMAN_COVER_IMAGE_MODEL_SLUG}“ ist nicht angebunden.`,
+    );
+  }
+  return {
+    id: wired.modelSlug,
+    label: wired.label,
+    provider: wired.provider,
+    modelSlug: wired.modelSlug,
+    supportsSystemPrompt: false,
+    supportsJsonOutput: false,
+    isActive: true,
+    notes: null,
+    ttsVoiceId: null,
+  };
 }
 
 /**

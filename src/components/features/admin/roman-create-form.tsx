@@ -1,7 +1,9 @@
 "use client";
 
 /**
- * Minimal create form for a new roman shell (title only).
+ * Minimal create form for a new roman / sachbuch shell (title only).
+ * Clever erzählt uses `CleverErzaehltCreateForm` instead.
+ * buchTyp is fixed by the admin module.
  */
 
 import Link from "next/link";
@@ -9,11 +11,22 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { saveRomanKontextAction } from "@/app/actions/roman-admin";
+import {
+  getRomanAdminModule,
+  type RomanAdminModuleId,
+} from "@/lib/roman/admin-module";
 import { emptyRomanEditorial } from "@/lib/roman/editorial";
 import { emptyRomanUpsertFields } from "@/lib/roman/fundament";
 import { cn } from "@/lib/utils";
 
-export function RomanCreateForm({ canSave }: { canSave: boolean }) {
+export function RomanCreateForm({
+  canSave,
+  moduleId = "roman",
+}: {
+  canSave: boolean;
+  moduleId?: RomanAdminModuleId;
+}) {
+  const adminModule = getRomanAdminModule(moduleId);
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [pending, setPending] = useState(false);
@@ -30,24 +43,27 @@ export function RomanCreateForm({ canSave }: { canSave: boolean }) {
     const result = await saveRomanKontextAction({
       ...fields,
       id: null,
-      editorial: emptyRomanEditorial(),
+      editorial: {
+        ...emptyRomanEditorial(),
+        buchTyp: adminModule.buchTyp,
+      },
     });
     setPending(false);
     if (!result.success) {
       toast.error(result.error ?? "Anlegen fehlgeschlagen.");
       return;
     }
-    toast.success("Buch angelegt.");
-    router.push(`/admin/roman/${result.data!.roman.id}`);
+    toast.success(`${adminModule.itemLabel} angelegt.`);
+    router.push(`${adminModule.basePath}/${result.data!.roman.id}`);
   }
 
   return (
     <div className="space-y-6 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
       <Link
-        href="/admin/roman"
+        href={adminModule.basePath}
         className="text-sm font-bold text-orange-800 hover:underline"
       >
-        ← Alle Bücher
+        ← Alle {adminModule.itemLabelPlural}
       </Link>
       <label className="block">
         <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
@@ -58,7 +74,7 @@ export function RomanCreateForm({ canSave }: { canSave: boolean }) {
           onChange={(e) => setTitle(e.target.value)}
           disabled={!canSave || pending}
           className="w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-          placeholder="z. B. Arbeitsname des Buchs"
+          placeholder={`z. B. Arbeitsname des ${adminModule.itemLabel}s`}
         />
       </label>
       <button

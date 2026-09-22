@@ -77,7 +77,11 @@ async function applyOwnRoleMetadata(input: {
 
   const { error: refreshError } = await supabase.auth.refreshSession();
   if (refreshError) {
-    console.warn("[admin-role-test] refreshSession", refreshError.message);
+    return {
+      success: false,
+      error:
+        "Rolle in der Datenbank gesetzt, aber die Session konnte nicht aktualisiert werden. Bitte einmal ab- und wieder anmelden.",
+    };
   }
 
   revalidatePath("/", "layout");

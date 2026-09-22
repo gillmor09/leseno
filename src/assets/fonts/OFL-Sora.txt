@@ -1,0 +1,3 @@
+﻿Sora — Copyright 2019 The Sora Project Authors (https://github.com/sora-xor/sora-font)
+Licensed under the SIL Open Font License, Version 1.1.
+https://scripts.sil.org/OFL

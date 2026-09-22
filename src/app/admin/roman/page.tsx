@@ -3,25 +3,36 @@ import Link from "next/link";
 import { RomanAdminList } from "@/components/features/admin/roman-admin-list";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import {
+  getRomanAdminModule,
+  matchesAdminModule,
+  type RomanAdminModuleId,
+} from "@/lib/roman/admin-module";
 import { listRomanKontexte } from "@/lib/roman/repository";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
-  title: "Buch — Leseno Admin",
-  description: "Buchprojekte und KI-Rollen der Buch-Pipeline.",
+  title: "Roman — Leseno Admin",
+  description: "Romanprojekte und KI-Rollen der Belletristik-Pipeline.",
 };
 
+const MODULE_ID: RomanAdminModuleId = "roman";
+
 /**
- * Admin index for the internal book writing pipeline.
+ * Admin index for the internal novel (Belletristik) writing pipeline.
  */
 export default async function RomanAdminPage() {
+  const adminModule = getRomanAdminModule(MODULE_ID);
   let romane: Awaited<ReturnType<typeof listRomanKontexte>> = [];
   let canSave = false;
   let readOnlyNotice: string | undefined =
-    "Vorschau: Bücher konnten nicht geladen werden. Bitte Migration `20260911160000_roman_pipeline.sql` ausführen.";
+    "Vorschau: Romane konnten nicht geladen werden. Bitte Migration `20260911160000_roman_pipeline.sql` ausführen.";
 
   try {
-    romane = await listRomanKontexte();
+    const all = await listRomanKontexte();
+    romane = all.filter((r) =>
+      matchesAdminModule(r.editorial?.buchTyp, MODULE_ID),
+    );
     canSave = hasServiceRoleConfig();
     if (!canSave) {
       readOnlyNotice =
@@ -35,7 +46,7 @@ export default async function RomanAdminPage() {
         "Vorschau: `SUPABASE_SERVICE_ROLE_KEY` fehlt. Bitte `.env.local` prüfen.";
     } else {
       const message =
-        error instanceof Error ? error.message : "Buch-Modul nicht verfügbar.";
+        error instanceof Error ? error.message : "Roman-Modul nicht verfügbar.";
       readOnlyNotice = `Vorschau: ${message}`;
     }
   }
@@ -49,15 +60,15 @@ export default async function RomanAdminPage() {
             Admin
           </p>
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            Buch
+            {adminModule.label}
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Internes Werkzeug für Buchprojekte. Pipeline wird neu aufgebaut —
+            Internes Werkzeug für Belletristik. Buchtyp ist fest Belletristik —
             KI-Rollen und Prompts verwaltest du hier im Modul.
           </p>
           <div className="mt-4">
             <Link
-              href="/admin/roman/rollen"
+              href={`${adminModule.basePath}/rollen`}
               className="text-sm font-bold text-orange-800 hover:underline"
             >
               KI-Rollen verwalten
@@ -68,6 +79,7 @@ export default async function RomanAdminPage() {
               initialRomane={romane}
               canSave={canSave}
               readOnlyNotice={readOnlyNotice}
+              moduleId={MODULE_ID}
             />
           </div>
         </section>

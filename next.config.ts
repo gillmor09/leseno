@@ -19,10 +19,17 @@ const nextConfig: NextConfig = {
   compress: false,
   // Native canvas must stay external for social image text overlay.
   serverExternalPackages: ["@napi-rs/canvas", "sharp", "opentype.js", "unpdf"],
-  // Vendored Nunito TTF + Frage background for social overlays.
+  // Vendored TTFs + Clever cover logos + Frage background.
   outputFileTracingIncludes: {
     "/*": [
+      "./src/assets/fonts/Nunito-ExtraBold.ttf",
+      "./src/assets/fonts/Nunito-Bold.ttf",
       "./src/assets/fonts/Nunito-SemiBold.ttf",
+      "./src/assets/fonts/Sora-ExtraBold.ttf",
+      "./src/assets/fonts/Sora-Bold.ttf",
+      "./src/assets/fonts/Sora-SemiBold.ttf",
+      "./public/clever_erzählt_300.png",
+      "./public/leseno-komplett-256.png",
       "./public/bg3.jpg",
       "./public/landing/vogel-hell.webp",
     ],

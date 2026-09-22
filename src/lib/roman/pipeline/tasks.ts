@@ -2,8 +2,10 @@
  * Resolve pipeline task_key → KI role (+ model via resolveRomanKiRolle).
  */
 
+import type { RomanAdminModuleId } from "@/lib/roman/admin-module";
 import { createServiceClient } from "@/lib/supabase/service";
 import {
+  isCleverErzaehltRoleKey,
   resolveRomanKiRolle,
   type RomanKiRolle,
 } from "@/lib/roman/roles";
@@ -152,6 +154,54 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
   },
 ];
 
+/**
+ * Clever erzählt: Wissen sammeln → checken → Geschichte → Leser-Feedback.
+ * Feedback einarbeiten nutzt dieselbe Erzähler-Rolle (kein eigener Task).
+ */
+export const FALLBACK_CLEVER_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
+  {
+    taskKey: "wissen.collect",
+    label: "Wissen · Sammeln",
+    stage: "wissen",
+    kind: "draft",
+    rolleKey: "clever_wissenssammler",
+    sortOrder: 200,
+    updatedAt: null,
+  },
+  {
+    taskKey: "wissen.verify",
+    label: "Wissen · Faktencheck",
+    stage: "wissen",
+    kind: "critique",
+    rolleKey: "clever_faktenchecker",
+    sortOrder: 210,
+    updatedAt: null,
+  },
+  {
+    taskKey: "geschichte.draft",
+    label: "Geschichte · Entwurf",
+    stage: "geschichte",
+    kind: "draft",
+    rolleKey: "clever_erzaehler",
+    sortOrder: 220,
+    updatedAt: null,
+  },
+  {
+    taskKey: "geschichte.feedback",
+    label: "Geschichte · Leser-Feedback",
+    stage: "geschichte",
+    kind: "critique",
+    rolleKey: "clever_leser",
+    sortOrder: 230,
+    updatedAt: null,
+  },
+];
+
+const ALL_FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
+  ...FALLBACK_PIPELINE_AUFGABEN,
+  ...FALLBACK_CLEVER_PIPELINE_AUFGABEN,
+];
+
 function rowToAufgabe(row: AufgabeRow): RomanPipelineAufgabe {
   const kind = row.kind as PipelineTaskKind;
   return {
@@ -177,8 +227,19 @@ function mergeFallback(
   const keys = new Set(rows.map((r) => r.taskKey));
   return [
     ...rows,
-    ...FALLBACK_PIPELINE_AUFGABEN.filter((f) => !keys.has(f.taskKey)),
+    ...ALL_FALLBACK_PIPELINE_AUFGABEN.filter((f) => !keys.has(f.taskKey)),
   ].sort((a, b) => a.sortOrder - b.sortOrder || a.taskKey.localeCompare(b.taskKey));
+}
+
+/** Clever vs Roman/Sachbuch task sets (by role key). */
+export function filterAufgabenForAdminModule(
+  aufgaben: RomanPipelineAufgabe[],
+  moduleId: RomanAdminModuleId,
+): RomanPipelineAufgabe[] {
+  if (moduleId === "clever_erzaehlt") {
+    return aufgaben.filter((a) => isCleverErzaehltRoleKey(a.rolleKey));
+  }
+  return aufgaben.filter((a) => !isCleverErzaehltRoleKey(a.rolleKey));
 }
 
 /** Load all pipeline task bindings. */
@@ -193,7 +254,7 @@ export async function loadPipelineAufgaben(options?: {
     if (options?.mergeFallback !== false) return mergeFallback(rows);
     return rows;
   } catch {
-    return [...FALLBACK_PIPELINE_AUFGABEN];
+    return [...ALL_FALLBACK_PIPELINE_AUFGABEN];
   }
 }
 
@@ -224,7 +285,7 @@ export async function resolvePipelineTask(taskKey: string): Promise<{
   const aufgaben = await loadPipelineAufgaben({ mergeFallback: true });
   const aufgabe =
     aufgaben.find((a) => a.taskKey === taskKey) ??
-    FALLBACK_PIPELINE_AUFGABEN.find((a) => a.taskKey === taskKey);
+    ALL_FALLBACK_PIPELINE_AUFGABEN.find((a) => a.taskKey === taskKey);
   if (!aufgabe) {
     throw new Error(`Unbekannte Pipeline-Aufgabe „${taskKey}“.`);
   }
@@ -288,6 +349,8 @@ export function groupAufgabenByStage(
     "szenenplot",
     "manuskript",
     "pipeline",
+    "wissen",
+    "geschichte",
   ];
   const byStage = new Map<string, RomanPipelineAufgabe[]>();
   for (const a of aufgaben) {

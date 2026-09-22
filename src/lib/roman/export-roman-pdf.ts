@@ -1,7 +1,7 @@
 /**
  * Admin roman export: HTML preview + text PDF (jsPDF + embedded Nunito).
- * Order: optional cover image → eBook front matter → Manuskript chapters
- * (or legacy revised scenes). Text PDFs avoid blank html2canvas captures.
+ * Order: optional cover → front matter → chapters
+ * (prose → optional Clever Infografik → Abenteuer-Wissen).
  */
 
 import { jsPDF } from "jspdf";
@@ -11,6 +11,14 @@ import {
   nunitoGoogleFontsLinkTag,
 } from "@/lib/pdf/export-font";
 import { ensureNunitoOnPdf, setNunito } from "@/lib/pdf/jspdf-nunito";
+import {
+  abenteuerWissenExportLines,
+  stripErzaehlerWrappers,
+} from "@/lib/roman/clever-geschichte";
+import type {
+  CleverUnterthemen,
+  RomanEditorial,
+} from "@/lib/roman/editorial";
 import {
   emptyVorsatz,
   hasUsableVorsatz,
@@ -34,6 +42,13 @@ export type RomanExportChapter = {
   number: number;
   title: string;
   body: string;
+  /**
+   * Clever erzählt: full-page Abenteuer-Wissen infographic (1200×1920) after prose,
+   * before the facts list.
+   */
+  infografikDataUrl?: string | null;
+  /** Clever erzählt: numbered takeaways after the infographic. */
+  abenteuerWissenFakten?: string[];
 };
 
 function escapeHtml(value: string): string {
@@ -80,6 +95,47 @@ export function collectManuskriptExportChapters(
       body: stripLeadingChapterHeadings(chapter.body, chapter.number).trim(),
     }))
     .filter((chapter) => chapter.body.length > 0);
+}
+
+/**
+ * Clever: attach Infografik + Abenteuer-Wissen (order: prose → image → list).
+ * Strips any legacy Abenteuer-Wissen block from prose.
+ */
+export function enrichCleverExportChapters(
+  chapters: RomanExportChapter[],
+  unterthemen: CleverUnterthemen | null | undefined,
+): RomanExportChapter[] {
+  if (!unterthemen?.kapitel.length) {
+    return chapters.map((c) => ({
+      ...c,
+      body: stripErzaehlerWrappers(c.body).trim(),
+    }));
+  }
+  const byNum = new Map(unterthemen.kapitel.map((k) => [k.nummer, k]));
+  return chapters.map((c) => {
+    const kap = byNum.get(c.number);
+    const fakten = (kap?.fakten ?? [])
+      .map((f) => f.trim())
+      .filter((f) => f.length >= 3);
+    const url = kap?.infografikDataUrl?.trim() ?? "";
+    const cleanTitle = (kap?.titel ?? c.title).trim();
+    return {
+      ...c,
+      title: cleanTitle || c.title,
+      body: stripErzaehlerWrappers(c.body).trim(),
+      infografikDataUrl: url.startsWith("data:image/") ? url : null,
+      abenteuerWissenFakten: fakten,
+    };
+  });
+}
+
+/** Manuskript chapters, with Clever extras when `buchTyp === clever_erzaehlt`. */
+export function collectExportChaptersFromEditorial(
+  editorial: Pick<RomanEditorial, "buchTyp" | "manuskriptText" | "cleverUnterthemen">,
+): RomanExportChapter[] {
+  const base = collectManuskriptExportChapters(editorial.manuskriptText ?? "");
+  if (editorial.buchTyp !== "clever_erzaehlt") return base;
+  return enrichCleverExportChapters(base, editorial.cleverUnterthemen);
 }
 
 function chaptersFromRevisedScenes(
@@ -252,6 +308,50 @@ const ROMAN_EXPORT_CSS = `
     color: #18181b;
   }
   .scene-body p:last-child { margin-bottom: 0; }
+  .infografik {
+    margin: 0;
+    padding: 0;
+    text-align: center;
+    break-before: page;
+    break-after: page;
+  }
+  .infografik img {
+    display: block;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    border-radius: 0;
+  }
+  .abenteuer-wissen {
+    margin: 1.25rem 0 0;
+    padding: 1rem 0 0;
+    border-top: 1px solid #e4e4e7;
+  }
+  .abenteuer-wissen h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #9a3412;
+  }
+  .abenteuer-wissen .hint {
+    margin: 0 0 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #a16207;
+  }
+  .abenteuer-wissen ol {
+    margin: 0;
+    padding: 0 0 0 1.25rem;
+  }
+  .abenteuer-wissen li {
+    margin: 0 0 0.45rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.45;
+    color: #18181b;
+  }
   @media print {
     .leseno-pdf-root { padding: 0; }
     .cover-bleed { margin: 0 0 0; break-after: page; }
@@ -345,11 +445,31 @@ export function buildRomanExportDocument(input: RomanExportInput): string {
   const chaptersHtml = chapters
     .map((chapter) => {
       const body = paragraphsToHtml(chapter.body);
+      const info = (chapter.infografikDataUrl ?? "").trim();
+      const fakten = abenteuerWissenExportLines(
+        chapter.abenteuerWissenFakten ?? [],
+      );
+      const infoHtml =
+        info.startsWith("data:image/") && info.length <= 900_000
+          ? `<div class="infografik"><img src="${escapeHtml(info)}" alt="Infografik" /></div>`
+          : info.startsWith("data:image/")
+            ? `<div class="infografik"><p class="meta">Infografik (nur in der gespeicherten PDF)</p></div>`
+            : "";
+      const wissenHtml =
+        fakten.length > 0
+          ? `<aside class="abenteuer-wissen">
+    <h3>Abenteuer-Wissen</h3>
+    <p class="hint">Was du aus diesem Abenteuer mitnimmst:</p>
+    <ol>${fakten.map((line) => `<li>${escapeHtml(line.replace(/^\d+\.\s*/, ""))}</li>`).join("")}</ol>
+  </aside>`
+          : "";
       return `
   <section class="chapter">
     <h2 class="chapter-title">${escapeHtml(chapterHeadingLabel(chapter))}</h2>
     <article class="scene">
       <div class="scene-body">${body}</div>
+      ${infoHtml}
+      ${wissenHtml}
     </article>
   </section>`;
     })
@@ -585,6 +705,19 @@ function drawFullBleedCover(
   pdf.addImage(dataUrl, fmt, x, y, drawW, drawH);
 }
 
+/** Full-page chapter infographic (1200×1920) — own PDF page, cover-fit. */
+function drawChapterInfografik(ctx: WriteCtx, dataUrl: string): void {
+  const { pdf, pageWidth, pageHeight } = ctx;
+  startNewPage(ctx);
+  try {
+    drawFullBleedCover(pdf, dataUrl, pageWidth, pageHeight);
+    // Image owns the whole page; next content starts on a fresh page.
+    ctx.y = pageHeight;
+  } catch {
+    // Infografik optional — skip broken data URLs.
+  }
+}
+
 /**
  * Builds a real text PDF (Nunito embedded) from Manuskript chapters.
  * Amazon eBook page size (1:1.6); optional cover; chapter = new page;
@@ -650,7 +783,12 @@ export async function buildRomanPdfBlob(
 
   for (const chapter of chapters) {
     const paras = paragraphsPlain(chapter.body);
-    if (!paras.length) continue;
+    const fakten = abenteuerWissenExportLines(
+      chapter.abenteuerWissenFakten ?? [],
+    );
+    const infoUrl = (chapter.infografikDataUrl ?? "").trim();
+    const hasInfo = infoUrl.startsWith("data:image/");
+    if (!paras.length && !hasInfo && fakten.length === 0) continue;
 
     if (pageUsed || storyStartPdfPage !== 0) {
       startNewPage(ctx);
@@ -677,6 +815,33 @@ export async function buildRomanPdfBlob(
       const lines = pdf.splitTextToSize(para, contentWidth) as string[];
       writeLines(ctx, lines, PDF_BODY_LINE_MM);
       ctx.y += 2.5;
+    }
+
+    // Clever reader order: Infografik (full page) → Abenteuer-Wissen list.
+    if (hasInfo) {
+      drawChapterInfografik(ctx, infoUrl);
+    }
+
+    if (fakten.length > 0) {
+      if (hasInfo) startNewPage(ctx);
+      else ctx.y += 3;
+      setNunito(pdf, "bold", PDF_BODY_PT);
+      pdf.setTextColor(154, 52, 18);
+      writeLines(ctx, ["Abenteuer-Wissen"], PDF_BODY_LINE_MM);
+      setNunito(pdf, "normal", PDF_BODY_PT);
+      pdf.setTextColor(161, 98, 7);
+      const hintLines = pdf.splitTextToSize(
+        "Was du aus diesem Abenteuer mitnimmst:",
+        contentWidth,
+      ) as string[];
+      writeLines(ctx, hintLines, PDF_BODY_LINE_MM);
+      ctx.y += 1.5;
+      pdf.setTextColor(24, 24, 27);
+      for (const line of fakten) {
+        const lines = pdf.splitTextToSize(line, contentWidth) as string[];
+        writeLines(ctx, lines, PDF_BODY_LINE_MM);
+        ctx.y += 1.2;
+      }
     }
   }
 

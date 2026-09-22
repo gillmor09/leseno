@@ -6,7 +6,7 @@
  * start → critique → cascade → finish for Verbessern) for live progress.
  */
 
-import { revalidatePath } from "next/cache";
+import { revalidateRomanAdmin, revalidateRomanAdminRollen } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
@@ -27,11 +27,17 @@ import {
   type PipelineStepResult,
 } from "@/lib/roman/pipeline/runner";
 import {
+  PIPELINE_STAGES,
+  cleverManuskriptSkipsReifegrad,
+  type PipelineStage,
+} from "@/lib/roman/pipeline/stages";
+import {
   loadPipelineAufgaben,
   savePipelineAufgabe,
   type RomanPipelineAufgabe,
 } from "@/lib/roman/pipeline/tasks";
-import { PIPELINE_STAGES } from "@/lib/roman/pipeline/stages";
+import { emptyRomanEditorial } from "@/lib/roman/editorial";
+import { getRomanKontext } from "@/lib/roman/repository";
 import { ALL_REIFEGRAD_DIMENSION_KEYS } from "@/lib/roman/reifegrad-craft";
 import type { ActionResult } from "@/lib/types/actions";
 
@@ -73,8 +79,23 @@ function asEvents(value: unknown[]): PipelineHistoryEvent[] {
 }
 
 function revalidateBook(romanId: string) {
-  revalidatePath("/admin/roman");
-  revalidatePath(`/admin/roman/${romanId}`);
+  revalidateRomanAdmin(romanId);
+}
+
+const CLEVER_MANUSKRIPT_REIFEGRAD_BLOCKED =
+  "Bei Clever erzählt gibt es keinen übergeordneten Manuskript-Reifegrad — bitte je Kurzgeschichte gegenlesen oder verbessern.";
+
+async function denyCleverManuskriptReifegrad(
+  romanId: string,
+  stage: PipelineStage,
+): Promise<string | null> {
+  const roman = await getRomanKontext(romanId);
+  if (!roman) return "Buch nicht gefunden.";
+  const buchTyp = (roman.editorial ?? emptyRomanEditorial()).buchTyp;
+  if (cleverManuskriptSkipsReifegrad(buchTyp, stage)) {
+    return CLEVER_MANUSKRIPT_REIFEGRAD_BLOCKED;
+  }
+  return null;
 }
 
 function stepResult(
@@ -496,7 +517,7 @@ export async function saveRomanPipelineAufgabeAction(
         error: "Aufgabe nach dem Speichern nicht gefunden.",
       };
     }
-    revalidatePath("/admin/roman/rollen");
+    revalidateRomanAdminRollen();
     return { success: true, data: { aufgabe } };
   } catch (error) {
     return {
@@ -538,6 +559,11 @@ export async function romanPipelineDimensionAnalyzeAction(
   }
 
   try {
+    const blocked = await denyCleverManuskriptReifegrad(
+      parsed.data.romanId,
+      parsed.data.stage,
+    );
+    if (blocked) return { success: false, error: blocked };
     const {
       analyzeReifegradDimension,
       isReifegradDimensionForStage,
@@ -595,6 +621,11 @@ export async function romanPipelineDimensionApplyAction(
   }
 
   try {
+    const blocked = await denyCleverManuskriptReifegrad(
+      parsed.data.romanId,
+      parsed.data.stage,
+    );
+    if (blocked) return { success: false, error: blocked };
     const { applyReifegradDimensionPlan } = await import(
       "@/lib/roman/reifegrad-dimension"
     );
@@ -702,6 +733,11 @@ export async function romanPipelineStageVerbessernAnalyzeAction(
   }
 
   try {
+    const blocked = await denyCleverManuskriptReifegrad(
+      parsed.data.romanId,
+      parsed.data.stage,
+    );
+    if (blocked) return { success: false, error: blocked };
     const { analyzeStageVerbessern } = await import(
       "@/lib/roman/stage-verbessern"
     );
@@ -749,6 +785,11 @@ export async function romanPipelineStageVerbessernApplyAction(
   }
 
   try {
+    const blocked = await denyCleverManuskriptReifegrad(
+      parsed.data.romanId,
+      parsed.data.stage,
+    );
+    if (blocked) return { success: false, error: blocked };
     const { applyStageVerbessern } = await import(
       "@/lib/roman/stage-verbessern"
     );
@@ -846,6 +887,11 @@ export async function romanPipelineDimensionImproveAction(
   }
 
   try {
+    const blocked = await denyCleverManuskriptReifegrad(
+      parsed.data.romanId,
+      parsed.data.stage,
+    );
+    if (blocked) return { success: false, error: blocked };
     const {
       improveReifegradDimension,
       isReifegradDimensionForStage,

@@ -37,6 +37,18 @@ export function sanitizeFluxVisualCue(text: string, maxLen = 280): string {
     .slice(0, maxLen);
 }
 
+/**
+ * Style / art-direction cues for the image model — keep “3D”, ages, etc.
+ * Only strips quote marks that FLUX may paint as glyphs.
+ */
+export function sanitizeFluxStyleCue(text: string, maxLen = 900): string {
+  return text
+    .replace(/[„“”"«»'’']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLen);
+}
+
 /** Day-of-month mood without putting calendar digits in the prompt. */
 export function fluxDayVisualVariation(postDate: string): string {
   const day = Number(postDate.slice(-2));

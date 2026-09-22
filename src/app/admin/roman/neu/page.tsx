@@ -5,11 +5,11 @@ import { AppHeader } from "@/components/features/landing/app-header";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
-  title: "Neues Buch — Leseno Admin",
+  title: "Neuer Roman — Leseno Admin",
 };
 
 /**
- * Create a new book shell (title only); pipeline steps come later.
+ * Create a new Roman shell (title only); buchTyp = Belletristik.
  */
 export default async function RomanAdminNewPage() {
   const canSave = hasServiceRoleConfig();
@@ -23,10 +23,10 @@ export default async function RomanAdminNewPage() {
             Admin
           </p>
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            Neues Buch
+            Neuer Roman
           </h1>
           <div className="mt-8">
-            <RomanCreateForm canSave={canSave} />
+            <RomanCreateForm canSave={canSave} moduleId="roman" />
           </div>
         </section>
       </main>

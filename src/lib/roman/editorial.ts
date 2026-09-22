@@ -15,9 +15,63 @@ import {
   type RomanSzenenplotStructured,
 } from "@/lib/roman/szenenplot-structured";
 
+/** Clever erzählt: per-fact Faktenchecker result. */
+export type CleverFaktCheckStatus =
+  | "ok"
+  | "korrigiert"
+  | "unsicher"
+  | "fehlerhaft";
+
+export type CleverFaktCheck = {
+  status: CleverFaktCheckStatus;
+  /** Short note; empty when ok. */
+  hinweis: string;
+  /** Corrected fact text when status is korrigiert. */
+  faktKorrigiert: string;
+};
+
+/** Clever erzählt: chapter-level check signal. */
+export type CleverKapitelCheckStatus = "ungeprueft" | "ok" | "nacharbeit";
+
+/** Clever erzählt: one chapter subtopic with facts (stored on editorial). */
+export type CleverUnterthemaKapitel = {
+  nummer: number;
+  titel: string;
+  fakten: string[];
+  checkStatus: CleverKapitelCheckStatus;
+  /** Chapter-level summary from Faktenchecker. */
+  checkHinweis: string;
+  /** Parallel to `fakten` (same length after check). */
+  faktChecks: CleverFaktCheck[];
+  checkedAt: string | null;
+  /** Infographic JPEG data URL (Abenteuer-Wissen visual); null = none. */
+  infografikDataUrl: string | null;
+  /** Image prompt from Infografik-Designer (debug / regen). */
+  infografikPrompt: string;
+  infografikGeneratedAt: string | null;
+  infografikModelLabel: string;
+};
+
+/** Clever erzählt: 10 Unterthemen document from Wissenssammler. */
+export type CleverUnterthemen = {
+  thema: string;
+  faktenProKapitel: number;
+  generatedAt: string;
+  modelLabel: string;
+  /** When Faktenchecker last finished a full pass. */
+  checkedAt: string | null;
+  checkModelLabel: string;
+  kapitel: CleverUnterthemaKapitel[];
+};
+
 export type RomanMehrteilerForm = "unbekannt" | "einzelband" | "duologie" | "trilogie" | "serie";
 
-export type RomanBuchTyp = "unbekannt" | "belletristik" | "serie_welt" | "sachbuch";
+export type RomanBuchTyp =
+  | "unbekannt"
+  | "belletristik"
+  | "serie_welt"
+  | "sachbuch"
+  | "clever_erzaehlt";
 
 export type RomanGateId = "idee" | "fundament" | "struktur" | "outline";
 
@@ -400,6 +454,31 @@ export type RomanEditorial = {
   zielWortzahlRoman: number | null;
   zielWortzahlSzeneMin: number | null;
   zielWortzahlSzeneMax: number | null;
+  /**
+   * Clever erzählt: target length per Kurzgeschichte in minutes (5 or 10).
+   * Chosen at create with Altersgruppe; Erzähler must follow this, not invent length.
+   */
+  cleverGeschichteMinuten: 5 | 10 | null;
+  /**
+   * Clever erzählt: 10 Unterthemen (+ Fakten) from Wissenssammler.
+   * See `src/lib/roman/clever-unterthemen.ts`.
+   */
+  cleverUnterthemen: CleverUnterthemen | null;
+  /**
+   * Clever erzählt: pending Verbessern plan per Kurzgeschichte number (string key).
+   * Analyze → dialog → apply / Fertig (OK) — no Autor-Entscheidungen.
+   */
+  cleverGeschichteImprove: Record<string, RomanReifegradImprovePlan> | null;
+  /**
+   * Clever erzählt: how many times Verbessern was applied per story number.
+   * Survives re-analyze / Fertig of the open plan.
+   */
+  cleverGeschichteImproveCount: Record<string, number> | null;
+  /**
+   * Clever erzählt: chapters marked OK via Verbessern-Dialog „Fertig“.
+   * Key = chapter number string.
+   */
+  cleverGeschichteOk: Record<string, true> | null;
   serieTitel: string;
   bandNr: number | null;
   mehrteilerForm: RomanMehrteilerForm;
@@ -468,7 +547,8 @@ export type RomanEditorial = {
   reifegrade?: RomanReifegrade;
   /**
    * Manual author „Fertig“ toggle per pipeline tab (soft-green tab chrome).
-   * Keys: typ | idee | spec | outline | schreiben | cover | export.
+   * Keys: typ | idee | spec | outline | schreiben | export
+   * (`cover` kept for legacy stored flags; UI lives under Export).
    */
   pipelineFertig: RomanPipelineFertig;
 };
@@ -519,6 +599,11 @@ export function emptyRomanEditorial(): RomanEditorial {
     zielWortzahlRoman: null,
     zielWortzahlSzeneMin: 1800,
     zielWortzahlSzeneMax: 2500,
+    cleverGeschichteMinuten: null,
+    cleverUnterthemen: null,
+    cleverGeschichteImprove: null,
+    cleverGeschichteImproveCount: null,
+    cleverGeschichteOk: null,
     serieTitel: "",
     bandNr: null,
     mehrteilerForm: "unbekannt",
@@ -546,6 +631,7 @@ export const BUCHTYP_LABELS: Record<RomanBuchTyp, string> = {
   belletristik: "Belletristik (Einzelband)",
   serie_welt: "Serie / Weltbau",
   sachbuch: "Sachbuch",
+  clever_erzaehlt: "Clever erzählt",
 };
 
 export const BUCHTYP_HINTS: Record<Exclude<RomanBuchTyp, "unbekannt">, string> = {
@@ -555,6 +641,8 @@ export const BUCHTYP_HINTS: Record<Exclude<RomanBuchTyp, "unbekannt">, string> =
     "Kinderbuch-/Fantasy-Serie: Welt- und Serien-Bibel steuern Kontinuität — Outline allein reicht nicht.",
   sachbuch:
     "These und Kapitel-Argumentbaum steuern die Roadmap — nicht Dramaturgie-Szenen.",
+  clever_erzaehlt:
+    "Wissensgebiet in mehreren Abenteuer-Geschichten: Fakten werden erlebt; Abenteuer-Wissen separat (Export).",
 };
 
 export function isBuchTypSet(typ: RomanBuchTyp): boolean {
@@ -566,6 +654,43 @@ export function isPipelineTabFertig(
   tabId: keyof RomanPipelineFertig | string,
 ): boolean {
   return Boolean(editorial?.pipelineFertig?.[tabId as keyof RomanPipelineFertig]);
+}
+
+/**
+ * Pipeline tabs counted for list progress (Fertig-Toggles).
+ * Clever: Basics → Unterthemen → Geschichten → Export (4).
+ * Roman/Sachbuch: + Idee + Spec (6).
+ */
+export const PIPELINE_FERTIG_STEPS_CLEVER = [
+  "typ",
+  "outline",
+  "schreiben",
+  "export",
+] as const satisfies ReadonlyArray<keyof RomanPipelineFertig>;
+
+export const PIPELINE_FERTIG_STEPS_FULL = [
+  "typ",
+  "idee",
+  "spec",
+  "outline",
+  "schreiben",
+  "export",
+] as const satisfies ReadonlyArray<keyof RomanPipelineFertig>;
+
+/** How many Fertig-Schritte are done vs total for this buchTyp. */
+export function countPipelineFertigProgress(
+  editorial: RomanEditorial | null | undefined,
+  buchTyp?: RomanBuchTyp | null,
+): { done: number; total: number } {
+  const steps =
+    buchTyp === "clever_erzaehlt"
+      ? PIPELINE_FERTIG_STEPS_CLEVER
+      : PIPELINE_FERTIG_STEPS_FULL;
+  let done = 0;
+  for (const key of steps) {
+    if (isPipelineTabFertig(editorial, key)) done += 1;
+  }
+  return { done, total: steps.length };
 }
 
 /** Set / clear one tab’s Fertig flag (immutable). */
@@ -602,6 +727,7 @@ function parsePipelineFertig(raw: unknown): RomanPipelineFertig {
 export function strukturDocForTyp(editorial: RomanEditorial): string {
   switch (editorial.buchTyp) {
     case "belletristik":
+    case "clever_erzaehlt":
       return editorial.handlungsArchitektur.trim();
     case "serie_welt":
       return [editorial.weltBibel.trim(), editorial.serienBibel.trim()]
@@ -616,7 +742,7 @@ export function strukturDocForTyp(editorial: RomanEditorial): string {
 
 /**
  * Exposé text for the current book type (same storage as Struktur-docs).
- * Belletristik → handlungsArchitektur; Serie → welt-/serien-Bibel; Sachbuch → sachbuchStruktur.
+ * Belletristik / Clever erzählt → handlungsArchitektur; Serie → welt-/serien-Bibel; Sachbuch → sachbuchStruktur.
  */
 export function exposeTextFromEditorial(editorial: RomanEditorial): string {
   return strukturDocForTyp(editorial);
@@ -633,6 +759,7 @@ export function withExposeText(
   const trimmed = text.trim().slice(0, 80_000);
   switch (editorial.buchTyp) {
     case "belletristik":
+    case "clever_erzaehlt":
       return { ...editorial, handlungsArchitektur: trimmed };
     case "serie_welt":
       return { ...editorial, weltBibel: trimmed };
@@ -687,7 +814,7 @@ export const ROMAN_ALTER_PRESETS: RomanEditorialPreset[] = [
     id: "kinder-8-10",
     kind: "alter",
     label: "Kinderbuch (8–10)",
-    hint: "Vorlesen & erstes Selbstlesen · ca. 20.000–35.000 Wörter.",
+    hint: "Vorlesen & erstes Selbstlesen · ca. 20.000–35.000 Wörter · Clever erzählt: ca. 5-Min-Geschichten.",
     apply: {
       zielAlterMin: 8,
       zielAlterMax: 10,
@@ -695,6 +822,20 @@ export const ROMAN_ALTER_PRESETS: RomanEditorialPreset[] = [
       zielWortzahlRoman: 28_000,
       zielWortzahlSzeneMin: 1_200,
       zielWortzahlSzeneMax: 2_000,
+    },
+  },
+  {
+    id: "kinder-10-12",
+    kind: "alter",
+    label: "Kinderbuch (10–12)",
+    hint: "Selbstlesen · Clever erzählt: ca. 10-Min-Geschichten · ca. 12.000–20.000 Wörter.",
+    apply: {
+      zielAlterMin: 10,
+      zielAlterMax: 12,
+      lesestufe: "Kinderbuch / Selbstlesen",
+      zielWortzahlRoman: 15_000,
+      zielWortzahlSzeneMin: 900,
+      zielWortzahlSzeneMax: 1_300,
     },
   },
   {
@@ -779,6 +920,22 @@ export const ROMAN_GENRE_OPTIONS_SACHBUCH = [
   "Finanzen",
   "Technik / Digitales",
   "Reise / Reportage",
+] as const;
+
+/** Knowledge domains for Clever erzählt (stories that teach). */
+export const ROMAN_GENRE_OPTIONS_CLEVER_ERZAEHLT = [
+  "Natur & Tiere",
+  "Weltall & Physik",
+  "Geschichte",
+  "Technik & Erfinden",
+  "Körper & Gesundheit",
+  "Erde & Klima",
+  "Mathematik & Denksport",
+  "Kulturen & Sprachen",
+  "Wirtschaft & Alltag",
+  "Kunst & Musik",
+  "Philosophie für Einsteiger",
+  "Digitales & Medien",
 ] as const;
 
 /** Book-length choices (Wörter) — aligned with common DE market bands. */
@@ -951,6 +1108,7 @@ export function genreOptionsForBuchTyp(
   buchTyp: RomanBuchTyp,
 ): readonly string[] {
   if (buchTyp === "sachbuch") return ROMAN_GENRE_OPTIONS_SACHBUCH;
+  if (buchTyp === "clever_erzaehlt") return ROMAN_GENRE_OPTIONS_CLEVER_ERZAEHLT;
   return ROMAN_GENRE_OPTIONS_BELLETRISTIK;
 }
 
@@ -1076,6 +1234,12 @@ function alterLeitplanken(alterPresetId: string): string[] {
         "Konflikt und Gefahr erlaubt, aber ohne Grausamkeit und ohne traumatische Detailtiefe.",
         "Kapitel mit klarem dramatischem oder emotionalem Haken beenden.",
       ];
+    case "kinder-10-12":
+      return [
+        "Selbstlese-tauglich: etwas längere Sätze und mehr Eigenantrieb der Figuren.",
+        "Konflikt und Neugier erwünscht — ohne Grausamkeit und ohne Erwachsenen-Zynismus.",
+        "Lernpunkte klar, aber ohne Lehrbuch-Ton.",
+      ];
     case "jugend-11-14":
       return [
         "Mehr Tempo und Konflikt als im Kinderbuch, aber noch zugänglich — kein Hard-YA.",
@@ -1141,6 +1305,13 @@ function buchTypLeitplanken(buchTyp: RomanBuchTyp): string[] {
     return [
       "Sachbuch: These und Leserversprechen steuern die Kapitel — keine Roman-Dramaturgie erzwingen.",
       "Beispiele und Argumente klar; Fachjargon nur mit Erklärung.",
+    ];
+  }
+  if (buchTyp === "clever_erzaehlt") {
+    return [
+      "Clever erzählt: Abenteuer-Geschichten — Fakten erlebt; Abenteuer-Wissen separat für UI/Export.",
+      "Erzählung trägt das Wissen: Figuren und Plot dienen dem Verständnis, nicht umgekehrt.",
+      "Fachlich korrekt, aber lebendig — kein Lehrbuch-Ton, keine Roman-Spannung ohne Erkenntnis.",
     ];
   }
   if (buchTyp === "serie_welt") {
@@ -1219,6 +1390,11 @@ export function buildBasisRegeln(input: {
     bullets.push(
       `Genre „${genre}“: Nutzen und Klarheit vor Anekdoten-Ballast; Kapitel mit greifbarem Takeaway.`,
       "Behauptungen nachvollziehbar machen — Beispiele, Schritte oder Belege einbauen.",
+    );
+  } else if (genre && input.buchTyp === "clever_erzaehlt") {
+    bullets.push(
+      `Wissensgebiet „${genre}“: jede Kurzgeschichte vermittelt einen greifbaren Lernpunkt aus diesem Gebiet.`,
+      "Dramaturgie und Figuren sind Träger des Wissens — am Ende jeder Geschichte steht eine klare Erkenntnis.",
     );
   } else if (genre) {
     bullets.push(
@@ -1358,11 +1534,151 @@ function asBuchTyp(value: unknown): RomanBuchTyp {
     value === "belletristik" ||
     value === "serie_welt" ||
     value === "sachbuch" ||
+    value === "clever_erzaehlt" ||
     value === "unbekannt"
   ) {
     return value;
   }
   return "unbekannt";
+}
+
+function parseCleverFaktCheck(raw: unknown): CleverFaktCheck {
+  if (!raw || typeof raw !== "object") {
+    return { status: "ok", hinweis: "", faktKorrigiert: "" };
+  }
+  const row = raw as Record<string, unknown>;
+  const statusRaw = String(row.status ?? "").trim();
+  const status: CleverFaktCheckStatus =
+    statusRaw === "korrigiert" ||
+    statusRaw === "unsicher" ||
+    statusRaw === "fehlerhaft" ||
+    statusRaw === "ok"
+      ? statusRaw
+      : "unsicher";
+  return {
+    status,
+    hinweis: String(row.hinweis ?? "").trim().slice(0, 800),
+    faktKorrigiert: String(row.faktKorrigiert ?? "").trim().slice(0, 1_200),
+  };
+}
+
+function parseCleverUnterthemenField(raw: unknown): CleverUnterthemen | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const thema = String(row.thema ?? "").trim();
+  if (!thema) return null;
+  const faktenProKapitel = Number(row.faktenProKapitel);
+  const kapitelRaw = Array.isArray(row.kapitel) ? row.kapitel : [];
+  const kapitel: CleverUnterthemaKapitel[] = [];
+  for (const item of kapitelRaw.slice(0, 12)) {
+    if (!item || typeof item !== "object") continue;
+    const k = item as Record<string, unknown>;
+    const titel = String(k.titel ?? "").trim();
+    if (!titel) continue;
+    const fakten = Array.isArray(k.fakten)
+      ? k.fakten
+          .map((f) => String(f ?? "").trim())
+          .filter((f) => f.length >= 3)
+          .slice(0, 12)
+      : [];
+    const checkStatusRaw = String(k.checkStatus ?? "").trim();
+    const checkStatus: CleverKapitelCheckStatus =
+      checkStatusRaw === "ok" ||
+      checkStatusRaw === "nacharbeit" ||
+      checkStatusRaw === "ungeprueft"
+        ? checkStatusRaw
+        : "ungeprueft";
+    const faktChecksRaw = Array.isArray(k.faktChecks) ? k.faktChecks : [];
+    const faktChecks = fakten.map((_, i) =>
+      parseCleverFaktCheck(faktChecksRaw[i]),
+    );
+    kapitel.push({
+      nummer: Number(k.nummer) || kapitel.length + 1,
+      titel: titel.slice(0, 200),
+      fakten,
+      checkStatus,
+      checkHinweis: String(k.checkHinweis ?? "").trim().slice(0, 2_000),
+      faktChecks,
+      checkedAt: String(k.checkedAt ?? "").trim().slice(0, 80) || null,
+      infografikDataUrl: (() => {
+        const u = String(k.infografikDataUrl ?? "").trim();
+        return u.startsWith("data:image/") ? u.slice(0, 2_500_000) : null;
+      })(),
+      infografikPrompt: String(k.infografikPrompt ?? "").trim().slice(0, 8_000),
+      infografikGeneratedAt:
+        String(k.infografikGeneratedAt ?? "").trim().slice(0, 80) || null,
+      infografikModelLabel: String(k.infografikModelLabel ?? "")
+        .trim()
+        .slice(0, 120),
+    });
+  }
+  if (kapitel.length === 0) return null;
+  return {
+    thema: thema.slice(0, 200),
+    faktenProKapitel: faktenProKapitel === 10 ? 10 : 5,
+    generatedAt: String(row.generatedAt ?? "").trim().slice(0, 80),
+    modelLabel: String(row.modelLabel ?? "").trim().slice(0, 120),
+    checkedAt: String(row.checkedAt ?? "").trim().slice(0, 80) || null,
+    checkModelLabel: String(row.checkModelLabel ?? "").trim().slice(0, 120),
+    kapitel,
+  };
+}
+
+/** Pending Clever Kurzgeschichte Verbessern plans keyed by chapter number. */
+function parseCleverGeschichteImproveField(
+  raw: unknown,
+): Record<string, RomanReifegradImprovePlan> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const out: Record<string, RomanReifegradImprovePlan> = {};
+  for (const [key, value] of Object.entries(row)) {
+    const n = Number(key);
+    if (!Number.isFinite(n) || n < 1) continue;
+    const plan = parseRomanReifegradImprovePlan(value, "geschichte");
+    if (!plan) continue;
+    out[String(Math.floor(n))] = {
+      ...plan,
+      stage: "geschichte",
+      dimension: `geschichte-${Math.floor(n)}`,
+      dimensionLabel:
+        plan.dimensionLabel.trim() || `Geschichte ${Math.floor(n)}`,
+    };
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Applied Verbessern counts keyed by chapter number (non-negative ints). */
+function parseCleverGeschichteImproveCountField(
+  raw: unknown,
+): Record<string, number> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(row)) {
+    const n = Number(key);
+    if (!Number.isFinite(n) || n < 1) continue;
+    const count = Math.floor(Number(value));
+    if (!Number.isFinite(count) || count < 1) continue;
+    out[String(Math.floor(n))] = Math.min(count, 999);
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Chapters marked OK (Fertig) in the Verbessern dialog. */
+function parseCleverGeschichteOkField(
+  raw: unknown,
+): Record<string, true> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const out: Record<string, true> = {};
+  for (const [key, value] of Object.entries(row)) {
+    const n = Number(key);
+    if (!Number.isFinite(n) || n < 1) continue;
+    if (value === true || value === 1 || value === "1" || value === "true") {
+      out[String(Math.floor(n))] = true;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 function parseGateChat(raw: unknown): RomanGateChatMessage[] {
@@ -2758,6 +3074,21 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
     zielWortzahlRoman: asInt(row.zielWortzahlRoman),
     zielWortzahlSzeneMin: asInt(row.zielWortzahlSzeneMin) ?? 1800,
     zielWortzahlSzeneMax: asInt(row.zielWortzahlSzeneMax) ?? 2500,
+    cleverGeschichteMinuten: (() => {
+      const v = row.cleverGeschichteMinuten;
+      if (v === 5 || v === 10) return v;
+      if (v === "5") return 5 as const;
+      if (v === "10") return 10 as const;
+      return null;
+    })(),
+    cleverUnterthemen: parseCleverUnterthemenField(row.cleverUnterthemen),
+    cleverGeschichteImprove: parseCleverGeschichteImproveField(
+      row.cleverGeschichteImprove,
+    ),
+    cleverGeschichteImproveCount: parseCleverGeschichteImproveCountField(
+      row.cleverGeschichteImproveCount,
+    ),
+    cleverGeschichteOk: parseCleverGeschichteOkField(row.cleverGeschichteOk),
     serieTitel: String(row.serieTitel ?? "").trim(),
     bandNr: asInt(row.bandNr),
     mehrteilerForm: asForm(row.mehrteilerForm),
@@ -2841,6 +3172,14 @@ export function buildEditorialMustBlock(editorial: RomanEditorial): string {
   }
   if (editorial.lesestufe.trim()) {
     lines.push(`Lesestufe (verbindlich): ${editorial.lesestufe.trim()}`);
+  }
+  if (
+    editorial.cleverGeschichteMinuten === 5 ||
+    editorial.cleverGeschichteMinuten === 10
+  ) {
+    lines.push(
+      `Kurzgeschichten-Länge (verbindlich): ca. ${editorial.cleverGeschichteMinuten} Minuten Vorlese-/Lesezeit — Länge und Erzählstil der Buch-Auswahl einhalten, nicht aus dem Alter raten.`,
+    );
   }
   if (normalizeRichtungen(editorial.richtungen).length) {
     const ids = normalizeRichtungen(editorial.richtungen);

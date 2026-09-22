@@ -115,13 +115,20 @@ export async function listRomanKontexte(): Promise<RomanKontextSummary[]> {
 }
 
 /** One roman by id. */
-export async function getRomanKontext(id: string): Promise<RomanKontext | null> {
+export async function getRomanKontext(
+  id: string,
+  options?: { omitCover?: boolean },
+): Promise<RomanKontext | null> {
   const supabase = createServiceClient(null);
   const { data, error } = await supabase.rpc("admin_get_roman", { p_id: id });
   if (error) throw new Error(error.message);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;
-  return mapKontext(row as KontextRow);
+  const mapped = mapKontext(row as KontextRow);
+  if (options?.omitCover) {
+    return { ...mapped, coverImageDataUrl: "" };
+  }
+  return mapped;
 }
 
 
@@ -168,9 +175,14 @@ export async function upsertRomanKontext(
   const mapped = mapKontext(row as KontextRow);
   if (input.editorial) {
     await setRomanEditorial(mapped.id, input.editorial);
-    return { ...mapped, editorial: input.editorial };
   }
-  return mapped;
+  // Upsert RPC does not return cover_* columns — reload so UI keeps the cover.
+  const full = await getRomanKontext(mapped.id);
+  if (!full) throw new Error("Roman konnte nach dem Speichern nicht geladen werden.");
+  if (input.editorial) {
+    return { ...full, editorial: input.editorial };
+  }
+  return full;
 }
 
 /** Persist generated cover data URL + prompt debug. */

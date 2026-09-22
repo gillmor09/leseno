@@ -4,7 +4,7 @@
  * Basics Vorab: Marktanalyse (Gemini + Google Search) — persists on editorial.
  */
 
-import { revalidatePath } from "next/cache";
+import { revalidateRomanAdmin, revalidateRomanAdminRollen } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
@@ -101,8 +101,7 @@ export async function romanMarktanalyseScanAction(
       editorial: nextEditorial,
     });
 
-    revalidatePath("/admin/roman");
-    revalidatePath(`/admin/roman/${roman.id}`);
+    revalidateRomanAdmin(roman.id);
 
     return {
       success: true,

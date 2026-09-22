@@ -103,6 +103,29 @@ export function isManuskriptSimplifyPatch(input: {
   return /vereinfachen|register-pass|sprachniveau/.test(blob);
 }
 
+/**
+ * Detect Reifegrad-Dimension „Lesefluss“ einarbeiten.
+ * Pacing/Klarheit often shortens chapters — must not hit the 95% floor revert.
+ */
+export function isLeseflussChapterPatch(input: {
+  patchBrief: string;
+  reason?: string;
+  critiqueText?: string;
+}): boolean {
+  const blob = [
+    input.reason ?? "",
+    input.critiqueText ?? "",
+    input.patchBrief,
+  ]
+    .join("\n")
+    .toLowerCase();
+  return (
+    /fokussierte nacharbeit:\s*lesefluss/.test(blob) ||
+    /reifegrad-dimension\s*[„"']?lesefluss/.test(blob) ||
+    /arbeitsauftrag\s*[—–-]\s*reifegrad-dimension\s*[„"']lesefluss/.test(blob)
+  );
+}
+
 /** Feedback / stage Verbessern apply — allow modest growth like Leser-Feedback. */
 export function isCanonLogicChapterPatch(input: {
   patchBrief: string;
@@ -128,7 +151,11 @@ export function isNeedsFocusedChapterPatch(input: {
   reason?: string;
   critiqueText?: string;
 }): boolean {
-  if (isLeserFeedbackChapterPatch(input) || isManuskriptSimplifyPatch(input)) {
+  if (
+    isLeserFeedbackChapterPatch(input) ||
+    isManuskriptSimplifyPatch(input) ||
+    isLeseflussChapterPatch(input)
+  ) {
     return false;
   }
 
@@ -314,7 +341,7 @@ async function patchOneChapterBody(input: {
       ? input.preferTighten
         ? `\nLÄNGEN-CONTRACT: Buch ist schon am/über Ziel. Inhaltlich ändern laut Patch-Brief; höchstens leicht verdichten. Nicht aufblasen — Zielband bis ca. ${ceiling ?? baselineWords} Wörter (Baseline ${baselineWords}).`
         : input.allowSubstantialShorten
-          ? `\nLÄNGEN-CONTRACT: Baseline ${baselineWords} Wörter. Patch-Brief hat Vorrang — Duplikate/Wiederholungen streichen und kürzer werden ist erwünscht. Soft-Ziel ab ca. ${floor} Wörtern, aber sichtbare Streichungen nicht rückgängig machen.`
+          ? `\nLÄNGEN-CONTRACT: Baseline ${baselineWords} Wörter. Patch-Brief hat Vorrang — straffen, Duplikate streichen und kürzer werden für Klarheit/Lesefluss ist erwünscht. Soft-Ziel ab ca. ${floor} Wörtern, aber sichtbare Änderungen nicht rückgängig machen.`
           : `\nLÄNGEN-CONTRACT: Zielband ${floor}–${ceiling ?? Math.round(floor * 1.25)} Wörter (Baseline ${baselineWords}). Nicht sinnlos aufblähen.`
       : "";
 
@@ -456,14 +483,23 @@ async function applyChapterDoc(input: {
     reason: input.target.reason,
     critiqueText: input.critiqueText,
   });
+  const leseflussPatch = isLeseflussChapterPatch({
+    patchBrief: input.target.patchBrief,
+    reason: input.target.reason,
+    critiqueText: input.critiqueText,
+  });
   const canonLogicPatch = isCanonLogicChapterPatch({
     patchBrief: input.target.patchBrief,
     reason: input.target.reason,
     critiqueText: input.critiqueText,
   });
   const allowGrowthPatch =
-    leserFeedbackPatch || simplifyPatch || canonLogicPatch;
-  const allowSubstantialShorten = leserFeedbackPatch || simplifyPatch;
+    leserFeedbackPatch ||
+    simplifyPatch ||
+    leseflussPatch ||
+    canonLogicPatch;
+  const allowSubstantialShorten =
+    leserFeedbackPatch || simplifyPatch || leseflussPatch;
   const toPatch = resolveChapterPatchNumbers({
     chapterNumbers: chapters.map((c) => c.number),
     requested: input.target.chapterNumbers,
@@ -500,7 +536,7 @@ async function applyChapterDoc(input: {
   for (const num of toPatch) {
     const ch = chapters.find((c) => c.number === num)!;
     const baselineWords = manuskriptChapterWordCount(ch.body);
-    // Leser-Feedback / Vereinfachen must be allowed to cut (often >5% of a chapter).
+    // Leser-Feedback / Vereinfachen / Lesefluss must be allowed to cut (often >5% of a chapter).
     // The default 95% floor silently reverted such patches.
     const wordFloor =
       input.stage === "manuskript"

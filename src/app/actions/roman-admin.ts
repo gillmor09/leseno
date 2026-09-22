@@ -5,19 +5,17 @@
  * Vertical pipeline KI lives in `roman-pipeline.ts` and stage suggest actions.
  */
 
-import { revalidatePath } from "next/cache";
-import type { z } from "zod";
+import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
+import { generateCleverCover } from "@/lib/roman/clever-cover";
 import { generateRomanCover } from "@/lib/roman/cover";
 import {
-  emptyRomanEditorial,
-  type RomanEditorial,
-} from "@/lib/roman/editorial";
+  clearPendingRomanCover,
+  stashPendingRomanCover,
+  takePendingRomanCover,
+} from "@/lib/roman/cover-pending";
 import { generateRomanFrontMatter } from "@/lib/roman/front-matter";
-import {
-  generateRomanMarketingCopy,
-  marketingCopySourceFromRoman,
-} from "@/lib/roman/marketing-copy";
+import type { RomanEditorial } from "@/lib/roman/editorial";
 import {
   clearRomanCover,
   deleteRoman,
@@ -32,6 +30,7 @@ import type {
   RomanSzenenRasterItem,
 } from "@/lib/roman/types";
 import type { ActionResult } from "@/lib/types/actions";
+import { revalidateRomanAdmin, revalidateRomanAdminLists } from "@/lib/roman/revalidate-admin";
 import {
   firstZodMessage,
   romanCoverGenerateSchema,
@@ -39,7 +38,6 @@ import {
   romanFrontMatterGenerateSchema,
   romanFrontMatterSaveSchema,
   romanIdSchema,
-  romanMarketingCopyGenerateSchema,
   romanUpsertSchema,
 } from "@/lib/validations/roman-admin";
 
@@ -66,16 +64,15 @@ function toUpsertInput(data: z.infer<typeof romanUpsertSchema>) {
 }
 
 function revalidateRoman(romanId?: string) {
-  revalidatePath("/admin/roman");
-  if (romanId) revalidatePath(`/admin/roman/${romanId}`);
+  revalidateRomanAdmin(romanId);
 }
 
 /**
- * List only — do not refresh the open `/admin/roman/[id]` workspace.
+ * List only — do not refresh the open workspace detail.
  * Detail revalidation remounts RSC props and jumps the scroll after Speichern.
  */
 function revalidateRomanListOnly() {
-  revalidatePath("/admin/roman");
+  revalidateRomanAdminLists();
 }
 
 /** Save kontext without regenerating the roadmap. */
@@ -137,7 +134,7 @@ export async function deleteRomanAction(
 }
 
 /**
- * Gemini scene brief → Flux cover (returns data URL; persist via save).
+ * Cover generate: Roman pipeline, or Clever (roles + logo overlays) when buchTyp is clever_erzaehlt.
  */
 export async function generateRomanCoverAction(
   input: unknown,
@@ -175,7 +172,7 @@ export async function generateRomanCoverAction(
             : `bis ${ed.zielAlterMax} Jahre`
         : "";
 
-    const result = await generateRomanCover({
+    const coverInput = {
       title: roman.title,
       genre: roman.genre,
       praemisse: roman.praemisse,
@@ -187,7 +184,17 @@ export async function generateRomanCoverAction(
       ideeKurz: ed?.ideeKurz ?? "",
       alterLabel,
       extraInstruction: parsed.data.extraInstruction,
-      skipTitleOverlay: parsed.data.skipTitleOverlay,
+    };
+
+    const result =
+      ed?.buchTyp === "clever_erzaehlt"
+        ? await generateCleverCover(coverInput)
+        : await generateRomanCover(coverInput);
+
+    stashPendingRomanCover({
+      romanId: parsed.data.romanId,
+      dataUrl: result.dataUrl,
+      prompt: result.promptUsed,
     });
 
     return {
@@ -209,7 +216,7 @@ export async function generateRomanCoverAction(
   }
 }
 
-/** Persist cover on the roman row. */
+/** Persist pending cover (from generate stash) — no multi-MB client upload. */
 export async function saveRomanCoverAction(
   input: unknown,
 ): Promise<ActionResult<{ saved: boolean }>> {
@@ -225,12 +232,21 @@ export async function saveRomanCoverAction(
   }
 
   try {
+    const pending = takePendingRomanCover(parsed.data.romanId);
+    if (!pending?.dataUrl) {
+      return {
+        success: false,
+        error:
+          "Keine Cover-Vorschau zum Speichern — bitte Cover zuerst neu erzeugen.",
+      };
+    }
     const saved = await setRomanCover({
       id: parsed.data.romanId,
-      coverImageDataUrl: parsed.data.coverImageDataUrl,
-      coverPrompt: parsed.data.coverPrompt,
+      coverImageDataUrl: pending.dataUrl,
+      coverPrompt: parsed.data.coverPrompt?.trim() || pending.prompt,
     });
-    revalidateRoman(parsed.data.romanId);
+    // Lists only — do not remount the open workspace with a multi-MB RSC payload.
+    revalidateRomanListOnly();
     return { success: true, data: { saved } };
   } catch (error) {
     return {
@@ -259,8 +275,9 @@ export async function clearRomanCoverAction(
   }
 
   try {
+    clearPendingRomanCover(parsed.data.romanId);
     const cleared = await clearRomanCover(parsed.data.romanId);
-    revalidateRoman(parsed.data.romanId);
+    revalidateRomanListOnly();
     return { success: true, data: { cleared } };
   } catch (error) {
     return {
@@ -355,77 +372,6 @@ export async function saveRomanFrontMatterAction(
         error instanceof Error
           ? error.message
           : "Buchrücken/Vorsatz speichern fehlgeschlagen.",
-    };
-  }
-}
-
-/**
- * Gemini: Klappentext (Amazon-Beschreibung) + Einzeiler (Untertitel / Eyecatcher).
- */
-export async function generateRomanMarketingCopyAction(
-  input: unknown,
-): Promise<
-  ActionResult<{
-    klappentext: string;
-    einzeiler: string;
-    roman: RomanKontext;
-  }>
-> {
-  const denied = await denyUnlessAdmin();
-  if (denied) return { success: false, error: denied };
-
-  const parsed = romanMarketingCopyGenerateSchema.safeParse(input);
-  if (!parsed.success) {
-    return { success: false, error: firstZodMessage(parsed.error) };
-  }
-
-  try {
-    const roman = await getRomanKontext(parsed.data.romanId);
-    if (!roman) {
-      return { success: false, error: "Roman nicht gefunden." };
-    }
-    const source = marketingCopySourceFromRoman(roman);
-    const copy = await generateRomanMarketingCopy(source);
-    const editorial: RomanEditorial = {
-      ...(roman.editorial as RomanEditorial),
-      klappentext: copy.klappentext,
-      einzeiler: copy.einzeiler,
-    };
-    const saved = await upsertRomanKontext({
-      id: roman.id,
-      title: roman.title,
-      manuskriptRaw: roman.manuskriptRaw,
-      stilbibel: roman.stilbibel,
-      genre: roman.genre,
-      praemisse: roman.praemisse,
-      perspektive: roman.perspektive,
-      zeitform: roman.zeitform,
-      tonalitaet: roman.tonalitaet,
-      charaktere: roman.charaktere,
-      weltSchauplaetze: roman.weltSchauplaetze,
-      weltRegeln: roman.weltRegeln,
-      szenenRaster: roman.szenenRaster,
-      kiRegelwerk: roman.kiRegelwerk,
-      fanPersonaName: roman.fanPersonaName,
-      fanPersonaProfil: roman.fanPersonaProfil,
-      editorial,
-    });
-    revalidateRoman(parsed.data.romanId);
-    return {
-      success: true,
-      data: {
-        klappentext: copy.klappentext,
-        einzeiler: copy.einzeiler,
-        roman: saved,
-      },
-    };
-  } catch (error) {
-    return {
-      success: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Marketing-Text fehlgeschlagen.",
     };
   }
 }

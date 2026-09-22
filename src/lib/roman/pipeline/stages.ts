@@ -33,3 +33,14 @@ export function stagesAfter(stage: PipelineStage): PipelineStage[] {
 export function stageIndex(stage: PipelineStage): number {
   return PIPELINE_STAGES.indexOf(stage);
 }
+
+/**
+ * Clever erzählt Kurzgeschichten: no book-level Reifegrad on manuskript.
+ * Per-story Gegenlesen/Verbessern stays available.
+ */
+export function cleverManuskriptSkipsReifegrad(
+  buchTyp: string | null | undefined,
+  stage: PipelineStage,
+): boolean {
+  return buchTyp === "clever_erzaehlt" && stage === "manuskript";
+}

@@ -22,6 +22,7 @@ import {
 import { critiqueStage, draftStage } from "@/lib/roman/pipeline/producers";
 import {
   PIPELINE_STAGE_LABELS,
+  cleverManuskriptSkipsReifegrad,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
 import { emptyRomanEditorial, countWords } from "@/lib/roman/editorial";
@@ -488,9 +489,58 @@ export async function pipelineStepAssessReifegrad(input: {
   const events = [...input.events];
   try {
     let roman = await reload(input.romanId);
-    const previous =
-      (roman.editorial ?? emptyRomanEditorial()).reifegrade?.[input.stage] ??
-      null;
+    const editorial = roman.editorial ?? emptyRomanEditorial();
+    if (cleverManuskriptSkipsReifegrad(editorial.buchTyp, input.stage)) {
+      const reifegrade = { ...(editorial.reifegrade ?? {}) };
+      delete reifegrade.manuskript;
+      const improveMap = { ...(editorial.reifegradImprove ?? {}) };
+      delete improveMap.manuskript;
+      const stageImprove = { ...(editorial.stageImprove ?? {}) };
+      delete stageImprove.manuskript;
+      const nextEd = {
+        ...editorial,
+        reifegrade,
+        reifegradImprove: improveMap,
+        stageImprove,
+      };
+      const saved = await upsertRomanKontext({
+        id: roman.id,
+        title: roman.title,
+        manuskriptRaw: roman.manuskriptRaw,
+        stilbibel: roman.stilbibel,
+        genre: roman.genre,
+        praemisse: roman.praemisse,
+        perspektive: roman.perspektive,
+        zeitform: roman.zeitform,
+        tonalitaet: roman.tonalitaet,
+        charaktere: roman.charaktere,
+        weltSchauplaetze: roman.weltSchauplaetze,
+        weltRegeln: roman.weltRegeln,
+        szenenRaster: roman.szenenRaster,
+        kiRegelwerk: roman.kiRegelwerk,
+        fanPersonaName: roman.fanPersonaName,
+        fanPersonaProfil: roman.fanPersonaProfil,
+        editorial: nextEd,
+      });
+      roman = { ...saved, ideenChat: roman.ideenChat };
+      events.push(
+        historyEvent({
+          type: "info",
+          stage: input.stage,
+          summary:
+            "Reifegrad übersprungen (Clever erzählt: unabhängige Kurzgeschichten).",
+        }),
+      );
+      await appendEvents({ runId: input.runId, events });
+      return {
+        roman,
+        runId: input.runId,
+        events,
+        status: "running",
+        progressLabel: "Geschichten gespeichert",
+      };
+    }
+    const previous = editorial.reifegrade?.[input.stage] ?? null;
     const focusChapters = [...(input.focusChapterNumbers ?? [])].sort(
       (a, b) => a - b,
     );

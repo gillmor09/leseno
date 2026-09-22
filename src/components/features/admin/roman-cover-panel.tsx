@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Bilder tab: Gemini scene → Flux 1200×1920 cover → Nunito title overlay.
+ * Export: cover (KI → Bild → Titel-Overlay).
+ * Clever erzählt: Art-Director-Rolle → Bild → Serien-/leseno-Logos → Typograf-Rolle → Titel.
  */
 
 import { useState } from "react";
@@ -22,6 +23,7 @@ export function RomanCoverPanel({
   coverPrompt,
   canSave,
   disabled,
+  isCleverErzaehlt,
   onComplete,
 }: {
   romanId: string;
@@ -30,6 +32,8 @@ export function RomanCoverPanel({
   coverPrompt: string | null;
   canSave: boolean;
   disabled?: boolean;
+  /** Clever-Serie: feste Logo-Overlays + eigene KI-Rollen. */
+  isCleverErzaehlt?: boolean;
   onComplete?: (patch: {
     id: string;
     coverImageDataUrl: string | null;
@@ -41,8 +45,6 @@ export function RomanCoverPanel({
   );
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewPrompt, setPreviewPrompt] = useState<string | null>(null);
-  const [extra, setExtra] = useState("");
-  const [skipTitle, setSkipTitle] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
 
   const shownUrl = previewUrl ?? coverImageDataUrl;
@@ -54,8 +56,6 @@ export function RomanCoverPanel({
     try {
       const result = await generateRomanCoverAction({
         romanId,
-        extraInstruction: extra.trim() || undefined,
-        skipTitleOverlay: skipTitle,
       });
       if (!result.success || !result.data) {
         toast.error(result.error ?? "Cover-Erzeugung fehlgeschlagen.");
@@ -81,7 +81,6 @@ export function RomanCoverPanel({
     try {
       const result = await saveRomanCoverAction({
         romanId,
-        coverImageDataUrl: previewUrl,
         coverPrompt: previewPrompt ?? coverPrompt ?? "",
       });
       if (!result.success) {
@@ -143,15 +142,15 @@ export function RomanCoverPanel({
         variant="pipeline-generate"
         title="Cover wird erzeugt"
         progressLabel={
-          skipTitle
-            ? "Gemini-Prompt → Flux 1200×1920 …"
-            : "Gemini-Prompt → Flux 1200×1920 → Titel (Nunito) …"
+          isCleverErzaehlt
+            ? "Cover-Art-Director → Bild → Logos → Cover-Typograf → Titel …"
+            : "Art Direction → Bild → Typografie (Verleger) → Overlay …"
         }
       />
       <ConfirmDeleteDialog
         open={clearOpen}
         title="Cover löschen?"
-        description="Das gespeicherte Cover-Bild und der Prompt werden entfernt. Das betrifft nur den Bilder-Schritt."
+        description="Das gespeicherte Cover-Bild und der Prompt werden entfernt. Verkaufstexte und Exporte bleiben."
         confirmLabel="Cover löschen"
         pending={pending === "clear"}
         onCancel={() => {
@@ -162,36 +161,22 @@ export function RomanCoverPanel({
       />
 
       <p className="text-sm font-semibold text-zinc-600">
-        Gemini Flash plant Motiv und Farbwelt (Genre + Altersklasse + Kernaussage),
-        Flux erzeugt {ROMAN_COVER_SIZE.width}×{ROMAN_COVER_SIZE.height} px, danach
-        setzt Mistral die Titelzeilen und Nunito schreibt den Titel beidseitig
-        zentriert aufs Cover.
+        {isCleverErzaehlt ? (
+          <>
+            Ablauf: Cover-Art-Director (KI-Rolle) → Bild → Serien-Badge oben
+            mittig + leseno-Logo unten rechts → Cover-Typograf (KI-Rolle) →
+            Buchtitel mittig. Rollen unter KI-Rollen anpassbar. Format{" "}
+            {ROMAN_COVER_SIZE.width}×{ROMAN_COVER_SIZE.height} px.
+          </>
+        ) : (
+          <>
+            Motiv ohne Text (Profi-Grafik). Titel wird danach nach
+            Designer-/Verleger-Vorgabe gesetzt: Zone, Ausrichtung, Größe, Ton,
+            Scrim — als sauberes Overlay. Format{" "}
+            {ROMAN_COVER_SIZE.width}×{ROMAN_COVER_SIZE.height} px.
+          </>
+        )}
       </p>
-
-      <label className="block space-y-1.5">
-        <span className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-          Zusätzliche Art Direction (optional)
-        </span>
-        <textarea
-          value={extra}
-          onChange={(e) => setExtra(e.target.value)}
-          disabled={busy}
-          rows={3}
-          className="w-full resize-y rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700 disabled:opacity-50"
-          placeholder="z. B. kühle Blautöne, Silhouette am Kai, kein Gesicht …"
-        />
-      </label>
-
-      <label className="flex items-center gap-2 text-sm font-semibold text-zinc-700">
-        <input
-          type="checkbox"
-          checked={skipTitle}
-          onChange={(e) => setSkipTitle(e.target.checked)}
-          disabled={busy}
-          className="size-4 rounded border-zinc-300"
-        />
-        Nur Bild ohne Titel-Overlay (Titel: {title.trim() || "—"})
-      </label>
 
       <div className="flex flex-wrap items-center gap-3">
         <button

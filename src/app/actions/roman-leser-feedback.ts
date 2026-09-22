@@ -4,7 +4,7 @@
  * Idee / Spec / Kapitelgerüst / Manuskript: Testleser Leser-Feedback — generate + persist + apply.
  */
 
-import { revalidatePath } from "next/cache";
+import { revalidateRomanAdmin, revalidateRomanAdminRollen } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
@@ -97,8 +97,7 @@ export async function romanLeserFeedbackAction(
       editorial: nextEditorial,
     });
 
-    revalidatePath("/admin/roman");
-    revalidatePath(`/admin/roman/${roman.id}`);
+    revalidateRomanAdmin(roman.id);
 
     return {
       success: true,
@@ -168,8 +167,7 @@ export async function romanLeserFeedbackApplyAction(
       autorEntscheidungen,
     });
 
-    revalidatePath("/admin/roman");
-    revalidatePath(`/admin/roman/${roman.id}`);
+    revalidateRomanAdmin(roman.id);
 
     return {
       success: true,

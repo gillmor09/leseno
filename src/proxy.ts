@@ -70,9 +70,12 @@ export async function proxy(request: NextRequest) {
       },
     });
 
-    // Refreshes the session; errors are intentionally ignored here — the
-    // Server Component itself handles the unauthenticated state gracefully.
-    await supabase.auth.getUser();
+    // Refreshes the session; abort slow/broken refresh so pages stay usable.
+    // Stale refresh tokens otherwise stall ~10s and break subsequent login.
+    await Promise.race([
+      supabase.auth.getUser(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+    ]);
   } catch {
     // Supabase is not reachable or misconfigured — let the request through.
   }

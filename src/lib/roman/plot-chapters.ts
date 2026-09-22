@@ -141,6 +141,13 @@ export function sanitizeChapterTitle(
     .trim();
   if (new RegExp(`^Kapitel\\s*${chapterNumber}\\s*$`, "i").test(t)) return "";
   if (/^Kapitel\s+\d+\s*$/i.test(t)) return "";
+  // Clever outline mirror used to append Faktencheck tags — never print them.
+  t = t
+    .replace(/\s*\[(?:✓\s*)?ok\]\s*$/iu, "")
+    .replace(/\s*\[⚠\s*Nacharbeit\]\s*$/iu, "")
+    .replace(/\s*\[○\s*ungeprüft\]\s*$/iu, "")
+    .replace(/\s*[✓✔]\s*ok\s*$/iu, "")
+    .trim();
   return t;
 }
 
@@ -292,12 +299,69 @@ export function dedupePlotChapters(chapters: PlotChapter[]): PlotChapter[] {
 }
 
 /**
+ * Replace one chapter body in a Manuskript document (keeps all other chapters).
+ * Titles come from the plot/Unterthemen when present (Thema = SoT for Clever).
+ */
+export function replaceManuskriptChapterBody(
+  manuskript: string,
+  plot: string,
+  chapterNumber: number,
+  body: string,
+): string {
+  const required = parsePlotChapters(plot);
+  const current = parsePlotChapters(manuskript);
+  const byNum = new Map(current.map((c) => [c.number, c]));
+  const slots =
+    required.length > 0
+      ? mergeManuskriptAgainstPlot(required, current, {
+          titlesFromPlot: true,
+        })
+      : dedupePlotChapters(current);
+  if (slots.length < 1) {
+    const title =
+      byNum.get(chapterNumber)?.title ??
+      required.find((c) => c.number === chapterNumber)?.title ??
+      "";
+    return serializeManuskriptChapters([
+      {
+        number: chapterNumber,
+        title,
+        body: stripLeadingChapterHeadings(body.trim(), chapterNumber),
+      },
+    ]);
+  }
+  const next = slots.map((ch) =>
+    ch.number === chapterNumber
+      ? {
+          ...ch,
+          body: stripLeadingChapterHeadings(body.trim(), chapterNumber),
+        }
+      : ch,
+  );
+  if (!next.some((ch) => ch.number === chapterNumber)) {
+    const title =
+      required.find((c) => c.number === chapterNumber)?.title ??
+      byNum.get(chapterNumber)?.title ??
+      "";
+    next.push({
+      number: chapterNumber,
+      title,
+      body: stripLeadingChapterHeadings(body.trim(), chapterNumber),
+    });
+    next.sort((a, b) => a.number - b.number);
+  }
+  return serializeManuskriptChapters(next);
+}
+
+/**
  * Ensure every required Szenenplot chapter exists in the Manuskript list.
  * Missing chapters keep the plot title and an empty body (visible gap).
+ * @param options.titlesFromPlot — Clever: Unterthemen/plot titles win (Thema = SoT).
  */
 export function mergeManuskriptAgainstPlot(
   plotChapters: PlotChapter[],
   manuskriptChapters: PlotChapter[],
+  options?: { titlesFromPlot?: boolean },
 ): PlotChapter[] {
   if (plotChapters.length < 1) {
     return dedupePlotChapters(manuskriptChapters);
@@ -305,12 +369,18 @@ export function mergeManuskriptAgainstPlot(
   const have = new Map(
     dedupePlotChapters(manuskriptChapters).map((c) => [c.number, c]),
   );
+  const preferPlot = Boolean(options?.titlesFromPlot);
   return plotChapters
     .map((plot) => {
       const existing = have.get(plot.number);
-      const title =
-        sanitizeChapterTitle(existing?.title ?? "", plot.number) ||
-        sanitizeChapterTitle(plot.title, plot.number);
+      const plotTitle = sanitizeChapterTitle(plot.title, plot.number);
+      const existingTitle = sanitizeChapterTitle(
+        existing?.title ?? "",
+        plot.number,
+      );
+      const title = preferPlot
+        ? plotTitle || existingTitle
+        : existingTitle || plotTitle;
       return {
         number: plot.number,
         title,
@@ -341,10 +411,11 @@ export function missingManuskriptChapterNumbers(
  * Parse + re-serialize Manuskript into print-ready chapter layout.
  * Scrubs meta stubs and dedupes numbers — never drops chapters silently.
  * Pass `requiredFromPlot` so every Szenenplot chapter stays present.
+ * Clever: pass `titlesFromPlot: true` so Unterthemen titles stay the SoT.
  */
 export function normalizeManuskriptDocument(
   text: string,
-  options?: { requiredFromPlot?: string },
+  options?: { requiredFromPlot?: string; titlesFromPlot?: boolean },
 ): string {
   const chapters = parsePlotChapters(text);
   const scrubbed = dedupePlotChapters(
@@ -358,7 +429,9 @@ export function normalizeManuskriptDocument(
   const required = plot ? parsePlotChapters(plot) : [];
   const merged =
     required.length > 0
-      ? mergeManuskriptAgainstPlot(required, scrubbed)
+      ? mergeManuskriptAgainstPlot(required, scrubbed, {
+          titlesFromPlot: options?.titlesFromPlot,
+        })
       : scrubbed;
   if (merged.length < 1) return text.replace(/\r\n/g, "\n").trim();
   return serializeManuskriptChapters(merged);

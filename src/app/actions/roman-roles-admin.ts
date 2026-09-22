@@ -4,7 +4,7 @@
  * Admin actions for Roman-module KI roles (prompts + model).
  */
 
-import { revalidatePath } from "next/cache";
+import { revalidateRomanAdmin, revalidateRomanAdminRollen } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
@@ -73,8 +73,8 @@ export async function saveRomanKiRolleAction(
     if (!rolle) {
       return { success: false, error: "Rolle nach dem Speichern nicht gefunden." };
     }
-    revalidatePath("/admin/roman");
-    revalidatePath("/admin/roman/rollen");
+    revalidateRomanAdmin();
+    revalidateRomanAdminRollen();
     return { success: true, data: { rolle } };
   } catch (error) {
     return {

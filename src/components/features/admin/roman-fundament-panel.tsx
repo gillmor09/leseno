@@ -73,6 +73,7 @@ export function RomanFundamentPanel({
   savePending,
   onSave,
   mode,
+  showRichtungen = true,
 }: {
   buchTyp: RomanBuchTyp;
   value: FundamentBasics;
@@ -83,6 +84,8 @@ export function RomanFundamentPanel({
   onSave: () => void;
   /** fields = selects + Speichern; rules-save = Basis-Regeln only */
   mode: "fields" | "rules-save";
+  /** Optional reader-promise chips (hidden for Clever erzählt). */
+  showRichtungen?: boolean;
 }) {
   const genres = useMemo(() => genreOptionsForBuchTyp(buchTyp), [buchTyp]);
   const busy = Boolean(disabled || savePending);
@@ -122,14 +125,18 @@ export function RomanFundamentPanel({
   }, [value.grobRegeln, showRules]);
 
   function withAutoBasisRegeln(next: FundamentBasics): FundamentBasics {
+    const richtungen = showRichtungen
+      ? next.richtungen
+      : [];
     return {
       ...next,
+      richtungen,
       grobRegeln: buildBasisRegeln({
         buchTyp,
         genre: next.genre,
         alterPresetId: next.alterPresetId,
         zielWortzahlRoman: next.zielWortzahlRoman,
-        richtungen: next.richtungen,
+        richtungen,
       }),
     };
   }
@@ -255,43 +262,45 @@ export function RomanFundamentPanel({
             </select>
           </label>
 
-          <div className="sm:col-span-2 space-y-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-                Richtung (optional)
-              </span>
-              <span className="text-xs font-semibold text-zinc-500">
-                Max. {ROMAN_RICHTUNG_MAX} · leer = keine Extra-Vorgabe
-              </span>
+          {showRichtungen ? (
+            <div className="sm:col-span-2 space-y-2">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <span className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Richtung (optional)
+                </span>
+                <span className="text-xs font-semibold text-zinc-500">
+                  Max. {ROMAN_RICHTUNG_MAX} · leer = keine Extra-Vorgabe
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {ROMAN_RICHTUNG_OPTIONS.map((opt) => {
+                  const selected = value.richtungen.includes(opt.id);
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      disabled={!canSave || busy}
+                      title={opt.hint}
+                      onClick={() => toggleRichtung(opt.id)}
+                      className={cn(
+                        "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition",
+                        selected
+                          ? "bg-orange-700 text-white ring-orange-700"
+                          : "bg-white text-zinc-700 ring-zinc-950/10 hover:bg-zinc-50",
+                        (!canSave || busy) && "opacity-60",
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs font-semibold text-zinc-500">
+                Wenn gesetzt: verbindliches Leserversprechen für Ton und
+                Buchverlauf (auch Marktanalyse).
+              </p>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {ROMAN_RICHTUNG_OPTIONS.map((opt) => {
-                const selected = value.richtungen.includes(opt.id);
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    disabled={!canSave || busy}
-                    title={opt.hint}
-                    onClick={() => toggleRichtung(opt.id)}
-                    className={cn(
-                      "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition",
-                      selected
-                        ? "bg-orange-700 text-white ring-orange-700"
-                        : "bg-white text-zinc-700 ring-zinc-950/10 hover:bg-zinc-50",
-                      (!canSave || busy) && "opacity-60",
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-xs font-semibold text-zinc-500">
-              Wenn gesetzt: verbindliches Leserversprechen für Ton und
-              Buchverlauf (auch Marktanalyse).
-            </p>
-          </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -323,12 +332,16 @@ export function RomanFundamentPanel({
               disabled={!canSave || busy}
               rows={10}
               className={textareaClass}
-              placeholder="Werden aus Genre, Richtung, Altersgruppe und Buchlänge mit Standard-Leitplanken befüllt — danach manuell anpassbar."
+              placeholder={
+                showRichtungen
+                  ? "Werden aus Genre, Richtung, Altersgruppe und Buchlänge mit Standard-Leitplanken befüllt — danach manuell anpassbar."
+                  : "Werden aus Genre, Altersgruppe und Buchlänge mit Standard-Leitplanken befüllt — danach manuell anpassbar."
+              }
             />
             <span className="mt-1.5 block text-xs font-semibold text-zinc-500">
               Automatisch aus den Feldern oben; optional manuell nachschärfen.
-              Mit „Speichern“ oben sicherst du Titel, Genre, Alter, Richtung und
-              diese Regeln.
+              Mit „Speichern“ oben sicherst du Titel, Genre, Alter
+              {showRichtungen ? ", Richtung" : ""} und diese Regeln.
             </span>
           </label>
         </div>

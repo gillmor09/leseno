@@ -1,6 +1,7 @@
 /**
  * Roman-module KI roles: system prompts + model slug.
  * Stored in `leseno.roman_ki_rollen` (not story `prompt_templates`).
+ * Clever-erzählt roles share the same table; filter via `filterRollenForAdminModule`.
  */
 
 import type { AiModelConfig } from "@/lib/prompts/catalog";
@@ -10,8 +11,11 @@ import {
 import {
   WIRED_AI_ENDPOINTS,
   findWiredAiEndpoint,
+  isImageAiProvider,
   isTextLlmProvider,
+  type WiredAiEndpoint,
 } from "@/lib/ai/wired-models";
+import type { RomanAdminModuleId } from "@/lib/roman/admin-module";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export type RomanKiRolle = {
@@ -42,7 +46,240 @@ type RolleRow = {
   updated_at: string | null;
 };
 
-/** Seed used when DB/RPC is missing — matches migration defaults. */
+/** Clever-erzählt role keys (lean set; Google Search when callers enable it). */
+export const CLEVER_ERZAEHLT_ROLE_KEYS = [
+  "clever_wissenssammler",
+  "clever_faktenchecker",
+  "clever_erzaehler",
+  "clever_leser",
+  "clever_infografiker",
+  "clever_cover_artdirector",
+  "clever_cover_typograf",
+] as const;
+
+export type CleverErzaehltRoleKey = (typeof CLEVER_ERZAEHLT_ROLE_KEYS)[number];
+
+const CLEVER_ROLE_KEY_SET = new Set<string>(CLEVER_ERZAEHLT_ROLE_KEYS);
+
+export function isCleverErzaehltRoleKey(key: string): boolean {
+  return CLEVER_ROLE_KEY_SET.has(key);
+}
+
+/**
+ * Clever erzählt: Wissen → Faktencheck → Erzähler → Leser → Infografik → Cover.
+ * Default model: Gemini 3.8 Flash for text roles.
+ */
+export const FALLBACK_CLEVER_ERZAEHLT_KI_ROLLEN: RomanKiRolle[] = [
+  {
+    key: "clever_wissenssammler",
+    label: "Wissenssammler",
+    purpose:
+      "Recherchiert Fakten zu einem Wissensgebiet und liefert sie chronologisch sortiert als Stoff für Kurzgeschichten.",
+    systemPrompt: `Du bist Wissenssammler:in für „Clever erzählt“-Bücher (deutscher Markt, Kinder).
+Aufgabe: Zu einem Thema belastbares Wissen zusammentragen und chronologisch ordnen — als Rohstoff für spätere Kurzgeschichten.
+
+Regeln:
+- Antworte auf Deutsch, klar und faktenbasiert.
+- Nutze aktuelle Recherche (Google Search), wenn verfügbar.
+- Sortiere chronologisch, wo Zeitabläufe sinnvoll sind (Entstehung, Entdeckung, Entwicklung, Ablauf).
+- Bei Themen ohne klare Zeitachse: logische Lernreihenfolge von grundlegend → aufbauend.
+- Gliedere in Teilthemen / Episoden-Bausteine, die später jeweils eine Kurzgeschichte werden können.
+- Pro Baustein: Kernfakten (je ca. 30–50 Wörter: dicht, konkret, prüfbar — kein Stichwort), warum es wichtig ist, typische Missverständnisse, offene Punkte.
+- Keine fertigen Geschichten, keine Dialoge, keine moralisierenden Schlusspredigten.
+- Alter der Zielgruppe beachten (Wortschatz der Fakten, Abstraktionsgrad) — aber noch nicht ausschmücken.
+- Wenn du JSON liefern sollst: nur JSON, keine Markdown-Fences.`,
+    userPromptHint:
+      "Thema + Altersgruppe → chronologisch/logisch geordnete Teilthemen mit Kernfakten (je ca. 30–50 Wörter).",
+    modelSlug: "gemini-3.8-flash",
+    reasoningEffort: "medium",
+    sortOrder: 100,
+    updatedAt: null,
+  },
+  {
+    key: "clever_faktenchecker",
+    label: "Faktenchecker",
+    purpose:
+      "Prüft Wissensstoff tiefer nach, korrigiert Fehler und markiert Unsicheres — vor dem Erzählen.",
+    systemPrompt: `Du bist Faktenchecker:in für „Clever erzählt“-Bücher.
+Aufgabe: Den gelieferten Wissensstoff kritisch und tiefer recherchieren, korrigieren und absichern.
+
+Regeln:
+- Antworte auf Deutsch.
+- Nutze aktuelle Recherche (Google Search), wenn verfügbar — gehe tiefer als die Erstfassung.
+- Trenne klar: (1) bestätigt, (2) korrigiert, (3) unsicher / streitig, (4) für die Altersgruppe zu komplex oder irreführend.
+- Korrigiere sachliche Fehler verbindlich; erfinde keine „Fakten“.
+- Vereinfachungen für Kinder sind ok, wenn sie nicht fachlich falsch werden — kennzeichne bewusste Vereinfachungen.
+- Keine Geschichten schreiben; nur den Wissensstoff härten.
+- Am Ende: bereinigter Stoff in derselben Struktur (chronologisch/logisch), plus kurze Liste der Korrekturen.`,
+    userPromptHint:
+      "Roh-Wissensstoff + Thema + Altersgruppe → geprüfte Fassung + Korrekturliste.",
+    modelSlug: "gemini-3.8-flash",
+    reasoningEffort: "high",
+    sortOrder: 110,
+    updatedAt: null,
+  },
+  {
+    key: "clever_erzaehler",
+    label: "Erzähler",
+    purpose:
+      "Formuliert aus einem geprüften Teilthema ein altersgerechtes Wissens-Abenteuer gemäß Buch-Auswahl. Abenteuer-Wissen (Fakten) kommt separat in UI/Export.",
+    systemPrompt: `Du bist Erzähler:in für „Clever erzählt“: Du verwandelst geprüfte Fakten eines Teilthemas in ein spannendes Abenteuer für Kinder.
+
+Länge und Erzählstil kommen AUSSCHLIESSLICH aus der Buch-Auswahl im Kontext (Minuten, Wortzahl-Richtwert, Stilhinweise).
+- Halte dich daran — rate die Länge NICHT aus dem Alter und erfinde keine eigene Zielvorgabe.
+- Wenn im Kontext keine Länge steht: eine knappe, klare Abenteuer-Geschichte schreiben und die fehlende Vorgabe nennen.
+
+Regeln:
+- Antworte auf Deutsch. Keine Meta-Kommentare im Fließtext der Geschichte.
+- Jede Geschichte ist ein kleines ABENTEUER: Figur(en) mit Ziel, sichtbares Hindernis, Wendepunkt, spannende Auflösung — kein trockener Erklärtext.
+- Die gelieferten Fakten müssen in der Handlung erlebt werden (nicht als Vortrag aufgezählt).
+- Fachlich korrekt bleiben (geprüfte Fakten sind verbindlich); keine erfundenen „Wissenschaft“.
+- Altersgerecht gemäß Lesestufe und Erzählstil der Buch-Auswahl.
+- Am Ende der Handlung die Erkenntnis spürbar machen, aber nicht als Lehrbuch-Absatz und nicht als eigener „Lernpunkt“-Block.
+- Schreibe KEINE Faktliste und kein „Abenteuer-Wissen“ in den Text — das kommt separat in UI/Export.
+- Wenn du Feedback einarbeiten sollst: brauchbares behalten, Kritik gezielt umsetzen, Fakten und Längenvorgabe nicht opfern.
+- Ausgabe: NUR die fertige Abenteuer-Kurzgeschichte als Fließtext. Keine Marker (kein ===GESCHICHTE===, ===LERNPUNKT===, ===ENDE===), keine Meta-Überschriften.`,
+    userPromptHint:
+      "Teilthema + geprüfte Fakten + Buch-Vorgaben → Abenteuer-Prosa (nur Fließtext); Abenteuer-Wissen separat (UI/Export).",
+    modelSlug: "gemini-3.8-flash",
+    reasoningEffort: "medium",
+    sortOrder: 120,
+    updatedAt: null,
+  },
+  {
+    key: "clever_leser",
+    label: "Leser-Feedback",
+    purpose:
+      "Kinder-/Vorlese-Stimme: prüft, ob die Kurzgeschichte trägt, verständlich und spannend ist — Stoff für den Erzähler.",
+    systemPrompt: `Du bist Testleser:in / Vorlese-Publikum für „Clever erzählt“-Kurzgeschichten.
+Du gibst ehrliches Leser-Feedback aus Sicht der Zielaltersgruppe (oder der vorlesenden Eltern).
+
+Regeln:
+- Antworte auf Deutsch, in Ich-Perspektive als Leser:in (keine Lektorats-Checkliste).
+- Fokus: Verständlichkeit, Spannung, Emotion, „habe ich etwas gelernt?“, Weiterlesen-Lust.
+- Höchstens 3 konkrete Verbesserungswünsche — priorisiert, actionable für den Erzähler.
+- Sachliche Fehler nur nennen, wenn sie dir als Leser:in auffallen; du bist kein Faktenchecker.
+- Stärken kurz würdigen, dann Störstellen — kein Zwang, alles zu kritisieren.
+- Keine fertige Neufassung der Geschichte schreiben.`,
+    userPromptHint:
+      "Kurzgeschichte + Altersgruppe + Lernpunkt → Stärken + max. 3 Verbesserungen.",
+    modelSlug: "gemini-3.8-flash",
+    reasoningEffort: "low",
+    sortOrder: 130,
+    updatedAt: null,
+  },
+  {
+    key: "clever_infografiker",
+    label: "Infografik-Designer",
+    purpose:
+      "Ein Bildprompt aus der Kapitelgeschichte — fertige Infografik inkl. gemaltem deutschem Text. Bildmodell über diese Rolle wählbar.",
+    systemPrompt: `Du bist Infografik-Designer:in für „Clever erzählt“.
+
+Schreibe EINEN englischen Bildprompt für eine ganzseitige Kinder-Infografik (1200×1920, 5:8).
+Ein Bildmodell malt daraus Motive und deutschen Text in einem Rutsch.
+Der Serien-Art-Style (three-dimensional CGI / Disney-Pixar Feature-Qualität) kommt aus dem Code — du planst nur Inhalt, Layout und deutsche Labels.
+
+Regeln:
+- Nur Inhalte aus der gelieferten Kapitelgeschichte — nichts erfinden.
+- 3–6 kurze deutsche Captions/Labels auf dem Bild; EXAKT Deutsch, klar und groß.
+- CHARACTER ANCHOR: mindestens eine Figur mit lesbarem Gesicht und großen ausdrucksstarken Augen — kein Diagramm ohne Gesicht.
+- Freundlich, hell, kindgerecht; cinematic CGI lighting; keine Logos, keine Fotorealistik, keine flache Clipart.
+- Am Anfang und Ende: LANGUAGE LOCK (all on-image text German only).
+- Ausgabe: nur der englische Prompt (deutsche Labels in Anführungszeichen), kein Markdown, ca. 100–200 Wörter — ohne rivalisierende Style-Bibel.`,
+    userPromptHint:
+      "Kapitelgeschichte → ein Bildprompt (Infografik mit deutschem Text).",
+    modelSlug: "gemini-3.8-flash",
+    reasoningEffort: "medium",
+    sortOrder: 140,
+    updatedAt: null,
+  },
+  {
+    key: "clever_cover_artdirector",
+    label: "Cover-Art-Director",
+    purpose:
+      "Plant nur das Cover-Motiv (reine Illustration). Logos werden später 1:1 als PNG eingefügt — nie vom Bildmodell malen lassen.",
+    systemPrompt: `Du bist Cover-Art-Director für eine Kinder-Wissens-Abenteuer-Buchreihe (deutscher Markt).
+
+Aufgabe: Einen EINZIGEN englischen SCENE-Brief schreiben (Staging only) für EINE durchgehende Cover-Illustration im three-dimensional CGI Feature-Animationsstil.
+Der finale Art-Style wird im Code gesperrt — erfinde keinen rivalisierenden Look (kein Foto, keine Aquarell, keine flache Clipart).
+
+WICHTIG — Branding und Typo kommen NICHT von dir:
+- Logos, Serien-Badge und Buchtitel werden SPÄTER pixelgenau als Overlay auf das fertige Bild gelegt.
+- Du darfst im Prompt KEINE Logos, Badges, Embleme, Banner, Schilder, Markenzeichen, „Clever“, „erzählt“, „leseno“, Publisher-Marks oder irgendwelche Buchstaben beschreiben oder andeuten.
+- Auch keine gelben Bänder, Schilde, Siegel, Aufkleber oder UI-Chrome.
+- KEINE reservierten Titelzonen, Kopfleisten, dunklen Balken, Verlaufsstreifen, leeren Rechtecke oder „quiet strips“ — das Bildmodell malt sonst hässliche UI-Balken.
+
+Charakter-Pflicht (auch bei Natur-/Wissensthemen):
+- IMMER ein Hero mit lesbarem Gesicht und großen ausdrucksstarken Augen (Kind und/oder freundlicher Begleiter).
+- Thema = Welt um den Hero herum — keine leere Landschaft ohne Gesicht.
+
+Komposition:
+- Ein einziges, vollflächiges Motiv (full-bleed), durchgehende Szene von Rand zu Rand.
+- Klarer Hero-Fokus, thumbnail-tauglich — keine Collage, kein Panel-Layout.
+
+Hard rules:
+- English only; scene brief only — no markdown, no quotes wrapping the whole answer.
+- ZERO text, letters, numbers, signs, logos, badges, emblems, banners, watermarks, titles.
+- ZERO painted bars, bands, strips, frames, panels, or reserved empty title zones.
+- Full-bleed portrait eBook cover 1200×1920 (5:8).
+- Kindgerecht, spannend, klarer Hero-Fokus zum Thema; eltern-tauglich hochwertig.
+- Keine Horror-Motive; freundlich-abenteuerlich, farbstark, thumbnail-tauglich.
+- Tonality nur zur Verstärkung von Licht/Emotion — nie Medienwechsel weg vom CGI-Animationslook.
+- ~90–140 Wörter; beginne direkt mit dem Prompt.`,
+    userPromptHint:
+      "Titel + Thema + Altersgruppe (+ optional Prämisse/Idee) → englischer Cover-Bildprompt OHNE jede Logo-/Text-Erwähnung.",
+    modelSlug: "gemini-3-pro-image",
+    reasoningEffort: "medium",
+    sortOrder: 150,
+    updatedAt: null,
+  },
+  {
+    key: "clever_cover_typograf",
+    label: "Cover-Typograf",
+    purpose:
+      "Plant nur die Titel-Hierarchie fürs Clever-Cover. Serie/Logo und leseno-Markenzeichen sind bereits als PNGs gesetzt — nicht nochmal setzen.",
+    systemPrompt: `Du bist Cover-Typograf:in für die Serie „Clever erzählt“ (leseno).
+
+Kontext der fertigen Cover-Komposition (bereits gesetzt, NICHT planen):
+- Oben mittig: Serien-Badge-PNG „Clever erzählt“
+- Unten rechts: leseno-Logo-PNG
+- Deine Aufgabe: NUR den Buchtitel als Typografie-Hierarchie im oberen Drittel (unter dem Badge), horizontal zentriert
+
+Glyphs werden später in Nunito gesetzt (ExtraBold für Primary, Bold für Secondary/Eyebrow — mindestens Bold).
+Du planst nur Zeilenbruch, Rollen, Ton und Scrim. Du erfindest oder buchstabierst den Titel NIE um.
+
+Return ONLY JSON:
+{
+  "lines": [
+    { "text": "...", "role": "eyebrow"|"primary"|"secondary" }
+  ],
+  "zone": "upper",
+  "align": "center",
+  "size": "hero",
+  "tone": "light"|"dark"|"auto",
+  "scrim": "none"|"soft"|"strong",
+  "publisherNote": "one short QC sentence"
+}
+
+Hard rules:
+- Concatenating line texts with spaces MUST equal the exact TITLE TEXT you are given (same words, same order).
+- The title text you receive is usually ONLY the topic after the series colon (e.g. "Wald & Bäume") — because the series badge already says „Clever erzählt“. Do NOT re-add „Clever erzählt“ or a series eyebrow.
+- Exactly ONE line with role "primary".
+- ALWAYS zone "upper", align "center", size "hero" (title in the upper third, horizontally centered).
+- Prefer 1–2 short lines for the topic; keep pairs like "Wald & Bäume" as ONE primary line when short.
+- Lines starting with "&" / "und" must NEVER be the sole primary.
+- Default scrim "none". Prefer "light" tone on mid/dark art.
+- No author, no extra words, no ALL-CAPS unless the source already is.`,
+    userPromptHint:
+      "Thema-Titel (ohne Serienprefix) + Genre/Alter + kurze Szenennotiz → JSON Titel-Hierarchie, zone upper, align center, Nunito.",
+    modelSlug: "gemini-3.8-flash",
+    reasoningEffort: "low",
+    sortOrder: 160,
+    updatedAt: null,
+  },
+];
+
+/** Seed used when DB/RPC is missing — matches migration defaults (Roman/Sachbuch). */
 export const FALLBACK_ROMAN_KI_ROLLEN: RomanKiRolle[] = [
   {
     key: "marktanalyst",
@@ -244,6 +481,25 @@ Regeln:
   },
 ];
 
+/** All fallback seeds (Roman + Clever erzählt). */
+export const ALL_FALLBACK_KI_ROLLEN: RomanKiRolle[] = [
+  ...FALLBACK_ROMAN_KI_ROLLEN,
+  ...FALLBACK_CLEVER_ERZAEHLT_KI_ROLLEN,
+];
+
+/**
+ * Show only Clever roles on Clever-erzählt admin; hide them on Roman/Sachbuch.
+ */
+export function filterRollenForAdminModule(
+  rollen: RomanKiRolle[],
+  moduleId: RomanAdminModuleId,
+): RomanKiRolle[] {
+  if (moduleId === "clever_erzaehlt") {
+    return rollen.filter((r) => isCleverErzaehltRoleKey(r.key));
+  }
+  return rollen.filter((r) => !isCleverErzaehltRoleKey(r.key));
+}
+
 function rowToRolle(row: RolleRow): RomanKiRolle {
   return {
     key: row.key,
@@ -260,18 +516,40 @@ function rowToRolle(row: RolleRow): RomanKiRolle {
 
 function mergeWithFallback(rollen: RomanKiRolle[]): RomanKiRolle[] {
   const keys = new Set(rollen.map((r) => r.key));
-  return [...rollen, ...FALLBACK_ROMAN_KI_ROLLEN.filter((r) => !keys.has(r.key))]
-    .sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key));
+  return [
+    ...rollen,
+    ...ALL_FALLBACK_KI_ROLLEN.filter((r) => !keys.has(r.key)),
+  ].sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key));
 }
 
-/** Wired text LLMs for the role model dropdown. */
+/** True when the provider may be chosen on a KI-Rolle (text LLM or image). */
+function isRomanRoleSelectableProvider(provider: string): boolean {
+  return isTextLlmProvider(provider) || isImageAiProvider(provider);
+}
+
+/** Catalog-shaped config for a wired image endpoint (FLUX / Gemini Image). */
+function wiredImageEndpointToConfig(endpoint: WiredAiEndpoint): AiModelConfig {
+  return {
+    id: endpoint.modelSlug,
+    label: endpoint.label,
+    provider: endpoint.provider,
+    modelSlug: endpoint.modelSlug,
+    supportsSystemPrompt: false,
+    supportsJsonOutput: false,
+    isActive: true,
+    notes: null,
+    ttsVoiceId: null,
+  };
+}
+
+/** Wired text LLMs + FLUX.2 for the role model dropdown. */
 export function listRomanRoleModelOptions(): Array<{
   modelSlug: string;
   label: string;
 }> {
-  return WIRED_AI_ENDPOINTS.filter((e) => isTextLlmProvider(e.provider)).map(
-    (e) => ({ modelSlug: e.modelSlug, label: e.label }),
-  );
+  return WIRED_AI_ENDPOINTS.filter((e) =>
+    isRomanRoleSelectableProvider(e.provider),
+  ).map((e) => ({ modelSlug: e.modelSlug, label: e.label }));
 }
 
 /**
@@ -295,15 +573,15 @@ export async function loadRomanKiRollen(options?: {
 }
 
 /**
- * Upserts one role. Model slug must be a wired text LLM.
+ * Upserts one role. Model slug must be a wired text LLM or FLUX.2.
  */
 export async function saveRomanKiRolle(
   rolle: Omit<RomanKiRolle, "updatedAt">,
 ): Promise<void> {
   const wired = findWiredAiEndpoint(rolle.modelSlug);
-  if (!wired || !isTextLlmProvider(wired.provider)) {
+  if (!wired || !isRomanRoleSelectableProvider(wired.provider)) {
     throw new Error(
-      `Modell „${rolle.modelSlug}“ ist kein angebundenes Text-LLM.`,
+      `Modell „${rolle.modelSlug}“ ist kein angebundenes Text- oder Bildmodell.`,
     );
   }
 
@@ -324,11 +602,14 @@ export async function saveRomanKiRolle(
 }
 
 /**
- * Loads one role (fallback-aware) and resolves its wired text model.
+ * Loads one role (fallback-aware) and resolves models.
+ * `model` is always a text LLM (safe for `generateText`). If the role stores
+ * FLUX.2, that becomes `imageModel` and text falls back to the default Schreibmodell.
  */
 export async function resolveRomanKiRolle(key: string): Promise<{
   rolle: RomanKiRolle;
   model: AiModelConfig;
+  imageModel: AiModelConfig | null;
 }> {
   const wanted = key.trim();
   if (!wanted) {
@@ -339,14 +620,28 @@ export async function resolveRomanKiRolle(key: string): Promise<{
     const rollen = await loadRomanKiRollen({ mergeFallback: true });
     rolle = rollen.find((r) => r.key === wanted);
   } catch {
-    rolle = FALLBACK_ROMAN_KI_ROLLEN.find((r) => r.key === wanted);
+    rolle = ALL_FALLBACK_KI_ROLLEN.find((r) => r.key === wanted);
   }
   if (!rolle) {
-    rolle = FALLBACK_ROMAN_KI_ROLLEN.find((r) => r.key === wanted);
+    rolle = ALL_FALLBACK_KI_ROLLEN.find((r) => r.key === wanted);
   }
   if (!rolle) {
     throw new Error(`KI-Rolle „${wanted}“ nicht gefunden.`);
   }
+
+  const wired = findWiredAiEndpoint(rolle.modelSlug);
+  if (wired && isImageAiProvider(wired.provider)) {
+    const {
+      resolveDefaultRomanSchreibModel,
+    } = await import("@/lib/roman/model");
+    const textModel = await resolveDefaultRomanSchreibModel();
+    return {
+      rolle,
+      model: textModel,
+      imageModel: wiredImageEndpointToConfig(wired),
+    };
+  }
+
   const { resolveRomanSchreibModel } = await import("@/lib/roman/model");
   const base = await resolveRomanSchreibModel(rolle.modelSlug);
   const effort = resolveReasoningEffort(
@@ -357,5 +652,5 @@ export async function resolveRomanKiRolle(key: string): Promise<{
     ...base,
     reasoningEffort: effort,
   };
-  return { rolle, model };
+  return { rolle, model, imageModel: null };
 }

@@ -1,14 +1,23 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { RomanAdminWorkspace } from "@/components/features/admin/roman-admin-workspace";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import {
+  adminModuleForBuchTyp,
+  getRomanAdminModule,
+  type RomanAdminModuleId,
+} from "@/lib/roman/admin-module";
+import { emptyRomanEditorial } from "@/lib/roman/editorial";
+import { ensureRomanModuleBuchTyp } from "@/lib/roman/ensure-module-buch-typ";
 import { getRomanKontext } from "@/lib/roman/repository";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 type PageProps = {
   params: Promise<{ id: string }>;
 };
+
+const MODULE_ID: RomanAdminModuleId = "roman";
 
 export async function generateMetadata({
   params,
@@ -17,12 +26,10 @@ export async function generateMetadata({
   try {
     const roman = await getRomanKontext(id);
     return {
-      title: roman
-        ? `${roman.title} — Buch`
-        : "Buch — Leseno Admin",
+      title: roman ? `${roman.title} — Roman` : "Roman — Leseno Admin",
     };
   } catch {
-    return { title: "Buch — Leseno Admin" };
+    return { title: "Roman — Leseno Admin" };
   }
 }
 
@@ -30,11 +37,12 @@ export async function generateMetadata({
 export const maxDuration = 800;
 
 /**
- * Book detail: Typ + Idee Q&A; later tabs placeholders.
+ * Roman detail: Belletristik pipeline (buchTyp fixed).
  */
 export default async function RomanAdminDetailPage({ params }: PageProps) {
   const { id } = await params;
   const canSave = hasServiceRoleConfig();
+  const adminModule = getRomanAdminModule(MODULE_ID);
 
   let roman: Awaited<ReturnType<typeof getRomanKontext>> = null;
   try {
@@ -42,6 +50,21 @@ export default async function RomanAdminDetailPage({ params }: PageProps) {
     if (!roman) notFound();
   } catch {
     notFound();
+  }
+
+  const currentTyp =
+    (roman!.editorial ?? emptyRomanEditorial()).buchTyp ?? "unbekannt";
+  const owner = adminModuleForBuchTyp(currentTyp);
+  if (owner !== MODULE_ID) {
+    redirect(`${getRomanAdminModule(owner).basePath}/${id}`);
+  }
+
+  if (canSave) {
+    try {
+      roman = await ensureRomanModuleBuchTyp(roman!, adminModule.buchTyp);
+    } catch {
+      /* keep loaded roman; workspace still forces typ on save */
+    }
   }
 
   return (
@@ -59,6 +82,7 @@ export default async function RomanAdminDetailPage({ params }: PageProps) {
             <RomanAdminWorkspace
               initialRoman={roman!}
               canSave={canSave}
+              moduleId={MODULE_ID}
             />
           </div>
         </section>

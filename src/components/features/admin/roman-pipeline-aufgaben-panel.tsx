@@ -26,6 +26,8 @@ function stageTitle(stage: string): string {
     return PIPELINE_STAGE_LABELS[stage as PipelineStage];
   }
   if (stage === "pipeline") return "Pipeline (Router)";
+  if (stage === "wissen") return "Wissen";
+  if (stage === "geschichte") return "Geschichte";
   return stage;
 }
 

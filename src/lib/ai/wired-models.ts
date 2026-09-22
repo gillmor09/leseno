@@ -187,3 +187,10 @@ const TEXT_LLM_PROVIDERS = new Set([
 export function isTextLlmProvider(provider: string): boolean {
   return TEXT_LLM_PROVIDERS.has(provider.trim().toLowerCase());
 }
+
+const IMAGE_PROVIDERS = new Set(["ionos-image", "gemini-image"]);
+
+/** True when the provider generates pixels (FLUX / Gemini Image). */
+export function isImageAiProvider(provider: string): boolean {
+  return IMAGE_PROVIDERS.has(provider.trim().toLowerCase());
+}

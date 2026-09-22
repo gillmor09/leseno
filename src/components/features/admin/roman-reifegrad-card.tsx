@@ -8,7 +8,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { RefreshCw, Trash2, Wand2, X } from "lucide-react";
+import { Check, RefreshCw, Trash2, Wand2, X } from "lucide-react";
 import {
   romanPipelineDimensionAnalyzeAction,
   romanPipelineDimensionApplyAction,
@@ -653,7 +653,11 @@ export function RomanReifegradCard({
   );
 }
 
-function ReifegradImproveDialog({
+/**
+ * Kritik + Änderungsaufträge dialog (Reifegrad / Clever Verbessern).
+ * Clever: pass `hideAutorEntscheidungen` — no decision fields or apply gate.
+ */
+export function ReifegradImproveDialog({
   plan,
   pending,
   autorEntscheidungen,
@@ -662,21 +666,32 @@ function ReifegradImproveDialog({
   onReanalyze,
   onApply,
   onDiscardRequest,
+  hideAutorEntscheidungen = false,
+  /** Clever: „Fertig“ marks chapter OK instead of discarding the plan. */
+  fertigInsteadOfDiscard = false,
+  onFertig,
 }: {
   plan: RomanReifegradImprovePlan;
-  pending: "analyze" | "apply" | "discard" | null;
+  pending: "analyze" | "apply" | "discard" | "fertig" | null;
   autorEntscheidungen: Record<number, string>;
   onAutorEntscheidungChange: (index: number, value: string) => void;
   onClose: () => void;
   onReanalyze: () => void;
   onApply: () => void;
   onDiscardRequest: () => void;
+  /** Clever Kurzgeschichte: no „Deine Entscheidung“ section. */
+  hideAutorEntscheidungen?: boolean;
+  fertigInsteadOfDiscard?: boolean;
+  onFertig?: () => void;
 }) {
   const busy = pending != null;
   const onlyNice = onlyNiceToHavePrompts(plan.aenderungsPrompts);
-  const decisionRows = aenderungsPromptsNeedingDecision(plan.aenderungsPrompts);
+  const decisionRows = hideAutorEntscheidungen
+    ? []
+    : aenderungsPromptsNeedingDecision(plan.aenderungsPrompts);
   const needsDecisionAt = new Set(decisionRows.map((r) => r.index));
   const decisionsMissing =
+    !hideAutorEntscheidungen &&
     missingAutorEntscheidungen(
       plan.aenderungsPrompts,
       autorEntscheidungen,
@@ -685,7 +700,7 @@ function ReifegradImproveDialog({
     !plan.appliedAt &&
     actionableAenderungsPrompts(plan.aenderungsPrompts).length > 0 &&
     !decisionsMissing;
-  const canDiscard = !plan.appliedAt;
+  const canSecondary = !plan.appliedAt || fertigInsteadOfDiscard;
   const applyLabel = plan.appliedAt
     ? "Bereits eingearbeitet"
     : decisionsMissing
@@ -769,8 +784,11 @@ function ReifegradImproveDialog({
               Änderungsaufträge
             </h3>
             <p className="mt-1 text-xs font-semibold text-zinc-500">
-              Bis zu 3 Pflichtpunkte nach Wichtigkeit. Optional: deine
-              Entscheidung, bevor eingearbeitet wird.
+              {hideAutorEntscheidungen
+                ? fertigInsteadOfDiscard
+                  ? "Bis zu 3 Pflichtpunkte nach Wichtigkeit — einarbeiten oder mit Fertig als OK markieren."
+                  : "Bis zu 3 Pflichtpunkte nach Wichtigkeit — prüfen, dann einarbeiten oder verwerfen."
+                : "Bis zu 3 Pflichtpunkte nach Wichtigkeit. Optional: deine Entscheidung, bevor eingearbeitet wird."}
             </p>
             <div className="mt-2">
               <NiceToHaveOnlyBanner prompts={plan.aenderungsPrompts} />
@@ -854,16 +872,34 @@ function ReifegradImproveDialog({
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <div>
-            {canDiscard ? (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={onDiscardRequest}
-                className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-rose-800 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-50"
-              >
-                <Trash2 className="size-4" aria-hidden />
-                Plan verwerfen
-              </button>
+            {canSecondary ? (
+              fertigInsteadOfDiscard ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onFertig?.()}
+                  className="inline-flex items-center gap-2 rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  <Check
+                    className={cn(
+                      "size-4",
+                      pending === "fertig" && "animate-pulse",
+                    )}
+                    aria-hidden
+                  />
+                  {pending === "fertig" ? "Fertig …" : "Fertig"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={onDiscardRequest}
+                  className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-rose-800 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-50"
+                >
+                  <Trash2 className="size-4" aria-hidden />
+                  Plan verwerfen
+                </button>
+              )
             ) : null}
           </div>
           <div className="flex flex-wrap items-center justify-end gap-3">

@@ -5,7 +5,7 @@
  * Critique / Verbessern is handled by the vertical pipeline (Entwicklungslektor).
  */
 
-import { revalidatePath } from "next/cache";
+import { revalidateRomanAdmin, revalidateRomanAdminRollen } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
@@ -60,8 +60,7 @@ async function persistIdeeKurz(
     fanPersonaProfil: roman.fanPersonaProfil,
     editorial: nextEditorial,
   });
-  revalidatePath("/admin/roman");
-  revalidatePath(`/admin/roman/${roman.id}`);
+  revalidateRomanAdmin(roman.id);
   return { ...saved, ideenChat: roman.ideenChat };
 }
 

@@ -24,13 +24,16 @@ import {
   PIPELINE_STAGE_LABELS,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
-import { stageRoleAssignment } from "@/lib/roman/pipeline/tasks";
+import { stageRoleAssignment, filterAufgabenForAdminModule } from "@/lib/roman/pipeline/tasks";
 import type {
   LeserFeedbackStage,
   RomanLeserFeedback,
 } from "@/lib/roman/editorial";
 import type { RomanReifegrade } from "@/lib/roman/reifegrad-model";
-import type { RomanKiRolle } from "@/lib/roman/roles";
+import {
+  filterRollenForAdminModule,
+  type RomanKiRolle,
+} from "@/lib/roman/roles";
 import type { RomanKontext } from "@/lib/roman/types";
 
 type RunMode = "generate";
@@ -61,6 +64,8 @@ export function RomanPipelineStageActions({
   /** When true, Erzeugen also runs Reifegrad after the draft. */
   showAssess = true,
   displayLabel,
+  rolesHref = "/admin/roman/rollen",
+  cleverStories = false,
 }: {
   romanId: string;
   stage: PipelineStage;
@@ -76,6 +81,10 @@ export function RomanPipelineStageActions({
   generateMode?: "stage" | "spec-chain";
   showAssess?: boolean;
   displayLabel?: string;
+  /** Link to module KI-Rollen admin. */
+  rolesHref?: string;
+  /** Clever erzählt: independent Kurzgeschichten wording. */
+  cleverStories?: boolean;
 }) {
   const [pending, setPending] = useState<RunMode | null>(null);
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
@@ -88,11 +97,23 @@ export function RomanPipelineStageActions({
   );
 
   const busy = Boolean(disabled || pending);
-  const label = displayLabel ?? PIPELINE_STAGE_LABELS[stage];
+  const label =
+    displayLabel ??
+    (cleverStories && stage === "manuskript"
+      ? "Kurzgeschichten"
+      : PIPELINE_STAGE_LABELS[stage]);
   const generateIdleLabel =
-    stage === "manuskript" ? "Alles erzeugen" : "Erzeugen";
+    stage === "manuskript"
+      ? cleverStories
+        ? "Alle Geschichten erzeugen"
+        : "Alles erzeugen"
+      : "Erzeugen";
   const generatePendingLabel =
-    stage === "manuskript" ? "Alles erzeugen …" : "Erzeugen …";
+    stage === "manuskript"
+      ? cleverStories
+        ? "Alle Geschichten …"
+        : "Alles erzeugen …"
+      : "Erzeugen …";
 
   useEffect(() => {
     let cancelled = false;
@@ -102,16 +123,23 @@ export function RomanPipelineStageActions({
         loadRomanKiRollenAction(),
       ]);
       if (cancelled || !aufgabenResult.success) return;
-      const rollen = rollenResult.success
-        ? rollenResult.data!.rollen
-        : ([] as RomanKiRolle[]);
+      const moduleId = cleverStories ? "clever_erzaehlt" : "roman";
+      /** Clever pipeline tasks use stage `geschichte`, UI tab is still `manuskript`. */
+      const roleStage =
+        cleverStories && stage === "manuskript" ? "geschichte" : stage;
+      const rollen = filterRollenForAdminModule(
+        rollenResult.success
+          ? rollenResult.data!.rollen
+          : ([] as RomanKiRolle[]),
+        moduleId,
+      );
+      const aufgaben = filterAufgabenForAdminModule(
+        aufgabenResult.data!.aufgaben,
+        moduleId,
+      );
       const byKey = new Map(rollen.map((r) => [r.key, r]));
       const rolleMap = new Map(rollen.map((r) => [r.key, r.label]));
-      const assign = stageRoleAssignment(
-        aufgabenResult.data!.aufgaben,
-        rolleMap,
-        stage,
-      );
+      const assign = stageRoleAssignment(aufgaben, rolleMap, roleStage);
       setDraftLabel(assign.draftLabel);
       setCritiqueLabel(assign.critiqueLabel);
       setDraftAgent(
@@ -126,7 +154,7 @@ export function RomanPipelineStageActions({
     return () => {
       cancelled = true;
     };
-  }, [stage]);
+  }, [stage, cleverStories]);
 
   const activeAgent = useMemo((): WaitAgentInfo | null => {
     if (pending !== "generate") return null;
@@ -143,7 +171,9 @@ export function RomanPipelineStageActions({
       generateMode === "spec-chain"
         ? "Spec: Figuren → Welt → Exposé …"
         : stage === "manuskript"
-          ? "Alles erzeugen: Kapitel nacheinander …"
+          ? cleverStories
+            ? "Alle Geschichten: nacheinander …"
+            : "Alles erzeugen: Kapitel nacheinander …"
           : `Entwurf: ${label} …`,
     );
 
@@ -175,7 +205,9 @@ export function RomanPipelineStageActions({
       lastRoman = started.data.roman;
       setProgressLabel(
         stage === "manuskript"
-          ? "Alles erzeugen: Arbeitsbrief vorbereiten …"
+          ? cleverStories
+            ? "Alle Geschichten: vorbereiten …"
+            : "Alles erzeugen: Arbeitsbrief vorbereiten …"
           : started.data.progressLabel,
       );
 
@@ -306,8 +338,21 @@ export function RomanPipelineStageActions({
     <div className="space-y-2">
       <RomanSceneWaitDialog
         open={pending === "generate"}
-        variant="pipeline-generate"
-        title={stage === "manuskript" ? "Alles erzeugen" : null}
+        variant={
+          showAssess ? "pipeline-generate" : "pipeline-generate-draft-only"
+        }
+        title={
+          stage === "manuskript"
+            ? cleverStories
+              ? "Alle Geschichten erzeugen"
+              : "Alles erzeugen"
+            : null
+        }
+        footer={
+          cleverStories && stage === "manuskript"
+            ? "Jede Kurzgeschichte einzeln — ohne Buch-Reifegrad. Tab offen lassen."
+            : null
+        }
         progressLabel={progressLabel}
         activeStepIndex={activeStepIndex}
         agentInfo={activeAgent}
@@ -324,19 +369,21 @@ export function RomanPipelineStageActions({
               {draftLabel ?? "…"}
             </dd>
           </div>
-          <div>
-            <dt className="inline text-zinc-500">Lektor: </dt>
-            <dd className="inline font-extrabold text-zinc-950">
-              {critiqueLabel ?? "…"}
-            </dd>
-          </div>
+          {!(cleverStories && stage === "manuskript") ? (
+            <div>
+              <dt className="inline text-zinc-500">Lektor: </dt>
+              <dd className="inline font-extrabold text-zinc-950">
+                {critiqueLabel ?? "…"}
+              </dd>
+            </div>
+          ) : null}
         </dl>
         <p className="mt-2 text-xs font-semibold text-zinc-500">
-          Erzeugen = Co-Autor (+ Reifegrad). Analyse/Einarbeiten = Reifegrad-Knöpfe
-          (Gesamt oder Dimension). Feedback = Testleser. Nur dieser Schritt —
-          keine Upstream-/Downstream-Kaskade. Anpassen unter{" "}
+          {cleverStories && stage === "manuskript"
+            ? "Erzeugen = Erzähler schreibt jede Geschichte (+ Infografik). Verbessern je Geschichte: Kritik prüfen, dann einarbeiten. Anpassen unter "
+            : "Erzeugen = Co-Autor (+ Reifegrad). Analyse/Einarbeiten = Reifegrad-Knöpfe (Gesamt oder Dimension). Feedback = Testleser. Nur dieser Schritt — keine Upstream-/Downstream-Kaskade. Anpassen unter "}
           <Link
-            href="/admin/roman/rollen"
+            href={rolesHref}
             className="font-bold text-orange-800 hover:underline"
           >
             KI-Rollen
@@ -354,7 +401,8 @@ export function RomanPipelineStageActions({
         >
           {pending === "generate" ? generatePendingLabel : generateIdleLabel}
         </button>
-        {typeof hasLeserArtifact === "boolean" ? (
+        {typeof hasLeserArtifact === "boolean" &&
+        !(cleverStories && stage === "manuskript") ? (
           <RomanLeserFeedbackControl
             romanId={romanId}
             stage={
@@ -375,13 +423,17 @@ export function RomanPipelineStageActions({
       </div>
       <p className="text-xs font-semibold text-zinc-500">
         {stage === "manuskript"
-          ? "Alles erzeugen = alle Kapitel nacheinander (+ Reifegrad). "
+          ? cleverStories
+            ? "Alle Geschichten = Kurzgeschichte + Infografik je Kapitel nacheinander. "
+            : "Alles erzeugen = alle Kapitel nacheinander (+ Reifegrad). "
           : showAssess
             ? "Erzeugen = Entwurf + Reifegrad. "
             : generateMode === "spec-chain"
               ? "Erzeugen = Spec (Figuren + Welt + Exposé). "
               : "Erzeugen = Entwurf. "}
-        Analyse unter Reifegrad (Gesamt / Dimension).
+        {cleverStories && stage === "manuskript"
+          ? "Verbessern je Geschichte = Kritik ansehen, dann einarbeiten oder verwerfen."
+          : "Analyse unter Reifegrad (Gesamt / Dimension)."}
       </p>
     </div>
   );

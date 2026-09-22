@@ -77,6 +77,8 @@ function typHints(buchTyp: RomanBuchTyp): string {
   switch (buchTyp) {
     case "sachbuch":
       return `Sachbuch: Skizziere die grobe Argument-/Kapitel-Handlung als Anfang (Einstieg & Versprechen), Mitte (Kernargumente / Wendungen), Ende (Auflösung & Lesergewinn) — keine fertigen Kapiteltexte.`;
+    case "clever_erzaehlt":
+      return `Clever erzählt: Skizziere das Wissensgebiet als Folge von Kurzgeschichten — Anfang (Einstieg & Lernversprechen), Mitte (Geschichten mit aufbauenden Lernpunkten), Ende (Synthese / Lesergewinn). Keine fertige Prosa.`;
     case "serie_welt":
       return `Serie/Welt: Skizziere die grobe Handlungs-/Staffel-Bewegung als Anfang, Mitte, Ende — Weltregeln nur andeuten, Fokus Plot.`;
     default:

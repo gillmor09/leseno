@@ -32,9 +32,39 @@ const MARKTANALYSE_STEPS = [
   "Marktanalyse wird gespeichert …",
 ] as const;
 
+const CLEVER_UNTERTHEMEN_STEPS = [
+  "Thema und Altersgruppe werden gelesen …",
+  "Wissenssammler recherchiert (Google Search) …",
+  "10 Unterthemen werden chronologisch sortiert …",
+  "Fakten je Kapitel werden verdichtet …",
+  "Unterthemen werden gespeichert …",
+] as const;
+
+const CLEVER_FAKTENCHECK_STEPS = [
+  "Kapitel-Fakten werden gelesen …",
+  "Faktenchecker recherchiert tiefer (Google Search) …",
+  "Jeder Fakt wird einzeln bewertet …",
+  "Kapitel-Signal (ok / Nacharbeit) …",
+  "Ergebnis wird gespeichert …",
+] as const;
+
+const CLEVER_FAKTEN_ERSETZEN_STEPS = [
+  "Kritische Fakten werden markiert …",
+  "Wissenssammler recherchiert Ersatz (Google Search) …",
+  "Nur fehlerhafte/unsichere Fakten werden neu gesetzt …",
+  "Kapitel zurück auf ungeprüft …",
+  "Ergebnis wird gespeichert …",
+] as const;
+
 const PIPELINE_GENERATE_STEPS = [
   "Co-Autor erzeugt …",
   "Reifegrad wird bewertet …",
+] as const;
+
+const PIPELINE_GENERATE_DRAFT_ONLY_STEPS = [
+  "Geschichten werden erzeugt …",
+  "Infografiken werden gemalt …",
+  "Ergebnis wird gespeichert …",
 ] as const;
 
 const PIPELINE_CRITIQUE_STEPS = [
@@ -82,23 +112,63 @@ const MANUSKRIPT_CHAPTER_CRITIQUE_STEPS = [
   "Analyse wird verdichtet …",
 ] as const;
 
+const CLEVER_GESCHICHTE_GENERATE_STEPS = [
+  "Unterthema und Fakten werden gelesen …",
+  "Erzähler schreibt die Kurzgeschichte …",
+  "Infografik wird gemalt …",
+  "Speichern …",
+] as const;
+
+const CLEVER_GESCHICHTE_IMPROVE_ANALYZE_STEPS = [
+  "Kurzgeschichte wird gelesen …",
+  "Leser formuliert Kritik und Aufträge …",
+] as const;
+
+const CLEVER_GESCHICHTE_IMPROVE_APPLY_STEPS = [
+  "Erzähler arbeitet die Aufträge ein …",
+  "Speichern …",
+] as const;
+
+const CLEVER_GESCHICHTE_CRITIQUE_STEPS = [
+  "Kurzgeschichte wird gelesen …",
+  "Leser formuliert Gegenlese …",
+] as const;
+
+const CLEVER_INFOGRAFIK_STEPS = [
+  "Bildprompt aus der Geschichte …",
+  "Bildmodell malt Infografik inkl. Text …",
+  "Bild wird gespeichert …",
+] as const;
+
 type WaitVariant =
   | "idee"
   | "marktanalyse"
+  | "clever-unterthemen"
+  | "clever-faktencheck"
+  | "clever-fakten-ersetzen"
   | "pipeline-generate"
+  | "pipeline-generate-draft-only"
   | "pipeline-critique"
   | "reifegrad-assess"
   | "leser-feedback"
   | "leser-feedback-apply"
   | "manuskript-chapter-generate"
   | "manuskript-chapter-improve"
-  | "manuskript-chapter-critique";
+  | "manuskript-chapter-critique"
+  | "clever-geschichte-generate"
+  | "clever-geschichte-improve"
+  | "clever-geschichte-improve-analyze"
+  | "clever-geschichte-improve-apply"
+  | "clever-geschichte-critique"
+  | "clever-infografik";
 
 type RomanSceneWaitDialogProps = {
   open: boolean;
   variant?: WaitVariant;
   /** Override dialog title (e.g. „Alles erzeugen“). */
   title?: string | null;
+  /** Override footer hint under the checklist. */
+  footer?: string | null;
   /** Live status from the caller (preferred over fake step animation). */
   progressLabel?: string | null;
   /** Optional checklist index driven by the caller (0-based). */
@@ -117,8 +187,18 @@ function roleKeysForVariant(variant: WaitVariant): string[] {
       return ["schreib_coach", "ideen_redakteur"];
     case "marktanalyse":
       return ["marktanalyst"];
+    case "clever-unterthemen":
+      return ["clever_wissenssammler"];
+    case "clever-faktencheck":
+      return ["clever_faktenchecker"];
+    case "clever-fakten-ersetzen":
+      return ["clever_wissenssammler"];
+    case "clever-infografik":
+      return ["clever_infografiker"];
     case "pipeline-generate":
       return ["co_autor", "bewerter"];
+    case "pipeline-generate-draft-only":
+      return ["clever_erzaehler", "clever_infografiker"];
     case "pipeline-critique":
       return ["entwicklungslektor", "co_autor", "bewerter"];
     case "reifegrad-assess":
@@ -133,6 +213,15 @@ function roleKeysForVariant(variant: WaitVariant): string[] {
       return ["entwicklungslektor", "co_autor"];
     case "manuskript-chapter-critique":
       return ["entwicklungslektor"];
+    case "clever-geschichte-generate":
+      return ["clever_erzaehler", "clever_infografiker"];
+    case "clever-geschichte-improve":
+    case "clever-geschichte-improve-analyze":
+      return ["clever_leser"];
+    case "clever-geschichte-improve-apply":
+      return ["clever_erzaehler"];
+    case "clever-geschichte-critique":
+      return ["clever_leser"];
   }
 }
 
@@ -162,8 +251,18 @@ function stepsForVariant(variant: WaitVariant) {
       return IDEE_QA_STEPS;
     case "marktanalyse":
       return MARKTANALYSE_STEPS;
+    case "clever-unterthemen":
+      return CLEVER_UNTERTHEMEN_STEPS;
+    case "clever-faktencheck":
+      return CLEVER_FAKTENCHECK_STEPS;
+    case "clever-fakten-ersetzen":
+      return CLEVER_FAKTEN_ERSETZEN_STEPS;
+    case "clever-infografik":
+      return CLEVER_INFOGRAFIK_STEPS;
     case "pipeline-generate":
       return PIPELINE_GENERATE_STEPS;
+    case "pipeline-generate-draft-only":
+      return PIPELINE_GENERATE_DRAFT_ONLY_STEPS;
     case "pipeline-critique":
       return PIPELINE_CRITIQUE_STEPS;
     case "reifegrad-assess":
@@ -178,6 +277,15 @@ function stepsForVariant(variant: WaitVariant) {
       return MANUSKRIPT_CHAPTER_IMPROVE_STEPS;
     case "manuskript-chapter-critique":
       return MANUSKRIPT_CHAPTER_CRITIQUE_STEPS;
+    case "clever-geschichte-generate":
+      return CLEVER_GESCHICHTE_GENERATE_STEPS;
+    case "clever-geschichte-improve":
+    case "clever-geschichte-improve-analyze":
+      return CLEVER_GESCHICHTE_IMPROVE_ANALYZE_STEPS;
+    case "clever-geschichte-improve-apply":
+      return CLEVER_GESCHICHTE_IMPROVE_APPLY_STEPS;
+    case "clever-geschichte-critique":
+      return CLEVER_GESCHICHTE_CRITIQUE_STEPS;
   }
 }
 
@@ -187,8 +295,18 @@ function titleForVariant(variant: WaitVariant) {
       return "Idee wird weiterentwickelt";
     case "marktanalyse":
       return "Marktanalyse läuft";
+    case "clever-unterthemen":
+      return "Unterthemen werden erzeugt";
+    case "clever-faktencheck":
+      return "Fakten werden geprüft";
+    case "clever-fakten-ersetzen":
+      return "Kritische Fakten werden ersetzt";
+    case "clever-infografik":
+      return "Infografik wird erzeugt";
     case "pipeline-generate":
       return "Schritt wird erzeugt";
+    case "pipeline-generate-draft-only":
+      return "Geschichten werden erzeugt";
     case "pipeline-critique":
       return "Analyse & Einarbeiten";
     case "reifegrad-assess":
@@ -203,6 +321,15 @@ function titleForVariant(variant: WaitVariant) {
       return "Kapitel wird verbessert";
     case "manuskript-chapter-critique":
       return "Kapitel-Analyse";
+    case "clever-geschichte-generate":
+      return "Kurzgeschichte wird erzeugt";
+    case "clever-geschichte-improve":
+    case "clever-geschichte-improve-analyze":
+      return "Kurzgeschichte wird analysiert";
+    case "clever-geschichte-improve-apply":
+      return "Kurzgeschichte wird eingearbeitet";
+    case "clever-geschichte-critique":
+      return "Kurzgeschichte wird gegenlesen";
   }
 }
 
@@ -210,6 +337,8 @@ function footerForVariant(variant: WaitVariant) {
   switch (variant) {
     case "pipeline-generate":
       return "Entwurf + Reifegrad. Bei Manuskript: Kapitel-Status live. Tab offen lassen.";
+    case "pipeline-generate-draft-only":
+      return "Nur Erzeugen — ohne übergeordneten Reifegrad. Tab offen lassen.";
     case "pipeline-critique":
       return "Analyse, Einarbeiten und Reifegrad — nur dieser Schritt. Tab offen lassen.";
     case "reifegrad-assess":
@@ -224,6 +353,14 @@ function footerForVariant(variant: WaitVariant) {
       return "Analyse und Einarbeiten nur für dieses Kapitel. Tab offen lassen.";
     case "manuskript-chapter-critique":
       return "Nur Analyse — Manuskript bleibt unverändert. Tab offen lassen.";
+    case "clever-unterthemen":
+      return "Wissenssammler: 10 Unterthemen + Fakten. Tab offen lassen.";
+    case "clever-faktencheck":
+      return "Faktenchecker prüft jeden Fakt einzeln. Tab offen lassen.";
+    case "clever-fakten-ersetzen":
+      return "Nur kritische Fakten neu — danach erneut prüfen. Tab offen lassen.";
+    case "clever-infografik":
+      return "Ein Prompt → ein Bild (Text gemalt). Tab offen lassen.";
     default:
       return "Bitte diesen Tab offen lassen — Abbrechen mitten im KI-Lauf ist nicht möglich.";
   }
@@ -239,6 +376,7 @@ export function RomanSceneWaitDialog({
   open,
   variant = "pipeline-generate",
   title: titleOverride = null,
+  footer: footerOverride = null,
   progressLabel = null,
   activeStepIndex = null,
   agentInfo = null,
@@ -308,7 +446,7 @@ export function RomanSceneWaitDialog({
     steps[stepIndex] ||
     "KI arbeitet …";
   const title = titleOverride?.trim() || titleForVariant(variant);
-  const footerHint = footerForVariant(variant);
+  const footerHint = footerOverride?.trim() || footerForVariant(variant);
   const barPct = Math.round(((stepIndex + 1) / steps.length) * 100);
   const shownAgent = agentInfo ?? variantAgent;
 

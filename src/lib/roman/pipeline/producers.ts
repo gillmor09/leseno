@@ -25,7 +25,7 @@ import {
 import type { PipelineStage } from "@/lib/roman/pipeline/stages";
 import { resolvePipelineTask } from "@/lib/roman/pipeline/tasks";
 import { assertChapterStructure } from "@/lib/roman/pipeline/structure-guard";
-import { normalizeManuskriptDocument, missingManuskriptChapterNumbers } from "@/lib/roman/plot-chapters";
+import { normalizeManuskriptDocument, missingManuskriptChapterNumbers, parsePlotChapters } from "@/lib/roman/plot-chapters";
 import { upsertRomanKontext } from "@/lib/roman/repository";
 import { critiqueIdeeMitEntwicklungslektor } from "@/lib/roman/idea-qa";
 import {
@@ -221,6 +221,125 @@ export async function draftStage(
   }
 
   if (stage === "manuskript") {
+    if (buchTyp === "clever_erzaehlt") {
+      const { writeCleverGeschichte, cleverKapitelForStory } = await import(
+        "@/lib/roman/clever-geschichte"
+      );
+      const { patchChapterBodies } = await import(
+        "@/lib/roman/pipeline/structure-guard"
+      );
+      const plot = roman.manuskriptRaw ?? "";
+      const chapters = parsePlotChapters(plot);
+      if (chapters.length < 1) {
+        throw new Error("Zuerst Unterthemen erzeugen.");
+      }
+      let liveRoman = roman;
+      const { applyCleverThemaTitlesToManuskript } = await import(
+        "@/lib/roman/clever-unterthemen"
+      );
+      let liveText = applyCleverThemaTitlesToManuskript(
+        normalizeManuskriptDocument(
+          (editorial.manuskriptText ?? "").trim() || plot,
+          { requiredFromPlot: plot, titlesFromPlot: true },
+        ),
+        editorial.cleverUnterthemen,
+      );
+      let lastModel = "";
+      for (const ch of chapters) {
+        await options?.onProgress?.(
+          `Geschichte ${ch.number}/${chapters.length}: „${ch.title.slice(0, 40)}“…`,
+        );
+        const liveEd = liveRoman.editorial ?? emptyRomanEditorial();
+        const kap = cleverKapitelForStory(liveEd, ch.number);
+        if (!kap) {
+          throw new Error(
+            `Unterthema für Geschichte ${ch.number} fehlt. Zuerst Unterthemen erzeugen.`,
+          );
+        }
+        const written = await writeCleverGeschichte({
+          thema: (liveRoman.genre ?? "").trim() || kap.titel,
+          editorial: liveEd,
+          kapitel: kap,
+        });
+        lastModel = written.modelLabel;
+        const patched = patchChapterBodies(
+          liveText,
+          [{ chapterNumber: ch.number, body: written.body }],
+          "manuskript",
+        );
+        if (!patched.ok) {
+          throw new Error(
+            patched.error ?? `Geschichte ${ch.number} konnte nicht eingefügt werden.`,
+          );
+        }
+        liveText = applyCleverThemaTitlesToManuskript(
+          normalizeManuskriptDocument(patched.text, {
+            requiredFromPlot: plot,
+            titlesFromPlot: true,
+          }),
+          liveEd.cleverUnterthemen,
+        );
+        await options?.onProgress?.(
+          `Geschichte ${ch.number}/${chapters.length}: Infografik …`,
+        );
+        const { generateCleverKapitelInfografik } = await import(
+          "@/lib/roman/clever-infografik"
+        );
+        const editorialForImage = {
+          ...liveEd,
+          manuskriptText: liveText,
+        };
+        const { kapitel: kapWithImage } =
+          await generateCleverKapitelInfografik({
+            thema: (liveRoman.genre ?? "").trim() || kap.titel,
+            editorial: editorialForImage,
+            kapitel: kap,
+            storyBody: written.body,
+            tonalitaet: liveRoman.tonalitaet,
+          });
+        const doc = liveEd.cleverUnterthemen;
+        const nextUnterthemen = doc
+          ? {
+              ...doc,
+              kapitel: doc.kapitel.map((k) =>
+                k.nummer === kapWithImage.nummer ? kapWithImage : k,
+              ),
+            }
+          : null;
+
+        const improveMap = { ...(liveEd.reifegradImprove ?? {}) };
+        delete improveMap.manuskript;
+        const nextEd = withLeserFeedbackForStage(
+          withStageImprove(
+            {
+              ...liveEd,
+              manuskriptText: liveText,
+              cleverUnterthemen: nextUnterthemen,
+              storyState: null,
+              canon: null,
+              reifegradImprove: improveMap,
+            },
+            "manuskript",
+            null,
+          ),
+          "manuskript",
+          null,
+        );
+        liveRoman = await persist(liveRoman, { editorial: nextEd });
+      }
+      const missing = missingManuskriptChapterNumbers(plot, liveText);
+      if (missing.length > 0) {
+        throw new Error(
+          `Geschichten unvollständig — fehlend: ${missing.join(", ")}.`,
+        );
+      }
+      return {
+        roman: liveRoman,
+        summary: `${chapters.length} Abenteuer-Geschichten + Infografiken (${lastModel}).`,
+        modelLabel: lastModel,
+      };
+    }
+
     let liveRoman = roman;
     const plot = roman.manuskriptRaw ?? "";
     const data = await suggestManuskriptFromLektorUndCoAutor({

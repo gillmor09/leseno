@@ -86,9 +86,12 @@ export async function signInAction(input: unknown): Promise<ActionResult> {
   }
 
   const supabase = await createClient();
+  // Clear broken refresh cookies before password grant (same hang as unified login).
+  await supabase.auth.signOut({ scope: "local" });
   const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
+    console.error("[signInAction]", error.message, error.status, error.code);
     return { success: false, error: "Anmeldung fehlgeschlagen. Bitte prüfe E-Mail und Passwort." };
   }
 
@@ -150,10 +153,20 @@ export async function unifiedSignInAction(
     }
 
     const supabase = await createClient();
+    // Drop stale/broken refresh cookies first — otherwise GoTrue can hang
+    // ~10s on refresh and surface a generic login failure.
+    await supabase.auth.signOut({ scope: "local" });
+
     const { data, error } = await supabase.auth.signInWithPassword(
       emailParsed.data,
     );
     if (error) {
+      console.error(
+        "[unifiedSignInAction] parent",
+        error.message,
+        error.status,
+        error.code,
+      );
       return {
         success: false,
         error: "Anmeldung fehlgeschlagen. Bitte prüfe deine Angaben.",
@@ -543,22 +556,27 @@ export async function signOutAction(): Promise<ActionResult> {
   await clearChildSessionCookie();
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { error } = await supabase.auth.signOut();
-
-  if (error) {
-    return { success: false, error: "Abmelden hat nicht geklappt." };
+  let userId: string | null = null;
+  try {
+    const raced = await Promise.race([
+      supabase.auth.getUser(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500)),
+    ]);
+    userId = raced?.data?.user?.id ?? null;
+  } catch {
+    // ignore — still clear local session
   }
 
-  if (user?.id) {
+  // Prefer local clear so logout never hangs on a dead GoTrue refresh.
+  await supabase.auth.signOut({ scope: "local" });
+  void supabase.auth.signOut({ scope: "global" }).catch(() => undefined);
+
+  if (userId) {
     const { logUserActivity } = await import("@/lib/users/activity");
     await logUserActivity({
       action: "auth.sign_out",
       label: "Abmeldung",
-      userId: user.id,
+      userId,
     });
   }
 

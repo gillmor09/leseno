@@ -2,15 +2,19 @@
 
 /**
  * Single-chapter Manuskript actions: Erzeugen / Verbessern / Gegenlesen.
+ * Clever: Verbessern = Analyze → Dialog → Apply / Fertig (OK).
  */
 
-import { revalidatePath } from "next/cache";
+import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
+  analyzeCleverGeschichteVerbessern,
+  applyCleverGeschichteVerbessern,
   critiqueManuskriptChapter,
   generateManuskriptChapter,
   improveManuskriptChapter,
+  markCleverGeschichteFertig,
 } from "@/lib/roman/manuskript-chapter";
 import type { RomanKontext } from "@/lib/roman/types";
 import type { ActionResult } from "@/lib/types/actions";
@@ -29,8 +33,7 @@ function firstIssue(error: z.ZodError): string {
 }
 
 function revalidateBook(romanId: string) {
-  revalidatePath("/admin/roman");
-  revalidatePath(`/admin/roman/${romanId}`);
+  revalidateRomanAdmin(romanId);
 }
 
 /** Co-Autor schreibt / überschreibt ein Kapitel (mit Continuity). */
@@ -153,6 +156,106 @@ export async function romanManuskriptChapterImproveAction(
         error instanceof Error
           ? error.message
           : "Kapitel verbessern fehlgeschlagen.",
+    };
+  }
+}
+
+/** Clever: Leser analyzes one Kurzgeschichte → plan for the improve dialog. */
+export async function romanCleverGeschichteAnalyzeAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    roman: RomanKontext;
+    plan: import("@/lib/roman/editorial").RomanReifegradImprovePlan;
+    summary: string;
+    runId: string;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstIssue(parsed.error) };
+  }
+
+  try {
+    const result = await analyzeCleverGeschichteVerbessern(parsed.data);
+    revalidateBook(parsed.data.romanId);
+    return { success: true, data: result };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Kurzgeschichte analysieren fehlgeschlagen.",
+    };
+  }
+}
+
+/** Clever: apply stored Verbessern plan (Erzähler patch). */
+export async function romanCleverGeschichteApplyAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    roman: RomanKontext;
+    summary: string;
+    chapterNumber: number;
+    runId: string;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstIssue(parsed.error) };
+  }
+
+  try {
+    const result = await applyCleverGeschichteVerbessern(parsed.data);
+    revalidateBook(parsed.data.romanId);
+    return { success: true, data: result };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Kurzgeschichte einarbeiten fehlgeschlagen.",
+    };
+  }
+}
+
+/** Clever: mark Kurzgeschichte OK (Fertig) and clear open Verbessern plan. */
+export async function romanCleverGeschichteFertigAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    roman: RomanKontext;
+    summary: string;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstIssue(parsed.error) };
+  }
+
+  try {
+    const result = await markCleverGeschichteFertig(parsed.data);
+    revalidateBook(parsed.data.romanId);
+    return { success: true, data: result };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Fertig markieren fehlgeschlagen.",
     };
   }
 }

@@ -1,25 +1,28 @@
 "use client";
 
 /**
- * Export tab: Amazon Klappentext + Einzeiler, plus Manuskript PDF (mit Cover)
- * und EPUB (ohne Cover).
+ * Export tab: Cover, Amazon Klappentext + Einzeiler, Manuskript PDF/EPUB.
+ * Clever chapters: prose → Infografik → Abenteuer-Wissen.
+ * After PDF export: keep blob for inline reopen via StoryPdfPreviewDialog.
  */
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   generateRomanMarketingCopyAction,
-  saveRomanKontextAction,
-} from "@/app/actions/roman-admin";
+  saveRomanMarketingCopyAction,
+} from "@/app/actions/roman-marketing-admin";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
+import { StoryPdfPreviewDialog } from "@/components/features/stories/story-pdf-preview-dialog";
 import type { RomanEditorial } from "@/lib/roman/editorial";
 import {
   buildRomanEpubBlob,
   romanEpubFilename,
 } from "@/lib/roman/export-roman-epub";
 import {
+  buildRomanExportDocument,
   buildRomanPdfBlob,
-  collectManuskriptExportChapters,
+  collectExportChaptersFromEditorial,
   romanPdfFilename,
 } from "@/lib/roman/export-roman-pdf";
 import type { RomanKontext } from "@/lib/roman/types";
@@ -36,6 +39,13 @@ function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+type LastPdfPreview = {
+  pdfUrl: string;
+  previewHtml: string;
+  fileName: string;
+  withCover: boolean;
+};
+
 export function RomanExportMarketingPanel({
   roman,
   editorial,
@@ -47,25 +57,50 @@ export function RomanExportMarketingPanel({
   editorial: RomanEditorial;
   canSave: boolean;
   disabled?: boolean;
-  onComplete?: (roman: RomanKontext) => void;
+  onComplete?: (patch: {
+    klappentext: string;
+    einzeiler: string;
+  }) => void;
 }) {
   const [klappentext, setKlappentext] = useState(editorial.klappentext ?? "");
   const [einzeiler, setEinzeiler] = useState(editorial.einzeiler ?? "");
   const [pending, setPending] = useState<
     "generate" | "save" | "pdf" | "pdf-cover" | "epub" | null
   >(null);
+  const [lastPdf, setLastPdf] = useState<LastPdfPreview | null>(null);
+  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
 
   useEffect(() => {
     setKlappentext(editorial.klappentext ?? "");
     setEinzeiler(editorial.einzeiler ?? "");
   }, [editorial.klappentext, editorial.einzeiler, roman.id]);
 
+  useEffect(() => {
+    return () => {
+      if (lastPdf?.pdfUrl) URL.revokeObjectURL(lastPdf.pdfUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- revoke only on unmount
+  }, []);
+
+  useEffect(() => {
+    setLastPdf((prev) => {
+      if (prev?.pdfUrl) URL.revokeObjectURL(prev.pdfUrl);
+      return null;
+    });
+    setPdfPreviewOpen(false);
+  }, [roman.id]);
+
   const busy = Boolean(disabled || pending);
-  const chapters = collectManuskriptExportChapters(
-    editorial.manuskriptText ?? "",
-  );
+  const chapters = collectExportChaptersFromEditorial(editorial);
   const hasManuskript = chapters.length > 0;
   const hasCover = Boolean(roman.coverImageDataUrl?.startsWith("data:image/"));
+
+  function replaceLastPdf(next: LastPdfPreview | null) {
+    setLastPdf((prev) => {
+      if (prev?.pdfUrl) URL.revokeObjectURL(prev.pdfUrl);
+      return next;
+    });
+  }
 
   async function runGenerate() {
     if (!canSave || busy) return;
@@ -80,7 +115,10 @@ export function RomanExportMarketingPanel({
       }
       setKlappentext(result.data.klappentext);
       setEinzeiler(result.data.einzeiler);
-      onComplete?.(result.data.roman);
+      onComplete?.({
+        klappentext: result.data.klappentext,
+        einzeiler: result.data.einzeiler,
+      });
       toast.success("Klappentext und Einzeiler erzeugt.");
     } catch (error) {
       toast.error(
@@ -97,35 +135,19 @@ export function RomanExportMarketingPanel({
     if (!canSave || busy) return;
     setPending("save");
     try {
-      const nextEditorial: RomanEditorial = {
-        ...editorial,
+      const next = {
         klappentext: klappentext.trim(),
         einzeiler: einzeiler.trim(),
       };
-      const result = await saveRomanKontextAction({
-        id: roman.id,
-        title: roman.title,
-        manuskriptRaw: roman.manuskriptRaw,
-        stilbibel: roman.stilbibel,
-        genre: roman.genre,
-        praemisse: roman.praemisse,
-        perspektive: roman.perspektive,
-        zeitform: roman.zeitform,
-        tonalitaet: roman.tonalitaet,
-        charaktere: roman.charaktere,
-        weltSchauplaetze: roman.weltSchauplaetze,
-        weltRegeln: roman.weltRegeln,
-        szenenRaster: roman.szenenRaster,
-        kiRegelwerk: roman.kiRegelwerk,
-        fanPersonaName: roman.fanPersonaName,
-        fanPersonaProfil: roman.fanPersonaProfil,
-        editorial: nextEditorial,
+      const result = await saveRomanMarketingCopyAction({
+        romanId: roman.id,
+        ...next,
       });
-      if (!result.success || !result.data) {
+      if (!result.success) {
         toast.error(result.error ?? "Speichern fehlgeschlagen.");
         return;
       }
-      onComplete?.(result.data.roman);
+      onComplete?.(next);
       toast.success("Verkaufstexte gespeichert.");
     } catch (error) {
       toast.error(
@@ -141,17 +163,23 @@ export function RomanExportMarketingPanel({
     const withCover = includeCover && hasCover;
     setPending(withCover ? "pdf-cover" : "pdf");
     try {
-      const blob = await buildRomanPdfBlob({
+      const exportInput = {
         title: roman.title,
         chapters,
         coverImageDataUrl: withCover ? roman.coverImageDataUrl : undefined,
         vorsatz: roman.vorsatz,
-      });
-      downloadBlob(blob, romanPdfFilename(roman.title));
+      };
+      const previewHtml = buildRomanExportDocument(exportInput);
+      const blob = await buildRomanPdfBlob(exportInput);
+      const fileName = romanPdfFilename(roman.title);
+      const pdfUrl = URL.createObjectURL(blob);
+      replaceLastPdf({ pdfUrl, previewHtml, fileName, withCover });
+      downloadBlob(blob, fileName);
+      setPdfPreviewOpen(true);
       toast.success(
         withCover
-          ? "PDF heruntergeladen (mit Cover)."
-          : "PDF heruntergeladen (ohne Cover).",
+          ? "PDF erzeugt (mit Cover) — Vorschau geöffnet."
+          : "PDF erzeugt (ohne Cover) — Vorschau geöffnet.",
       );
     } catch (error) {
       toast.error(
@@ -208,6 +236,15 @@ export function RomanExportMarketingPanel({
         }
       />
 
+      <StoryPdfPreviewDialog
+        open={pdfPreviewOpen && lastPdf != null}
+        previewHtml={lastPdf?.previewHtml ?? null}
+        pdfUrl={lastPdf?.pdfUrl ?? null}
+        downloadFileName={lastPdf?.fileName}
+        heading={roman.title.trim() || "Manuskript"}
+        onClose={() => setPdfPreviewOpen(false)}
+      />
+
       <div className="space-y-4">
         <div>
           <h3 className="text-base font-extrabold text-zinc-950">
@@ -215,9 +252,10 @@ export function RomanExportMarketingPanel({
           </h3>
           <p className="mt-1 text-sm font-semibold text-zinc-600">
             PDF im eBook-Seitenformat — mit oder ohne Cover
-            {!hasCover ? " (Cover zuerst im Tab Bilder anlegen)" : ""}. EPUB
-            immer ohne Cover. Kapitel starten jeweils auf einer neuen Seite;
-            Überschrift eine Stufe größer und fett.
+            {!hasCover ? " (oben zuerst ein Cover anlegen)" : ""}. EPUB ohne
+            Buch-Cover; Clever-Infografiken und Abenteuer-Wissen gehören zum
+            Kapitel (Geschichte → Infografik → Liste). Kapitel starten jeweils
+            auf einer neuen Seite.
           </p>
         </div>
 
@@ -251,6 +289,17 @@ export function RomanExportMarketingPanel({
             >
               {pending === "epub" ? "EPUB …" : "EPUB ohne Cover"}
             </button>
+            {lastPdf ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setPdfPreviewOpen(true)}
+                className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-zinc-950 ring-1 ring-zinc-950/15 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                PDF öffnen
+                {lastPdf.withCover ? " (mit Cover)" : " (ohne Cover)"}
+              </button>
+            ) : null}
             <span className="text-xs font-semibold text-zinc-500">
               {chapters.length} Kapitel
             </span>

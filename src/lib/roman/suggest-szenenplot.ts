@@ -113,6 +113,8 @@ function typHints(buchTyp: RomanBuchTyp): string {
   switch (buchTyp) {
     case "sachbuch":
       return `Sachbuch: Kapitel = Argumentblöcke; Szenen = didaktische Einheiten mit klarer Erkenntnis-/Wertänderung (kein Roman-Thriller-Zwang, aber keine leeren Wiederholungen).`;
+    case "clever_erzaehlt":
+      return `Clever erzählt: Kapitel = Kurzgeschichten; jede Szene/Geschichte braucht Ziel → Hindernis → Wendepunkt und einen klaren Lernpunkt aus dem Wissensgebiet.`;
     case "serie_welt":
       return `Serie/Welt: Szenen für DIESES Band — Kontinuität wahren, Band-Bogen tragen.`;
     default:

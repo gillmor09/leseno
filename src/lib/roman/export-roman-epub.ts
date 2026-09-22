@@ -1,10 +1,14 @@
 /**
  * Amazon/KDP-oriented EPUB 3 export from Manuskript chapters
- * (or legacy revised scenes). Reflowable XHTML; no cover image
- * (PDF keeps the cover). Client-side via JSZip.
+ * (or legacy revised scenes). Reflowable XHTML; no book cover image
+ * (PDF keeps the cover). Clever: chapter Infografik + Abenteuer-Wissen
+ * after prose. Client-side via JSZip.
  */
 
 import JSZip from "jszip";
+import {
+  abenteuerWissenExportLines,
+} from "@/lib/roman/clever-geschichte";
 import {
   emptyVorsatz,
   hasUsableVorsatz,
@@ -142,6 +146,47 @@ p {
 .titlepage p, .copyright p, .dedication p, .epigraph p, h1.chapter + p {
   text-indent: 0;
 }
+.infografik {
+  margin: 0;
+  padding: 0;
+  text-align: center;
+  text-indent: 0;
+  page-break-before: always;
+  page-break-after: always;
+  break-before: page;
+  break-after: page;
+}
+.infografik img {
+  display: block;
+  width: 100%;
+  max-width: none;
+  height: auto;
+}
+.abenteuer-wissen {
+  margin: 1.25em 0 0;
+  padding-top: 1em;
+  border-top: 1px solid #ccc;
+}
+.abenteuer-wissen h2 {
+  font-size: 1em;
+  font-weight: bold;
+  margin: 0 0 0.4em;
+  text-indent: 0;
+}
+.abenteuer-wissen .hint {
+  font-size: 0.95em;
+  margin: 0 0 0.75em;
+  text-indent: 0;
+}
+.abenteuer-wissen ol {
+  margin: 0;
+  padding-left: 1.4em;
+}
+.abenteuer-wissen li {
+  margin: 0 0 0.45em;
+  text-indent: 0;
+  text-align: left;
+}
 `;
 
 type SpineItem = {
@@ -151,8 +196,71 @@ type SpineItem = {
   landmark?: "titlepage" | "bodymatter";
 };
 
+type ManifestExtra = {
+  id: string;
+  href: string;
+  mediaType: string;
+};
+
+function parseImageDataUrl(dataUrl: string): {
+  mediaType: string;
+  ext: string;
+  bytes: Uint8Array;
+} | null {
+  const m = /^data:(image\/(jpeg|jpg|png|webp));base64,(.+)$/i.exec(
+    dataUrl.trim(),
+  );
+  if (!m) return null;
+  const mediaType = m[1]!.toLowerCase().replace("image/jpg", "image/jpeg");
+  const kind = m[2]!.toLowerCase();
+  const ext = kind === "jpg" || kind === "jpeg" ? "jpg" : kind;
+  try {
+    const bin = atob(m[3]!);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { mediaType, ext, bytes };
+  } catch {
+    return null;
+  }
+}
+
+function chapterBodyXhtml(
+  chapter: RomanExportChapter,
+  imageHref: string | null,
+): string {
+  const parts: string[] = [
+    `<h1 class="chapter">${escapeXml(chapterHeadingLabel(chapter))}</h1>`,
+    paragraphsToXhtml(chapter.body),
+  ];
+  if (imageHref) {
+    parts.push(
+      `<div class="infografik"><img src="${escapeXml(imageHref)}" alt="Infografik" /></div>`,
+    );
+  }
+  const fakten = abenteuerWissenExportLines(
+    chapter.abenteuerWissenFakten ?? [],
+  );
+  if (fakten.length > 0) {
+    parts.push(`<aside class="abenteuer-wissen">
+  <h2>Abenteuer-Wissen</h2>
+  <p class="hint">Was du aus diesem Abenteuer mitnimmst:</p>
+  <ol>
+${fakten
+  .map((line) => {
+    const text = line.replace(/^\d+\.\s*/, "");
+    return `    <li>${escapeXml(text)}</li>`;
+  })
+  .join("\n")}
+  </ol>
+</aside>`);
+  }
+  return `<section epub:type="chapter">
+  ${parts.join("\n  ")}
+</section>`;
+}
+
 /**
- * Builds a reflowable EPUB 3 blob (Manuskript, ohne Cover).
+ * Builds a reflowable EPUB 3 blob (Manuskript, ohne Buch-Cover).
  */
 export async function buildRomanEpubBlob(
   input: RomanEpubInput,
@@ -197,6 +305,7 @@ export async function buildRomanEpubBlob(
   oebps.file("styles.css", EPUB_CSS);
 
   const spine: SpineItem[] = [];
+  const manifestExtra: ManifestExtra[] = [];
 
   if (hasUsableVorsatz(vorsatz) || title) {
     const t = vorsatz.titelseite;
@@ -292,16 +401,23 @@ export async function buildRomanEpubBlob(
     const href = `chapter-${String(chapter.number).padStart(2, "0")}.xhtml`;
     const id = `chapter-${chapter.number}`;
     const chapterTitle = chapterHeadingLabel(chapter);
-    oebps.file(
-      href,
-      xhtmlDoc(
-        chapterTitle,
-        `<section epub:type="chapter">
-  <h1 class="chapter">${escapeXml(chapterTitle)}</h1>
-  ${paragraphsToXhtml(chapter.body)}
-</section>`,
-      ),
-    );
+
+    let imageHref: string | null = null;
+    const parsed = chapter.infografikDataUrl
+      ? parseImageDataUrl(chapter.infografikDataUrl)
+      : null;
+    if (parsed) {
+      const imgName = `infografik-${String(chapter.number).padStart(2, "0")}.${parsed.ext}`;
+      oebps.file(imgName, parsed.bytes);
+      imageHref = imgName;
+      manifestExtra.push({
+        id: `img-infografik-${chapter.number}`,
+        href: imgName,
+        mediaType: parsed.mediaType,
+      });
+    }
+
+    oebps.file(href, xhtmlDoc(chapterTitle, chapterBodyXhtml(chapter, imageHref)));
     spine.push({
       id,
       href,
@@ -361,6 +477,10 @@ ${navLandmarks}
     ...spine.map(
       (s) =>
         `<item id="${s.id}" href="${s.href}" media-type="application/xhtml+xml"/>`,
+    ),
+    ...manifestExtra.map(
+      (m) =>
+        `<item id="${m.id}" href="${m.href}" media-type="${m.mediaType}"/>`,
     ),
   ].join("\n    ");
 

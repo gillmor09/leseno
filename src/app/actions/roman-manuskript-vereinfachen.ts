@@ -4,7 +4,7 @@
  * Manuskript Vereinfachen + Original wiederherstellen.
  */
 
-import { revalidatePath } from "next/cache";
+import { revalidateRomanAdmin, revalidateRomanAdminRollen } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
@@ -59,8 +59,7 @@ export async function romanManuskriptVereinfachenAction(
     }
 
     const result = await vereinfacheManuskript({ roman });
-    revalidatePath("/admin/roman");
-    revalidatePath(`/admin/roman/${roman.id}`);
+    revalidateRomanAdmin(roman.id);
     return {
       success: true,
       data: {
@@ -104,8 +103,7 @@ export async function romanManuskriptOriginalRestoreAction(
     }
 
     const result = await restoreManuskriptOriginal({ roman });
-    revalidatePath("/admin/roman");
-    revalidatePath(`/admin/roman/${roman.id}`);
+    revalidateRomanAdmin(roman.id);
     return {
       success: true,
       data: { roman: result.roman, summary: result.summary },

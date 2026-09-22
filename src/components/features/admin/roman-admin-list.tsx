@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Admin list + create entry for the novel writing pipeline.
+ * Admin list + create entry for a pipeline module (Roman or Sachbuch).
  */
 
 import Link from "next/link";
@@ -10,6 +10,11 @@ import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { deleteRomanAction } from "@/app/actions/roman-admin";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import {
+  getRomanAdminModule,
+  type RomanAdminModuleId,
+} from "@/lib/roman/admin-module";
+import { countPipelineFertigProgress } from "@/lib/roman/editorial";
 import type { RomanKontextSummary } from "@/lib/roman/types";
 import { cn } from "@/lib/utils";
 
@@ -29,11 +34,14 @@ export function RomanAdminList({
   initialRomane,
   canSave,
   readOnlyNotice,
+  moduleId = "roman",
 }: {
   initialRomane: RomanKontextSummary[];
   canSave: boolean;
   readOnlyNotice?: string;
+  moduleId?: RomanAdminModuleId;
 }) {
+  const adminModule = getRomanAdminModule(moduleId);
   const [romane, setRomane] = useState(initialRomane);
   const [deleteTarget, setDeleteTarget] = useState<RomanKontextSummary | null>(
     null,
@@ -53,7 +61,7 @@ export function RomanAdminList({
       current.filter((roman) => roman.id !== deleteTarget.id),
     );
     setDeleteTarget(null);
-    toast.success("Buch gelöscht.");
+    toast.success(`${adminModule.itemLabel} gelöscht.`);
   }
 
   return (
@@ -67,40 +75,65 @@ export function RomanAdminList({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm font-semibold text-zinc-600">
           {romane.length === 1
-            ? "1 Buch"
-            : `${romane.length} Bücher`}
+            ? `1 ${adminModule.itemLabel}`
+            : `${romane.length} ${adminModule.itemLabelPlural}`}
         </p>
         <Link
-          href="/admin/roman/neu"
+          href={`${adminModule.basePath}/neu`}
           className={cn(
             "inline-flex items-center gap-2 rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white transition hover:bg-orange-800",
             !canSave && "pointer-events-none opacity-50",
           )}
         >
           <Plus className="size-4" aria-hidden />
-          Neues Buch
+          Neues {adminModule.itemLabel}
         </Link>
       </div>
 
       {romane.length === 0 ? (
         <p className="rounded-2xl bg-white px-5 py-8 text-center text-sm font-semibold text-zinc-500 ring-1 ring-zinc-950/10">
-          Noch kein Buch. Mit „Neues Buch“ anlegen — Pipeline-Schritte folgen
-          später.
+          Noch kein {adminModule.itemLabel}. Mit „Neues {adminModule.itemLabel}
+          “ anlegen.
         </p>
       ) : (
         <ul className="space-y-3">
-          {romane.map((roman) => (
+          {romane.map((roman) => {
+            const progress = countPipelineFertigProgress(
+              roman.editorial,
+              roman.editorial?.buchTyp ??
+                (moduleId === "clever_erzaehlt"
+                  ? "clever_erzaehlt"
+                  : moduleId === "sachbuch"
+                    ? "sachbuch"
+                    : "belletristik"),
+            );
+            return (
             <li
               key={roman.id}
               className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white px-4 py-4 ring-1 ring-zinc-950/10 sm:px-5"
             >
               <div className="min-w-0 flex-1">
-                <Link
-                  href={`/admin/roman/${roman.id}`}
-                  className="text-lg font-extrabold text-zinc-950 hover:text-orange-800"
-                >
-                  {roman.title}
-                </Link>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`${adminModule.basePath}/${roman.id}`}
+                    className="text-lg font-extrabold text-zinc-950 hover:text-orange-800"
+                  >
+                    {roman.title}
+                  </Link>
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-0.5 text-[11px] font-extrabold tracking-wide",
+                      progress.done === progress.total
+                        ? "bg-emerald-100 text-emerald-900"
+                        : progress.done === 0
+                          ? "bg-zinc-100 text-zinc-500"
+                          : "bg-amber-100 text-amber-950",
+                    )}
+                    title={`${progress.done} von ${progress.total} Schritten fertig`}
+                  >
+                    {progress.done}/{progress.total}
+                  </span>
+                </div>
                 <p className="mt-1 text-xs font-semibold text-zinc-500">
                   Zuletzt bearbeitet: {formatDate(roman.updatedAt)}
                   {roman.hasCover ? " · Cover vorhanden" : ""}
@@ -108,7 +141,7 @@ export function RomanAdminList({
               </div>
               <div className="flex items-center gap-2">
                 <Link
-                  href={`/admin/roman/${roman.id}`}
+                  href={`${adminModule.basePath}/${roman.id}`}
                   className="rounded-full bg-gray-100 px-4 py-2 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white"
                 >
                   Öffnen
@@ -124,16 +157,17 @@ export function RomanAdminList({
                 </button>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 
       <ConfirmDeleteDialog
         open={Boolean(deleteTarget)}
-        title="Buch löschen?"
+        title={`${adminModule.itemLabel} löschen?`}
         description={
           deleteTarget
-            ? `„${deleteTarget.title}“ und alle Szenen werden unwiderruflich gelöscht.`
+            ? `„${deleteTarget.title}“ und alle zugehörigen Daten werden unwiderruflich gelöscht.`
             : ""
         }
         pending={deletePending}
