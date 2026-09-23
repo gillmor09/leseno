@@ -34,7 +34,7 @@ export async function generateMetadata({
 }
 
 /** Coach + Redakteur + Kapitel können lange brauchen. */
-export const maxDuration = 800;
+export const maxDuration = 1800;
 
 /**
  * Sachbuch detail: same pipeline UI as Roman; buchTyp fixed to Sachbuch.

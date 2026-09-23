@@ -66,7 +66,9 @@ export type PipelineStepResult = {
 };
 
 async function reload(romanId: string): Promise<RomanKontext> {
-  const roman = await getRomanKontext(romanId);
+  // Cover bytes stay in the DB; the client keeps the image it already has.
+  // Shipping them back after a long draft blows the response stream.
+  const roman = await getRomanKontext(romanId, { omitCover: true });
   if (!roman) throw new Error("Buch nicht gefunden.");
   return roman;
 }

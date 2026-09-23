@@ -34,7 +34,7 @@ export async function generateMetadata({
 }
 
 /** Coach + Redakteur + Szenenplot-Kapitel können lange brauchen. */
-export const maxDuration = 800;
+export const maxDuration = 1800;
 
 /**
  * Roman detail: Belletristik pipeline (buchTyp fixed).

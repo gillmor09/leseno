@@ -35,8 +35,8 @@ export async function generateMetadata({
   }
 }
 
-/** Coach + Redakteur + Kapitel können lange brauchen. */
-export const maxDuration = 800;
+/** Coach + Redakteur + alle Kapitel (inkl. Infografik) können weit über 13 Minuten brauchen. */
+export const maxDuration = 1800;
 
 /**
  * Clever-erzählt detail: same pipeline UI as Roman; buchTyp fixed.

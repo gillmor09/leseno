@@ -29,6 +29,14 @@ const GERMAN_TEXT_LOCK = `
 
 LANGUAGE LOCK (mandatory): German children's book page. Every readable word MUST be German (Deutsch) only. Prefer short clear German labels. Zero English words on the image.`;
 
+/**
+ * Painted labels must stay off the trim. Image models otherwise hug the edges.
+ * ~8% quiet border on every side of the 1200×1920 canvas.
+ */
+const TEXT_SAFE_MARGIN_LOCK = `
+
+TEXT SAFE MARGIN (mandatory): Keep every letter, number, caption, and label at least 8% of the canvas away from ALL four edges (top, right, bottom, left). Leave a clean quiet border with no text. Do not let words touch or nearly touch the frame. Motifs may approach the edge; readable text may not.`;
+
 async function resolveInfografikImageModel(
   roleImageModel: AiModelConfig | null,
 ): Promise<AiModelConfig> {
@@ -74,10 +82,16 @@ async function normalizeInfografikToPageSize(
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
-  const scale = Math.max(W / image.width, H / image.height);
+  // Equal quiet border so labels that hug the source edge still sit inset.
+  const pad = Math.round(W * 0.055);
+  const innerW = W - pad * 2;
+  const innerH = H - pad * 2;
+  const scale = Math.min(innerW / image.width, innerH / image.height);
   const dw = image.width * scale;
   const dh = image.height * scale;
-  ctx.drawImage(image, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  const x = pad + (innerW - dw) / 2;
+  const y = pad + (innerH - dh) / 2;
+  ctx.drawImage(image, x, y, dw, dh);
   const out = canvas.toBuffer("image/jpeg", 88);
   return `data:image/jpeg;base64,${out.toString("base64")}`;
 }
@@ -142,6 +156,7 @@ ${tonalitaet ? `# Buch-Tonalität (nur CGI-Stil verstärken, kein Medienwechsel)
 # Regeln
 - Nur Inhalte aus dieser Geschichte — nichts erfinden, kein Buchthema als Extra-Stoff.
 - 3–6 kurze deutsche Labels/Captions auf dem Bild (klar, groß, gut lesbar, nur Deutsch).
+- TEXT-RAND: jeder Buchstabe mindestens 8% vom Rand entfernt (oben, rechts, unten, links). Kein Text in der Außenkante.
 - CHARACTER ANCHOR: mindestens eine Figur mit lesbarem Gesicht und großen ausdrucksstarken Augen (kein reines Diagramm ohne Figur).
 - Freundlich, hell, kindgerecht (${alter} Jahre); cinematic CGI lighting, soft saturated colors.
 - Keine Logos, keine Marken, keine Fotorealistik, keine flache Clipart-/Editorial-Icons.
@@ -176,7 +191,7 @@ Nur der Bildprompt (Inhalt + Labels + Layout), kein Markdown, keine Vorrede, kei
   const imagePrompt = wrapCleverSeriesImagePrompt({
     styleBlock,
     contentBrief: designerPrompt.trim(),
-    tailExtras: [GERMAN_TEXT_LOCK],
+    tailExtras: [GERMAN_TEXT_LOCK, TEXT_SAFE_MARGIN_LOCK],
   });
 
   const imageModel = await resolveInfografikImageModel(roleImageModel);

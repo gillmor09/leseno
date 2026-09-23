@@ -49,6 +49,7 @@ export async function generateRomanMarketingCopyAction(
     klappentext: string;
     einzeiler: string;
     amazonKeywords: string[];
+    keywordsWarning?: string;
   }>
 > {
   const denied = await denyUnlessAdmin();
@@ -66,6 +67,9 @@ export async function generateRomanMarketingCopyAction(
     }
 
     const prose = (roman.editorial.manuskriptText ?? "").trim();
+    const previousKeywords = normalizeAmazonKeywords(
+      roman.editorial.amazonKeywords ?? [],
+    );
     const copy = await generateRomanMarketingCopy({
       title: roman.title,
       genre: roman.genre,
@@ -79,11 +83,16 @@ export async function generateRomanMarketingCopyAction(
       buchTyp: roman.editorial.buchTyp ?? "unbekannt",
     });
 
+    // Keep stored keywords when this run failed — do not wipe them with [].
+    const amazonKeywords = copy.amazonKeywords.length
+      ? copy.amazonKeywords
+      : previousKeywords;
+
     await patchRomanMarketingCopy({
       id: roman.id,
       klappentext: copy.klappentext,
       einzeiler: copy.einzeiler,
-      amazonKeywords: copy.amazonKeywords,
+      amazonKeywords,
     });
     revalidateRomanAdminLists();
 
@@ -92,7 +101,8 @@ export async function generateRomanMarketingCopyAction(
       data: {
         klappentext: copy.klappentext,
         einzeiler: copy.einzeiler,
-        amazonKeywords: copy.amazonKeywords,
+        amazonKeywords,
+        keywordsWarning: copy.keywordsWarning,
       },
     };
   } catch (error) {

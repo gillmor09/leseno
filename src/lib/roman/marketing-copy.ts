@@ -19,6 +19,8 @@ export type RomanMarketingCopyResult = {
   einzeiler: string;
   /** Exactly up to 7 Amazon KDP keyword phrases (≤50 chars each). */
   amazonKeywords: string[];
+  /** Set when keyword calls failed; blurb is still usable. */
+  keywordsWarning?: string;
 };
 
 /** Normalize / clamp keyword list for Amazon KDP (max 7 × 50 chars). */
@@ -365,16 +367,83 @@ ${extra ?? "Schreibe jetzt nur den vollständigen klappentext."}`,
   }
 }
 
-async function generateAmazonKeywords(
+/**
+ * Pull keyword phrases from JSON objects, JSON arrays, or numbered lines.
+ * Returns whatever normalized phrases were found (may be short of 7).
+ */
+function collectKeywordPhrases(raw: string): string[] {
+  const parsed = tryParseModelJsonObject(raw);
+  if (parsed) {
+    const list =
+      (Array.isArray(parsed.keywords) && parsed.keywords) ||
+      (Array.isArray(parsed.amazonKeywords) && parsed.amazonKeywords) ||
+      (Array.isArray(parsed.schlagwoerter) && parsed.schlagwoerter) ||
+      null;
+    if (list) {
+      const fromObjects = list.map((item) => {
+        if (item && typeof item === "object") {
+          const rec = item as Record<string, unknown>;
+          return String(
+            rec.keyword ?? rec.phrase ?? rec.text ?? rec.value ?? "",
+          );
+        }
+        return item;
+      });
+      const normalized = normalizeAmazonKeywords(fromObjects);
+      if (normalized.length > 0) return normalized;
+    }
+  }
+
+  const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
+  const arrStart = cleaned.indexOf("[");
+  const arrEnd = cleaned.lastIndexOf("]");
+  if (arrStart >= 0 && arrEnd > arrStart) {
+    try {
+      const arr = JSON.parse(cleaned.slice(arrStart, arrEnd + 1)) as unknown;
+      if (Array.isArray(arr)) {
+        const normalized = normalizeAmazonKeywords(arr);
+        if (normalized.length > 0) return normalized;
+      }
+    } catch {
+      // Numbered / comma fallback below.
+    }
+  }
+
+  const lines = cleaned
+    .split(/\n+/)
+    .map((line) =>
+      line
+        .replace(/^\s*(?:\d+[\.\)]|[-*•])\s*/, "")
+        .replace(/^["']|["'],?\s*$/g, "")
+        .trim(),
+    )
+    .filter(
+      (line) =>
+        line.length >= 2 &&
+        !/^[{}\[\]]/.test(line) &&
+        !/^(keywords?|amazonKeywords|schlagwoerter)\s*:/i.test(line),
+    );
+  if (lines.length >= 3) {
+    const fromLines = normalizeAmazonKeywords(lines);
+    if (fromLines.length > 0) return fromLines;
+  }
+
+  return normalizeAmazonKeywords(
+    cleaned.replace(/[{}"\[\]]/g, " ").replace(/keywords?\s*:/gi, " "),
+  );
+}
+
+async function generateAmazonKeywordsOnce(
   model: AiModelConfig,
   brief: string,
-  einzeiler: string,
+  attempt: number,
 ): Promise<string[]> {
   const raw = await generateText({
     model,
     preferJson: true,
-    maxTokens: 400,
-    timeoutMs: 60_000,
+    // Headroom for thinking models — 400 tokens often returns an empty body in prod.
+    maxTokens: 4_096,
+    timeoutMs: 90_000,
     systemInstruction: `Du erzeugst Amazon-KDP-Suchkeywords (Backend-Keywords) für ein deutsches Kinder-/Jugendbuch.
 Antworte NUR als JSON: {"keywords":["…","…","…","…","…","…","…"]}
 Regeln:
@@ -386,36 +455,43 @@ Regeln:
 - Keine Duplikate`,
     userText: `${brief}
 
-# Einzeiler (Kontext)
-${einzeiler}
-
-Schreibe jetzt genau 7 keywords.`,
+${
+  attempt > 0
+    ? 'WICHTIG: Genau 7 kurze deutsche Suchphrasen. Nur JSON {"keywords":["…","…","…","…","…","…","…"]}.'
+    : "Schreibe jetzt genau 7 keywords."
+}`,
   });
-  return parseKeywordsPayload(raw);
+  const phrases = collectKeywordPhrases(raw);
+  if (phrases.length < 5) {
+    throw new Error("Keywords nicht lesbar — bitte erneut erzeugen.");
+  }
+  return phrases.slice(0, 7);
 }
 
-function parseKeywordsPayload(raw: string): string[] {
-  const parsed = tryParseModelJsonObject(raw);
-  if (parsed) {
-    const list =
-      (Array.isArray(parsed.keywords) && parsed.keywords) ||
-      (Array.isArray(parsed.amazonKeywords) && parsed.amazonKeywords) ||
-      (Array.isArray(parsed.schlagwoerter) && parsed.schlagwoerter) ||
-      null;
-    if (list) {
-      const normalized = normalizeAmazonKeywords(list);
-      if (normalized.length >= 5) return normalized.slice(0, 7);
+/**
+ * Up to 3 attempts. Runs in parallel with the blurb so a slow Klappentext
+ * does not starve this call on the production request budget.
+ */
+async function generateAmazonKeywords(
+  model: AiModelConfig,
+  brief: string,
+): Promise<string[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await generateAmazonKeywordsOnce(model, brief, attempt);
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        "[generateAmazonKeywords] attempt",
+        attempt + 1,
+        error instanceof Error ? error.message : error,
+      );
     }
   }
-  // Fallback: lines / commas in free text
-  const fallback = normalizeAmazonKeywords(
-    raw
-      .replace(/```(?:json)?/gi, "")
-      .replace(/[{}"\[\]]/g, " ")
-      .replace(/keywords?\s*:/gi, " "),
-  );
-  if (fallback.length >= 5) return fallback.slice(0, 7);
-  throw new Error("Keywords nicht lesbar — bitte erneut erzeugen.");
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Keywords nicht lesbar — bitte erneut erzeugen.");
 }
 
 /**
@@ -437,6 +513,23 @@ export async function generateRomanMarketingCopy(input: {
   const model = await resolveRomanTextModel();
   const brief = bookBrief(input);
 
+  // Overlap with Einzeiler + Klappentext. On the live host the request often
+  // dies before a third sequential model call (keywords) can finish.
+  const keywordsTask = generateAmazonKeywords(model, brief).then(
+    (amazonKeywords) => ({ amazonKeywords, keywordsWarning: undefined as string | undefined }),
+    (error: unknown) => {
+      console.warn(
+        "[generateRomanMarketingCopy] keywords:",
+        error instanceof Error ? error.message : error,
+      );
+      return {
+        amazonKeywords: [] as string[],
+        keywordsWarning:
+          "Keywords konnten nicht erzeugt werden. Klappentext ist da — bitte Keywords erneut erzeugen.",
+      };
+    },
+  );
+
   let einzeiler = await generateEinzeiler(model, brief);
   const klappentext = await generateKlappentext(model, brief, einzeiler);
 
@@ -444,20 +537,13 @@ export async function generateRomanMarketingCopy(input: {
     einzeiler = synthesizeEinzeiler(klappentext);
   }
 
-  let amazonKeywords: string[] = [];
-  try {
-    amazonKeywords = await generateAmazonKeywords(model, brief, einzeiler);
-  } catch (error) {
-    console.warn(
-      "[generateRomanMarketingCopy] keywords:",
-      error instanceof Error ? error.message : error,
-    );
-  }
+  const keywords = await keywordsTask;
 
   return {
     klappentext,
     einzeiler: einzeiler.slice(0, 120),
-    amazonKeywords,
+    amazonKeywords: keywords.amazonKeywords,
+    keywordsWarning: keywords.keywordsWarning,
   };
 }
 

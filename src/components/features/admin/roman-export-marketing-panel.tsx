@@ -147,7 +147,11 @@ export function RomanExportMarketingPanel({
         einzeiler: result.data.einzeiler,
         amazonKeywords: result.data.amazonKeywords,
       });
-      toast.success("Klappentext, Einzeiler und Keywords erzeugt.");
+      if (result.data.keywordsWarning) {
+        toast.error(result.data.keywordsWarning);
+      } else {
+        toast.success("Klappentext, Einzeiler und Keywords erzeugt.");
+      }
     } catch (error) {
       toast.error(
         error instanceof Error

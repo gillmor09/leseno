@@ -3,8 +3,9 @@
 /**
  * Per-chapter Manuskript controls: Erzeugen / Verbessern / Gegenlesen.
  * Roman: Continuity via Gerüst + Vorgänger (server-side); one-shot Verbessern.
- * Clever: independent Kurzgeschichten — Verbessern = Analyse → Dialog → Einarbeiten
- * or Fertig (OK); no Gegenlesen, no Autor-Entscheidungen.
+ * Clever: independent Kurzgeschichten — Verbessern läuft automatisch
+ * (Analyse → bei kritisch/wichtig einarbeiten → erneut, bis nur Nice-to-have
+ * oder leer, dann Fertig). Dieselben Server-Actions und der Durchlauf-Zähler.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -141,6 +142,8 @@ export function RomanManuskriptChapterControl({
     useState<RomanReifegradImprovePlan | null>(null);
   const [dialogChapter, setDialogChapter] = useState<number | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  /** 1-based pass while Clever auto-improve is running. */
+  const [autoPass, setAutoPass] = useState(0);
 
   useEffect(() => {
     setLocalImprovePlans(cleverGeschichteImprove ?? {});
@@ -180,6 +183,7 @@ export function RomanManuskriptChapterControl({
 
   const openPlan = localImprovePlans[String(chapterNumber)] ?? null;
   const hasOpenPlan = Boolean(openPlan && !openPlan.appliedAt);
+  const storySelectedOk = Boolean(localOk[String(chapterNumber)]);
   const planClear =
     hasOpenPlan &&
     openPlan != null &&
@@ -310,18 +314,122 @@ export function RomanManuskriptChapterControl({
   }
 
   function onCleverVerbessernClick() {
+    void runCleverAutoImprove();
+  }
+
+  /**
+   * Same actions as the dialog buttons: analyze, apply when kritisch/wichtig
+   * remain, analyze again. Fertig when the plan is empty or only nice-to-have.
+   */
+  async function runCleverAutoImprove() {
     if (!canSave || busy || !selected) return;
     if (!hasProse) {
       toast.error("Noch keine Geschichte — zuerst erzeugen.");
       return;
     }
-    if (hasOpenPlan && openPlan) {
-      setDialogChapter(chapterNumber);
-      setDialogPlan(openPlan);
-      setDialogOpen(true);
+    if (localOk[String(chapterNumber)]) {
+      toast.error(
+        "Diese Kurzgeschichte ist schon fertig. Ein neuer Klick startet keine weitere Analyse.",
+      );
       return;
     }
-    void runCleverAnalyze();
+    const targetChapter = chapterNumber;
+    const key = String(targetChapter);
+    let plan: RomanReifegradImprovePlan | null =
+      hasOpenPlan && openPlan ? openPlan : null;
+    const maxPasses = 8;
+
+    try {
+      for (let pass = 1; pass <= maxPasses; pass += 1) {
+        if (!plan || plan.appliedAt) {
+          setAutoPass(pass);
+          setPending("analyze");
+          const analyzed = await romanCleverGeschichteAnalyzeAction({
+            romanId,
+            chapterNumber: targetChapter,
+          });
+          if (!analyzed.success || !analyzed.data) {
+            toast.error(analyzed.error ?? "Analyse fehlgeschlagen.");
+            return;
+          }
+          plan = analyzed.data.plan;
+          setLocalImprovePlans((prev) => ({ ...prev, [key]: plan! }));
+          setLocalOk((prev) => {
+            if (!prev[key]) return prev;
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+          onComplete?.(analyzed.data.roman);
+        }
+
+        const needsApply =
+          !plan.appliedAt &&
+          actionableAenderungsPrompts(plan.aenderungsPrompts).length > 0;
+
+        if (!needsApply) {
+          setPending("fertig");
+          const fertig = await romanCleverGeschichteFertigAction({
+            romanId,
+            chapterNumber: targetChapter,
+          });
+          if (!fertig.success || !fertig.data) {
+            toast.error(fertig.error ?? "Fertig markieren fehlgeschlagen.");
+            return;
+          }
+          onComplete?.(fertig.data.roman);
+          setLocalImprovePlans((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          });
+          setLocalOk((prev) => ({ ...prev, [key]: true }));
+          setDialogPlan(null);
+          setDialogChapter(null);
+          setDialogOpen(false);
+          toast.success(fertig.data.summary);
+          return;
+        }
+
+        setAutoPass(pass);
+        setPending("apply");
+        const applied = await romanCleverGeschichteApplyAction({
+          romanId,
+          chapterNumber: targetChapter,
+        });
+        if (!applied.success || !applied.data) {
+          toast.error(applied.error ?? "Einarbeiten fehlgeschlagen.");
+          return;
+        }
+        onComplete?.(applied.data.roman);
+        const stored =
+          applied.data.roman.editorial?.cleverGeschichteImprove?.[key] ??
+          null;
+        const marked =
+          stored ??
+          ({ ...plan, appliedAt: new Date().toISOString() } satisfies RomanReifegradImprovePlan);
+        setLocalImprovePlans((prev) => ({ ...prev, [key]: marked }));
+        const nextCount =
+          applied.data.roman.editorial?.cleverGeschichteImproveCount?.[key];
+        setLocalImproveCounts((prev) => ({
+          ...prev,
+          [key]: nextCount ?? (prev[key] ?? 0) + 1,
+        }));
+        plan = null;
+      }
+      toast.error(
+        "Nach mehreren Durchläufen sind noch wichtige Punkte offen. Bitte erneut verbessern.",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Kurzgeschichte verbessern fehlgeschlagen.",
+      );
+    } finally {
+      setPending(null);
+      setAutoPass(0);
+    }
   }
 
   async function runCleverApply() {
@@ -498,10 +606,10 @@ export function RomanManuskriptChapterControl({
         progressLabel={
           isClever && pending === "generate"
             ? "Eigenständige Geschichte aus Unterthema + Fakten …"
-            : isClever && pending === "analyze"
-              ? "Leser prüft Kritik und Änderungsaufträge …"
+              : isClever && pending === "analyze"
+              ? `Durchlauf ${autoPass || 1}: Leser prüft Kritik und Änderungsaufträge …`
               : isClever && pending === "apply"
-                ? "Erzähler arbeitet die Aufträge ein …"
+                ? `Durchlauf ${autoPass || 1}: Erzähler arbeitet wichtige Punkte ein …`
                 : null
         }
       />
@@ -680,7 +788,9 @@ export function RomanManuskriptChapterControl({
         </button>
         <button
           type="button"
-          disabled={!canSave || busy || !hasProse}
+          disabled={
+            !canSave || busy || !hasProse || (isClever && storySelectedOk)
+          }
           onClick={() =>
             isClever ? onCleverVerbessernClick() : void runImprove()
           }
@@ -695,12 +805,14 @@ export function RomanManuskriptChapterControl({
               aria-hidden
             />
           ) : null}
-          {pending === "improve" || pending === "analyze"
+          {pending === "apply"
+            ? "Arbeitet ein …"
+            : pending === "improve" || pending === "analyze"
             ? isClever
               ? "Analysiert …"
               : "Verbessern …"
-            : isClever && hasOpenPlan
-              ? "Plan öffnen"
+            : isClever && storySelectedOk
+              ? "Fertig"
               : `${unitLabelAccusative} verbessern`}
         </button>
         {!isClever ? (
@@ -718,7 +830,7 @@ export function RomanManuskriptChapterControl({
       </div>
       <p className="text-xs font-semibold text-zinc-500">
         {isClever
-          ? "Verbessern = Kritik ansehen, dann einarbeiten oder mit Fertig als OK markieren. Darunter: Infografik, dann Abenteuer-Wissen — gleiche Reihenfolge wie im Export. Im Feld nur die ausgewählte Geschichte."
+          ? "Verbessern läuft automatisch: Kritik, dann Einarbeiten, bis nur noch Nice-to-have oder nichts übrig ist — dann Fertig. Darunter: Infografik, dann Abenteuer-Wissen — gleiche Reihenfolge wie im Export. Im Feld nur die ausgewählte Geschichte."
           : "Nutzt Kapitelgerüst-Beats und das Ende des Vorgängers, damit Einzelkapitel wie aus einem Guss wirken. Spätere Kapitel ggf. danach neu erzeugen."}
       </p>
     </div>

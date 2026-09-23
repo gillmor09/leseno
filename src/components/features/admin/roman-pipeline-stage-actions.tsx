@@ -310,16 +310,26 @@ export function RomanPipelineStageActions({
             : `${label}: erzeugt.`,
       );
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Erzeugen fehlgeschlagen.",
-      );
+      const message =
+        error instanceof Error ? error.message : "Erzeugen fehlgeschlagen.";
+      // Long drafts often finish in the DB, then the browser stream closes
+      // before the result arrives. Do not mark that run as failed.
+      const streamClosed = /destination stream closed/i.test(message);
+      if (streamClosed) {
+        toast.error(
+          "Die Verbindung ist abgebrochen, der Entwurf kann trotzdem gespeichert sein. Seite wird neu geladen.",
+        );
+        window.location.reload();
+        return;
+      }
+      toast.error(message);
       if (runId) {
         try {
           await romanPipelineStepFinishAction({
             romanId,
             runId,
             ok: false,
-            error: error instanceof Error ? error.message : "Fehler",
+            error: message,
           });
         } catch {
           /* ignore */
@@ -380,7 +390,7 @@ export function RomanPipelineStageActions({
         </dl>
         <p className="mt-2 text-xs font-semibold text-zinc-500">
           {cleverStories && stage === "manuskript"
-            ? "Erzeugen = Erzähler schreibt jede Geschichte (+ Infografik). Verbessern je Geschichte: Kritik prüfen, dann einarbeiten. Anpassen unter "
+            ? "Erzeugen = Erzähler schreibt jede Geschichte (+ Infografik). Verbessern je Geschichte läuft automatisch bis nur noch Nice-to-have oder nichts übrig ist, dann Fertig. Anpassen unter "
             : "Erzeugen = Co-Autor (+ Reifegrad). Analyse/Einarbeiten = Reifegrad-Knöpfe (Gesamt oder Dimension). Feedback = Testleser. Nur dieser Schritt — keine Upstream-/Downstream-Kaskade. Anpassen unter "}
           <Link
             href={rolesHref}
@@ -432,7 +442,7 @@ export function RomanPipelineStageActions({
               ? "Erzeugen = Spec (Figuren + Welt + Exposé). "
               : "Erzeugen = Entwurf. "}
         {cleverStories && stage === "manuskript"
-          ? "Verbessern je Geschichte = Kritik ansehen, dann einarbeiten oder verwerfen."
+          ? "Verbessern je Geschichte läuft automatisch: einarbeiten, solange kritisch oder wichtig, sonst Fertig."
           : "Analyse unter Reifegrad (Gesamt / Dimension)."}
       </p>
     </div>

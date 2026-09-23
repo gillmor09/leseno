@@ -13,6 +13,8 @@ Short map for humans and agents. Product rules live in `.cursor/rules/`; ops in 
 
 Flow: **UI → Server Action (Zod + guards) → `lib` → Supabase / AI providers**.
 
+Blog create via JSON: **`POST /api/blog/posts`** (API key) — see [blog-api.md](blog-api.md).
+
 ## Story pipeline
 
 `generateFreeStoryAction` → `generateStoryPipeline`:
