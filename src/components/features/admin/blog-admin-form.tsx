@@ -197,7 +197,10 @@ export function BlogAdminForm({
               <li
                 key={post.id}
                 className={cn(
-                  "flex flex-wrap items-center gap-2 rounded-2xl bg-white px-4 py-3 ring-1 ring-zinc-950/10",
+                  "flex flex-wrap items-center gap-2 rounded-2xl px-4 py-3 ring-1",
+                  post.status === "published"
+                    ? "bg-emerald-50/80 ring-emerald-700/15"
+                    : "bg-white ring-zinc-950/10",
                   active && "ring-2 ring-orange-700/40",
                 )}
               >

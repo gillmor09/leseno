@@ -27,7 +27,30 @@ export const blogApiFormFieldsSchema = z.object({
     .min(1, { message: "Artikeltext (body) angeben." })
     .max(4_000_000, { message: "Artikeltext ist zu groß." }),
   slug: slugRequiredSchema,
-  status: z.enum(["draft", "published"]).optional().default("published"),
+  status: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : "published"))
+    .pipe(
+      z.enum(["draft", "published"], {
+        message: 'status muss "draft" oder "published" sein.',
+      }),
+    ),
 });
 
 export type BlogApiFormFields = z.infer<typeof blogApiFormFieldsSchema>;
+
+/** First Zod issue with field path for API clients (n8n). */
+export function firstBlogApiFieldError(
+  error: z.ZodError,
+): string {
+  const issue = error.issues[0];
+  if (!issue) return "Angaben ungültig.";
+  const path = issue.path.filter(Boolean).join(".");
+  if (path && !issue.message.toLowerCase().includes(path)) {
+    return `${path}: ${issue.message}`;
+  }
+  return issue.message || "Angaben ungültig.";
+}

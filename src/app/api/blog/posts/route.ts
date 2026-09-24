@@ -18,7 +18,10 @@ import {
   buildBlogHtmlFromUpload,
 } from "@/lib/blog/build-html-from-api";
 import { upsertBlogPost } from "@/lib/blog/repository";
-import { blogApiFormFieldsSchema } from "@/lib/validations/blog-api";
+import {
+  blogApiFormFieldsSchema,
+  firstBlogApiFieldError,
+} from "@/lib/validations/blog-api";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -68,13 +71,11 @@ export async function POST(request: Request) {
     excerpt: formString(form, "excerpt"),
     body: formString(form, "body"),
     slug: formString(form, "slug"),
-    status: formString(form, "status") || undefined,
+    status: formString(form, "status"),
   });
   if (!parsed.success) {
     return NextResponse.json(
-      {
-        error: parsed.error.issues[0]?.message ?? "Angaben ungültig.",
-      },
+      { error: firstBlogApiFieldError(parsed.error) },
       { status: 400 },
     );
   }
