@@ -23,11 +23,11 @@ X-Api-Key: <BLOG_API_KEY>
 
 | Field | Required | Notes |
 |-------|----------|--------|
-| `title` | yes | max 200 |
+| `title` | yes | beliebige Länge |
 | `body` | yes | HTML or Markdown/plain text |
-| `slug` | yes | only `a-z`, `0-9`, `-` |
+| `slug` | yes | only `a-z`, `0-9`, `-` (mind. 2 Zeichen, keine Maximallänge) |
 | `image` | yes | file: JPEG, PNG, WebP, GIF (max ~3 MB) |
-| `excerpt` | no | Kurzbeschreibung, max 500 |
+| `excerpt` | no | Teaser / Kurzbeschreibung, beliebige Länge |
 | `status` | no | `published` (default) or `draft` |
 
 ### Response `201`

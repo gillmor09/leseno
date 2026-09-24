@@ -11,7 +11,6 @@ const slugRequiredSchema = z
   .trim()
   .toLowerCase()
   .min(2, { message: "Slug angeben (mind. 2 Zeichen)." })
-  .max(80)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
     message: "Slug: nur a–z, 0–9 und Bindestriche.",
   });
@@ -20,17 +19,8 @@ const slugRequiredSchema = z
  * Text fields from multipart form (image is validated separately as File).
  */
 export const blogApiFormFieldsSchema = z.object({
-  title: z
-    .string()
-    .trim()
-    .min(1, { message: "Titel angeben." })
-    .max(200),
-  excerpt: z
-    .string()
-    .trim()
-    .max(500, { message: "Kurzbeschreibung max. 500 Zeichen." })
-    .optional()
-    .default(""),
+  title: z.string().trim().min(1, { message: "Titel angeben." }),
+  excerpt: z.string().trim().optional().default(""),
   body: z
     .string()
     .trim()
