@@ -1,5 +1,5 @@
 /**
- * Build Quill-compatible `html_body` from API payload:
+ * Build Quill-compatible `html_body` from API upload:
  * hero image (data URL) at the top + sanitized article body.
  */
 
@@ -10,16 +10,11 @@ export const BLOG_API_MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
 const ALLOWED_MIME = new Set([
   "image/jpeg",
+  "image/jpg",
   "image/png",
   "image/webp",
   "image/gif",
 ]);
-
-export type BlogApiImageInput = {
-  base64: string;
-  mimeType?: string;
-  alt?: string;
-};
 
 export class BlogApiImageError extends Error {
   readonly status: number;
@@ -39,55 +34,57 @@ function escapeHtmlAttr(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+function normalizeMime(mime: string): string {
+  const m = mime.trim().toLowerCase();
+  if (m === "image/jpg") return "image/jpeg";
+  return m;
+}
+
 /**
- * Normalize raw or data-URL base64 into a `data:image/…;base64,…` string.
- * Validates mime + decoded size (≤ 3 MB).
+ * Convert an uploaded File/Blob into a `data:image/…;base64,…` URL.
  */
-export function toBlogImageDataUrl(image: BlogApiImageInput): string {
-  const raw = (image.base64 ?? "").trim();
-  if (!raw) {
-    throw new BlogApiImageError("Bild fehlt (image.base64).");
+export async function fileToBlogImageDataUrl(
+  file: File,
+  alt?: string,
+): Promise<{ dataUrl: string; alt: string }> {
+  if (!file || typeof file.arrayBuffer !== "function") {
+    throw new BlogApiImageError("Bild fehlt (image).");
   }
-
-  let mime = (image.mimeType ?? "").trim().toLowerCase();
-  let payload = raw;
-
-  const dataMatch = /^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i.exec(raw);
-  if (dataMatch) {
-    mime = dataMatch[1]!.toLowerCase();
-    payload = dataMatch[2]!.replace(/\s+/g, "");
-  } else {
-    payload = raw.replace(/\s+/g, "");
-    if (!mime) {
-      throw new BlogApiImageError(
-        "image.mimeType angeben (z. B. image/jpeg), wenn base64 ohne data:-Prefix kommt.",
-      );
-    }
+  if (file.size <= 0) {
+    throw new BlogApiImageError("Bild-Datei ist leer.");
   }
-
-  if (!ALLOWED_MIME.has(mime)) {
-    throw new BlogApiImageError(
-      "Ungültiger Bildtyp — erlaubt: JPEG, PNG, WebP, GIF.",
-    );
-  }
-
-  let bytes: Buffer;
-  try {
-    bytes = Buffer.from(payload, "base64");
-  } catch {
-    throw new BlogApiImageError("Bild-Base64 ist ungültig.");
-  }
-  if (!bytes.length) {
-    throw new BlogApiImageError("Bild-Base64 ist leer.");
-  }
-  if (bytes.length > BLOG_API_MAX_IMAGE_BYTES) {
+  if (file.size > BLOG_API_MAX_IMAGE_BYTES) {
     throw new BlogApiImageError(
       "Bild ist zu groß (max. 3 MB). Bitte verkleinern.",
       413,
     );
   }
 
-  return `data:${mime};base64,${bytes.toString("base64")}`;
+  const name = (file.name || "").toLowerCase();
+  let mime = normalizeMime(file.type || "");
+  if (!ALLOWED_MIME.has(mime)) {
+    mime = name.endsWith(".png")
+      ? "image/png"
+      : name.endsWith(".webp")
+        ? "image/webp"
+        : name.endsWith(".gif")
+          ? "image/gif"
+          : name.endsWith(".jpg") || name.endsWith(".jpeg")
+            ? "image/jpeg"
+            : "";
+  }
+  mime = normalizeMime(mime);
+  if (!ALLOWED_MIME.has(mime)) {
+    throw new BlogApiImageError(
+      "Ungültiger Bildtyp — erlaubt: JPEG, PNG, WebP, GIF.",
+    );
+  }
+
+  const bytes = Buffer.from(await file.arrayBuffer());
+  return {
+    dataUrl: `data:${mime};base64,${bytes.toString("base64")}`,
+    alt: (alt ?? "").trim().slice(0, 200),
+  };
 }
 
 /** Wrap a data URL as the leading Quill-style paragraph. */
@@ -127,15 +124,13 @@ export function normalizeArticleBody(body: string): string {
  * Hero image first, then body — one Quill-style `html_body` string
  * (data-URL `<img>` embedded, same as manual admin uploads).
  */
-export function buildBlogHtmlFromApi(input: {
+export function buildBlogHtmlFromParts(input: {
   body: string;
-  image: BlogApiImageInput;
+  dataUrl: string;
+  alt?: string;
 }): string {
-  const dataUrl = toBlogImageDataUrl(input.image);
-  const imageHtml = buildHeroImageHtml(dataUrl, input.image.alt);
+  const imageHtml = buildHeroImageHtml(input.dataUrl, input.alt);
   const bodyNormalized = normalizeArticleBody(input.body);
-  // Sanitize the combined document so the stored field matches Quill output
-  // (image + paragraphs in one html_body, data: URLs kept).
   const htmlBody = sanitizeBlogHtml(`${imageHtml}${bodyNormalized}`);
   if (!htmlBody.includes("<img")) {
     throw new BlogApiImageError(
@@ -149,4 +144,21 @@ export function buildBlogHtmlFromApi(input: {
     );
   }
   return htmlBody;
+}
+
+/** From multipart: File → data URL → combined html_body. */
+export async function buildBlogHtmlFromUpload(input: {
+  body: string;
+  image: File;
+  alt?: string;
+}): Promise<string> {
+  const { dataUrl, alt } = await fileToBlogImageDataUrl(
+    input.image,
+    input.alt,
+  );
+  return buildBlogHtmlFromParts({
+    body: input.body,
+    dataUrl,
+    alt,
+  });
 }

@@ -1,25 +1,10 @@
 /**
- * POST /api/blog/posts — create a blog article via JSON + API key.
+ * POST /api/blog/posts — create a blog article via multipart/form-data (n8n).
  *
- * Auth: `Authorization: Bearer <BLOG_API_KEY>` or `X-Api-Key: <BLOG_API_KEY>`
+ * Auth: `X-Api-Key: <BLOG_API_KEY>` (Bearer also accepted).
  *
- * Example:
- * ```http
- * POST /api/blog/posts
- * Authorization: Bearer …
- * Content-Type: application/json
- *
- * {
- *   "title": "Mein Artikel",
- *   "excerpt": "Kurzbeschreibung",
- *   "body": "<p>Text…</p>",
- *   "image": { "base64": "…", "mimeType": "image/jpeg", "alt": "…" },
- *   "status": "published"
- * }
- * ```
- *
- * Hero image is a separate field and is prepended as a data-URL `<img>`
- * (same as Quill admin uploads — not Supabase Storage).
+ * Form fields: title, body, slug, image (file); optional excerpt, status.
+ * Image is embedded as a data-URL `<img>` at the top of html_body (Quill-style).
  */
 
 import { revalidatePath } from "next/cache";
@@ -30,13 +15,10 @@ import {
 } from "@/lib/blog/api-auth";
 import {
   BlogApiImageError,
-  buildBlogHtmlFromApi,
+  buildBlogHtmlFromUpload,
 } from "@/lib/blog/build-html-from-api";
 import { upsertBlogPost } from "@/lib/blog/repository";
-import {
-  blogApiCreateSchema,
-  resolveBlogApiSlug,
-} from "@/lib/validations/blog-api";
+import { blogApiFormFieldsSchema } from "@/lib/validations/blog-api";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -47,6 +29,11 @@ function revalidateBlog(slug: string) {
   revalidatePath(`/blog/${slug}`);
 }
 
+function formString(form: FormData, key: string): string {
+  const value = form.get(key);
+  return typeof value === "string" ? value : "";
+}
+
 export async function POST(request: Request) {
   if (!isValidBlogApiKey(extractBlogApiKey(request))) {
     return NextResponse.json(
@@ -55,17 +42,34 @@ export async function POST(request: Request) {
     );
   }
 
-  let json: unknown;
-  try {
-    json = await request.json();
-  } catch {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("multipart/form-data")) {
     return NextResponse.json(
-      { error: "JSON-Body erwartet." },
+      {
+        error:
+          "multipart/form-data erwartet (Felder: title, body, slug, image).",
+      },
       { status: 400 },
     );
   }
 
-  const parsed = blogApiCreateSchema.safeParse(json);
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return NextResponse.json(
+      { error: "Form-Data konnte nicht gelesen werden." },
+      { status: 400 },
+    );
+  }
+
+  const parsed = blogApiFormFieldsSchema.safeParse({
+    title: formString(form, "title"),
+    excerpt: formString(form, "excerpt"),
+    body: formString(form, "body"),
+    slug: formString(form, "slug"),
+    status: formString(form, "status") || undefined,
+  });
   if (!parsed.success) {
     return NextResponse.json(
       {
@@ -75,27 +79,21 @@ export async function POST(request: Request) {
     );
   }
 
-  const data = parsed.data;
-  let slug: string;
-  try {
-    slug = resolveBlogApiSlug(data.title, data.slug ?? "");
-  } catch (error) {
+  const imageEntry = form.get("image");
+  if (!(imageEntry instanceof File) || imageEntry.size <= 0) {
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Slug ungültig.",
-      },
+      { error: "Bild fehlt (image als Datei)." },
       { status: 400 },
     );
   }
 
+  const data = parsed.data;
   let htmlBody: string;
   try {
-    htmlBody = buildBlogHtmlFromApi({
+    htmlBody = await buildBlogHtmlFromUpload({
       body: data.body,
-      image: data.image,
+      image: imageEntry,
+      alt: data.title,
     });
   } catch (error) {
     if (error instanceof BlogApiImageError) {
@@ -118,20 +116,18 @@ export async function POST(request: Request) {
   try {
     const post = await upsertBlogPost({
       id: null,
-      slug,
+      slug: data.slug,
       title: data.title,
       excerpt: data.excerpt,
       htmlBody,
       status: data.status,
-      publishedAt: data.publishedAt ?? null,
+      publishedAt: null,
     });
     revalidateBlog(post.slug);
     return NextResponse.json(
       {
+        success: true,
         id: post.id,
-        slug: post.slug,
-        title: post.title,
-        status: post.status,
         url: `/blog/${post.slug}`,
       },
       { status: 201 },
