@@ -2,7 +2,7 @@
 
 /**
  * Book admin tab shell: Basics → Idee → Spec → Kapitelgerüst → Manuskript → Export.
- * KI-Rollen are module-wide at `{basePath}/rollen`.
+ * KI-Rollen live at `{basePath}/rollen` (Roman / Clever).
  */
 
 import Link from "next/link";
@@ -142,6 +142,7 @@ export function RomanAdminWorkspace({
 }) {
   const adminModule = getRomanAdminModule(moduleId);
   const isCleverErzaehlt = moduleId === "clever_erzaehlt";
+  const rolesHref = `${adminModule.basePath}/rollen`;
   const typSet = true;
   const fixedBuchTyp = adminModule.buchTyp;
   function withFixedTyp(ed: RomanEditorial): RomanEditorial {
@@ -884,7 +885,7 @@ export function RomanAdminWorkspace({
                     }
                     showAssess
                     displayLabel="Idee"
-                  rolesHref={`${adminModule.basePath}/rollen`}
+                    rolesHref={rolesHref}
                   />
                   <RomanIdeeQaPanel
                     romanId={roman.id}
@@ -952,7 +953,7 @@ export function RomanAdminWorkspace({
                     generateMode="spec-chain"
                     showAssess
                     displayLabel="Spec"
-                  rolesHref={`${adminModule.basePath}/rollen`}
+                    rolesHref={rolesHref}
                   />
                   <div className="space-y-3">
                     <h3 className="text-base font-extrabold text-zinc-950">
@@ -1087,7 +1088,7 @@ export function RomanAdminWorkspace({
                     hasLeserArtifact={hasSzenenplotDoc}
                     showAssess
                     displayLabel="Kapitelgerüst"
-                  rolesHref={`${adminModule.basePath}/rollen`}
+                    rolesHref={rolesHref}
                   />
                   <RomanSzenenplotPanel
                     hasExpose={hasExposeDoc}
@@ -1161,7 +1162,7 @@ export function RomanAdminWorkspace({
                         : hasFilledManuskript(manuskript)
                     }
                     showAssess={!isCleverErzaehlt}
-                    rolesHref={`${adminModule.basePath}/rollen`}
+                    rolesHref={rolesHref}
                     cleverStories={isCleverErzaehlt}
                   />
                   {!isCleverErzaehlt ? (

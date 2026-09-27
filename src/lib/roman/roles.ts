@@ -488,7 +488,8 @@ export const ALL_FALLBACK_KI_ROLLEN: RomanKiRolle[] = [
 ];
 
 /**
- * Show only Clever roles on Clever-erzählt admin; hide them on Roman/Sachbuch.
+ * Clever: only clever_* roles. Roman: belletristik roles (not clever_*).
+ * Sachbuch has no roles admin (module stub).
  */
 export function filterRollenForAdminModule(
   rollen: RomanKiRolle[],
@@ -496,6 +497,9 @@ export function filterRollenForAdminModule(
 ): RomanKiRolle[] {
   if (moduleId === "clever_erzaehlt") {
     return rollen.filter((r) => isCleverErzaehltRoleKey(r.key));
+  }
+  if (moduleId === "sachbuch") {
+    return [];
   }
   return rollen.filter((r) => !isCleverErzaehltRoleKey(r.key));
 }

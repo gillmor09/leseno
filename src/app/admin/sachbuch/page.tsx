@@ -1,38 +1,27 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { RomanAdminList } from "@/components/features/admin/roman-admin-list";
+import { SachbuchAdminList } from "@/components/features/admin/sachbuch-admin-list";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
-import {
-  getRomanAdminModule,
-  matchesAdminModule,
-  type RomanAdminModuleId,
-} from "@/lib/roman/admin-module";
-import { listRomanKontexte } from "@/lib/roman/repository";
+import { listSachbuchKontexte } from "@/lib/sachbuch/repository";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
   title: "Sachbuch — Leseno Admin",
-  description: "Sachbuchprojekte und KI-Rollen der Sachbuch-Pipeline.",
+  description:
+    "Sachbuch-Modul: Agenten-Matrix, Interview, Abschnitte mit Checkpoint/Critic/Style.",
 };
 
-const MODULE_ID: RomanAdminModuleId = "sachbuch";
-
 /**
- * Admin index for the internal non-fiction writing pipeline.
+ * Sachbuch admin index (greenfield module).
  */
 export default async function SachbuchAdminPage() {
-  const adminModule = getRomanAdminModule(MODULE_ID);
-  let romane: Awaited<ReturnType<typeof listRomanKontexte>> = [];
+  let books: Awaited<ReturnType<typeof listSachbuchKontexte>> = [];
   let canSave = false;
   let readOnlyNotice: string | undefined =
-    "Vorschau: Sachbücher konnten nicht geladen werden. Bitte Migration `20260911160000_roman_pipeline.sql` ausführen.";
+    "Vorschau: Sachbücher konnten nicht geladen werden. Bitte Migration `20260925150000_sachbuch_kontext.sql` ausführen.";
 
   try {
-    const all = await listRomanKontexte();
-    romane = all.filter((r) =>
-      matchesAdminModule(r.editorial?.buchTyp, MODULE_ID),
-    );
+    books = await listSachbuchKontexte();
     canSave = hasServiceRoleConfig();
     if (!canSave) {
       readOnlyNotice =
@@ -62,26 +51,17 @@ export default async function SachbuchAdminPage() {
             Admin
           </p>
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            {adminModule.label}
+            Sachbuch
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Internes Werkzeug für Sachbücher. Buchtyp ist fest Sachbuch —
-            KI-Rollen und Prompts verwaltest du hier im Modul.
+            Eigenes Modul: Agenten pro Buch, sokratisches Interview (Text /
+            Deepgram) und Abschnitte mit Checkpoint, Critic und Style.
           </p>
-          <div className="mt-4">
-            <Link
-              href={`${adminModule.basePath}/rollen`}
-              className="text-sm font-bold text-orange-800 hover:underline"
-            >
-              KI-Rollen verwalten
-            </Link>
-          </div>
           <div className="mt-8">
-            <RomanAdminList
-              initialRomane={romane}
+            <SachbuchAdminList
+              initialBooks={books}
               canSave={canSave}
               readOnlyNotice={readOnlyNotice}
-              moduleId={MODULE_ID}
             />
           </div>
         </section>

@@ -64,7 +64,7 @@ export function RomanPipelineStageActions({
   /** When true, Erzeugen also runs Reifegrad after the draft. */
   showAssess = true,
   displayLabel,
-  rolesHref = "/admin/roman/rollen",
+  rolesHref,
   cleverStories = false,
 }: {
   romanId: string;
@@ -81,7 +81,7 @@ export function RomanPipelineStageActions({
   generateMode?: "stage" | "spec-chain";
   showAssess?: boolean;
   displayLabel?: string;
-  /** Link to module KI-Rollen admin. */
+  /** Link to module KI-Rollen admin; omit when the module has no roles UI. */
   rolesHref?: string;
   /** Clever erzählt: independent Kurzgeschichten wording. */
   cleverStories?: boolean;
@@ -390,15 +390,21 @@ export function RomanPipelineStageActions({
         </dl>
         <p className="mt-2 text-xs font-semibold text-zinc-500">
           {cleverStories && stage === "manuskript"
-            ? "Erzeugen = Erzähler schreibt jede Geschichte (+ Infografik). Verbessern je Geschichte läuft automatisch bis nur noch Nice-to-have oder nichts übrig ist, dann Fertig. Anpassen unter "
-            : "Erzeugen = Co-Autor (+ Reifegrad). Analyse/Einarbeiten = Reifegrad-Knöpfe (Gesamt oder Dimension). Feedback = Testleser. Nur dieser Schritt — keine Upstream-/Downstream-Kaskade. Anpassen unter "}
-          <Link
-            href={rolesHref}
-            className="font-bold text-orange-800 hover:underline"
-          >
-            KI-Rollen
-          </Link>
-          .
+            ? "Erzeugen = Erzähler schreibt jede Geschichte (+ Infografik). Verbessern je Geschichte läuft automatisch bis nur noch Nice-to-have oder nichts übrig ist, dann Fertig."
+            : "Erzeugen = Co-Autor (+ Reifegrad). Analyse/Einarbeiten = Reifegrad-Knöpfe (Gesamt oder Dimension). Feedback = Testleser. Nur dieser Schritt — keine Upstream-/Downstream-Kaskade."}
+          {rolesHref ? (
+            <>
+              {" "}
+              Anpassen unter{" "}
+              <Link
+                href={rolesHref}
+                className="font-bold text-orange-800 hover:underline"
+              >
+                KI-Rollen
+              </Link>
+              .
+            </>
+          ) : null}
         </p>
       </div>
 

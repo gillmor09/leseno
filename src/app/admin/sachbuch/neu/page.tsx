@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { RomanCreateForm } from "@/components/features/admin/roman-create-form";
+import { SachbuchCreateForm } from "@/components/features/admin/sachbuch-create-form";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 /**
- * Create a new Sachbuch shell (title only); buchTyp = Sachbuch.
+ * Create a new Sachbuch shell (title + default agents).
  */
 export default async function SachbuchAdminNewPage() {
   const canSave = hasServiceRoleConfig();
@@ -26,7 +26,7 @@ export default async function SachbuchAdminNewPage() {
             Neues Sachbuch
           </h1>
           <div className="mt-8">
-            <RomanCreateForm canSave={canSave} moduleId="sachbuch" />
+            <SachbuchCreateForm canSave={canSave} />
           </div>
         </section>
       </main>

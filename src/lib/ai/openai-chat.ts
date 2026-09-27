@@ -1,6 +1,6 @@
 /**
  * OpenAI Chat Completions client (`OPENAI_API_KEY`).
- * Used for GPT-6 Astra, GPT-5.6 Luna, and other OpenAI text models — not IONOS.
+ * Used for GPT-6 Astra / Luna, GPT-5.6 Luna, and other OpenAI text models — not IONOS.
  *
  * Reasoning models (gpt-5*, gpt-6*, o*) count reasoning tokens against
  * `max_completion_tokens`. A tight cap can yield empty `content` with

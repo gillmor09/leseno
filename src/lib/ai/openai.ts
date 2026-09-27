@@ -11,7 +11,7 @@ export function getOpenAiApiKey(): string {
   const key = process.env.OPENAI_API_KEY?.trim() ?? "";
   if (!key) {
     throw new UserFacingError(
-      "OPENAI_API_KEY fehlt. Bitte in .env.local und Coolify setzen (Chat / GPT-6 Astra / GPT-5.6 Luna / TTS).",
+      "OPENAI_API_KEY fehlt. Bitte in .env.local und Coolify setzen (Chat / GPT-6 Astra / GPT-6 Luna / TTS).",
     );
   }
   return key;

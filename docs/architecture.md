@@ -33,7 +33,18 @@ Personal mode: topic/cast resolved **server-side** from the selected `child_prof
 - `/admin/*`: `src/app/admin/layout.tsx` + `denyUnlessAdmin()` on write actions  
 - Prompt/model catalogs: **service role only** (not anon) — see migration `20260904120000_restrict_prompt_catalog_rpc.sql`
 - Auth emails: templates in `leseno.auth_email_templates`; hooks at `/hooks/auth/send-email` (unified), `/hooks/auth/register` (signup), `/hooks/auth/forget` (recovery). Env: `AUTH_EMAIL_HOOK_SECRET`, `SMTP_*`.
-- Billing / usage: `user_profiles.credits`; `membership_packages` (Admin `/admin/pakete`); `user_package_bookings`; `credit_grants` (monthly invoice grants); `user_activities`. **Stripe Checkout** (card + PayPal): `/preise` → Checkout; webhook `/api/stripe/webhook` syncs role + monthly credits on anniversary — see [docs/stripe.md](stripe.md) and [docs/billing.md](billing.md). **Promo-Codes** (Admin `/admin/promo`): Stripe coupons + `?promo=` capture — see stripe.md §5. **Social Media** (Admin `/admin/social-media`): Instagram calendar; captions from manifesto + one motivation angle (`/motivation`); Gemini 3.8 Flash for caption + scene plan → FLUX.2. **Buch** (Admin `/admin/roman`, internal): see **Buch (Admin)** below.
+- Billing / usage: `user_profiles.credits`; `membership_packages` (Admin `/admin/pakete`); `user_package_bookings`; `credit_grants` (monthly invoice grants); `user_activities`. **Stripe Checkout** (card + PayPal): `/preise` → Checkout; webhook `/api/stripe/webhook` syncs role + monthly credits on anniversary — see [docs/stripe.md](stripe.md) and [docs/billing.md](billing.md). **Promo-Codes** (Admin `/admin/promo`): Stripe coupons + `?promo=` capture — see stripe.md §5. **Social Media** (Admin `/admin/social-media`): Instagram calendar; captions from manifesto + one motivation angle (`/motivation`); Gemini 3.8 Flash for caption + scene plan → FLUX.2. **Buch** (Admin `/admin/roman`, internal): see **Buch (Admin)** below. **Sachbuch** (Admin `/admin/sachbuch`, internal): greenfield module — see **Sachbuch (Admin)** below.
+
+## Sachbuch (Admin)
+
+Route `/admin/sachbuch`: own table `leseno.sachbuch_kontext`. **Buchart** (Journey | Erklärung | Erzählung/Fall) is set in Grundlagen (and on create) and drives Idee + Makro. Workflow phases:
+
+1. **Idee** — Interview adapted to Buchart (Journey: UVP / Erklärung: Kernaussage)  
+2. **Evidenz** — Google Search claims map (no RAG)  
+3. **Makro** — Stages follow Buchart from Grundlagen (Journey, Erklärung oder Erzählung) → Kapitelgerüst
+4–5. **Schreiben** — Context Graph per Kapitel + Abschnitte (400–700 Wörter); Ziel ca. 8.000 Wörter/Kapitel, ca. 40.000 Wörter/Buch; Auto-Pipeline Checkpoint (Web-Recherche) → Critic → Style  
+
+Agents per book: interviewer, researcher, architect, writer, critic, stylist. Defaults: `gpt-6-luna`, `gemini-3.8-flash` (+ Search), `openai/gpt-oss-120b`. Env: `DEEPGRAM_API_KEY` (alias `DEEPGAM_API_KEY`). Migrations `20260925150000_sachbuch_kontext.sql`, `20260925160000_sachbuch_phases.sql`.
 
 ## Buch (Admin)
 

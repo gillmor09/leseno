@@ -1,5 +1,5 @@
 /**
- * Next.js path revalidation for Roman / Sachbuch / Clever-erzählt admin modules.
+ * Next.js path revalidation for Roman / Clever-erzählt (and Sachbuch stub index).
  */
 
 import { revalidatePath } from "next/cache";
@@ -22,9 +22,10 @@ export function revalidateRomanAdminLists() {
   }
 }
 
-/** KI-Rollen pages under all modules. */
+/** KI-Rollen pages under Roman / Clever (Sachbuch has no /rollen). */
 export function revalidateRomanAdminRollen() {
   for (const mod of Object.values(ROMAN_ADMIN_MODULES)) {
+    if (mod.id === "sachbuch") continue;
     revalidatePath(`${mod.basePath}/rollen`);
   }
 }

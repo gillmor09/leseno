@@ -54,6 +54,12 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     usage: "Text: starkes Reasoning (Roman / Admin)",
   },
   {
+    modelSlug: "gpt-6-luna",
+    provider: "openai",
+    label: "GPT-6 Luna (OpenAI)",
+    usage: "Text: Sachbuch Interviewer / Style Matcher · schnell",
+  },
+  {
     modelSlug: "gpt-5.6-luna",
     provider: "openai",
     label: "GPT-5.6 Luna (OpenAI)",

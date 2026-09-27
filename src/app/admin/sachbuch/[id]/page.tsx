@@ -1,71 +1,49 @@
 import type { Metadata } from "next";
-import { notFound, redirect } from "next/navigation";
-import { RomanAdminWorkspace } from "@/components/features/admin/roman-admin-workspace";
+import { notFound } from "next/navigation";
+import { SachbuchAdminWorkspace } from "@/components/features/admin/sachbuch-admin-workspace";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
-import {
-  adminModuleForBuchTyp,
-  getRomanAdminModule,
-  type RomanAdminModuleId,
-} from "@/lib/roman/admin-module";
-import { emptyRomanEditorial } from "@/lib/roman/editorial";
-import { ensureRomanModuleBuchTyp } from "@/lib/roman/ensure-module-buch-typ";
-import { getRomanKontext } from "@/lib/roman/repository";
+import { listRomanRoleModelOptions } from "@/lib/roman/roles";
+import { getSachbuchKontext } from "@/lib/sachbuch/repository";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 type PageProps = {
   params: Promise<{ id: string }>;
 };
 
-const MODULE_ID: RomanAdminModuleId = "sachbuch";
-
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
   const { id } = await params;
   try {
-    const roman = await getRomanKontext(id);
+    const book = await getSachbuchKontext(id);
     return {
-      title: roman ? `${roman.title} — Sachbuch` : "Sachbuch — Leseno Admin",
+      title: book ? `${book.title} — Sachbuch` : "Sachbuch — Leseno Admin",
     };
   } catch {
     return { title: "Sachbuch — Leseno Admin" };
   }
 }
 
-/** Coach + Redakteur + Kapitel können lange brauchen. */
+/** Interview + Abschnitt pipeline can take a long time. */
 export const maxDuration = 1800;
 
 /**
- * Sachbuch detail: same pipeline UI as Roman; buchTyp fixed to Sachbuch.
+ * Sachbuch detail: Grundlagen, Agenten, Phasen 1–5.
  */
 export default async function SachbuchAdminDetailPage({ params }: PageProps) {
   const { id } = await params;
   const canSave = hasServiceRoleConfig();
-  const adminModule = getRomanAdminModule(MODULE_ID);
 
-  let roman: Awaited<ReturnType<typeof getRomanKontext>> = null;
+  let book: Awaited<ReturnType<typeof getSachbuchKontext>> = null;
   try {
-    roman = await getRomanKontext(id);
-    if (!roman) notFound();
+    book = await getSachbuchKontext(id);
   } catch {
-    notFound();
+    book = null;
   }
+  if (!book) notFound();
 
-  const currentTyp =
-    (roman!.editorial ?? emptyRomanEditorial()).buchTyp ?? "unbekannt";
-  const owner = adminModuleForBuchTyp(currentTyp);
-  if (owner !== MODULE_ID) {
-    redirect(`${getRomanAdminModule(owner).basePath}/${id}`);
-  }
-
-  if (canSave) {
-    try {
-      roman = await ensureRomanModuleBuchTyp(roman!, adminModule.buchTyp);
-    } catch {
-      /* keep loaded roman; workspace still forces typ on save */
-    }
-  }
+  const modelOptions = listRomanRoleModelOptions();
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -73,16 +51,13 @@ export default async function SachbuchAdminDetailPage({ params }: PageProps) {
       <main id="main" className="flex-1">
         <section className="mx-auto max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
           <p className="inline-flex items-center rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold tracking-wide text-zinc-950 uppercase">
-            Admin
+            Admin · Sachbuch
           </p>
-          <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            {roman!.title}
-          </h1>
-          <div className="mt-8">
-            <RomanAdminWorkspace
-              initialRoman={roman!}
+          <div className="mt-6">
+            <SachbuchAdminWorkspace
+              initialBook={book}
+              modelOptions={modelOptions}
               canSave={canSave}
-              moduleId={MODULE_ID}
             />
           </div>
         </section>

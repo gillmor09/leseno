@@ -1,6 +1,7 @@
 /**
- * Admin pipeline modules: Roman (Belletristik), Sachbuch, Clever erzählt.
- * Same UI/workspace; buchTyp is fixed per module (no typ picker).
+ * Admin pipeline modules: Roman (Belletristik), Clever erzählt, and Sachbuch.
+ * Roman + Clever share the book workspace. Sachbuch is a stub being rebuilt —
+ * kept in the registry so `buchTyp: "sachbuch"` rows stay out of other lists.
  */
 
 import type { RomanBuchTyp } from "@/lib/roman/editorial";
@@ -73,13 +74,16 @@ export function matchesAdminModule(
   return adminModuleForBuchTyp(buchTyp) === moduleId;
 }
 
-/** Revalidate all module trees after shared CRUD / pipeline writes. */
+/** Revalidate active module trees after shared CRUD / pipeline writes. */
 export function romanAdminPaths(romanId?: string): string[] {
-  const bases = Object.values(ROMAN_ADMIN_MODULES).map((m) => m.basePath);
-  if (!romanId) return bases;
+  const bases = Object.values(ROMAN_ADMIN_MODULES)
+    .filter((m) => m.id !== "sachbuch")
+    .map((m) => m.basePath);
+  if (!romanId) return [...bases, "/admin/sachbuch"];
   return [
     ...bases,
     ...bases.map((base) => `${base}/${romanId}`),
     ...bases.map((base) => `${base}/rollen`),
+    "/admin/sachbuch",
   ];
 }

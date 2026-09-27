@@ -231,13 +231,16 @@ function mergeFallback(
   ].sort((a, b) => a.sortOrder - b.sortOrder || a.taskKey.localeCompare(b.taskKey));
 }
 
-/** Clever vs Roman/Sachbuch task sets (by role key). */
+/** Clever vs Roman task sets; Sachbuch has no pipeline-aufgaben UI yet. */
 export function filterAufgabenForAdminModule(
   aufgaben: RomanPipelineAufgabe[],
   moduleId: RomanAdminModuleId,
 ): RomanPipelineAufgabe[] {
   if (moduleId === "clever_erzaehlt") {
     return aufgaben.filter((a) => isCleverErzaehltRoleKey(a.rolleKey));
+  }
+  if (moduleId === "sachbuch") {
+    return [];
   }
   return aufgaben.filter((a) => !isCleverErzaehltRoleKey(a.rolleKey));
 }

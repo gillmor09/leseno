@@ -1,34 +1,26 @@
 "use client";
 
 /**
- * Minimal create form for a new book shell (title only).
- * Clever erzählt uses `CleverErzaehltCreateForm` instead.
- * buchTyp is fixed by the admin module.
+ * Create a new Sachbuch shell (title + Buchart).
  */
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import { saveRomanKontextAction } from "@/app/actions/roman-admin";
+import { createSachbuchAction } from "@/app/actions/sachbuch-admin";
+import type { SachbuchMakroTyp } from "@/lib/sachbuch/types";
 import {
-  getRomanAdminModule,
-  type RomanAdminModuleId,
-} from "@/lib/roman/admin-module";
-import { emptyRomanEditorial } from "@/lib/roman/editorial";
-import { emptyRomanUpsertFields } from "@/lib/roman/fundament";
+  SACHBUCH_MAKRO_TYP_HINTS,
+  SACHBUCH_MAKRO_TYP_LABELS,
+  SACHBUCH_MAKRO_TYP_OPTIONS,
+} from "@/lib/sachbuch/types";
 import { cn } from "@/lib/utils";
 
-export function RomanCreateForm({
-  canSave,
-  moduleId = "roman",
-}: {
-  canSave: boolean;
-  moduleId?: RomanAdminModuleId;
-}) {
-  const adminModule = getRomanAdminModule(moduleId);
+export function SachbuchCreateForm({ canSave }: { canSave: boolean }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
+  const [buchArt, setBuchArt] = useState<SachbuchMakroTyp>("journey");
   const [pending, setPending] = useState(false);
 
   async function handleCreate() {
@@ -39,31 +31,26 @@ export function RomanCreateForm({
       return;
     }
     setPending(true);
-    const fields = emptyRomanUpsertFields({ title: trimmed });
-    const result = await saveRomanKontextAction({
-      ...fields,
-      id: null,
-      editorial: {
-        ...emptyRomanEditorial(),
-        buchTyp: adminModule.buchTyp,
-      },
+    const result = await createSachbuchAction({
+      title: trimmed,
+      buchArt,
     });
     setPending(false);
     if (!result.success) {
       toast.error(result.error ?? "Anlegen fehlgeschlagen.");
       return;
     }
-    toast.success(`${adminModule.itemLabel} angelegt.`);
-    router.push(`${adminModule.basePath}/${result.data!.roman.id}`);
+    toast.success("Sachbuch angelegt.");
+    router.push(`/admin/sachbuch/${result.data!.book.id}`);
   }
 
   return (
     <div className="space-y-6 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
       <Link
-        href={adminModule.basePath}
+        href="/admin/sachbuch"
         className="text-sm font-bold text-orange-800 hover:underline"
       >
-        ← Alle {adminModule.itemLabelPlural}
+        ← Alle Sachbücher
       </Link>
       <label className="block">
         <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
@@ -74,9 +61,37 @@ export function RomanCreateForm({
           onChange={(e) => setTitle(e.target.value)}
           disabled={!canSave || pending}
           className="w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-          placeholder={`z. B. Arbeitsname des ${adminModule.itemLabel}s`}
+          placeholder="z. B. Arbeitsname des Sachbuchs"
         />
       </label>
+
+      <div>
+        <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+          Buchart
+        </span>
+        <div className="flex flex-wrap gap-2">
+          {SACHBUCH_MAKRO_TYP_OPTIONS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              disabled={!canSave || pending}
+              onClick={() => setBuchArt(option)}
+              className={cn(
+                "rounded-full px-5 py-2.5 text-sm font-bold disabled:opacity-50",
+                buchArt === option
+                  ? "bg-zinc-900 text-white"
+                  : "bg-white text-zinc-700 ring-1 ring-zinc-950/10",
+              )}
+            >
+              {SACHBUCH_MAKRO_TYP_LABELS[option]}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs font-semibold text-zinc-500">
+          {SACHBUCH_MAKRO_TYP_HINTS[buchArt]}
+        </p>
+      </div>
+
       <button
         type="button"
         disabled={!canSave || pending}

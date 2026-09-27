@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Admin list + create entry for a pipeline module (Roman or Sachbuch).
+ * Admin list + create entry for a pipeline module (Roman or Clever).
  */
 
 import Link from "next/link";
