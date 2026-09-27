@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Trash2, X, ZoomIn } from "lucide-react";
+import { Trash2, X, ZoomIn, ZoomOut } from "lucide-react";
 import { toast } from "sonner";
 import {
   cleverInfografikClearKapitelAction,
@@ -18,6 +18,10 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import type { CleverUnterthemen } from "@/lib/roman/clever-unterthemen";
 import type { RomanKontext } from "@/lib/roman/types";
 import { lockBodyScroll } from "@/lib/ui/body-scroll-lock";
+
+const PREVIEW_ZOOM_MIN = 1;
+const PREVIEW_ZOOM_MAX = 4;
+const PREVIEW_ZOOM_STEP = 0.25;
 
 export function CleverInfografikCard({
   romanId,
@@ -45,7 +49,27 @@ export function CleverInfografikCard({
   const [clearOpen, setClearOpen] = useState(false);
   const [clearPending, setClearPending] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewZoom, setPreviewZoom] = useState(1);
   const busy = Boolean(disabled || pending || clearPending);
+
+  function openPreview() {
+    setPreviewZoom(1);
+    setPreviewOpen(true);
+  }
+
+  function closePreview() {
+    setPreviewOpen(false);
+    setPreviewZoom(1);
+  }
+
+  function bumpPreviewZoom(delta: number) {
+    setPreviewZoom((z) =>
+      Math.min(
+        PREVIEW_ZOOM_MAX,
+        Math.max(PREVIEW_ZOOM_MIN, Math.round((z + delta) * 100) / 100),
+      ),
+    );
+  }
 
   useEffect(() => {
     if (!previewOpen) return;
@@ -55,7 +79,20 @@ export function CleverInfografikCard({
   useEffect(() => {
     if (!previewOpen) return;
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setPreviewOpen(false);
+      if (event.key === "Escape") {
+        closePreview();
+        return;
+      }
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        bumpPreviewZoom(PREVIEW_ZOOM_STEP);
+      } else if (event.key === "-" || event.key === "_") {
+        event.preventDefault();
+        bumpPreviewZoom(-PREVIEW_ZOOM_STEP);
+      } else if (event.key === "0") {
+        event.preventDefault();
+        setPreviewZoom(1);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -103,7 +140,7 @@ export function CleverInfografikCard({
       }
       onComplete(result.data);
       setClearOpen(false);
-      setPreviewOpen(false);
+      closePreview();
       toast.success("Infografik gelöscht.");
     } catch (error) {
       toast.error(
@@ -140,13 +177,13 @@ export function CleverInfografikCard({
               aria-modal="true"
               aria-labelledby="clever-infografik-preview-title"
               className="fixed inset-0 z-[110] flex items-center justify-center bg-zinc-950/70 p-3 backdrop-blur-sm sm:p-6"
-              onClick={() => setPreviewOpen(false)}
+              onClick={closePreview}
             >
               <div
                 className="flex max-h-[96vh] w-full max-w-5xl flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-2xl ring-1 ring-zinc-950/10"
                 onClick={(event) => event.stopPropagation()}
               >
-                <div className="flex items-start justify-between gap-3 border-b border-zinc-100 px-5 py-4">
+                <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-100 px-5 py-4">
                   <div>
                     <p className="text-[10px] font-extrabold tracking-wide text-zinc-500 uppercase">
                       Infografik · Vergrößert
@@ -166,21 +203,79 @@ export function CleverInfografikCard({
                       </p>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewOpen(false)}
-                    className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-zinc-500 hover:bg-gray-100 hover:text-zinc-950"
-                    aria-label="Schließen"
-                  >
-                    <X className="size-5" aria-hidden />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={previewZoom <= PREVIEW_ZOOM_MIN}
+                      onClick={() => bumpPreviewZoom(-PREVIEW_ZOOM_STEP)}
+                      className="inline-flex size-10 items-center justify-center rounded-full text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100 disabled:opacity-40"
+                      title="Verkleinern (−)"
+                      aria-label="Verkleinern"
+                    >
+                      <ZoomOut className="size-5" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewZoom(1)}
+                      className="min-w-[3.25rem] rounded-full px-2 py-2 text-xs font-extrabold text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100"
+                      title="Zoom zurücksetzen (0)"
+                      aria-label={`Zoom ${Math.round(previewZoom * 100)} Prozent, zurücksetzen`}
+                    >
+                      {Math.round(previewZoom * 100)}%
+                    </button>
+                    <button
+                      type="button"
+                      disabled={previewZoom >= PREVIEW_ZOOM_MAX}
+                      onClick={() => bumpPreviewZoom(PREVIEW_ZOOM_STEP)}
+                      className="inline-flex size-10 items-center justify-center rounded-full text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-100 disabled:opacity-40"
+                      title="Vergrößern (+)"
+                      aria-label="Vergrößern"
+                    >
+                      <ZoomIn className="size-5" aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closePreview}
+                      className="inline-flex size-10 items-center justify-center rounded-full text-zinc-500 hover:bg-gray-100 hover:text-zinc-950"
+                      aria-label="Schließen"
+                    >
+                      <X className="size-5" aria-hidden />
+                    </button>
+                  </div>
                 </div>
-                <div className="min-h-0 flex-1 overflow-auto bg-zinc-100/80 p-3 sm:p-5">
+                <div
+                  className="min-h-0 flex-1 overflow-auto bg-zinc-100/80 p-3 sm:p-5"
+                  onWheel={(event) => {
+                    if (!(event.ctrlKey || event.metaKey)) return;
+                    event.preventDefault();
+                    bumpPreviewZoom(
+                      event.deltaY < 0
+                        ? PREVIEW_ZOOM_STEP
+                        : -PREVIEW_ZOOM_STEP,
+                    );
+                  }}
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={dataUrl}
                     alt={`Infografik Geschichte ${kapitelNummer} (groß)`}
-                    className="mx-auto h-auto max-h-[calc(96vh-7rem)] w-auto max-w-full object-contain"
+                    className="mx-auto block object-contain"
+                    draggable={false}
+                    style={
+                      previewZoom <= 1
+                        ? {
+                            maxHeight: "calc(96vh - 7rem)",
+                            maxWidth: "100%",
+                            width: "auto",
+                            height: "auto",
+                          }
+                        : {
+                            height: `${Math.round(previewZoom * 85)}vh`,
+                            width: "auto",
+                            maxWidth: "none",
+                            maxHeight: "none",
+                          }
+                    }
                   />
                 </div>
               </div>
@@ -232,7 +327,7 @@ export function CleverInfografikCard({
         <div className="mt-4 overflow-hidden rounded-xl bg-white ring-1 ring-sky-100">
           <button
             type="button"
-            onClick={() => setPreviewOpen(true)}
+            onClick={openPreview}
             className="group relative block w-full cursor-zoom-in text-left outline-none focus-visible:ring-2 focus-visible:ring-sky-700 focus-visible:ring-offset-2"
             title="Infografik vergrößern"
             aria-label={`Infografik Geschichte ${kapitelNummer} vergrößern`}
