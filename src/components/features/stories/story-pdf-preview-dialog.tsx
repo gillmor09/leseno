@@ -42,14 +42,28 @@ export function StoryPdfPreviewDialog({
   const [previewReady, setPreviewReady] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
 
-  useEffect(() => {
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (!open) {
       setPreviewReady(false);
       setIsSaving(false);
       setFullscreen(false);
-      return;
     }
+  }
+
+  const previewLoadKey = open && previewHtml ? previewHtml : null;
+  const [prevPreviewLoadKey, setPrevPreviewLoadKey] = useState<string | null>(
+    null,
+  );
+  if (previewLoadKey !== prevPreviewLoadKey) {
+    setPrevPreviewLoadKey(previewLoadKey);
+    setPreviewReady(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -90,17 +104,9 @@ export function StoryPdfPreviewDialog({
   }, [open, onClose, fullscreen]);
 
   useLayoutEffect(() => {
-    if (!open) {
-      setPreviewReady(false);
-      return;
-    }
+    if (!open || !previewHtml) return;
 
     // HTML preview only — do not set iframe src to the PDF blob (often blank).
-    if (!previewHtml) {
-      setPreviewReady(false);
-      return;
-    }
-    setPreviewReady(false);
     const iframe = iframeRef.current;
     const doc = iframe?.contentDocument;
     if (!doc) return;

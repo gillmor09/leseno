@@ -5,6 +5,7 @@
  * Continuations (`parent_story_id`) render indented under their predecessor.
  */
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   BookCheck,
@@ -413,12 +414,12 @@ export function StoryLibraryBrowser({
           </ul>
           {allowAdvent ? (
             <p className="text-sm font-semibold text-zinc-600">
-              <a
+              <Link
                 href="/adventskalender"
                 className="text-orange-700 underline-offset-2 hover:underline"
               >
                 Neues Adventskalenderbuch anlegen
-              </a>
+              </Link>
             </p>
           ) : null}
         </div>
@@ -428,12 +429,12 @@ export function StoryLibraryBrowser({
             <HelpTrigger slotId="advent" />
           </span>
           Noch kein Adventskalenderbuch.{" "}
-          <a
+          <Link
             href="/adventskalender"
             className="font-bold text-orange-700 underline-offset-2 hover:underline"
           >
             Jetzt anlegen
-          </a>
+          </Link>
         </p>
       ) : null}
 

@@ -80,7 +80,10 @@ Table `leseno.child_profiles` (1:N per auth user); RPCs `list_my_child_profiles`
 
 Route `/mein-buchclub` (package feature `buchclub`, Plus+). Friendship code on `user_profiles`; confirmed friendships; email invite via SMTP. Share level on `user_stories.book_club_share`: `none` (private), `friends`, `public` (visible in every Buchclub). Likes via RPCs — see migrations `20260908090000_book_club.sql` and `20260908150000_book_club_share_levels.sql`.
 
-## Bot guard
+## Spiele
+
+Public hub `/spiele` (footer). Cards from `src/lib/spiele/catalog.ts`. Per game: route under `src/app/spiele/<game>/`, UI in `src/components/features/spiele/`, pure logic in `src/lib/spiele/<game>/`. Games that shuffle or use Phaser mount via `dynamic(..., { ssr: false })` loaders — do not import Phaser or shuffled decks from Server Components.
+
 
 `src/lib/security/bot-guard.ts`: honeypot + min fill time + **in-memory** IP rate limit (per Node process). Fine for one Coolify replica; scale-out needs Redis/edge (documented in that file).
 

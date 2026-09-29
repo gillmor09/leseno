@@ -4,7 +4,7 @@
  * Editable fields for one child profile — changes autosave (debounced).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -110,6 +110,18 @@ type MyWorldProfileEditorProps = {
 
 type SaveStatus = "idle" | "pending_name" | "saving" | "saved" | "error";
 
+function buildProfileSnapshot(
+  nextFields: ChildProfileFields,
+  nextFollows: boolean,
+  nextPrefs: ReadingModePrefs,
+): string {
+  return JSON.stringify({
+    fields: nextFields,
+    followsStandard: nextFollows,
+    readingPrefs: nextFollows ? null : nextPrefs,
+  });
+}
+
 /**
  * Form for one child: fields autosave; optional delete with confirm dialog.
  */
@@ -143,6 +155,15 @@ export function MyWorldProfileEditor({
       initialReadingModePrefs ?? stageDefaultsFor(initialFields.schoolStage),
     ),
   );
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState(() =>
+    buildProfileSnapshot(
+      initialFields,
+      initialReadingModePrefs == null,
+      normalizeReadingModePrefs(
+        initialReadingModePrefs ?? stageDefaultsFor(initialFields.schoolStage),
+      ),
+    ),
+  );
   const [drafts, setDrafts] = useState<Record<ListKey, string>>({
     friends: "",
     interests: "",
@@ -159,7 +180,6 @@ export function MyWorldProfileEditor({
   const [hasPassword, setHasPassword] = useState(initialHasPassword);
   const allowLesemodus = featuresInclude(enabledFeatures, "lesemodus");
 
-  const lastSavedSnapshotRef = useRef<string | null>(null);
   const skipAutosaveRef = useRef(true);
   const saveGenerationRef = useRef(0);
   const fieldsRef = useRef(fields);
@@ -169,183 +189,143 @@ export function MyWorldProfileEditor({
   const loginCodeRef = useRef(loginCode);
   const hasPasswordRef = useRef(hasPassword);
 
-  fieldsRef.current = fields;
-  followsStandardRef.current = followsStandard;
-  readingPrefsRef.current = readingPrefs;
-  savedProfileIdRef.current = savedProfileId;
-  loginCodeRef.current = loginCode;
-  hasPasswordRef.current = hasPassword;
+  useEffect(() => {
+    fieldsRef.current = fields;
+    followsStandardRef.current = followsStandard;
+    readingPrefsRef.current = readingPrefs;
+    savedProfileIdRef.current = savedProfileId;
+    loginCodeRef.current = loginCode;
+    hasPasswordRef.current = hasPassword;
+  });
 
-  function buildSnapshot(
-    nextFields: ChildProfileFields,
-    nextFollows: boolean,
-    nextPrefs: ReadingModePrefs,
-  ): string {
-    return JSON.stringify({
-      fields: nextFields,
-      followsStandard: nextFollows,
-      readingPrefs: nextFollows ? null : nextPrefs,
-    });
-  }
+  const persistSnapshot = useCallback(async () => {
+    while (true) {
+      const generation = ++saveGenerationRef.current;
+      const currentFields = fieldsRef.current;
+      const currentFollows = followsStandardRef.current;
+      const currentPrefs = readingPrefsRef.current;
+      const currentId = savedProfileIdRef.current;
+
+      if (!currentFields.displayName.trim()) {
+        return;
+      }
+
+      setSaveStatus("saving");
+      const result = await saveChildProfileAction({
+        id: currentId,
+        ...currentFields,
+      });
+
+      if (generation !== saveGenerationRef.current) return;
+
+      if (!result.success || !result.data) {
+        setSaveStatus("error");
+        setFieldError(result.error ?? "Speichern hat nicht geklappt.");
+        toast.error(result.error ?? "Speichern hat nicht geklappt.");
+        return;
+      }
+
+      const savedId = result.data.id;
+      if (result.data.loginCode) {
+        setLoginCode(result.data.loginCode);
+        loginCodeRef.current = result.data.loginCode;
+      }
+      setHasPassword(result.data.hasPassword);
+      hasPasswordRef.current = result.data.hasPassword;
+      const prefsToSave = currentFollows
+        ? null
+        : normalizeReadingModePrefs(currentPrefs);
+
+      if (allowLesemodus) {
+        const prefsResult = await saveChildReadingModePrefsAction({
+          profileId: savedId,
+          prefs: prefsToSave,
+        });
+        if (generation !== saveGenerationRef.current) return;
+        if (!prefsResult.success) {
+          setSaveStatus("error");
+          setFieldError(
+            prefsResult.error ??
+              "Lesemodus-Darstellung speichern fehlgeschlagen.",
+          );
+          toast.error(
+            prefsResult.error ??
+              "Lesemodus-Darstellung speichern fehlgeschlagen.",
+          );
+          return;
+        }
+        if (prefsToSave) {
+          saveReadingModePrefs(prefsToSave, savedId);
+        } else {
+          clearReadingModePrefs(savedId);
+        }
+      }
+
+      if (generation !== saveGenerationRef.current) return;
+
+      const savedSnapshot = buildProfileSnapshot(
+        currentFields,
+        currentFollows,
+        currentPrefs,
+      );
+      setLastSavedSnapshot(savedSnapshot);
+      setSavedProfileId(savedId);
+      setSaveStatus("saved");
+      setFieldError(null);
+      onSaved({
+        id: savedId,
+        displayName: currentFields.displayName.trim(),
+        schoolStage: currentFields.schoolStage,
+        lengthStep: currentFields.lengthStep,
+        mood: currentFields.mood,
+        friends: currentFields.friends,
+        interests: currentFields.interests,
+        experiences: currentFields.experiences,
+        fears: currentFields.fears,
+        fearsGentle: currentFields.fearsGentle,
+        includeImages: currentFields.includeImages,
+        syllableHelp: currentFields.syllableHelp,
+        wordHighlight: currentFields.wordHighlight,
+        readableAloud: currentFields.readableAloud,
+        isDefault: currentFields.isDefault,
+        readingModePrefs: prefsToSave,
+        hasPin: false,
+        loginCode: loginCodeRef.current,
+        hasPassword: hasPasswordRef.current,
+        sortOrder: 0,
+      });
+
+      const latestSnapshot = buildProfileSnapshot(
+        fieldsRef.current,
+        followsStandardRef.current,
+        readingPrefsRef.current,
+      );
+      if (latestSnapshot === savedSnapshot) {
+        return;
+      }
+    }
+  }, [allowLesemodus, onSaved]);
 
   useEffect(() => {
-    skipAutosaveRef.current = true;
-    setSavedProfileId(profileId);
-    setFields(initialFields);
-    setLoginCode(initialLoginCode);
-    setHasPassword(initialHasPassword);
-    const follows = initialReadingModePrefs == null;
-    setFollowsStandard(follows);
-    const nextPrefs = normalizeReadingModePrefs(
-      initialReadingModePrefs ?? stageDefaultsFor(initialFields.schoolStage),
-    );
-    setReadingPrefs(nextPrefs);
-    setDrafts({ friends: "", interests: "", experiences: "", fears: "" });
-    setFieldError(null);
-    setSaveStatus("idle");
-    lastSavedSnapshotRef.current = buildSnapshot(
-      initialFields,
-      follows,
-      nextPrefs,
-    );
     const unlock = window.setTimeout(() => {
       skipAutosaveRef.current = false;
     }, 0);
     return () => window.clearTimeout(unlock);
-    // Remount via key when switching profiles; avoid resetting while typing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileId]);
+  }, []);
 
   useEffect(() => {
     if (skipAutosaveRef.current) return;
 
-    const snapshot = buildSnapshot(fields, followsStandard, readingPrefs);
-    if (snapshot === lastSavedSnapshotRef.current) return;
-
-    if (!fields.displayName.trim()) {
-      setSaveStatus("pending_name");
-      setFieldError(
-        "Bitte gib den Namen des Kindes ein — dann speichern wir automatisch.",
-      );
-      return;
-    }
-
-    setFieldError(null);
-    setSaveStatus("saving");
+    const snapshot = buildProfileSnapshot(fields, followsStandard, readingPrefs);
+    if (snapshot === lastSavedSnapshot) return;
+    if (!fields.displayName.trim()) return;
 
     const timer = window.setTimeout(() => {
-      void persistSnapshot(snapshot);
+      void persistSnapshot();
     }, AUTOSAVE_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fields, followsStandard, readingPrefs]);
-
-  async function persistSnapshot(snapshot: string) {
-    const generation = ++saveGenerationRef.current;
-    const currentFields = fieldsRef.current;
-    const currentFollows = followsStandardRef.current;
-    const currentPrefs = readingPrefsRef.current;
-    const currentId = savedProfileIdRef.current;
-
-    if (!currentFields.displayName.trim()) {
-      setSaveStatus("pending_name");
-      return;
-    }
-
-    setSaveStatus("saving");
-    const result = await saveChildProfileAction({
-      id: currentId,
-      ...currentFields,
-    });
-
-    if (generation !== saveGenerationRef.current) return;
-
-    if (!result.success || !result.data) {
-      setSaveStatus("error");
-      setFieldError(result.error ?? "Speichern hat nicht geklappt.");
-      toast.error(result.error ?? "Speichern hat nicht geklappt.");
-      return;
-    }
-
-    const savedId = result.data.id;
-    if (result.data.loginCode) {
-      setLoginCode(result.data.loginCode);
-      loginCodeRef.current = result.data.loginCode;
-    }
-    setHasPassword(result.data.hasPassword);
-    hasPasswordRef.current = result.data.hasPassword;
-    const prefsToSave = currentFollows
-      ? null
-      : normalizeReadingModePrefs(currentPrefs);
-
-    if (allowLesemodus) {
-      const prefsResult = await saveChildReadingModePrefsAction({
-        profileId: savedId,
-        prefs: prefsToSave,
-      });
-      if (generation !== saveGenerationRef.current) return;
-      if (!prefsResult.success) {
-        setSaveStatus("error");
-        setFieldError(
-          prefsResult.error ?? "Lesemodus-Darstellung speichern fehlgeschlagen.",
-        );
-        toast.error(
-          prefsResult.error ?? "Lesemodus-Darstellung speichern fehlgeschlagen.",
-        );
-        return;
-      }
-      if (prefsToSave) {
-        saveReadingModePrefs(prefsToSave, savedId);
-      } else {
-        clearReadingModePrefs(savedId);
-      }
-    }
-
-    if (generation !== saveGenerationRef.current) return;
-
-    const savedSnapshot = buildSnapshot(
-      currentFields,
-      currentFollows,
-      currentPrefs,
-    );
-    lastSavedSnapshotRef.current = savedSnapshot;
-    setSavedProfileId(savedId);
-    setSaveStatus("saved");
-    setFieldError(null);
-    onSaved({
-      id: savedId,
-      displayName: currentFields.displayName.trim(),
-      schoolStage: currentFields.schoolStage,
-      lengthStep: currentFields.lengthStep,
-      mood: currentFields.mood,
-      friends: currentFields.friends,
-      interests: currentFields.interests,
-      experiences: currentFields.experiences,
-      fears: currentFields.fears,
-      fearsGentle: currentFields.fearsGentle,
-      includeImages: currentFields.includeImages,
-      syllableHelp: currentFields.syllableHelp,
-      wordHighlight: currentFields.wordHighlight,
-      readableAloud: currentFields.readableAloud,
-      isDefault: currentFields.isDefault,
-      readingModePrefs: prefsToSave,
-      hasPin: false,
-      loginCode: loginCodeRef.current,
-      hasPassword: hasPasswordRef.current,
-      sortOrder: 0,
-    });
-
-    const latestSnapshot = buildSnapshot(
-      fieldsRef.current,
-      followsStandardRef.current,
-      readingPrefsRef.current,
-    );
-    if (latestSnapshot !== savedSnapshot) {
-      setSaveStatus("saving");
-      void persistSnapshot(latestSnapshot);
-    }
-  }
+  }, [fields, followsStandard, readingPrefs, lastSavedSnapshot, persistSnapshot]);
 
   function addItem(key: ListKey) {
     const value = drafts[key].trim();
@@ -410,12 +390,23 @@ export function MyWorldProfileEditor({
     onDeleted(savedProfileId);
   }
 
+  const autosaveSnapshot = buildProfileSnapshot(
+    fields,
+    followsStandard,
+    readingPrefs,
+  );
+  const autosaveDirty = autosaveSnapshot !== lastSavedSnapshot;
+  const autosavePendingName =
+    autosaveDirty && !fields.displayName.trim();
+  const nameMissingMessage =
+    "Bitte gib den Namen des Kindes ein — dann speichern wir automatisch.";
+
   const saveStatusLabel =
     saveStatus === "saving"
       ? "Speichert …"
       : saveStatus === "saved"
         ? "Gespeichert"
-        : saveStatus === "pending_name"
+        : autosavePendingName
           ? "Name fehlt noch"
           : saveStatus === "error"
             ? "Speichern fehlgeschlagen"
@@ -431,7 +422,7 @@ export function MyWorldProfileEditor({
               <p
                 className={cn(
                   "text-xs font-bold",
-                  saveStatus === "error" || saveStatus === "pending_name"
+                  saveStatus === "error" || autosavePendingName
                     ? "text-orange-800"
                     : "text-zinc-500",
                 )}
@@ -837,8 +828,10 @@ export function MyWorldProfileEditor({
           </section>
         ) : null}
 
-        {fieldError ? (
-          <p className="text-sm font-semibold text-orange-800">{fieldError}</p>
+        {fieldError ?? (autosavePendingName ? nameMissingMessage : null) ? (
+          <p className="text-sm font-semibold text-orange-800">
+            {fieldError ?? nameMissingMessage}
+          </p>
         ) : null}
 
         {savedProfileId ? (

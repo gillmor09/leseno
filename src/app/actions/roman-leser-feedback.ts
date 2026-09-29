@@ -4,7 +4,7 @@
  * Idee / Spec / Kapitelgerüst / Manuskript: Testleser Leser-Feedback — generate + persist + apply.
  */
 
-import { revalidateRomanAdmin, revalidateRomanAdminRollen } from "@/lib/roman/revalidate-admin";
+import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {

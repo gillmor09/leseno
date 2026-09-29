@@ -49,20 +49,23 @@ export function CreateChildProfileDialog({
     useState<LoginCodeStatus>("idle");
   const [loginCodeMessage, setLoginCodeMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
 
-  useEffect(() => {
-    if (!open) return;
-    setStep(1);
-    setDisplayName("");
-    setSchoolStage("klasse_3");
-    setLoginCode("");
-    setPassword("");
-    setPasswordConfirm("");
-    setFieldError(null);
-    setLoginCodeStatus("idle");
-    setLoginCodeMessage(null);
-    setPending(false);
-  }, [open]);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setStep(1);
+      setDisplayName("");
+      setSchoolStage("klasse_3");
+      setLoginCode("");
+      setPassword("");
+      setPasswordConfirm("");
+      setFieldError(null);
+      setLoginCodeStatus("idle");
+      setLoginCodeMessage(null);
+      setPending(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;

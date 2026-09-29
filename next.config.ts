@@ -11,6 +11,10 @@ const modernPolyfill = path.join(__dirname, "src/lib/modern-polyfill.js");
  */
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  images: {
+    // Landing mood tiles use quality={70}; Next 16 defaults allow only 75.
+    qualities: [70, 75],
+  },
   /**
    * Next 16.3 gzip + large Server Action bodies leak `drain` listeners on [Gzip]
    * (`MaxListenersExceededWarning`). Let Coolify/nginx compress instead.

@@ -5,7 +5,7 @@
  * Delete: remove all rows older than a chosen calendar date (confirm dialog).
  */
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { deleteActivitiesBeforeAction } from "@/app/actions/user-activities-admin";
@@ -97,19 +97,20 @@ export function UserActivitiesAdminView({
     query.trim() || actionFilter ? filteredCounts : initialCounts;
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const filterToken = `${query}\0${actionFilter ?? ""}`;
+  const [pageFilterToken, setPageFilterToken] = useState(filterToken);
+  if (filterToken !== pageFilterToken) {
+    setPageFilterToken(filterToken);
+    setPage(1);
+  }
+  if (page > pageCount) {
+    setPage(pageCount);
+  }
   const safePage = Math.min(page, pageCount);
   const pageRows = filtered.slice(
     (safePage - 1) * PAGE_SIZE,
     safePage * PAGE_SIZE,
   );
-
-  useEffect(() => {
-    setPage(1);
-  }, [query, actionFilter]);
-
-  useEffect(() => {
-    if (page > pageCount) setPage(pageCount);
-  }, [page, pageCount]);
 
   function openDeleteConfirm() {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(beforeDate)) {

@@ -8,7 +8,7 @@
  * oder leer, dann Fertig). Dieselben Server-Actions und der Durchlauf-Zähler.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { X } from "lucide-react";
@@ -122,7 +122,9 @@ export function RomanManuskriptChapterControl({
   const chapterNumber = controlledChapter ?? internalChapter;
   const setChapterNumber = onChapterNumberChange ?? setInternalChapter;
   const chapterNumberRef = useRef(chapterNumber);
-  chapterNumberRef.current = chapterNumber;
+  useLayoutEffect(() => {
+    chapterNumberRef.current = chapterNumber;
+  }, [chapterNumber]);
 
   const [pending, setPending] = useState<PendingKind>(null);
   const [critiqueDialog, setCritiqueDialog] = useState<{
@@ -145,23 +147,36 @@ export function RomanManuskriptChapterControl({
   /** 1-based pass while Clever auto-improve is running. */
   const [autoPass, setAutoPass] = useState(0);
 
-  useEffect(() => {
+  const [syncedImprovePlans, setSyncedImprovePlans] = useState(
+    cleverGeschichteImprove,
+  );
+  if (cleverGeschichteImprove !== syncedImprovePlans) {
+    setSyncedImprovePlans(cleverGeschichteImprove);
     setLocalImprovePlans(cleverGeschichteImprove ?? {});
-  }, [cleverGeschichteImprove]);
+  }
 
-  useEffect(() => {
+  const [syncedImproveCounts, setSyncedImproveCounts] = useState(
+    cleverGeschichteImproveCount,
+  );
+  if (cleverGeschichteImproveCount !== syncedImproveCounts) {
+    setSyncedImproveCounts(cleverGeschichteImproveCount);
     setLocalImproveCounts(cleverGeschichteImproveCount ?? {});
-  }, [cleverGeschichteImproveCount]);
+  }
 
-  useEffect(() => {
+  const [syncedCleverOk, setSyncedCleverOk] = useState(cleverGeschichteOk);
+  if (cleverGeschichteOk !== syncedCleverOk) {
+    setSyncedCleverOk(cleverGeschichteOk);
     setLocalOk(cleverGeschichteOk ?? {});
-  }, [cleverGeschichteOk]);
+  }
 
-  useEffect(() => {
+  const [dialogChapterSource, setDialogChapterSource] =
+    useState(chapterNumber);
+  if (chapterNumber !== dialogChapterSource) {
+    setDialogChapterSource(chapterNumber);
     setDialogOpen(false);
     setDialogPlan(null);
     setDialogChapter(null);
-  }, [chapterNumber]);
+  }
 
   useEffect(() => {
     if (plotChapters.length === 0) return;

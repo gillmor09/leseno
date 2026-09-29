@@ -836,7 +836,7 @@ export async function applyRouteTarget(input: {
       critiqueText: input.critiqueText,
       zielWortzahlRoman: editorial.zielWortzahlRoman,
       zielWortzahlSzeneMax: editorial.zielWortzahlSzeneMax,
-      needsBlock: manuskriptNeedsPromptBlock(editorial),
+      needsBlock: manuskriptNeedsPromptBlock(),
       storyState: editorial.storyState ?? null,
       patchBriefForChapter: input.patchBriefForChapter,
     });

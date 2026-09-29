@@ -38,6 +38,14 @@ export function SachbuchWaitDialog({
 }) {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [softStep, setSoftStep] = useState(0);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (!open) {
+      setElapsedSec(0);
+      setSoftStep(0);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -45,11 +53,7 @@ export function SachbuchWaitDialog({
   }, [open]);
 
   useEffect(() => {
-    if (!open) {
-      setElapsedSec(0);
-      setSoftStep(0);
-      return;
-    }
+    if (!open) return;
     const tick = window.setInterval(() => {
       setElapsedSec((n) => n + 1);
     }, 1_000);

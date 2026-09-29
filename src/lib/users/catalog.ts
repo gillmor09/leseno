@@ -33,9 +33,8 @@ export type UserAdminRow = {
 };
 
 /** Shared story composer for every membership role (and admin). */
-export function storyPathForRole(
-  _role?: string | null | undefined,
-): string {
+export function storyPathForRole(_role?: string | null | undefined): string {
+  void _role;
   return STORY_PATH;
 }
 

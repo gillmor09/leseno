@@ -5,7 +5,14 @@
  * Custom prefs persist on the child profile / localStorage; Standard = admin stage defaults.
  */
 
-import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from "react";
 import { createPortal } from "react-dom";
 import { Settings2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -92,29 +99,38 @@ export function StoryReadingMode({
   );
   const [isCustom, setIsCustom] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const saveSeqRef = useRef(0);
-  const customPrefsRef = useRef(customPrefs);
-  customPrefsRef.current = customPrefs;
-  const stageDefaultsRef = useRef(stageDefaults);
-  stageDefaultsRef.current = stageDefaults;
+  const openProfileKey = open ? String(profileId ?? "local") : null;
+  const [syncedOpenProfileKey, setSyncedOpenProfileKey] = useState<
+    string | null
+  >(null);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  if (!open && settingsOpen) {
+    setSettingsOpen(false);
+  }
 
-  useEffect(() => {
-    if (!open) {
-      setSettingsOpen(false);
-      return;
-    }
+  if (open && openProfileKey !== syncedOpenProfileKey) {
+    setSyncedOpenProfileKey(openProfileKey);
     const resolved = resolveEffectivePrefs({
       profileId,
-      customPrefs: customPrefsRef.current,
-      stageDefaults: stageDefaultsRef.current,
+      customPrefs,
+      stageDefaults,
     });
     setPrefs(resolved.prefs);
     setIsCustom(resolved.isCustom);
+  }
+
+  if (!open && syncedOpenProfileKey !== null) {
+    setSyncedOpenProfileKey(null);
+  }
+
+  useEffect(() => {
+    if (!open) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -151,10 +167,7 @@ export function StoryReadingMode({
   }, [open, settingsOpen, onClose]);
 
   function persistCustomPrefs(next: ReadingModePrefs) {
-    const normalized = normalizeReadingModePrefs(
-      next,
-      stageDefaultsRef.current,
-    );
+    const normalized = normalizeReadingModePrefs(next, stageDefaults);
     setPrefs(normalized);
     setIsCustom(true);
     saveReadingModePrefs(normalized, profileId);
@@ -177,7 +190,7 @@ export function StoryReadingMode({
   }
 
   function resetToStandard() {
-    const stage = normalizeReadingModePrefs(stageDefaultsRef.current);
+    const stage = normalizeReadingModePrefs(stageDefaults);
     setPrefs(stage);
     setIsCustom(false);
     clearReadingModePrefs(profileId);

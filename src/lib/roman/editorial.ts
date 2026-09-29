@@ -2269,7 +2269,8 @@ export function discardReifegradImprovePlan(
   if (!dim) return next;
   const prev = reifegradImprovePlansForStage(improve, stage);
   if (!(dim in prev)) return next;
-  const { [dim]: _removed, ...rest } = prev;
+  const rest = { ...prev };
+  delete rest[dim];
   if (Object.keys(rest).length === 0) {
     delete next[stage];
     return next;

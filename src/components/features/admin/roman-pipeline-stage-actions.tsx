@@ -57,7 +57,6 @@ export function RomanPipelineStageActions({
   canSave,
   disabled,
   onComplete,
-  reifegrade: _reifegrade,
   leserFeedback,
   hasLeserArtifact,
   generateMode = "stage",

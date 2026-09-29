@@ -373,7 +373,7 @@ function fillLine(
   isPrimary: boolean,
 ) {
   const lineW = measureLineWidth(font, text, fontSize, tracking);
-  let x =
+  const x =
     align === "left"
       ? padX
       : align === "right"
@@ -765,16 +765,6 @@ export async function overlayCoverTitleByDesign(input: {
     width,
     maxTextWidth,
   );
-
-  type Resolved = {
-    text: string;
-    role: CoverTitleRole;
-    font: OtFont;
-    fontSize: number;
-    tracking: number;
-    lineHeight: number;
-    gapAfter: number;
-  };
 
   const buildResolved = (specs: { text: string; role: CoverTitleRole }[]) =>
     specs.map((l) => {

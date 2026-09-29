@@ -6,7 +6,7 @@
  */
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, Circle } from "lucide-react";
 import { toast } from "sonner";
 import { saveRomanKontextAction } from "@/app/actions/roman-admin";
@@ -234,11 +234,9 @@ export function RomanAdminWorkspace({
     });
   }, [isCleverErzaehlt]);
 
-  useEffect(() => {
-    if (isCleverErzaehlt && (tab === "idee" || tab === "spec")) {
-      setTab("typ");
-    }
-  }, [isCleverErzaehlt, tab]);
+  if (isCleverErzaehlt && (tab === "idee" || tab === "spec")) {
+    setTab("typ");
+  }
 
   const hasExposeDoc =
     expose.trim().length >= 80 ||
@@ -253,12 +251,13 @@ export function RomanAdminWorkspace({
     [isCleverErzaehlt, szenenplot],
   );
 
-  useEffect(() => {
-    if (!isCleverErzaehlt || cleverPlotChapters.length === 0) return;
-    if (!cleverPlotChapters.some((c) => c.number === cleverStoryNumber)) {
-      setCleverStoryNumber(cleverPlotChapters[0]!.number);
-    }
-  }, [isCleverErzaehlt, cleverPlotChapters, cleverStoryNumber]);
+  if (
+    isCleverErzaehlt &&
+    cleverPlotChapters.length > 0 &&
+    !cleverPlotChapters.some((c) => c.number === cleverStoryNumber)
+  ) {
+    setCleverStoryNumber(cleverPlotChapters[0]!.number);
+  }
 
   function reifegradFor(stage: PipelineStage) {
     return editorial.reifegrade?.[stage] ?? null;
@@ -289,13 +288,11 @@ export function RomanAdminWorkspace({
     fundament.title,
     fundament.genre,
     fundament.grobRegeln,
-    editorial.ideeKurz,
-    editorial.klappentext,
-    editorial.einzeiler,
+    editorial,
+    isCleverErzaehlt,
     charaktere,
     welt,
     expose,
-    editorial.cleverUnterthemen,
     szenenplot,
     manuskript,
     roman.coverImageDataUrl,

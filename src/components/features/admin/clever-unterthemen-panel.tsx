@@ -5,7 +5,7 @@
  * Faktenchecker → per-chapter ok / Nacharbeit.
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   cleverUnterthemenFaktenCheckKapitelAction,
@@ -495,12 +495,13 @@ function CleverKapitelCard({
   onReplaceCritical?: () => void;
 }) {
   const [draftTitel, setDraftTitel] = useState(k.titel);
+  const [syncedTitel, setSyncedTitel] = useState(k.titel);
+  if (k.titel !== syncedTitel) {
+    setSyncedTitel(k.titel);
+    setDraftTitel(k.titel);
+  }
   const badge = kapitelBadge(k.checkStatus);
   const titelDirty = draftTitel.trim() !== k.titel;
-
-  useEffect(() => {
-    setDraftTitel(k.titel);
-  }, [k.titel]);
 
   return (
     <li className="rounded-2xl bg-white px-4 py-3 ring-1 ring-zinc-950/10">

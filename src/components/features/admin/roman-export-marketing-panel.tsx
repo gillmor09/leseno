@@ -82,16 +82,20 @@ export function RomanExportMarketingPanel({
   const [lastPdf, setLastPdf] = useState<LastPdfPreview | null>(null);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
 
-  useEffect(() => {
+  const marketingSyncKey = [
+    roman.id,
+    editorial.klappentext ?? "",
+    editorial.einzeiler ?? "",
+    JSON.stringify(editorial.amazonKeywords ?? []),
+  ].join("\0");
+  const [syncedMarketingKey, setSyncedMarketingKey] =
+    useState(marketingSyncKey);
+  if (marketingSyncKey !== syncedMarketingKey) {
+    setSyncedMarketingKey(marketingSyncKey);
     setKlappentext(editorial.klappentext ?? "");
     setEinzeiler(editorial.einzeiler ?? "");
     setKeywords(padKeywordSlots(editorial.amazonKeywords ?? []));
-  }, [
-    editorial.klappentext,
-    editorial.einzeiler,
-    editorial.amazonKeywords,
-    roman.id,
-  ]);
+  }
 
   useEffect(() => {
     return () => {
@@ -101,11 +105,18 @@ export function RomanExportMarketingPanel({
   }, []);
 
   useEffect(() => {
-    setLastPdf((prev) => {
-      if (prev?.pdfUrl) URL.revokeObjectURL(prev.pdfUrl);
-      return null;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setLastPdf((prev) => {
+        if (prev?.pdfUrl) URL.revokeObjectURL(prev.pdfUrl);
+        return null;
+      });
+      setPdfPreviewOpen(false);
     });
-    setPdfPreviewOpen(false);
+    return () => {
+      cancelled = true;
+    };
   }, [roman.id]);
 
   const busy = Boolean(disabled || pending);

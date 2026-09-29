@@ -5,7 +5,13 @@
  * Confirm before charging credits; blocking wait dialog while 24 days generate.
  */
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -101,12 +107,10 @@ export function AdventBookCreateForm({
     [lengthStep],
   );
 
-  useEffect(() => {
-    if (topicSecondary && topicSecondary === topic) {
-      setTopicSecondary(null);
-      setTopicMixPattern(null);
-    }
-  }, [topic, topicSecondary]);
+  if (topicSecondary && topicSecondary === topic) {
+    setTopicSecondary(null);
+    setTopicMixPattern(null);
+  }
 
   function validateBeforeConfirm(): string | null {
     if (!/^\d{4,8}$/.test(pin.trim())) {
@@ -658,11 +662,11 @@ function AdventWaitingDialog({
   open: boolean;
   progressDay: number;
 }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   useEffect(() => {
     if (!open) return;

@@ -28,12 +28,14 @@ export const MANUSKRIPT_NEEDS_PASS_MAX_CHAPTERS = 6;
 /**
  * Per-chapter word band from book target.
  * Mins ~85% of average; max ~120% — no inflated soft ceiling that blows past Ziel.
+ * `_szeneMax` reserved for optional Basics per-scene ceiling (callers still pass it).
  */
 export function manuskriptWordsPerChapter(
   zielWortzahl: number | null,
   chapterCount: number,
   _szeneMax?: number | null,
 ): { min: number; max: number } {
+  void _szeneMax;
   const n = Math.max(chapterCount, 1);
   if (zielWortzahl == null || zielWortzahl <= 0) {
     return { min: 400, max: 900 };
@@ -76,8 +78,9 @@ export function manuskriptBookNearOrOverTarget(
  * Temporarily always empty while Marktanalyse is reworked.
  */
 export function manuskriptNeedsPromptBlock(
-  _editorial: RomanEditorial | null | undefined,
+  _editorial?: RomanEditorial | null,
 ): string {
+  void _editorial;
   return "";
 }
 

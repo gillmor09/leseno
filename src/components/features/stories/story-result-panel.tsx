@@ -5,7 +5,7 @@
  * Used on `/geschichte` after generation and in Meine Bücherei when expanded.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import { FileDown, GitBranchPlus, Headphones, Loader2, Maximize2, X } from "lucide-react";
@@ -144,8 +144,8 @@ export function StoryResultPanel({
   const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
   const [isTtsLoading, setIsTtsLoading] = useState(false);
-  const [isTtsPlaying, setIsTtsPlaying] = useState(false);
-  const [storedTtsReady, setStoredTtsReady] = useState(hasStoredTts);
+  const [ttsPersistedLocally, setTtsPersistedLocally] = useState(false);
+  const storedTtsReady = hasStoredTts || ttsPersistedLocally;
   /** Seekable merged MP3 (app proxy URL or blob). */
   const [ttsAudioSrc, setTtsAudioSrc] = useState<string | null>(() => {
     if (hasStoredTts && libraryStoryId && readableAloud) {
@@ -154,16 +154,27 @@ export function StoryResultPanel({
     return null;
   });
 
+  const ttsSourceKey = `${storyHtml}\0${libraryStoryId ?? ""}\0${readableAloud}\0${hasStoredTts}`;
+  const [syncedTtsSourceKey, setSyncedTtsSourceKey] = useState(ttsSourceKey);
+  if (ttsSourceKey !== syncedTtsSourceKey) {
+    setSyncedTtsSourceKey(ttsSourceKey);
+    if (!readableAloud) {
+      setTtsAudioSrc(null);
+    } else if (storedTtsReady && libraryStoryId) {
+      setTtsAudioSrc(
+        storyTtsPlayPath(libraryStoryId, titleFromStoryHtml(storyHtml)),
+      );
+    } else {
+      setTtsAudioSrc(null);
+    }
+  }
+
   const storyBodyRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const ttsObjectUrlRef = useRef<string | null>(null);
   const ttsWordsRef = useRef<StoryTtsWordTiming[]>([]);
   const ttsLastHighlightAtRef = useRef(0);
   const ttsRafRef = useRef<number | null>(null);
-  const wordHighlightRef = useRef(wordHighlight);
-  wordHighlightRef.current = wordHighlight;
-  const libraryStoryIdRef = useRef(libraryStoryId);
-  libraryStoryIdRef.current = libraryStoryId;
 
   function getTtsRoot(): HTMLElement | null {
     return (
@@ -211,27 +222,8 @@ export function StoryResultPanel({
     }
   }
 
-  function resolveStoredTtsUrl(): string | null {
-    if (!storedTtsReady || !libraryStoryId || !readableAloud) return null;
-    return storyTtsPlayPath(libraryStoryId, titleFromStoryHtml(storyHtml));
-  }
-
-  function resetTtsToStoredOrClear() {
+  function cleanupTtsPlaybackResources() {
     stopTtsHighlightLoop();
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-    }
-    ttsWordsRef.current = [];
-    revokeTtsObjectUrl();
-    clearTtsHighlight();
-    setIsTtsPlaying(false);
-    setTtsAudioSrc(resolveStoredTtsUrl());
-  }
-
-  function stopTtsPlayback() {
-    stopTtsHighlightLoop();
-    setTtsAudioSrc(null);
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
@@ -241,7 +233,11 @@ export function StoryResultPanel({
     ttsWordsRef.current = [];
     revokeTtsObjectUrl();
     clearTtsHighlight();
-    setIsTtsPlaying(false);
+  }
+
+  function stopTtsPlayback() {
+    cleanupTtsPlaybackResources();
+    setTtsAudioSrc(null);
   }
 
   async function handlePrepareTts() {
@@ -262,8 +258,8 @@ export function StoryResultPanel({
     try {
       const result = await synthesizeStorySpeechAction({
         storyText,
-        wordHighlight: wordHighlightRef.current,
-        libraryStoryId: libraryStoryIdRef.current,
+        wordHighlight,
+        libraryStoryId,
         ...botGuard.getBotGuardPayload(),
       });
 
@@ -293,16 +289,16 @@ export function StoryResultPanel({
         return;
       }
 
-      const words = wordHighlightRef.current ? (result.data.words ?? []) : [];
+      const words = wordHighlight ? (result.data.words ?? []) : [];
       ttsWordsRef.current = words;
       setTtsAudioSrc(src);
 
       if (result.data.persisted) {
-        setStoredTtsReady(true);
+        setTtsPersistedLocally(true);
         onTtsPersisted?.();
       }
 
-      if (wordHighlightRef.current) {
+      if (wordHighlight) {
         const root = getTtsRoot();
         if (root) {
           wrapStoryWordsForTts(root);
@@ -365,32 +361,57 @@ export function StoryResultPanel({
     };
   }, [isTtsLoading]);
 
-  useEffect(() => {
-    setStoredTtsReady(hasStoredTts);
-  }, [hasStoredTts]);
-
-  useEffect(() => {
-    if (!readableAloud) {
-      stopTtsPlayback();
-      return;
+  useLayoutEffect(() => {
+    if (ttsRafRef.current !== null) {
+      cancelAnimationFrame(ttsRafRef.current);
+      ttsRafRef.current = null;
     }
-    resetTtsToStoredOrClear();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when Vorlesbar / stored flag changes
-  }, [readableAloud, hasStoredTts, libraryStoryId]);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+    }
+    ttsWordsRef.current = [];
+    if (ttsObjectUrlRef.current) {
+      URL.revokeObjectURL(ttsObjectUrlRef.current);
+      ttsObjectUrlRef.current = null;
+    }
+    clearActiveTtsWord(
+      storyBodyRef.current?.querySelector<HTMLElement>("[data-tts-root]") ??
+        null,
+    );
+  }, [ttsSourceKey]);
+
+  const pdfPreviewUrlRef = useRef(pdfPreviewUrl);
+  useEffect(() => {
+    pdfPreviewUrlRef.current = pdfPreviewUrl;
+  });
 
   useEffect(() => {
-    resetTtsToStoredOrClear();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset audio when story changes
-  }, [storyHtml]);
-
-  useEffect(() => {
+    const storyBody = storyBodyRef.current;
     return () => {
-      stopTtsPlayback();
-      if (pdfPreviewUrl) {
-        URL.revokeObjectURL(pdfPreviewUrl);
+      if (ttsRafRef.current !== null) {
+        cancelAnimationFrame(ttsRafRef.current);
+        ttsRafRef.current = null;
+      }
+      const audio = audioRef.current;
+      if (audio) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+      }
+      ttsWordsRef.current = [];
+      if (ttsObjectUrlRef.current) {
+        URL.revokeObjectURL(ttsObjectUrlRef.current);
+        ttsObjectUrlRef.current = null;
+      }
+      clearActiveTtsWord(
+        storyBody?.querySelector<HTMLElement>("[data-tts-root]") ?? null,
+      );
+      const previewUrl = pdfPreviewUrlRef.current;
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only
   }, []);
 
   const stageDefaults = normalizeReadingModePrefs(
@@ -521,17 +542,14 @@ export function StoryResultPanel({
             preload="metadata"
             className="mt-2 w-full max-w-full"
             onPlay={() => {
-              setIsTtsPlaying(true);
               startTtsHighlightLoop();
             }}
             onPause={() => {
               stopTtsHighlightLoop();
-              setIsTtsPlaying(false);
             }}
             onEnded={() => {
               stopTtsHighlightLoop();
               clearTtsHighlight();
-              setIsTtsPlaying(false);
             }}
             onSeeked={() => {
               syncTtsHighlightFromAudio();

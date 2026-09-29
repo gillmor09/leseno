@@ -107,7 +107,7 @@ export async function createAdventBookAction(
     let syllableHelp = parsed.data.syllableHelp;
     let conflictDepth = parsed.data.conflictDepth;
     let childProfileId: string | null = null;
-    let personalMode = parsed.data.personalMode;
+    const personalMode = parsed.data.personalMode;
 
     if (!featuresInclude(packageFeatures, "mehr_tiefgang")) {
       conflictDepth = false;
@@ -586,7 +586,8 @@ export async function getAdventBookViewAction(
 
   const days = await listMyAdventDayMeta(book.id);
   const previewActive = await hasAdventPreviewCookie(user.id, book.id);
-  const { pinHash: _pin, ...safeBook } = book;
+  const { pinHash, ...safeBook } = book;
+  void pinHash;
 
   return {
     success: true,

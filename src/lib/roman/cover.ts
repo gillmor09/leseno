@@ -19,7 +19,6 @@ import {
   resolveRomanTextModel,
 } from "@/lib/roman/model";
 import { compressCoverDataUrl } from "@/lib/roman/cover-compress";
-import { ROMAN_COVER_SIZE } from "@/lib/roman/cover-size";
 import {
   defaultCoverTitleDesign,
   normalizeCoverTitleLines,
@@ -185,7 +184,7 @@ function asAlign(v: unknown): CoverTitleAlign {
   return "center";
 }
 
-function asSize(_v: unknown): CoverTitleSize {
+function asSize(): CoverTitleSize {
   // Marketing covers always render hero; planner compact/standard is ignored.
   return "hero";
 }
@@ -272,7 +271,7 @@ Propose a modern series/topic typographic hierarchy now.`,
       lines,
       zone: asZone(parsed.zone),
       align: asAlign(parsed.align),
-      size: asSize(parsed.size),
+      size: asSize(),
       tone: asTone(parsed.tone),
       scrim: asScrim(parsed.scrim),
       publisherNote: String(parsed.publisherNote ?? "")

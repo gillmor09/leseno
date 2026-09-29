@@ -106,5 +106,6 @@ export function craftForChannel(
   global: SocialGlobalSettings,
   _channel?: SocialChannel,
 ): SocialChannelCraft {
+  void _channel;
   return craftFromGlobal(global);
 }

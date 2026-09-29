@@ -30,12 +30,17 @@ export function WithdrawalConsentDialog({
   const titleId = useId();
   const consentId = useId();
   const [agreed, setAgreed] = useState(false);
+  const [prevOpen, setPrevOpen] = useState(open);
 
-  useEffect(() => {
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (!open) {
       setAgreed(false);
-      return;
     }
+  }
+
+  useEffect(() => {
+    if (!open) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {

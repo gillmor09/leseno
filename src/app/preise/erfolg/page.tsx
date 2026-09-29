@@ -23,11 +23,7 @@ export default async function PreiseErfolgPage({
   const params = await searchParams;
   const isCredits = params.credits === "1";
   const user = await getCurrentUser();
-  const role =
-    typeof user?.app_metadata?.role === "string"
-      ? user.app_metadata.role
-      : "basis";
-  const storyHref = storyPathForRole(role);
+  const storyHref = storyPathForRole();
 
   if (user?.id && !isCredits && hasStripeCheckoutConfig()) {
     try {

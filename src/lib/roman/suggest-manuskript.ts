@@ -11,13 +11,11 @@ import {
   isAiAbortError,
 } from "@/lib/ai/fetch-timeout";
 import { generateText } from "@/lib/ai/provider";
-import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
 import {
   BUCHTYP_LABELS,
   buildCritiqueRulesAndNeedsBlock,
   countWords,
   exposeTextFromEditorial,
-  parseRomanLeserFeedback,
   type RomanBuchTyp,
   type RomanEditorial,
   type RomanLeserFeedback,
@@ -45,7 +43,7 @@ import {
   manuskriptNeedsPromptBlock,
   manuskriptWordsPerChapter,
 } from "@/lib/roman/manuskript-contracts";
-import { formatCharaktere, resolveFanPersona } from "@/lib/roman/fundament";
+import { formatCharaktere } from "@/lib/roman/fundament";
 import {
   formatChapterHeading,
   formatManuskriptChapterBlock,

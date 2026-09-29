@@ -259,13 +259,17 @@ export function RomanReifegradCard({
   const isStagePlan = (plan: RomanReifegradImprovePlan | null) =>
     plan?.dimension === STAGE_VERBESSERN_DIMENSION;
 
-  useEffect(() => {
+  const [syncedImprovePlans, setSyncedImprovePlans] = useState(improvePlans);
+  if (improvePlans !== syncedImprovePlans) {
+    setSyncedImprovePlans(improvePlans);
     setLocalPlans(improvePlans ?? {});
-  }, [improvePlans]);
+  }
 
-  useEffect(() => {
+  const [syncedStagePlan, setSyncedStagePlan] = useState(stageImprovePlan);
+  if (stageImprovePlan !== syncedStagePlan) {
+    setSyncedStagePlan(stageImprovePlan);
     setLocalStagePlan(stageImprovePlan ?? null);
-  }, [stageImprovePlan]);
+  }
 
   useEffect(() => {
     let cancelled = false;

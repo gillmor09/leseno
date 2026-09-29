@@ -238,16 +238,16 @@ function HeroSection() {
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <a
-              href="/registrieren"
+              href="/kostenlos"
               className="inline-flex items-center justify-center rounded-full bg-orange-700 px-6 py-3 text-base font-bold text-white transition-all duration-200 ease-in-out hover:bg-orange-800"
             >
               Kostenlos eigene Geschichte starten
             </a>
             <a
-              href="/kostenlos"
+              href="/registrieren"
               className="inline-flex items-center justify-center rounded-full bg-white px-6 py-3 text-base font-bold text-zinc-950 ring-1 ring-zinc-950/10 transition-all duration-200 ease-in-out hover:bg-gray-100"
             >
-              Ohne Konto ausprobieren
+              Konto anlegen
             </a>
           </div>
           <p className="mt-5 text-sm font-semibold text-zinc-600">

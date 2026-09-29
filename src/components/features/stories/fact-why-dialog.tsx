@@ -51,12 +51,19 @@ export function FactWhyDialog({
   const [isLoadingWhy, startWhy] = useTransition();
   const [isLoadingMore, startMore] = useTransition();
 
+  const whyRequestKey =
+    open && fact.trim() ? `${fact}\0${schoolStage}` : null;
+  const [prevWhyRequestKey, setPrevWhyRequestKey] = useState<string | null>(
+    null,
+  );
+  if (whyRequestKey !== prevWhyRequestKey) {
+    setPrevWhyRequestKey(whyRequestKey);
+    setBackground(null);
+    setMore(null);
+  }
+
   useEffect(() => {
-    if (!open) {
-      setBackground(null);
-      setMore(null);
-      return;
-    }
+    if (!open) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -77,9 +84,6 @@ export function FactWhyDialog({
 
   useEffect(() => {
     if (!open || !fact.trim()) return;
-
-    setBackground(null);
-    setMore(null);
 
     startWhy(async () => {
       const result = await explainFactWhyAction({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition, type MouseEvent } from "react";
+import { useState, useTransition, type MouseEvent } from "react";
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
@@ -83,14 +83,16 @@ export function LandingHeader({
   const router = useRouter();
   const onHome = pathname === "/";
   const [open, setOpen] = useState(false);
+  const [prevPathname, setPrevPathname] = useState(pathname);
   const [signingOut, startSignOut] = useTransition();
 
   const showAdminCog = isAdmin || adminImpersonating;
 
   // Soft navigations keep this client header mounted — close the drawer on route change.
-  useEffect(() => {
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
     setOpen(false);
-  }, [pathname]);
+  }
 
   function closeMobileNav() {
     setOpen(false);

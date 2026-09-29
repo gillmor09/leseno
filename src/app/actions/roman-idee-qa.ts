@@ -5,7 +5,7 @@
  * Critique / Verbessern is handled by the vertical pipeline (Entwicklungslektor).
  */
 
-import { revalidateRomanAdmin, revalidateRomanAdminRollen } from "@/lib/roman/revalidate-admin";
+import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {

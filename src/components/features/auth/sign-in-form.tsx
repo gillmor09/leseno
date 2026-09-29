@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { unifiedSignInAction } from "@/app/actions/auth";
@@ -26,6 +27,7 @@ export function SignInForm({
   initialEmail?: string;
   nextPath?: string;
 }) {
+  const router = useRouter();
   const [identifier, setIdentifier] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -54,13 +56,14 @@ export function SignInForm({
       }
 
       toast.success("Du bist jetzt angemeldet.");
-      if (result.data?.kind === "child") {
-        window.location.href = "/geschichte";
-        return;
-      }
-      window.location.href = nextPath.startsWith("/")
-        ? nextPath
-        : "/geschichte";
+      const target =
+        result.data?.kind === "child"
+          ? "/geschichte"
+          : nextPath.startsWith("/")
+            ? nextPath
+            : "/geschichte";
+      router.replace(target);
+      router.refresh();
     });
   }
 

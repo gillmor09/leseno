@@ -385,6 +385,15 @@ export function RomanSceneWaitDialog({
   const [elapsedSec, setElapsedSec] = useState(0);
   const [softStep, setSoftStep] = useState(0);
   const [variantAgent, setVariantAgent] = useState<WaitAgentInfo | null>(null);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (!open) {
+      setElapsedSec(0);
+      setSoftStep(0);
+      setVariantAgent(null);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -392,11 +401,7 @@ export function RomanSceneWaitDialog({
   }, [open]);
 
   useEffect(() => {
-    if (!open) {
-      setElapsedSec(0);
-      setSoftStep(0);
-      return;
-    }
+    if (!open) return;
     const tick = window.setInterval(() => {
       setElapsedSec((n) => n + 1);
     }, 1_000);
@@ -412,10 +417,7 @@ export function RomanSceneWaitDialog({
   }, [open, steps.length]);
 
   useEffect(() => {
-    if (!open) {
-      setVariantAgent(null);
-      return;
-    }
+    if (!open) return;
     let cancelled = false;
     void (async () => {
       const result = await loadRomanKiRollenAction();

@@ -188,17 +188,16 @@ export function FreeStoryForm({
   const [isPending, startTransition] = useTransition();
   const botGuard = useBotGuardFields();
   const [profiles, setProfiles] = useState(childProfiles);
-
-  useEffect(() => {
+  const [prevChildProfiles, setPrevChildProfiles] = useState(childProfiles);
+  if (childProfiles !== prevChildProfiles) {
+    setPrevChildProfiles(childProfiles);
     setProfiles(childProfiles);
-  }, [childProfiles]);
+  }
 
-  useEffect(() => {
-    if (topicSecondary && topicSecondary === topic) {
-      setTopicSecondary(null);
-      setTopicMixPattern(null);
-    }
-  }, [topic, topicSecondary]);
+  if (topicSecondary && topicSecondary === topic) {
+    setTopicSecondary(null);
+    setTopicMixPattern(null);
+  }
 
   const selectedProfile =
     selectedProfileId == null

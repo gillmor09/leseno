@@ -255,6 +255,7 @@ export function improveDimensionsForStage(
  * How Gesamt is averaged for a stage (Logik + craft axes).
  */
 export function reifegradGesamtDivisor(_stage: PipelineStage): number {
+  void _stage;
   return 4;
 }
 

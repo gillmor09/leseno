@@ -4,7 +4,7 @@
  * Phase 3 — Makro stages for the book's Buchart (set in Grundlagen).
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { saveSachbuchAction } from "@/app/actions/sachbuch-admin";
 import {
@@ -50,9 +50,12 @@ export function SachbuchMakroPanel({
     ) ||
     book.kapitel.length > 0;
 
-  useEffect(() => {
+  const makroSyncKey = `${book.id}\0${book.updatedAt}`;
+  const [syncedMakroKey, setSyncedMakroKey] = useState(makroSyncKey);
+  if (makroSyncKey !== syncedMakroKey) {
+    setSyncedMakroKey(makroSyncKey);
     setStages(book.makro.stages);
-  }, [book.id, book.updatedAt]);
+  }
 
   function patchStage(key: string, patch: Partial<SachbuchMakroStage>) {
     setStages((prev) =>

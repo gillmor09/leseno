@@ -4,7 +4,7 @@
  * Phases 4–5: Context Graph + Abschnitte (Critic/Style per Abschnitt).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -103,38 +103,60 @@ export function SachbuchSchreibenPanel({
     );
   });
 
-  useEffect(() => {
-    if (!selected) return;
-    setReaderKnowledge(selected.contextGraph.readerKnowledge);
-    setTerms(selected.contextGraph.establishedTerms.join(", "));
-    setClaims(selected.contextGraph.claimsToProve.join("\n"));
-  }, [
-    selected?.id,
-    selected?.contextGraph.readerKnowledge,
-    selected?.contextGraph.establishedTerms,
-    selected?.contextGraph.claimsToProve,
-  ]);
-
-  useEffect(() => {
-    setFinalTextDraft(selected?.finalText ?? "");
-  }, [selected?.id, selected?.finalText]);
-
-  useEffect(() => {
-    setCheckpointReply("");
+  useLayoutEffect(() => {
+    lastAutoFocusedCheckpointRef.current = null;
   }, [selected?.id]);
 
-  useEffect(() => {
-    const g = selected?.contextGraph;
-    if (!g) {
-      setGraphOpen(true);
-      return;
+  const selectedSyncKey = selected
+    ? [
+        selected.id,
+        selected.finalText ?? "",
+        selected.contextGraph.readerKnowledge,
+        selected.contextGraph.establishedTerms.join("\0"),
+        selected.contextGraph.claimsToProve.join("\0"),
+      ].join("\n")
+    : "";
+  const [syncedSelectedKey, setSyncedSelectedKey] = useState(selectedSyncKey);
+  if (selectedSyncKey !== syncedSelectedKey) {
+    const prevSelectedId = syncedSelectedKey.split("\n")[0] ?? "";
+    setSyncedSelectedKey(selectedSyncKey);
+    if ((selected?.id ?? "") !== prevSelectedId) {
+      setCheckpointReply("");
+      setFocusedAbschnittId(null);
     }
-    const hasContent =
-      g.claimsToProve.length > 0 ||
-      Boolean(g.readerKnowledge.trim()) ||
-      g.establishedTerms.length > 0;
-    setGraphOpen(!hasContent);
-  }, [selected?.id]);
+    if (selected) {
+      setReaderKnowledge(selected.contextGraph.readerKnowledge);
+      setTerms(selected.contextGraph.establishedTerms.join(", "));
+      setClaims(selected.contextGraph.claimsToProve.join("\n"));
+      setFinalTextDraft(selected.finalText ?? "");
+      const g = selected.contextGraph;
+      const hasContent =
+        g.claimsToProve.length > 0 ||
+        Boolean(g.readerKnowledge.trim()) ||
+        g.establishedTerms.length > 0;
+      setGraphOpen(!hasContent);
+    } else {
+      setGraphOpen(true);
+    }
+  }
+
+  const openCheckpoint = selected?.abschnitte.find(
+    (a) => a.status === "checkpoint",
+  );
+  /** Explicit selection only — null means all Abschnitte collapsed. */
+  const currentAbschnitt =
+    focusedAbschnittId &&
+    selected?.abschnitte.some((a) => a.id === focusedAbschnittId)
+      ? (selected.abschnitte.find((a) => a.id === focusedAbschnittId) ?? null)
+      : null;
+
+  const abschnittSyncKey = `${currentAbschnitt?.id ?? ""}\0${currentAbschnitt?.draftText ?? ""}`;
+  const [syncedAbschnittKey, setSyncedAbschnittKey] =
+    useState(abschnittSyncKey);
+  if (abschnittSyncKey !== syncedAbschnittKey) {
+    setSyncedAbschnittKey(abschnittSyncKey);
+    setAbschnittDraft(currentAbschnitt?.draftText ?? "");
+  }
 
   useEffect(() => {
     if (!chapterPanelOpen) return;
@@ -150,15 +172,6 @@ export function SachbuchSchreibenPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [chapterPanelOpen]);
 
-  const openCheckpoint = selected?.abschnitte.find(
-    (a) => a.status === "checkpoint",
-  );
-  /** Explicit selection only — null means all Abschnitte collapsed. */
-  const currentAbschnitt =
-    focusedAbschnittId &&
-    selected?.abschnitte.some((a) => a.id === focusedAbschnittId)
-      ? (selected.abschnitte.find((a) => a.id === focusedAbschnittId) ?? null)
-      : null;
   const doneAbschnitte =
     selected?.abschnitte.filter(
       (a) => a.status === "accepted" || a.status === "revised",
@@ -175,22 +188,16 @@ export function SachbuchSchreibenPanel({
   );
   const ergebnisWords = countSachbuchWords(abschnittDraft);
 
-  useEffect(() => {
-    setFocusedAbschnittId(null);
-    lastAutoFocusedCheckpointRef.current = null;
-  }, [selected?.id]);
-
   /** Auto-open only when a *new* checkpoint is created — never force-reopen after user collapse. */
   useEffect(() => {
     if (!openCheckpoint) return;
     if (lastAutoFocusedCheckpointRef.current === openCheckpoint.id) return;
-    lastAutoFocusedCheckpointRef.current = openCheckpoint.id;
-    setFocusedAbschnittId(openCheckpoint.id);
-  }, [openCheckpoint?.id]);
-
-  useEffect(() => {
-    setAbschnittDraft(currentAbschnitt?.draftText ?? "");
-  }, [currentAbschnitt?.id, currentAbschnitt?.draftText]);
+    const checkpointId = openCheckpoint.id;
+    queueMicrotask(() => {
+      lastAutoFocusedCheckpointRef.current = checkpointId;
+      setFocusedAbschnittId(checkpointId);
+    });
+  }, [openCheckpoint]);
 
   /** Grow Ergebnis textarea so the full section is visible without inner scroll. */
   useEffect(() => {

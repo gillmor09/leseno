@@ -7,6 +7,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -33,12 +34,14 @@ export function LandingMarketingHeader({
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [prevPathname, setPrevPathname] = useState(pathname);
   const panelId = useId();
   const headerRef = useRef<HTMLElement>(null);
 
-  useEffect(() => {
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
     setOpen(false);
-  }, [pathname]);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -68,7 +71,7 @@ export function LandingMarketingHeader({
       className="sticky top-0 z-50 border-b border-zinc-950/10 bg-white/95 backdrop-blur-md"
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
-        <a
+        <Link
           href="/#start"
           className="flex min-w-0 shrink items-center gap-2.5 transition-all duration-200 ease-in-out"
           onClick={closeMenu}
@@ -85,7 +88,7 @@ export function LandingMarketingHeader({
           <span className="truncate text-xl font-extrabold tracking-tight text-zinc-950">
             leseno
           </span>
-        </a>
+        </Link>
 
         <nav
           className="hidden items-center gap-8 md:flex"
@@ -100,7 +103,7 @@ export function LandingMarketingHeader({
               {item.label}
             </a>
           ))}
-          <a
+          <Link
             href="/blog"
             className={cn(
               "text-sm font-semibold transition-all duration-200 ease-in-out hover:text-orange-700",
@@ -110,12 +113,12 @@ export function LandingMarketingHeader({
             )}
           >
             Blog
-          </a>
+          </Link>
         </nav>
 
         <div className="flex shrink-0 items-center gap-2">
           {/* Display class must not fight `inline-flex` from a shared base — only md+. */}
-          <a
+          <Link
             href="/registrieren"
             className={cn(
               "hidden md:inline-flex",
@@ -124,13 +127,13 @@ export function LandingMarketingHeader({
             )}
           >
             Jetzt registrieren
-          </a>
-          <a
+          </Link>
+          <Link
             href="/anmelden"
             className={cn("hidden md:inline-flex", headerBtnBase, signInClass)}
           >
             Anmelden
-          </a>
+          </Link>
 
           <button
             type="button"
@@ -172,7 +175,7 @@ export function LandingMarketingHeader({
               {item.label}
             </a>
           ))}
-          <a
+          <Link
             href="/blog"
             onClick={closeMenu}
             className={cn(
@@ -183,8 +186,8 @@ export function LandingMarketingHeader({
             )}
           >
             Blog
-          </a>
-          <a
+          </Link>
+          <Link
             href="/registrieren"
             onClick={closeMenu}
             className={cn(
@@ -194,14 +197,14 @@ export function LandingMarketingHeader({
             )}
           >
             Jetzt registrieren
-          </a>
-          <a
+          </Link>
+          <Link
             href="/anmelden"
             onClick={closeMenu}
             className={cn("inline-flex justify-center", headerBtnBase, signInClass)}
           >
             Anmelden
-          </a>
+          </Link>
         </nav>
       </div>
     </header>

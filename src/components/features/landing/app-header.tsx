@@ -72,7 +72,7 @@ export async function AppHeader() {
       adminImpersonating={adminImpersonating}
       testRole={testRole}
       isSignedIn
-      storyHref={storyPathForRole(role)}
+      storyHref={storyPathForRole()}
       showMeineWelt={showMeineWelt}
       showMeineBuecherei={showMeineBuecherei}
       showMeinBuchclub={showMeinBuchclub}

@@ -4,7 +4,14 @@
  * Admin Social Media: CRAFT settings + create (Winkel or marketing) and edit list.
  */
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Copy, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -147,11 +154,11 @@ function StatusChip({
 
 /** Blocking wait overlay while caption/image AI runs. */
 function SocialWaitOverlay({ message }: { message: string | null }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   useEffect(() => {
     if (!message) return;
@@ -322,10 +329,27 @@ export function SocialMediaAdminForm({
   }, []);
 
   useEffect(() => {
-    void reloadWorkspace();
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      if (!cancelled) void reloadWorkspace();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
   }, [reloadWorkspace]);
 
-  useEffect(() => {
+  const postDraftSyncKey = [
+    postDate,
+    postKind,
+    effectiveAngleId,
+    activePost?.id ?? "",
+    activePost?.updatedAt ?? "",
+  ].join("\0");
+  const [syncedPostDraftKey, setSyncedPostDraftKey] =
+    useState(postDraftSyncKey);
+  if (postDraftSyncKey !== syncedPostDraftKey) {
+    setSyncedPostDraftKey(postDraftSyncKey);
     setCaptionDraft(activePost?.caption ?? "");
     setImageDraft(activePost?.imageDataUrl ?? null);
     setLastImagePromptDraft(activePost?.lastImagePrompt ?? null);
@@ -333,8 +357,7 @@ export function SocialMediaAdminForm({
       if (activePost?.angleId) setFrageAngleId(activePost.angleId);
       setFrageDraft(activePost?.lastImagePrompt ?? "");
     }
-    // Sync when create-form topic changes — not on every posts reload while drafting.
-  }, [postDate, postKind, effectiveAngleId, activePost?.id, activePost?.updatedAt]);
+  }
 
   const hasCreateDraft =
     Boolean(captionDraft.trim()) ||

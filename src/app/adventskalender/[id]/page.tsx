@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
@@ -64,7 +65,8 @@ export default async function AdventskalenderBookPage({ params }: PageProps) {
     }
   }
 
-  const { pinHash: _pin, ...safeBook } = book;
+  const { pinHash, ...safeBook } = book;
+  void pinHash;
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
@@ -81,12 +83,12 @@ export default async function AdventskalenderBookPage({ params }: PageProps) {
             checkoutEnabled={hasStripeCheckoutConfig()}
           />
           <p className="mt-6">
-            <a
+            <Link
               href="/adventskalender"
               className="text-sm font-bold text-orange-700 underline-offset-2 hover:underline"
             >
               ← Alle Adventskalenderbücher
-            </a>
+            </Link>
           </p>
           <div className="mt-6">
             <AdventCalendarView

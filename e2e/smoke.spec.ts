@@ -3,6 +3,9 @@ import { expect, test } from "@playwright/test";
 /**
  * Guest smoke tests for marketing + free composer surfaces.
  * Does not burn AI quota (no story generation submit).
+ *
+ * Note: `/basis` and `/paket1`–`/paket3` are legacy redirects → `/geschichte`
+ * (auth-gated). Guest trial composer lives at `/kostenlos`.
  */
 
 test.describe("Landing (guest)", () => {
@@ -20,38 +23,42 @@ test.describe("Landing (guest)", () => {
     await expect(page.getByRole("link", { name: "Anmelden" })).toBeVisible();
   });
 
-  test("hero CTA reaches /basis", async ({ page }) => {
+  test("hero CTA reaches free trial composer", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("link", { name: "Kostenlos eigene Geschichte starten" }).first().click();
+    await expect(page).toHaveURL(/\/kostenlos/);
+  });
+
+  test("pricing CTA reaches register", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("link", { name: "Jetzt mit Basis starten" }).first().click();
-    await expect(page).toHaveURL(/\/basis/);
+    await expect(page).toHaveURL(/\/registrieren/);
+  });
+
+  test("secondary hero CTA reaches register", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("link", { name: "Konto anlegen" }).first().click();
+    await expect(page).toHaveURL(/\/registrieren/);
   });
 });
 
-test.describe("Basis (guest)", () => {
+test.describe("Kostenlos trial (guest)", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/basis");
+    await page.goto("/kostenlos");
   });
 
-  test("composer shows Top-10 themes and personal toggle off", async ({
-    page,
-  }) => {
+  test("composer shows themes and limited school stages", async ({ page }) => {
     await expect(
       page.getByRole("heading", {
-        name: "Wähl dein Thema. Lies deine Geschichte.",
+        name: /Eine Geschichte — ohne Konto/i,
       }),
     ).toBeVisible();
 
-    await expect(
-      page.getByRole("button", { name: "Magie & Geheimnisse" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Sport & Power" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Tiere" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Dinos" })).toBeVisible();
 
-    const personal = page.getByRole("switch", { name: "Ganz persönlich" });
-    await expect(personal).toBeVisible();
-    await expect(personal).toBeDisabled();
-    await expect(personal).toHaveAttribute("aria-checked", "false");
+    await expect(page.getByRole("button", { name: "1. Klasse" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Vorschule" })).toBeDisabled();
   });
 
   test("school stage and mood choices are interactive", async ({ page }) => {
@@ -61,34 +68,20 @@ test.describe("Basis (guest)", () => {
       page.getByRole("button", { name: "Meine Geschichte starten" }),
     ).toBeEnabled();
   });
-
-  test("guest header still shows marketing nav on /basis", async ({
-    page,
-  }) => {
-    await expect(
-      page.getByRole("navigation", { name: "Seitenbereiche" }),
-    ).toBeVisible();
-  });
 });
 
 test.describe("Auth pages", () => {
   test("sign-in form renders", async ({ page }) => {
     await page.goto("/anmelden");
     await expect(page.getByRole("heading", { name: /Anmelden/i })).toBeVisible();
-    await expect(page.locator('input[type="email"]')).toBeVisible();
+    await expect(page.locator('input[name="identifier"]')).toBeVisible();
     await expect(page.locator('input[type="password"]')).toBeVisible();
   });
 
   test("meine-welt redirects guests toward auth", async ({ page }) => {
     await page.goto("/meine-welt");
-    await expect(page).toHaveURL(/anmelden|registrieren|meine-welt/);
-    // Either redirect to auth or show a gate — must not expose editable world without session.
-    const email = page.locator('input[type="email"]');
-    const worldHeading = page.getByRole("heading", { name: /Meine Welt/i });
-    await expect(email.or(worldHeading)).toBeVisible();
-    if (await email.isVisible()) {
-      await expect(page).toHaveURL(/anmelden|registrieren/);
-    }
+    await expect(page).toHaveURL(/\/anmelden/);
+    await expect(page.locator('input[name="identifier"]')).toBeVisible();
   });
 });
 
@@ -96,6 +89,27 @@ test.describe("Admin gate", () => {
   test("guest hitting /admin/users is sent to sign-in", async ({ page }) => {
     await page.goto("/admin/users");
     await expect(page).toHaveURL(/\/anmelden/);
+  });
+});
+
+test.describe("Spiele hub (guest)", () => {
+  test("hub lists four games", async ({ page }) => {
+    await page.goto("/spiele");
+    await expect(page.getByRole("heading", { name: "Spiele" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Tier-Memory/i })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /Bibliothek-Escape/i }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: /Bauwelt/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Sternenlauf/i })).toBeVisible();
+  });
+
+  test("memory loads client game", async ({ page }) => {
+    await page.goto("/spiele/memory");
+    await expect(
+      page.getByRole("heading", { name: "Tier-Memory" }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: "Neu mischen" })).toBeVisible();
   });
 });
 
@@ -109,11 +123,18 @@ test.describe("Robustness smoke", () => {
     ).toBeVisible();
   });
 
-  test("basis responds within budget", async ({ page }) => {
+  test("kostenlos responds within budget", async ({ page }) => {
     const started = Date.now();
-    const response = await page.goto("/basis");
+    const response = await page.goto("/kostenlos");
     const elapsed = Date.now() - started;
     expect(response?.ok()).toBeTruthy();
     expect(elapsed).toBeLessThan(8_000);
+  });
+
+  test("legacy /basis redirects toward geschichte", async ({ page }) => {
+    const response = await page.goto("/basis", { maxRedirects: 0 });
+    // Playwright follows redirects by default; assert final or intermediate.
+    expect(response?.status()).toBeTruthy();
+    await expect(page).toHaveURL(/\/(geschichte|anmelden)/);
   });
 });

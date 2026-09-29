@@ -57,12 +57,14 @@ function formatDate(iso: string): string {
 
 function VideoClipWaitDialog({ open }: { open: boolean }) {
   const [stepIndex, setStepIndex] = useState(0);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (!open) setStepIndex(0);
+  }
 
   useEffect(() => {
-    if (!open) {
-      setStepIndex(0);
-      return;
-    }
+    if (!open) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const timer = window.setInterval(() => {
@@ -347,7 +349,6 @@ export function VideoClipsAdminForm({
                   </button>
                 </div>
                 {clip.signedUrl ? (
-                  // eslint-disable-next-line jsx-a11y/media-has-caption
                   <video
                     src={clip.signedUrl}
                     controls

@@ -5,7 +5,7 @@
  * Close via X only (no Abbrechen). Primary: Fortsetzung starten.
  */
 
-import { useEffect, useId, useState, useTransition } from "react";
+import { useEffect, useId, useState, useSyncExternalStore, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -54,7 +54,11 @@ export function StoryContinueDialog({
 }) {
   const titleId = useId();
   const botGuard = useBotGuardFields();
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const [schoolStage, setSchoolStage] =
     useState<StorySchoolStageId>(initialSchoolStage);
   const [lengthStep, setLengthStep] =
@@ -62,16 +66,18 @@ export function StoryContinueDialog({
   const [mood, setMood] = useState<StoryMoodId>(initialMood);
   const [isPending, startTransition] = useTransition();
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    setSchoolStage(initialSchoolStage);
-    setLengthStep(initialLengthStep);
-    setMood(initialMood);
-  }, [open, initialSchoolStage, initialLengthStep, initialMood]);
+  const formResetKey = open
+    ? `${initialSchoolStage}\0${initialLengthStep}\0${initialMood}`
+    : null;
+  const [prevFormResetKey, setPrevFormResetKey] = useState<string | null>(null);
+  if (formResetKey !== prevFormResetKey) {
+    setPrevFormResetKey(formResetKey);
+    if (formResetKey) {
+      setSchoolStage(initialSchoolStage);
+      setLengthStep(initialLengthStep);
+      setMood(initialMood);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;

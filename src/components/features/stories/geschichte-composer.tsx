@@ -4,6 +4,7 @@
  * Client shell for `/geschichte`: package badge + live credits + composer.
  */
 
+import Link from "next/link";
 import { HelpPageHeading } from "@/components/features/help/help-page-heading";
 import { HelpTrigger } from "@/components/features/help/help-trigger";
 import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
@@ -62,12 +63,12 @@ function GeschichteComposerBody({
       {allowAdvent && !childSessionLockedProfileId ? (
         <p className="mt-4 max-w-2xl text-sm font-semibold text-zinc-700">
           Komplett:{" "}
-          <a
+          <Link
             href="/adventskalender"
             className="font-extrabold text-orange-700 underline-offset-2 hover:underline"
           >
             Adventskalenderbuch mit 24 Tagen
-          </a>{" "}
+          </Link>{" "}
           anlegen.
         </p>
       ) : null}

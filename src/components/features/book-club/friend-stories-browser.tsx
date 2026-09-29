@@ -4,7 +4,7 @@
  * Freundes- und öffentliche Geschichten im Buchclub: Liste, Like, PDF.
  */
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Heart, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -40,6 +40,11 @@ export function FriendStoriesBrowser({
   typographyDefaults: ReadingTypographyDefaultsCatalog;
 }) {
   const [stories, setStories] = useState(initialStories);
+  const [prevInitialStories, setPrevInitialStories] = useState(initialStories);
+  if (initialStories !== prevInitialStories) {
+    setPrevInitialStories(initialStories);
+    setStories(initialStories);
+  }
   const [filter, setFilter] = useState<FriendFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedStory, setExpandedStory] =
@@ -47,10 +52,6 @@ export function FriendStoriesBrowser({
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [likePendingId, setLikePendingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
-
-  useEffect(() => {
-    setStories(initialStories);
-  }, [initialStories]);
 
   const allowPdf = featuresInclude(enabledFeatures, "export");
   const allowReadingMode = featuresInclude(enabledFeatures, "lesemodus");

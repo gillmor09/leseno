@@ -126,11 +126,12 @@ export function RomanLeserFeedbackControl({
   const [autorEntscheidungen, setAutorEntscheidungen] = useState<
     Record<number, string>
   >({});
-
-  useEffect(() => {
+  const [syncedFeedback, setSyncedFeedback] = useState(feedback);
+  if (feedback !== syncedFeedback) {
+    setSyncedFeedback(feedback);
     setLocalFeedback(feedback);
     setAutorEntscheidungen({});
-  }, [feedback]);
+  }
 
   async function runNewFeedback() {
     if (!ready) {

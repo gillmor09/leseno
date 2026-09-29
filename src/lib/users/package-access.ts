@@ -2,7 +2,6 @@
  * Resolve package features for the current session (story UI + Server Actions).
  */
 
-import { getAppSession, getSessionMembershipRole } from "@/lib/auth/app-session";
 import { loadMembershipPackages } from "@/lib/users/package-repository";
 import {
   featuresInclude,

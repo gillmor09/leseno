@@ -4,7 +4,7 @@
  * Child Kennung + password set/change/clear (parent Meine Welt).
  */
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Copy, KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -49,12 +49,20 @@ export function ChildLoginSettings({
   const codeDirty =
     codeDraft.trim().toLowerCase() !== savedCode.trim().toLowerCase();
 
-  useEffect(() => {
+  const [prevLoginSync, setPrevLoginSync] = useState({
+    profileId,
+    loginCode,
+  });
+  if (
+    profileId !== prevLoginSync.profileId ||
+    loginCode !== prevLoginSync.loginCode
+  ) {
+    setPrevLoginSync({ profileId, loginCode });
     setCodeDraft(loginCode ?? "");
     setSavedCode(loginCode ?? "");
     setLoginCodeStatus("idle");
     setLoginCodeMessage(null);
-  }, [profileId, loginCode]);
+  }
 
   async function handleCopyCode() {
     const value = savedCode.trim() || codeDraft.trim();

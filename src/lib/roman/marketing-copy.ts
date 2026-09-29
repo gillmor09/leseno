@@ -224,7 +224,7 @@ function parseEinzeilerPayload(raw: string): string {
 }
 
 function finalizeKlappentext(text: string, closed: boolean): string {
-  let t = text.replace(/\s+/g, " ").trim();
+  const t = text.replace(/\s+/g, " ").trim();
   if (!t) {
     throw new Error("Klappentext leer — bitte erneut erzeugen.");
   }

@@ -109,7 +109,14 @@ export function RomanPipelineHistoryPanel({
   }, [romanId]);
 
   useEffect(() => {
-    void load();
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      if (!cancelled) void load();
+    }, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
   }, [load, refreshKey]);
 
   const visibleRuns = originStage

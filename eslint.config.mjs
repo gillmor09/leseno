@@ -12,7 +12,23 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Android Capactor / Gradle intermediates (not app source)
+    "mobile/**/build/**",
+    "mobile/**/intermediates/**",
   ]),
+  {
+    rules: {
+      // Underscore-prefixed unused args are intentional API placeholders.
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

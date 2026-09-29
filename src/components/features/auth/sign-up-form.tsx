@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 import { signUpAction } from "@/app/actions/auth";
 import {
@@ -23,17 +23,20 @@ export function SignUpForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [referralCode, setReferralCode] = useState<string | null>(null);
-  const [promoCode, setPromoCode] = useState<string | null>(null);
+  const referralCode = useSyncExternalStore(
+    () => () => {},
+    () => readStoredReferralCode(),
+    () => null,
+  );
+  const promoCode = useSyncExternalStore(
+    () => () => {},
+    () => readStoredPromoCode(),
+    () => null,
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const botGuard = useBotGuardFields();
-
-  useEffect(() => {
-    setReferralCode(readStoredReferralCode());
-    setPromoCode(readStoredPromoCode());
-  }, []);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

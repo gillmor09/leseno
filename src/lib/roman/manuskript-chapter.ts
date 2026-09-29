@@ -539,7 +539,7 @@ export async function generateManuskriptChapter(input: {
         weave: Boolean((editorial.manuskriptText ?? "").trim()),
         zielWortzahl: brief.zielWortzahl,
         zielWortzahlSzeneMax: brief.zielWortzahlSzeneMax,
-        needsBlock: manuskriptNeedsPromptBlock(editorial),
+        needsBlock: manuskriptNeedsPromptBlock(),
         autorBias: formatAutorBiasFromCharaktere(roman.charaktere),
         continuityBuffer: `${continuityBuffer}\n\n${SEAM_MANDATE}`,
         szenenplotStructured: editorial.szenenplotStructured,
@@ -1218,7 +1218,7 @@ Schreibe jetzt die verbesserte Geschichte (nur Prosa, ohne Marker).`,
       }),
     );
 
-    let nextBody = scrubManuskriptChapterBody(stripErzaehlerWrappers(rawBody));
+    const nextBody = scrubManuskriptChapterBody(stripErzaehlerWrappers(rawBody));
     if (nextBody.trim().length < 80) {
       throw new Error(
         `Geschichte ${input.chapterNumber}: Erzähler lieferte zu wenig Text. Bitte erneut einarbeiten.`,
