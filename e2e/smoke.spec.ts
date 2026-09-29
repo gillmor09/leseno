@@ -132,9 +132,8 @@ test.describe("Robustness smoke", () => {
   });
 
   test("legacy /basis redirects toward geschichte", async ({ page }) => {
-    const response = await page.goto("/basis", { maxRedirects: 0 });
-    // Playwright follows redirects by default; assert final or intermediate.
-    expect(response?.status()).toBeTruthy();
+    await page.goto("/basis");
+    // Playwright follows redirects; guest → /anmelden, session → /geschichte.
     await expect(page).toHaveURL(/\/(geschichte|anmelden)/);
   });
 });
