@@ -23,6 +23,15 @@ export type BuchDerWocheBook = {
   chapterCount: number;
   hasCover: boolean;
   coverImageDataUrl: string;
+  /**
+   * Best image for book-face / hero product shot:
+   * real cover data URL when present, else curated marketing art.
+   */
+  coverDisplaySrc: string | null;
+  /** Full-bleed atmosphere (prefer marketing hero crop). */
+  heroBackdropSrc: string | null;
+  detailASrc: string | null;
+  detailBSrc: string | null;
   /** Self-contained HTML for the inline reader iframe. */
   previewHtml: string;
 };
@@ -69,6 +78,12 @@ export async function loadBuchDerWocheBook(
   if (chapters.length === 0) return null;
 
   const cover = (roman.coverImageDataUrl ?? "").trim();
+  const hasCover = cover.startsWith("data:image/");
+  const art = entry.marketingArt;
+  const coverDisplaySrc = hasCover
+    ? cover
+    : (art?.hero?.trim() || null);
+  const heroBackdropSrc = art?.hero?.trim() || coverDisplaySrc;
   const previewHtml = withReadOnlyProtection(
     buildRomanExportDocument({
       title: roman.title,
@@ -86,8 +101,12 @@ export async function loadBuchDerWocheBook(
     zielAlterMin: roman.editorial.zielAlterMin,
     zielAlterMax: roman.editorial.zielAlterMax,
     chapterCount: chapters.length,
-    hasCover: cover.startsWith("data:image/"),
+    hasCover,
     coverImageDataUrl: cover,
+    coverDisplaySrc,
+    heroBackdropSrc,
+    detailASrc: art?.detailA?.trim() || null,
+    detailBSrc: art?.detailB?.trim() || null,
     previewHtml,
   };
 }

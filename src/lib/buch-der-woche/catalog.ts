@@ -3,6 +3,14 @@
  * Only whitelisted `romanId`s are loadable publicly — never arbitrary UUIDs from the URL.
  */
 
+export type BuchDerWocheMarketingArt = {
+  /** Full-bleed hero / book-face art under `public/`. */
+  hero: string;
+  /** Optional cropped detail for secondary marketing moments. */
+  detailA?: string;
+  detailB?: string;
+};
+
 export type BuchDerWocheEntry = {
   /** URL slug, e.g. `hausaufgaben`. */
   slug: string;
@@ -11,6 +19,11 @@ export type BuchDerWocheEntry = {
   /** Optional teaser overrides when editorial copy is empty. */
   teaserHeadline?: string;
   teaserLead?: string;
+  /**
+   * Static marketing art (cover crops / Infografik-Ausschnitte).
+   * Used when the roman has no `cover_image_data_url` yet — or as hero atmosphere.
+   */
+  marketingArt?: BuchDerWocheMarketingArt;
 };
 
 /**
@@ -24,6 +37,11 @@ export const BUCH_DER_WOCHE_CATALOG: readonly BuchDerWocheEntry[] = [
     teaserHeadline: "Warum Hausaufgaben dein Gehirn trainieren",
     teaserLead:
       "Zehn Kurzgeschichten über Lernen, Motivation und den inneren Schweinehund — zum Mitfiebern und Verstehen.",
+    marketingArt: {
+      hero: "/buch-der-woche/hausaufgaben/hero.webp",
+      detailA: "/buch-der-woche/hausaufgaben/detail-a.webp",
+      detailB: "/buch-der-woche/hausaufgaben/detail-b.webp",
+    },
   },
 ] as const;
 
