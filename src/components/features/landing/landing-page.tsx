@@ -54,25 +54,25 @@ const moods = [
   {
     title: "Lustig",
     text: "Komödie mit Klamauk: Missgeschicke, Quatsch und Lacher — und zwischendrin Dinge, über die man danach noch reden will.",
-    image: "/landing/mood-lustig.webp",
+    image: "/landing/mood-lustig-v3.webp",
     imageAlt:
-      "Kind lacht über ein aufgeschlagenes Buch, aus dem ein bunter Vogel steigt",
+      "Kind lacht auf dem Sofa, der orangegelbe leseno-Vogel flattert zur lustigen Mini-Szene aus dem Buch",
     icon: Smile,
   },
   {
     title: "Abenteuer",
     text: "Hindernis, Plan, Höhepunkt: echte Abenteuer-Spannung — optional mit Rätsel, kindgerecht und ohne Angstmachen.",
-    image: "/landing/mood-spannend.webp",
+    image: "/landing/mood-spannend-v3.webp",
     imageAlt:
-      "Kind liest gebannt, während ein Vogel und ein Blitz aus dem Buch aufsteigen",
+      "Kind liest gebannt im Zauberwald, der orangegelbe leseno-Vogel sitzt am Buchrand",
     icon: Zap,
   },
   {
     title: "Motivierend",
     text: "Wachstum und Mut: üben, Rückschlag, Durchbruch — danach das Gefühl: Wenn ich will, schaff ich das.",
-    image: "/landing/mood-motivierend.webp",
+    image: "/landing/mood-motivierend-v3.webp",
     imageAlt:
-      "Kind betrachtet zuversichtlich ein Buch, aus dem ein leuchtender Vogel steigt",
+      "Kind liest zuversichtlich auf dem Sofa, der orangegelbe leseno-Vogel sitzt ermutigend daneben",
     icon: BicepsFlexed,
   },
 ] as const;
@@ -606,8 +606,8 @@ function ParentsSection() {
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-2 lg:gap-14">
         <div className="overflow-hidden rounded-[2rem] shadow-xl ring-1 ring-zinc-950/10">
           <Image
-            src="/landing/eltern-lesen.webp"
-            alt="Elternteil und Kind lesen gemeinsam auf dem Sofa, ein Vogel sitzt daneben"
+            src="/landing/eltern-lesen-v2.webp"
+            alt="Elternteil und Kind lesen gemeinsam auf dem Sofa, der orangegelbe leseno-Vogel sitzt daneben"
             width={1400}
             height={933}
             className="h-auto w-full"
