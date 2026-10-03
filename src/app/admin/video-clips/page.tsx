@@ -65,8 +65,8 @@ export default async function VideoClipsAdminPage() {
             Video-Clips
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Aus einer Bildvorlage und einem Prompt erzeugt Gemini Veo einen
-            kurzen Clip (8&nbsp;Sekunden) und speichert ihn in Supabase Storage.
+            Mit Gemini Veo aus Bild + Prompt erzeugen — oder fertige MP4-Clips
+            hochladen. Alles landet in Supabase Storage.
           </p>
           <div className="mt-8">
             <VideoClipsAdminForm

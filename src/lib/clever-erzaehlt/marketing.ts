@@ -3,12 +3,13 @@
  */
 
 import { BUCH_DER_WOCHE_SLOGAN } from "@/lib/buch-der-woche/catalog";
+import { CLEVER_ERZAEHLT_AMAZON_SERIES_URL } from "@/lib/roman/clever-erzaehlt";
 
 /** Series brand slogan — same as IG / Buch-der-Woche creatives. */
 export const CLEVER_ERZAEHLT_SLOGAN = BUCH_DER_WOCHE_SLOGAN;
 
-export const CLEVER_ERZAEHLT_AMAZON_SEARCH_URL =
-  "https://www.amazon.de/s?k=Clever+erz%C3%A4hlt+leseno";
+/** Amazon series page — see `CLEVER_ERZAEHLT_AMAZON_SERIES_URL` in `clever-erzaehlt.ts`. */
+export { CLEVER_ERZAEHLT_AMAZON_SERIES_URL };
 
 /** Familiar kids’ topics — atmosphere on the series landing. */
 export const CLEVER_ERZAEHLT_TOPIC_CLASSICS = [

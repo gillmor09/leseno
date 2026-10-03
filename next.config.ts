@@ -41,9 +41,9 @@ const nextConfig: NextConfig = {
   experimental: {
     inlineCss: true,
     optimizePackageImports: ["lucide-react", "sonner"],
-    // Social overlays + blog articles with embedded images (base64 HTML).
+    // Social overlays + blog HTML; admin video-clip MP4 upload (bucket ≤ 50 MB).
     serverActions: {
-      bodySizeLimit: "15mb",
+      bodySizeLimit: "55mb",
     },
   },
   turbopack: {

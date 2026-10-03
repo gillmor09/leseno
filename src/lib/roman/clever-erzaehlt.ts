@@ -9,6 +9,13 @@ import {
 } from "@/lib/roman/editorial";
 import { buildCleverThemaStanceForThema } from "@/lib/roman/clever-thema-stance";
 
+/**
+ * Amazon.de series page (Kindle series ASIN).
+ * Stable part is `/dp/B0HKNPK2SD` — omit session query params (`qid`, `sr`, `ref`, …).
+ */
+export const CLEVER_ERZAEHLT_AMAZON_SERIES_URL =
+  "https://www.amazon.de/dp/B0HKNPK2SD";
+
 /** Story length chosen at book create (drives Erzähler length + style). */
 export type CleverGeschichteMinuten = 5 | 10;
 

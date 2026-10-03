@@ -1,7 +1,8 @@
 "use server";
 
 /**
- * Admin Video-Clips: Gemini Veo generation, Storage persist, list + delete.
+ * Admin Video-Clips: Gemini Veo generation, finished MP4 upload,
+ * Storage persist, list + delete.
  */
 
 import { revalidatePath } from "next/cache";
@@ -20,9 +21,12 @@ import type { ActionResult } from "@/lib/types/actions";
 import {
   videoClipGenerateFieldsSchema,
   videoClipIdSchema,
+  videoClipUploadFieldsSchema,
 } from "@/lib/validations/video-clips-admin";
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+/** Match Storage bucket `file_size_limit` (50 MB). */
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
 const IMAGE_MIME = new Set([
   "image/jpeg",
@@ -30,6 +34,8 @@ const IMAGE_MIME = new Set([
   "image/png",
   "image/webp",
 ]);
+
+const VIDEO_MIME = new Set(["video/mp4", "video/quicktime"]);
 
 function sniffImage(mime: string, fileName: string): boolean {
   const lower = mime.toLowerCase();
@@ -48,6 +54,21 @@ function normalizeImageMime(mime: string, fileName: string) {
 
 function revalidateVideoClips() {
   revalidatePath("/admin/video-clips");
+}
+
+function sniffMp4(mime: string, fileName: string): boolean {
+  const lower = mime.toLowerCase().trim();
+  if (lower === "video/mp4") return true;
+  // Some browsers send empty type or video/quicktime for .mp4 — still require .mp4.
+  if (VIDEO_MIME.has(lower) || !lower) {
+    return /\.mp4$/i.test(fileName);
+  }
+  return /\.mp4$/i.test(fileName);
+}
+
+function titleFromFileName(fileName: string): string {
+  const base = fileName.replace(/\.[^.]+$/, "").trim();
+  return base.slice(0, 160) || "Video-Clip";
 }
 
 /**
@@ -130,6 +151,80 @@ export async function generateVideoClipAction(
         ? error.message
         : "Video-Clip-Generierung fehlgeschlagen.";
     console.error("[video-clips] generate failed:", message, error);
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Upload a finished MP4 into the same Storage + metadata list.
+ * FormData: `file`, `title`, optional `notes`, `durationSeconds`, `aspectRatio`.
+ */
+export async function uploadVideoClipAction(
+  formData: FormData,
+): Promise<ActionResult<VideoClipListItem>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { success: false, error: "Bitte eine MP4-Datei wählen." };
+  }
+
+  const fields = videoClipUploadFieldsSchema.safeParse({
+    title: String(formData.get("title") ?? "").trim() || titleFromFileName(file.name || ""),
+    notes: String(formData.get("notes") ?? ""),
+    durationSeconds: Number(formData.get("durationSeconds") ?? 8),
+    aspectRatio: String(formData.get("aspectRatio") ?? "16:9"),
+  });
+  if (!fields.success) {
+    return {
+      success: false,
+      error: fields.error.issues[0]?.message ?? "Ungültige Eingabe.",
+    };
+  }
+
+  if (!sniffMp4(file.type || "", file.name || "")) {
+    return { success: false, error: "Nur MP4-Dateien sind erlaubt." };
+  }
+
+  if (file.size <= 0 || file.size > MAX_VIDEO_BYTES) {
+    return { success: false, error: "Video zu groß (max. 50 MB)." };
+  }
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const user = await getCurrentUser();
+    const clipId = randomUUID();
+    const notes = fields.data.notes.trim();
+    const saved = await saveGeneratedVideoClip({
+      clipId,
+      buffer,
+      title: fields.data.title,
+      prompt: notes || "Fertiger Upload (ohne KI-Generierung).",
+      modelSlug: "upload",
+      durationSeconds: fields.data.durationSeconds,
+      aspectRatio: fields.data.aspectRatio,
+      sourceKind: "video",
+      sourceFileName: file.name || "clip.mp4",
+      veoFileUri: null,
+      createdBy: user?.id ?? null,
+    });
+
+    let signedUrl: string | null = null;
+    try {
+      signedUrl = await createVideoClipSignedUrl(saved.storagePath);
+    } catch {
+      signedUrl = null;
+    }
+
+    revalidateVideoClips();
+    return { success: true, data: { ...saved, signedUrl } };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Video-Clip-Upload fehlgeschlagen.";
+    console.error("[video-clips] upload failed:", message, error);
     return { success: false, error: message };
   }
 }

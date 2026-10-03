@@ -37,3 +37,20 @@ export const videoClipGenerateFieldsSchema = z.object({
 export const videoClipIdSchema = z.object({
   clipId: z.string().uuid({ message: "Ungültige Clip-ID." }),
 });
+
+/** Form fields for uploading a finished MP4 (file validated in the action). */
+export const videoClipUploadFieldsSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, { message: "Bitte einen Titel angeben." })
+    .max(160),
+  notes: z.string().trim().max(2000).default(""),
+  durationSeconds: z.coerce
+    .number()
+    .int()
+    .min(1, { message: "Dauer mind. 1 Sekunde." })
+    .max(600, { message: "Dauer max. 600 Sekunden." })
+    .default(8),
+  aspectRatio: videoClipAspectSchema.default("16:9"),
+});

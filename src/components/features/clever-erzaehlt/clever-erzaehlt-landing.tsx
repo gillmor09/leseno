@@ -10,7 +10,7 @@ import { BuchCoverFace } from "@/components/features/buch-der-woche/buch-cover-f
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
 import {
-  CLEVER_ERZAEHLT_AMAZON_SEARCH_URL,
+  CLEVER_ERZAEHLT_AMAZON_SERIES_URL,
   CLEVER_ERZAEHLT_SLOGAN,
   CLEVER_ERZAEHLT_TOPIC_CLASSICS,
   CLEVER_ERZAEHLT_TOPIC_UNUSUAL,
@@ -263,7 +263,7 @@ export function CleverErzaehltLanding({ week }: CleverErzaehltLandingProps) {
               erhältlich, weitere folgen, während die Reihe wächst.
             </p>
             <a
-              href={CLEVER_ERZAEHLT_AMAZON_SEARCH_URL}
+              href={CLEVER_ERZAEHLT_AMAZON_SERIES_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="mt-8 inline-flex items-center gap-2 rounded-full bg-amber-400 px-6 py-3 text-sm font-extrabold text-zinc-950 transition hover:bg-amber-300"

@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Admin Video-Clips: image + prompt → Gemini Veo → Supabase Storage, list + download + delete.
+ * Admin Video-Clips: Veo generate or upload finished MP4 → Storage,
+ * list + download + delete.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -11,6 +12,7 @@ import { toast } from "sonner";
 import {
   deleteVideoClipAction,
   generateVideoClipAction,
+  uploadVideoClipAction,
 } from "@/app/actions/video-clips-admin";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { videoClipDownloadPath } from "@/lib/video-clips/download-name";
@@ -120,11 +122,19 @@ export function VideoClipsAdminForm({
   initialClips,
 }: VideoClipAdminFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
   const [pending, setPending] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [uploadNotes, setUploadNotes] = useState("");
+  const [uploadDuration, setUploadDuration] = useState(8);
+  const [uploadAspect, setUploadAspect] = useState<"16:9" | "9:16">("16:9");
+  const [uploadPending, setUploadPending] = useState(false);
   const [clips, setClips] = useState(initialClips);
   const [deleteTarget, setDeleteTarget] = useState<VideoClipListItem | null>(
     null,
@@ -137,10 +147,25 @@ export function VideoClipsAdminForm({
     };
   }, [previewUrl]);
 
+  useEffect(() => {
+    return () => {
+      if (uploadPreviewUrl) URL.revokeObjectURL(uploadPreviewUrl);
+    };
+  }, [uploadPreviewUrl]);
+
   function handleFileChange(next: File | null) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setFile(next);
     setPreviewUrl(next ? URL.createObjectURL(next) : null);
+  }
+
+  function handleUploadFileChange(next: File | null) {
+    if (uploadPreviewUrl) URL.revokeObjectURL(uploadPreviewUrl);
+    setUploadFile(next);
+    setUploadPreviewUrl(next ? URL.createObjectURL(next) : null);
+    if (next && !uploadTitle.trim()) {
+      setUploadTitle(next.name.replace(/\.[^.]+$/, "").slice(0, 160));
+    }
   }
 
   async function handleGenerate() {
@@ -177,6 +202,46 @@ export function VideoClipsAdminForm({
     toast.success("Video-Clip erzeugt und gespeichert.");
   }
 
+  async function handleUpload() {
+    if (!canGenerate) {
+      toast.error("Service-Role fehlt — Upload nicht möglich.");
+      return;
+    }
+    if (!uploadFile) {
+      toast.error("Bitte eine MP4-Datei wählen.");
+      return;
+    }
+    if (!uploadTitle.trim()) {
+      toast.error("Bitte einen Titel angeben.");
+      return;
+    }
+
+    setUploadPending(true);
+    const form = new FormData();
+    form.set("file", uploadFile);
+    form.set("title", uploadTitle.trim());
+    form.set("notes", uploadNotes.trim());
+    form.set("durationSeconds", String(uploadDuration));
+    form.set("aspectRatio", uploadAspect);
+
+    const response = await uploadVideoClipAction(form);
+    setUploadPending(false);
+
+    if (!response.success || !response.data) {
+      toast.error(response.error ?? "Upload fehlgeschlagen.");
+      return;
+    }
+
+    setClips((current) => [response.data!, ...current]);
+    handleUploadFileChange(null);
+    setUploadTitle("");
+    setUploadNotes("");
+    setUploadDuration(8);
+    setUploadAspect("16:9");
+    if (uploadInputRef.current) uploadInputRef.current.value = "";
+    toast.success("Video-Clip hochgeladen.");
+  }
+
   async function handleConfirmDelete() {
     if (!deleteTarget) return;
     setDeletePending(true);
@@ -190,6 +255,8 @@ export function VideoClipsAdminForm({
     setDeleteTarget(null);
     toast.success("Video-Clip gelöscht.");
   }
+
+  const busy = pending || uploadPending;
 
   return (
     <>
@@ -222,7 +289,7 @@ export function VideoClipsAdminForm({
               />
               <button
                 type="button"
-                disabled={pending}
+                disabled={busy}
                 onClick={() => fileInputRef.current?.click()}
                 className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-5 py-2.5 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white disabled:opacity-50"
               >
@@ -256,7 +323,7 @@ export function VideoClipsAdminForm({
                 <textarea
                   value={prompt}
                   onChange={(event) => setPrompt(event.target.value)}
-                  disabled={pending}
+                  disabled={busy}
                   rows={8}
                   className={inputClass}
                   placeholder="z. B. Langsame Kamerafahrt, sanfter Wind in den Blättern, warmes Abendlicht …"
@@ -277,7 +344,7 @@ export function VideoClipsAdminForm({
                   <FieldLabel>Seitenverhältnis</FieldLabel>
                   <select
                     value={aspectRatio}
-                    disabled={pending}
+                    disabled={busy}
                     onChange={(event) =>
                       setAspectRatio(event.target.value as "16:9" | "9:16")
                     }
@@ -294,18 +361,148 @@ export function VideoClipsAdminForm({
           <button
             type="button"
             disabled={
-              !canGenerate || pending || !file || prompt.trim().length < 8
+              !canGenerate || busy || !file || prompt.trim().length < 8
             }
             onClick={() => void handleGenerate()}
             className={cn(
               "rounded-full bg-orange-700 px-6 py-3 text-sm font-bold text-white hover:bg-orange-800",
-              (!canGenerate || pending || !file || prompt.trim().length < 8) &&
+              (!canGenerate || busy || !file || prompt.trim().length < 8) &&
                 "opacity-70",
             )}
           >
             {pending
               ? "Clip wird erzeugt …"
               : "Video-Clip erzeugen & speichern"}
+          </button>
+        </section>
+
+        <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+          <div>
+            <h2 className="text-lg font-extrabold text-zinc-950">
+              Fertigen Clip hochladen
+            </h2>
+            <p className="mt-1 text-sm font-semibold text-zinc-600">
+              Bereits fertige MP4-Clips (max. 50&nbsp;MB) direkt in denselben
+              Storage legen — ohne Veo.
+            </p>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3">
+              <FieldLabel>MP4-Datei</FieldLabel>
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept="video/mp4,.mp4"
+                className="hidden"
+                onChange={(event) =>
+                  handleUploadFileChange(event.target.files?.[0] ?? null)
+                }
+              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => uploadInputRef.current?.click()}
+                className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-5 py-2.5 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-white disabled:opacity-50"
+              >
+                <Upload className="size-4" aria-hidden />
+                Video wählen
+              </button>
+              {uploadFile ? (
+                <p className="text-xs font-semibold text-zinc-500">
+                  {uploadFile.name} ·{" "}
+                  {(uploadFile.size / (1024 * 1024)).toFixed(2)} MB
+                </p>
+              ) : (
+                <p className="text-xs font-semibold text-zinc-500">
+                  Nur MP4 bis 50&nbsp;MB
+                </p>
+              )}
+              {uploadPreviewUrl ? (
+                <video
+                  src={uploadPreviewUrl}
+                  controls
+                  className="max-h-72 w-full rounded-2xl bg-zinc-950 object-contain ring-1 ring-zinc-950/10"
+                />
+              ) : null}
+            </div>
+
+            <div className="space-y-4">
+              <label className="block">
+                <FieldLabel>Titel</FieldLabel>
+                <input
+                  value={uploadTitle}
+                  onChange={(event) => setUploadTitle(event.target.value)}
+                  disabled={busy}
+                  className={inputClass}
+                  placeholder="z. B. Hausaufgaben Teaser"
+                />
+              </label>
+              <label className="block">
+                <FieldLabel>Notiz (optional)</FieldLabel>
+                <textarea
+                  value={uploadNotes}
+                  onChange={(event) => setUploadNotes(event.target.value)}
+                  disabled={busy}
+                  rows={4}
+                  className={inputClass}
+                  placeholder="Kurzbeschreibung oder Verwendungszweck …"
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <FieldLabel>Dauer (Sekunden)</FieldLabel>
+                  <input
+                    type="number"
+                    min={1}
+                    max={600}
+                    value={uploadDuration}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setUploadDuration(
+                        Math.min(
+                          600,
+                          Math.max(1, Number(event.target.value) || 1),
+                        ),
+                      )
+                    }
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <FieldLabel>Seitenverhältnis</FieldLabel>
+                  <select
+                    value={uploadAspect}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setUploadAspect(event.target.value as "16:9" | "9:16")
+                    }
+                    className={inputClass}
+                  >
+                    <option value="16:9">16:9 Querformat</option>
+                    <option value="9:16">9:16 Hochformat</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={!canGenerate || busy || !uploadFile || !uploadTitle.trim()}
+            onClick={() => void handleUpload()}
+            className={cn(
+              "inline-flex items-center gap-2 rounded-full bg-zinc-900 px-6 py-3 text-sm font-bold text-white hover:bg-zinc-800",
+              (!canGenerate || busy || !uploadFile || !uploadTitle.trim()) &&
+                "opacity-70",
+            )}
+          >
+            {uploadPending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <Upload className="size-4" aria-hidden />
+            )}
+            {uploadPending ? "Wird hochgeladen …" : "MP4 hochladen & speichern"}
           </button>
         </section>
 
@@ -332,7 +529,13 @@ export function VideoClipsAdminForm({
                     <p className="font-extrabold text-zinc-950">{clip.title}</p>
                     <p className="mt-1 text-xs font-semibold text-zinc-500">
                       {formatDate(clip.createdAt)} · {clip.durationSeconds}s ·{" "}
-                      {clip.aspectRatio} · {clip.modelSlug}
+                      {clip.aspectRatio} ·{" "}
+                      {clip.modelSlug === "upload"
+                        ? "Upload"
+                        : clip.modelSlug}
+                      {clip.sourceKind === "video" && clip.modelSlug === "upload"
+                        ? " · fertig"
+                        : ""}
                       {clip.byteSize
                         ? ` · ${(clip.byteSize / (1024 * 1024)).toFixed(2)} MB`
                         : ""}
@@ -340,7 +543,7 @@ export function VideoClipsAdminForm({
                   </div>
                   <button
                     type="button"
-                    disabled={!canGenerate || deletePending}
+                    disabled={!canGenerate || deletePending || busy}
                     onClick={() => setDeleteTarget(clip)}
                     className="inline-flex items-center gap-1.5 rounded-full bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-900 ring-1 ring-orange-200 hover:bg-orange-100 disabled:opacity-50"
                   >
@@ -361,7 +564,8 @@ export function VideoClipsAdminForm({
                   </p>
                 )}
                 <p className="text-xs font-semibold text-zinc-600">
-                  Prompt: {clip.prompt}
+                  {clip.modelSlug === "upload" ? "Notiz" : "Prompt"}:{" "}
+                  {clip.prompt}
                 </p>
                 <a
                   href={videoClipDownloadPath(clip.id, clip.title)}
