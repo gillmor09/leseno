@@ -11,6 +11,7 @@ const footerBlocks = [
       { href: "/#anders", label: "Was anders ist" },
       { href: "/motivation", label: "Motivation" },
       { href: "/beispiele", label: "Beispiele" },
+      { href: "/clever-erzaehlt", label: "Clever erzählt" },
       { href: "/buch-der-woche", label: "Buch der Woche" },
       { href: "/spiele", label: "Spiele" },
       { href: "/blog", label: "Blog" },

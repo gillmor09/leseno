@@ -71,18 +71,23 @@ export function BuchDerWocheLanding({ book }: BuchDerWocheLandingProps) {
           <div className="relative mx-auto grid min-h-[min(94vh,900px)] max-w-6xl items-center gap-8 px-4 py-16 sm:gap-10 sm:px-6 sm:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12">
             <div className="order-2 animate-[fadeUp_0.7s_ease-out_both] lg:order-1">
               <div className="flex items-center gap-3">
-                <Image
-                  src={CLEVER_BADGE_SRC}
-                  alt="Clever erzählt"
-                  width={300}
-                  height={180}
-                  className="h-12 w-auto shadow-lg sm:h-14"
-                  priority
-                />
+                <Link href="/clever-erzaehlt" className="shrink-0">
+                  <Image
+                    src={CLEVER_BADGE_SRC}
+                    alt="Clever erzählt"
+                    width={300}
+                    height={180}
+                    className="h-12 w-auto shadow-lg sm:h-14"
+                    priority
+                  />
+                </Link>
                 <div>
-                  <p className="text-sm font-extrabold tracking-[0.14em] text-amber-300 uppercase">
+                  <Link
+                    href="/clever-erzaehlt"
+                    className="text-sm font-extrabold tracking-[0.14em] text-amber-300 uppercase underline-offset-2 hover:underline"
+                  >
                     Clever erzählt
-                  </p>
+                  </Link>
                   <p className="text-xs font-bold tracking-wide text-orange-200/90 uppercase">
                     Buch der Woche
                   </p>

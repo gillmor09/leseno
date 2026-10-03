@@ -1,12 +1,13 @@
 /**
- * Loads a whitelisted Clever-erzählt roman and builds read-only export HTML
- * for the Instagram „Buch der Woche“ landing (no PDF download).
+ * Loads a whitelisted Clever-erzählt roman for the Buch-der-Woche landing
+ * (read-only HTML, no PDF). Entries come from DB; details from Infografiken.
  */
 
 import {
   getBuchDerWocheEntry,
-  type BuchDerWocheEntry,
-} from "@/lib/buch-der-woche/catalog";
+  getCurrentBuchDerWocheEntry,
+} from "@/lib/buch-der-woche/repository";
+import type { BuchDerWocheEntry } from "@/lib/buch-der-woche/types";
 import {
   buildRomanExportDocument,
   collectExportChaptersFromEditorial,
@@ -23,22 +24,13 @@ export type BuchDerWocheBook = {
   chapterCount: number;
   hasCover: boolean;
   coverImageDataUrl: string;
-  /**
-   * Best image for book-face / hero product shot:
-   * real cover data URL when present, else curated marketing art.
-   */
   coverDisplaySrc: string | null;
-  /** Full-bleed atmosphere (prefer marketing hero crop). */
   heroBackdropSrc: string | null;
   detailASrc: string | null;
   detailBSrc: string | null;
-  /** Self-contained HTML for the inline reader iframe. */
   previewHtml: string;
 };
 
-/**
- * Soft copy protection CSS injected into the export HTML (UX deterrent only).
- */
 const READ_ONLY_PROTECTION_CSS = `
   html, body {
     -webkit-user-select: none !important;
@@ -60,16 +52,25 @@ function withReadOnlyProtection(html: string): string {
   return `${styleTag}${html}`;
 }
 
-/**
- * Loads catalog slug → Clever roman → export HTML for inline reading.
- * Returns null when the slug is unknown or the roman is missing / not Clever.
- */
-export async function loadBuchDerWocheBook(
-  slug: string,
-): Promise<BuchDerWocheBook | null> {
-  const entry = getBuchDerWocheEntry(slug);
-  if (!entry) return null;
+function pickDetailInfografiken(
+  unterthemen: { kapitel?: Array<{ nummer: number; infografikDataUrl?: string | null }> } | null | undefined,
+): { detailA: string | null; detailB: string | null } {
+  const kapitel = [...(unterthemen?.kapitel ?? [])]
+    .filter((k) => (k.infografikDataUrl ?? "").startsWith("data:image/"))
+    .sort((a, b) => a.nummer - b.nummer);
+  if (kapitel.length === 0) return { detailA: null, detailB: null };
+  const detailA = kapitel[0]?.infografikDataUrl?.trim() || null;
+  const mid = kapitel[Math.min(kapitel.length - 1, Math.floor(kapitel.length / 2))];
+  const detailB =
+    kapitel.length > 1
+      ? mid?.infografikDataUrl?.trim() || null
+      : null;
+  return { detailA, detailB };
+}
 
+async function bookFromEntry(
+  entry: BuchDerWocheEntry,
+): Promise<BuchDerWocheBook | null> {
   const roman = await getRomanKontext(entry.romanId);
   if (!roman) return null;
   if (roman.editorial.buchTyp !== "clever_erzaehlt") return null;
@@ -79,12 +80,12 @@ export async function loadBuchDerWocheBook(
 
   const cover = (roman.coverImageDataUrl ?? "").trim();
   const hasCover = cover.startsWith("data:image/");
-  const art = entry.marketingArt;
-  const coverDisplaySrc = hasCover
-    ? cover
-    : (art?.hero?.trim() || null);
-  const heroBackdropSrc = art?.hero?.trim() || coverDisplaySrc;
-  // Inline reader: no cover page — marketing hero already shows the cover.
+  const { detailA, detailB } = pickDetailInfografiken(
+    roman.editorial.cleverUnterthemen,
+  );
+  const coverDisplaySrc = hasCover ? cover : detailA;
+  const heroBackdropSrc = coverDisplaySrc;
+
   const previewHtml = withReadOnlyProtection(
     buildRomanExportDocument({
       title: roman.title,
@@ -105,8 +106,27 @@ export async function loadBuchDerWocheBook(
     coverImageDataUrl: cover,
     coverDisplaySrc,
     heroBackdropSrc,
-    detailASrc: art?.detailA?.trim() || null,
-    detailBSrc: art?.detailB?.trim() || null,
+    detailASrc: detailA,
+    detailBSrc: detailB,
     previewHtml,
   };
+}
+
+/** Current live week for `/buch-der-woche`. */
+export async function loadCurrentBuchDerWocheBook(): Promise<BuchDerWocheBook | null> {
+  const entry = await getCurrentBuchDerWocheEntry();
+  if (!entry) return null;
+  return bookFromEntry(entry);
+}
+
+/**
+ * Loads whitelist slug → Clever roman → export HTML.
+ * Returns null when the slug is unknown or the roman is missing / not Clever.
+ */
+export async function loadBuchDerWocheBook(
+  slug: string,
+): Promise<BuchDerWocheBook | null> {
+  const entry = await getBuchDerWocheEntry(slug);
+  if (!entry) return null;
+  return bookFromEntry(entry);
 }
