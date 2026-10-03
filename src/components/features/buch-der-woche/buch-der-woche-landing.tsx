@@ -10,6 +10,7 @@ import { BuchCoverFace } from "@/components/features/buch-der-woche/buch-cover-f
 import { ProtectedBookReader } from "@/components/features/buch-der-woche/protected-book-reader";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import { BUCH_DER_WOCHE_SLOGAN } from "@/lib/buch-der-woche/catalog";
 import type { BuchDerWocheBook } from "@/lib/buch-der-woche/load-featured-book";
 
 /** Series badge in `public/` — keep path in sync with `clever-cover-logos.ts`. */
@@ -100,6 +101,17 @@ export function BuchDerWocheLanding({ book }: BuchDerWocheLandingProps) {
               <p className="mt-4 max-w-xl text-base leading-relaxed text-orange-50/90 sm:text-xl">
                 {lead}
               </p>
+              <p className="mt-3 text-sm font-bold text-orange-100/85">
+                Aus der Buchreihe{" "}
+                <Link
+                  href="/clever-erzaehlt"
+                  className="font-extrabold text-amber-300 underline-offset-2 hover:underline"
+                >
+                  Clever erzählt
+                </Link>
+                {" — "}
+                {BUCH_DER_WOCHE_SLOGAN}.
+              </p>
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <a
@@ -109,6 +121,12 @@ export function BuchDerWocheLanding({ book }: BuchDerWocheLandingProps) {
                   <BookOpen className="size-4" aria-hidden />
                   Buch jetzt lesen
                 </a>
+                <Link
+                  href="/clever-erzaehlt"
+                  className="inline-flex items-center gap-2 rounded-full bg-white/10 px-6 py-3 text-sm font-bold text-white ring-1 ring-white/25 backdrop-blur-sm transition hover:bg-white/15"
+                >
+                  Zur Buchreihe
+                </Link>
                 <Link
                   href="/kostenlos"
                   className="inline-flex items-center gap-2 rounded-full bg-white/10 px-6 py-3 text-sm font-bold text-white ring-1 ring-white/25 backdrop-blur-sm transition hover:bg-white/15"
@@ -263,14 +281,23 @@ export function BuchDerWocheLanding({ book }: BuchDerWocheLandingProps) {
             />
             <div className="mt-10 text-center">
               <p className="text-sm font-semibold text-zinc-600">
-                Lust auf eigene Abenteuer mit Wissens-Häppchen?
+                Mehr Bände, auch unübliche Themen — in der Buchreihe Clever
+                erzählt. {BUCH_DER_WOCHE_SLOGAN}.
               </p>
-              <Link
-                href="/kostenlos"
-                className="mt-4 inline-flex rounded-full bg-orange-700 px-6 py-3 text-sm font-bold text-white hover:bg-orange-800"
-              >
-                Kostenlos ausprobieren
-              </Link>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                <Link
+                  href="/clever-erzaehlt"
+                  className="inline-flex rounded-full bg-orange-700 px-6 py-3 text-sm font-bold text-white hover:bg-orange-800"
+                >
+                  Zur Buchreihe Clever erzählt
+                </Link>
+                <Link
+                  href="/kostenlos"
+                  className="inline-flex rounded-full bg-white px-6 py-3 text-sm font-bold text-zinc-950 ring-1 ring-zinc-950/10 hover:bg-zinc-50"
+                >
+                  Kostenlos ausprobieren
+                </Link>
+              </div>
             </div>
           </div>
         </section>
