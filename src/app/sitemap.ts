@@ -11,6 +11,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const paths: { path: string; changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"]; priority: number }[] = [
     { path: "/", changeFrequency: "weekly", priority: 1 },
     { path: "/kostenlos", changeFrequency: "weekly", priority: 0.9 },
+    { path: "/buch-der-woche", changeFrequency: "weekly", priority: 0.8 },
+    { path: "/buch-der-woche/hausaufgaben", changeFrequency: "monthly", priority: 0.6 },
     { path: "/preise", changeFrequency: "weekly", priority: 0.9 },
     { path: "/registrieren", changeFrequency: "monthly", priority: 0.7 },
     { path: "/anmelden", changeFrequency: "monthly", priority: 0.5 },
