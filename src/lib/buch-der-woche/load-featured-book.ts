@@ -84,11 +84,11 @@ export async function loadBuchDerWocheBook(
     ? cover
     : (art?.hero?.trim() || null);
   const heroBackdropSrc = art?.hero?.trim() || coverDisplaySrc;
+  // Inline reader: no cover page — marketing hero already shows the cover.
   const previewHtml = withReadOnlyProtection(
     buildRomanExportDocument({
       title: roman.title,
       chapters,
-      coverImageDataUrl: cover || undefined,
       vorsatz: roman.vorsatz,
     }),
   );

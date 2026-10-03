@@ -110,12 +110,9 @@ export function ProtectedBookReader({
         ref={iframeRef}
         title={`Buch: ${title}`}
         sandbox="allow-same-origin"
-        className="h-[min(78vh,920px)] w-full border-0 bg-white select-none"
+        className="h-[min(90vh,1100px)] w-full border-0 bg-white select-none"
         tabIndex={0}
       />
-      <p className="border-t border-zinc-950/10 bg-zinc-50 px-4 py-2.5 text-center text-xs font-semibold text-zinc-500">
-        Online lesen · Speichern und Rechtsklick sind deaktiviert
-      </p>
     </div>
   );
 }
