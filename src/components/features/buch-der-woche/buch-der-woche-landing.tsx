@@ -74,9 +74,9 @@ export function BuchDerWocheLanding({ book }: BuchDerWocheLandingProps) {
                 <Image
                   src={CLEVER_BADGE_SRC}
                   alt="Clever erzählt"
-                  width={72}
-                  height={72}
-                  className="size-14 rounded-2xl shadow-lg ring-1 ring-white/20 sm:size-16"
+                  width={300}
+                  height={180}
+                  className="h-12 w-auto shadow-lg sm:h-14"
                   priority
                 />
                 <div>
