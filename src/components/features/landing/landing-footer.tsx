@@ -4,6 +4,13 @@ import Image from "next/image";
 const linkClass =
   "text-sm font-semibold text-zinc-300 underline-offset-2 transition-colors hover:text-white hover:underline";
 
+const angebotLinks = [
+  { href: "/kostenlos", label: "Kostenlos starten" },
+  { href: "/preise", label: "Alle Preise" },
+  { href: "/kontakt", label: "Kontakt" },
+] as const;
+
+/** Former „Entdecken“ — split into story vs. books/play. */
 const footerBlocks = [
   {
     title: "Entdecken",
@@ -11,18 +18,20 @@ const footerBlocks = [
       { href: "/#anders", label: "Was anders ist" },
       { href: "/motivation", label: "Motivation" },
       { href: "/beispiele", label: "Beispiele" },
-      { href: "/clever-erzaehlt", label: "Clever erzählt" },
-      { href: "/buch-der-woche", label: "Buch der Woche" },
-      { href: "/spiele", label: "Spiele" },
       { href: "/blog", label: "Blog" },
+      {
+        href: "https://www.instagram.com/leseno.de/",
+        label: "Instagram",
+        external: true,
+      },
     ],
   },
   {
-    title: "Angebot",
+    title: "Bücher & Spiele",
     links: [
-      { href: "/kostenlos", label: "Kostenlos starten" },
-      { href: "/preise", label: "Alle Preise" },
-      { href: "/kontakt", label: "Kontakt" },
+      { href: "/clever-erzaehlt", label: "Clever erzählt" },
+      { href: "/buch-der-woche", label: "Buch der Woche" },
+      { href: "/spiele", label: "Spiele" },
     ],
   },
   {
@@ -40,8 +49,8 @@ export function LandingFooter() {
   return (
     <footer className="bg-zinc-800 text-zinc-200">
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.2fr_repeat(3,1fr)] lg:gap-8">
-          <div className="sm:col-span-2 lg:col-span-1">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">
+          <div>
             <div className="flex items-center gap-3">
               <Image
                 src="/landing/vogel-hell.webp"
@@ -61,29 +70,20 @@ export function LandingFooter() {
                 </p>
               </div>
             </div>
-            <a
-              href="https://www.instagram.com/leseno.de/"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Auf Instagram öffnen"
-              title="Instagram"
-              className="mt-5 inline-flex size-9 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="size-5"
-                aria-hidden
-              >
-                <rect width="20" height="20" x="2" y="2" rx="5" ry="5" />
-                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-                <line x1="17.5" x2="17.51" y1="6.5" y2="6.5" />
-              </svg>
-            </a>
+            <nav aria-label="Angebot" className="mt-8">
+              <p className="text-xs font-extrabold tracking-[0.14em] text-zinc-400 uppercase">
+                Angebot
+              </p>
+              <ul className="mt-3 space-y-2.5">
+                {angebotLinks.map((link) => (
+                  <li key={link.href}>
+                    <Link href={link.href} className={linkClass}>
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
           </div>
 
           {footerBlocks.map((block) => (
@@ -94,9 +94,20 @@ export function LandingFooter() {
               <ul className="mt-3 space-y-2.5">
                 {block.links.map((link) => (
                   <li key={link.href}>
-                    <Link href={link.href} className={linkClass}>
-                      {link.label}
-                    </Link>
+                    {"external" in link && link.external ? (
+                      <a
+                        href={link.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={linkClass}
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link href={link.href} className={linkClass}>
+                        {link.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
