@@ -21,11 +21,13 @@ import {
 } from "lucide-react";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
+import { LandingHeroMedia } from "@/components/features/landing/landing-hero-media";
 import { InviteFriendsCard } from "@/components/features/marketing/invite-friends-card";
 import {
   vsChatPositionsForLanding,
   type VsChatPositionId,
 } from "@/lib/social/vs-chat-positioning";
+import { findLandingHeroVideoClip } from "@/lib/video-clips/landing-hero";
 
 const steps = [
   {
@@ -182,7 +184,9 @@ export function LandingPage() {
         <AppHeader />
       </Suspense>
       <main id="main">
-        <HeroSection />
+        <Suspense fallback={<HeroSection videoAvailable={false} />}>
+          <HeroSectionAsync />
+        </Suspense>
         <StepsSection />
         <MoodsSection />
         <BeispieleTeaserSection />
@@ -218,7 +222,17 @@ function LandingHeaderFallback() {
   );
 }
 
-function HeroSection() {
+async function HeroSectionAsync() {
+  let videoAvailable = false;
+  try {
+    videoAvailable = Boolean(await findLandingHeroVideoClip());
+  } catch {
+    videoAvailable = false;
+  }
+  return <HeroSection videoAvailable={videoAvailable} />;
+}
+
+function HeroSection({ videoAvailable }: { videoAvailable: boolean }) {
   return (
     <section id="start" className="scroll-mt-20">
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-12 sm:px-6 sm:py-16 lg:grid-cols-2 lg:gap-14 lg:py-20">
@@ -256,24 +270,25 @@ function HeroSection() {
         </div>
 
         <div className="relative">
-          <div className="overflow-hidden rounded-[2rem] bg-white shadow-xl ring-1 ring-zinc-950/10">
-            <Image
-              src="/landing/hero-lesen.webp"
-              alt="Kind taucht in eine eigene Geschichte ein — aus dem Buch steigt ein Abenteuer"
-              width={1536}
-              height={1024}
-              className="h-auto w-full"
-              sizes="(max-width: 1024px) 100vw, 50vw"
-              priority
-              fetchPriority="high"
-            />
-          </div>
+          <LandingHeroMedia videoAvailable={videoAvailable} />
           <p className="mt-4 text-center text-sm font-semibold text-zinc-500 lg:text-left">
-            Nicht irgendwelche Texte —{" "}
-            <span className="font-extrabold text-zinc-800">
-              dein Abenteuer zum Lesen
-            </span>
-            .
+            {videoAvailable ? (
+              <>
+                Tippe aufs Bild —{" "}
+                <span className="font-extrabold text-zinc-800">
+                  kurzer Clip zum Mitfiebern
+                </span>
+                .
+              </>
+            ) : (
+              <>
+                Nicht irgendwelche Texte —{" "}
+                <span className="font-extrabold text-zinc-800">
+                  dein Abenteuer zum Lesen
+                </span>
+                .
+              </>
+            )}
           </p>
         </div>
       </div>
