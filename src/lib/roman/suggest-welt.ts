@@ -235,6 +235,8 @@ function formatWelt(welt: RomanWelt): string {
 export async function suggestWeltFromLektorUndCoAutor(input: {
   buchTyp: RomanBuchTyp;
   ideeKurz: string;
+  rechercheDossier?: string;
+  tonalitaet?: string;
   grobRegeln: string;
   charaktere: RomanCharakter[];
   existing: RomanWelt;
@@ -248,6 +250,8 @@ export async function suggestWeltFromLektorUndCoAutor(input: {
 
   const weave = hasFilledWelt(input.existing);
   const grob = input.grobRegeln.trim();
+  const recherche = (input.rechercheDossier ?? "").trim();
+  const ton = (input.tonalitaet ?? "").trim();
   const chars = formatCharaktere(input.charaktere) || "(noch keine Steckbriefe)";
   const existingFormatted = formatWelt(input.existing);
 
@@ -261,6 +265,12 @@ ${BUCHTYP_LABELS[input.buchTyp]}
 
 # Ideendokumentation
 ${idee.slice(0, CLIP.idee)}
+
+# Hintergrundrecherche (Fakten/Kontext)
+${recherche.slice(0, CLIP.recherche) || "(keine)"}
+
+# Sprache & Tonalität (Schreiber)
+${ton.slice(0, CLIP.grob) || "(keine)"}
 
 # Basis-Regeln
 ${grob.slice(0, CLIP.grob) || "(leer)"}
@@ -279,6 +289,8 @@ Feldregeln:
 - Vollständige Abschnitte liefern — nicht mittendrin abbrechen.
 - Keine Klischee-Kulisse; jede Regel muss dramaturgisch nutzbar sein.
 - Was die Welt einzigartig macht (kein austauschbares Genre-Kulisse).
+- Recherche für glaubwürdige Orte/Regeln nutzen — nicht Plot erfinden.
+- Schreiber-Tonalität in Atmosphäre der Schauplätze spiegeln (ohne Stil-Essay).
 
 Antworte EXAKT in diesem Format (kein JSON, keine Markdown-Fences, keine Extra-Prosa):
 ${MARK_SCHAU}
@@ -300,7 +312,7 @@ ${ROMAN_EXCELLENCE_MANDATE}
 
 Zusatzauftrag Welt/Setup (Co-Autor):
 Du schreibst die editierbare Welt-Fassung in markierten Abschnitten.
-Quellen: Idee, Basis-Regeln, Figuren${weave ? ", bestehende Welt" : ""}.
+Quellen: Idee, Hintergrundrecherche, Basis-Regeln, Figuren${weave ? ", bestehende Welt" : ""}.
 Nur ${MARK_SCHAU} … ${MARK_ENDE}.`,
     userText: writerUser,
     preferJson: false,

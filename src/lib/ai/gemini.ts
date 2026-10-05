@@ -3,6 +3,7 @@
  * Uses `GEMINI_API_KEY` and the model slug from `leseno.ai_models`.
  */
 
+import { resolveGeminiCachedContent } from "@/lib/ai/gemini-cache";
 import { aiFetchSignal, mapAiFetchError } from "@/lib/ai/fetch-timeout";
 import { recordAiUsage } from "@/lib/ai/usage";
 
@@ -26,6 +27,11 @@ const CREATIVE_WRITING_SAFETY_SETTINGS = [
 export type GeminiGenerateInput = {
   modelSlug: string;
   systemInstruction?: string;
+  /**
+   * Stable book bible. When long enough, stored via Gemini `cachedContents`
+   * and referenced as `cachedContent` so batches reuse tokens.
+   */
+  cacheablePrefix?: string;
   userText: string;
   jsonOutput?: boolean;
   /** Optional output cap (`maxOutputTokens`). */
@@ -159,6 +165,19 @@ export async function generateWithGemini(
     generationConfig.thinkingConfig = { thinkingLevel: level };
   }
 
+  const cacheablePrefix = input.cacheablePrefix?.trim() ?? "";
+  const systemInstruction = input.systemInstruction?.trim() ?? "";
+
+  // Explicit Context Cache when prefix is large enough; else inline fallback.
+  let cachedContentName: string | null = null;
+  if (cacheablePrefix.length >= 200 && !input.googleSearch) {
+    cachedContentName = await resolveGeminiCachedContent({
+      modelSlug: input.modelSlug,
+      systemInstruction,
+      cacheablePrefix,
+    });
+  }
+
   const body: Record<string, unknown> = {
     contents: [
       {
@@ -174,10 +193,23 @@ export async function generateWithGemini(
     body.tools = [{ googleSearch: {} }];
   }
 
-  if (input.systemInstruction?.trim()) {
-    body.systemInstruction = {
-      parts: [{ text: input.systemInstruction }],
-    };
+  if (cachedContentName) {
+    body.cachedContent = cachedContentName;
+  } else {
+    if (systemInstruction) {
+      body.systemInstruction = {
+        parts: [{ text: systemInstruction }],
+      };
+    }
+    if (cacheablePrefix) {
+      // Fallback: prepend stable prefix to user (no explicit cache).
+      body.contents = [
+        {
+          role: "user",
+          parts: [{ text: `${cacheablePrefix}\n\n${input.userText}` }],
+        },
+      ];
+    }
   }
 
   try {

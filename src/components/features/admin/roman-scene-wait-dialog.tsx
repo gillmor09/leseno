@@ -23,6 +23,13 @@ const IDEE_QA_STEPS = [
   "Idee und Dialog werden gespeichert …",
 ] as const;
 
+const RECHERCHE_QA_STEPS = [
+  "Recherche-Coach liest Idee und Nachfrage …",
+  "Google Search recherchiert Hintergründe …",
+  "Recherche-Redakteur verwebt das Dossier …",
+  "Recherche und Quellen werden gespeichert …",
+] as const;
+
 const MARKTANALYSE_STEPS = [
   "Genre und Altersgruppe werden gelesen …",
   "Google Search sucht aktuelle Konkurrenz-Titel …",
@@ -142,6 +149,7 @@ const CLEVER_INFOGRAFIK_STEPS = [
 
 type WaitVariant =
   | "idee"
+  | "recherche"
   | "marktanalyse"
   | "clever-unterthemen"
   | "clever-faktencheck"
@@ -185,6 +193,8 @@ function roleKeysForVariant(variant: WaitVariant): string[] {
   switch (variant) {
     case "idee":
       return ["schreib_coach", "ideen_redakteur"];
+    case "recherche":
+      return ["recherche_coach", "recherche_redakteur"];
     case "marktanalyse":
       return ["marktanalyst"];
     case "clever-unterthemen":
@@ -249,6 +259,8 @@ function stepsForVariant(variant: WaitVariant) {
   switch (variant) {
     case "idee":
       return IDEE_QA_STEPS;
+    case "recherche":
+      return RECHERCHE_QA_STEPS;
     case "marktanalyse":
       return MARKTANALYSE_STEPS;
     case "clever-unterthemen":
@@ -293,6 +305,8 @@ function titleForVariant(variant: WaitVariant) {
   switch (variant) {
     case "idee":
       return "Idee wird weiterentwickelt";
+    case "recherche":
+      return "Recherche läuft";
     case "marktanalyse":
       return "Marktanalyse läuft";
     case "clever-unterthemen":
@@ -447,7 +461,18 @@ export function RomanSceneWaitDialog({
     progressLabel?.trim() ||
     steps[stepIndex] ||
     "KI arbeitet …";
-  const title = titleOverride?.trim() || titleForVariant(variant);
+  const chapterHeadline = (() => {
+    const raw = progressLabel?.trim() ?? "";
+    if (!raw) return null;
+    const beforeColon = raw.split(":")[0]?.trim() ?? "";
+    if (/^Kapitel\s+\d+/i.test(beforeColon)) return beforeColon;
+    if (/^Geschichte\s+\d+/i.test(beforeColon)) return beforeColon;
+    return null;
+  })();
+  const title =
+    titleOverride?.trim() ||
+    chapterHeadline ||
+    titleForVariant(variant);
   const footerHint = footerOverride?.trim() || footerForVariant(variant);
   const barPct = Math.round(((stepIndex + 1) / steps.length) * 100);
   const shownAgent = agentInfo ?? variantAgent;

@@ -400,10 +400,21 @@ export async function pipelineStepDraft(input: {
     events.length = 0;
     events.push(...next);
     const now = Date.now();
-    // Always persist chapter completion so the wait dialog advances even under throttle.
+    // Always persist chapter switches / writes so the wait dialog never sticks
+    // on the previous Kapitel (throttle used to drop „Kapitel 2 schreibt“ right
+    // after „Kapitel 1 fertig“).
     const forceWrite =
-      force || /:\s*fertig\b/i.test(label) || /Schreibbrief fertig/i.test(label);
-    // Throttle DB writes so polling works without hammering history on every sub-step.
+      force ||
+      /:\s*fertig\b/i.test(label) ||
+      /Schreibbrief fertig/i.test(label) ||
+      /^Kapitel\s+\d+/i.test(label.trim()) ||
+      /^Geschichte\s+\d+/i.test(label.trim()) ||
+      /Co-Autor schreibt/i.test(label) ||
+      /Recherche\/Dialog einweben/i.test(label) ||
+      /Continuity vorbereiten/i.test(label) ||
+      /Längen-Pass/i.test(label) ||
+      /unter Min/i.test(label);
+    // Throttle only generic sub-noise; chapter labels always write.
     if (!forceWrite && now - lastProgressWriteAt < 1_200) return;
     lastProgressWriteAt = now;
     await appendEvents({ runId: input.runId, events });

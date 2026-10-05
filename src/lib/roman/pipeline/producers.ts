@@ -97,7 +97,9 @@ export async function draftStage(
   const editorial = roman.editorial ?? emptyRomanEditorial();
   const buchTyp = buchTypOf(roman);
   const ideeKurz = editorial.ideeKurz ?? "";
+  const rechercheDossier = editorial.rechercheDossier ?? "";
   const grobRegeln = editorial.grobRegeln ?? "";
+  const tonalitaet = roman.tonalitaet ?? "";
 
   if (stage === "idee") {
     // Idee draft is normally Q&A; vertical runner expects existing dossier.
@@ -117,6 +119,8 @@ export async function draftStage(
     const data = await suggestCharaktereFromIdee({
       buchTyp,
       ideeKurz,
+      rechercheDossier,
+      tonalitaet,
       grobRegeln,
       existing: roman.charaktere,
     });
@@ -132,6 +136,8 @@ export async function draftStage(
     const data = await suggestWeltFromLektorUndCoAutor({
       buchTyp,
       ideeKurz,
+      rechercheDossier,
+      tonalitaet,
       grobRegeln,
       charaktere: roman.charaktere,
       existing: {
@@ -154,6 +160,8 @@ export async function draftStage(
     const data = await suggestExposeFromCoAutor({
       buchTyp,
       ideeKurz,
+      rechercheDossier,
+      tonalitaet,
       grobRegeln,
       charaktere: roman.charaktere,
       weltSchauplaetze: roman.weltSchauplaetze,
@@ -185,6 +193,7 @@ export async function draftStage(
       weltSchauplaetze: roman.weltSchauplaetze,
       weltRegeln: roman.weltRegeln,
       existingPlot: roman.manuskriptRaw ?? "",
+      tonalitaet,
     });
     const guard = assertChapterStructure(
       roman.manuskriptRaw ?? "",
@@ -201,6 +210,7 @@ export async function draftStage(
       {
         ...editorial,
         szenenplotStructured: data.structured,
+        wissensGraph: data.wissensGraph,
       },
       "szenenplot",
       null,
@@ -213,9 +223,10 @@ export async function draftStage(
       (n, c) => n + c.scenes.length,
       0,
     );
+    const graphNodes = data.wissensGraph?.nodes.length ?? 0;
     return {
       roman: saved,
-      summary: `Kapitelgerüst entworfen (${data.modelLabel}) · ${data.structured.chapters.length} Kap. / ${sceneCount} Szenen.`,
+      summary: `Kapitelgerüst entworfen (${data.modelLabel}) · ${data.structured.chapters.length} Kap. / ${sceneCount} Szenen · Wissensgraph ${graphNodes} Knoten.`,
       modelLabel: data.modelLabel,
     };
   }
@@ -535,6 +546,9 @@ Maximal 8 Findings; Regel-/Logik-Verstöße und kritische Logikfehler zuerst.`,
       weltRegeln: roman.weltRegeln,
       szenenplot: roman.manuskriptRaw ?? "",
       editorial,
+      title: roman.title,
+      genre: roman.genre,
+      tonalitaet: roman.tonalitaet ?? "",
     });
     raw = r.critique;
     modelLabel = r.modelLabel;
@@ -551,6 +565,7 @@ Maximal 8 Findings; Regel-/Logik-Verstöße und kritische Logikfehler zuerst.`,
       weltRegeln: roman.weltRegeln,
       szenenplot: roman.manuskriptRaw ?? "",
       manuskriptText: editorial.manuskriptText ?? "",
+      tonalitaet: roman.tonalitaet ?? "",
     });
     raw = r.critique;
     modelLabel = r.modelLabel;

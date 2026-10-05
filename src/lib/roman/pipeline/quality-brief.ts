@@ -80,6 +80,7 @@ export const PROMPT_SOFT_CAP_CHARS = 800_000;
  */
 export const CLIP = {
   idee: PROMPT_SOFT_CAP_CHARS,
+  recherche: PROMPT_SOFT_CAP_CHARS,
   grob: PROMPT_SOFT_CAP_CHARS,
   charaktere: PROMPT_SOFT_CAP_CHARS,
   weltSchau: PROMPT_SOFT_CAP_CHARS,

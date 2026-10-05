@@ -1,32 +1,28 @@
 "use server";
 
 /**
- * Idea Q&A: Schreib-Coach turns woven into ideeKurz by Ideen-Redakteur.
- * Critique / Verbessern is handled by the vertical pipeline (Entwicklungslektor).
+ * Recherche Q&A: Gemini + Google Search coach turns woven into rechercheDossier.
  */
 
-import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
   emptyRomanEditorial,
   isBuchTypSet,
+  mergeRechercheSources,
   type RomanBuchTyp,
   type RomanEditorial,
 } from "@/lib/roman/editorial";
 import {
-  chatIdeeMitSchreibCoach,
-  weaveIdeeKurz,
-} from "@/lib/roman/idea-qa";
-import {
-  getRomanKontext,
-  setRomanIdeenChat,
-  upsertRomanKontext,
-} from "@/lib/roman/repository";
+  chatRechercheCoach,
+  weaveRechercheDossier,
+} from "@/lib/roman/recherche-qa";
+import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
+import { getRomanKontext, upsertRomanKontext } from "@/lib/roman/repository";
 import type { RomanIdeaChatMessage, RomanKontext } from "@/lib/roman/types";
 import type { ActionResult } from "@/lib/types/actions";
 
-const romanIdeeQaTurnSchema = z.object({
+const turnSchema = z.object({
   romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
   userMessage: z
     .string()
@@ -35,12 +31,19 @@ const romanIdeeQaTurnSchema = z.object({
     .max(8000),
 });
 
-async function persistIdeeKurz(
+async function persistRecherche(
   roman: RomanKontext,
   editorial: RomanEditorial,
-  ideeKurz: string,
+  dossier: string,
+  chat: RomanIdeaChatMessage[],
+  sources: RomanEditorial["rechercheSources"],
 ): Promise<RomanKontext> {
-  const nextEditorial = { ...editorial, ideeKurz };
+  const nextEditorial: RomanEditorial = {
+    ...editorial,
+    rechercheDossier: dossier,
+    rechercheChat: chat,
+    rechercheSources: sources,
+  };
   const saved = await upsertRomanKontext({
     id: roman.id,
     title: roman.title,
@@ -65,21 +68,21 @@ async function persistIdeeKurz(
 }
 
 /**
- * One Q&A turn: coach chat → weave ideeKurz → save chat + editorial.
+ * One Q&A turn: search-backed coach → weave dossier → save chat + sources.
  */
-export async function romanIdeeQaTurnAction(
+export async function romanRechercheQaTurnAction(
   input: unknown,
 ): Promise<
   ActionResult<{
     roman: RomanKontext;
     reply: string;
-    ideeKurz: string;
+    rechercheDossier: string;
   }>
 > {
   const denied = await denyUnlessAdmin();
   if (denied) return { success: false, error: denied };
 
-  const parsed = romanIdeeQaTurnSchema.safeParse(input);
+  const parsed = turnSchema.safeParse(input);
   if (!parsed.success) {
     return {
       success: false,
@@ -102,25 +105,32 @@ export async function romanIdeeQaTurnAction(
     }
 
     const editorial = roman.editorial ?? emptyRomanEditorial();
-    const history = roman.ideenChat ?? [];
+    const ideeKurz = (editorial.ideeKurz ?? "").trim();
+    if (ideeKurz.length < 40) {
+      return {
+        success: false,
+        error: "Zuerst im Schritt Idee eine Dokumentation erarbeiten.",
+      };
+    }
+
+    const history = editorial.rechercheChat ?? [];
     const userMessage = parsed.data.userMessage;
+    const currentDossier = editorial.rechercheDossier ?? "";
 
-    const schreiberSpracheTonalitaet = roman.tonalitaet ?? "";
-
-    const coach = await chatIdeeMitSchreibCoach({
+    const coach = await chatRechercheCoach({
       buchTyp: buchTyp as RomanBuchTyp,
-      ideeKurz: editorial.ideeKurz ?? "",
+      ideeKurz,
+      dossier: currentDossier,
       history,
       userMessage,
-      schreiberSpracheTonalitaet,
     });
 
-    const woven = await weaveIdeeKurz({
+    const woven = await weaveRechercheDossier({
       buchTyp: buchTyp as RomanBuchTyp,
-      ideeKurz: editorial.ideeKurz ?? "",
+      ideeKurz,
+      dossier: currentDossier,
       userMessage,
       coachReply: coach.reply,
-      schreiberSpracheTonalitaet,
     });
 
     const nextChat: RomanIdeaChatMessage[] = [
@@ -129,16 +139,25 @@ export async function romanIdeeQaTurnAction(
       { role: "assistant" as const, content: coach.reply },
     ].slice(-60);
 
-    const saved = await persistIdeeKurz(roman, editorial, woven.ideeKurz);
-    await setRomanIdeenChat({ id: saved.id, messages: nextChat });
+    const sources = mergeRechercheSources(
+      editorial.rechercheSources,
+      mergeRechercheSources(coach.sources, woven.sources),
+    );
 
-    const withChat: RomanKontext = { ...saved, ideenChat: nextChat };
+    const saved = await persistRecherche(
+      roman,
+      editorial,
+      woven.dossier,
+      nextChat,
+      sources,
+    );
+
     return {
       success: true,
       data: {
-        roman: withChat,
+        roman: saved,
         reply: coach.reply,
-        ideeKurz: woven.ideeKurz,
+        rechercheDossier: woven.dossier,
       },
     };
   } catch (error) {
@@ -147,7 +166,7 @@ export async function romanIdeeQaTurnAction(
       error:
         error instanceof Error
           ? error.message
-          : "Ideen-Q&A fehlgeschlagen.",
+          : "Recherche-Q&A fehlgeschlagen.",
     };
   }
 }

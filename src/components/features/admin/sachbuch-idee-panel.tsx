@@ -15,6 +15,7 @@ import {
 } from "@/app/actions/sachbuch-phases";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
+import { useDeepgramLiveStt } from "@/hooks/use-deepgram-live-stt";
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 import { SACHBUCH_MAKRO_TYP_LABELS } from "@/lib/sachbuch/types";
 import {
@@ -50,12 +51,13 @@ export function SachbuchIdeePanel({
   const [pending, setPending] = useState(false);
   const [waitKind, setWaitKind] = useState<"turn" | "uvp" | null>(null);
   const [undoConfirmOpen, setUndoConfirmOpen] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [liveTranscript, setLiveTranscript] = useState("");
-  const wsRef = useRef<WebSocket | null>(null);
-  const mediaRef = useRef<MediaStream | null>(null);
-  const recorderRef = useRef<ScriptProcessorNode | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const {
+    listening,
+    liveTranscript,
+    startListening,
+    stopListening,
+    clearTranscript,
+  } = useDeepgramLiveStt({ enabled: canSave });
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -74,35 +76,10 @@ export function SachbuchIdeePanel({
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [book.idee.interviewMessages]);
 
-  useEffect(() => () => stopListening(), []);
-
-  function stopListening() {
-    try {
-      wsRef.current?.close();
-    } catch {
-      /* ignore */
-    }
-    wsRef.current = null;
-    try {
-      recorderRef.current?.disconnect();
-    } catch {
-      /* ignore */
-    }
-    recorderRef.current = null;
-    try {
-      void audioCtxRef.current?.close();
-    } catch {
-      /* ignore */
-    }
-    audioCtxRef.current = null;
-    mediaRef.current?.getTracks().forEach((t) => t.stop());
-    mediaRef.current = null;
-    setListening(false);
-  }
-
   async function submitText(text: string) {
     const trimmed = text.trim();
     if (!trimmed || !canSave || pending) return;
+    if (listening) stopListening();
     setPending(true);
     setWaitKind("turn");
     try {
@@ -116,91 +93,10 @@ export function SachbuchIdeePanel({
       }
       onBookUpdate(result.data!.book);
       setDraft("");
-      setLiveTranscript("");
+      clearTranscript();
     } finally {
       setWaitKind(null);
       setPending(false);
-    }
-  }
-
-  async function startListening() {
-    if (listening || pending || !canSave) return;
-    try {
-      const tokenRes = await fetch("/api/admin/sachbuch/deepgram-token", {
-        method: "POST",
-      });
-      const tokenJson = (await tokenRes.json()) as {
-        token?: string;
-        error?: string;
-      };
-      if (!tokenRes.ok || !tokenJson.token) {
-        toast.error(tokenJson.error ?? "Deepgram-Token fehlgeschlagen.");
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRef.current = stream;
-      const url =
-        "wss://api.deepgram.com/v1/listen?" +
-        new URLSearchParams({
-          model: "nova-3",
-          language: "de",
-          punctuate: "true",
-          interim_results: "true",
-          endpointing: "300",
-          encoding: "linear16",
-          sample_rate: "16000",
-          channels: "1",
-        }).toString();
-      const ws = new WebSocket(url, ["token", tokenJson.token]);
-      wsRef.current = ws;
-      let finalBuffer = "";
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(String(event.data)) as {
-            is_final?: boolean;
-            channel?: { alternatives?: Array<{ transcript?: string }> };
-          };
-          const alt = data.channel?.alternatives?.[0]?.transcript ?? "";
-          if (!alt) return;
-          if (data.is_final) {
-            finalBuffer = `${finalBuffer} ${alt}`.trim();
-            setLiveTranscript(finalBuffer);
-          } else {
-            setLiveTranscript(`${finalBuffer} ${alt}`.trim());
-          }
-        } catch {
-          /* ignore */
-        }
-      };
-      ws.onerror = () => {
-        toast.error("Deepgram-Verbindung fehlgeschlagen.");
-        stopListening();
-      };
-      ws.onopen = () => {
-        const audioCtx = new AudioContext({ sampleRate: 16000 });
-        audioCtxRef.current = audioCtx;
-        const source = audioCtx.createMediaStreamSource(stream);
-        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-        recorderRef.current = processor;
-        processor.onaudioprocess = (e) => {
-          if (ws.readyState !== WebSocket.OPEN) return;
-          const input = e.inputBuffer.getChannelData(0);
-          const pcm = new Int16Array(input.length);
-          for (let i = 0; i < input.length; i++) {
-            const s = Math.max(-1, Math.min(1, input[i]!));
-            pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-          }
-          ws.send(pcm.buffer);
-        };
-        source.connect(processor);
-        processor.connect(audioCtx.destination);
-        setListening(true);
-      };
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Mikrofon nicht verfügbar.",
-      );
-      stopListening();
     }
   }
 

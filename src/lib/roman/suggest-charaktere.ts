@@ -158,6 +158,10 @@ const JSON_SHAPE = `{
 export async function suggestCharaktereFromIdee(input: {
   buchTyp: RomanBuchTyp;
   ideeKurz: string;
+  /** Optional background research dossier (Idee → Spec). */
+  rechercheDossier?: string;
+  /** Explicit Schreiber Sprache & Tonalität from Basics. */
+  tonalitaet?: string;
   grobRegeln: string;
   existing: RomanCharakter[];
 }): Promise<CharaktereSuggestResult> {
@@ -171,6 +175,8 @@ export async function suggestCharaktereFromIdee(input: {
   const existing = filterDraftChars(input.existing);
   const weave = hasFilledCharaktere(existing);
   const grob = input.grobRegeln.trim();
+  const recherche = (input.rechercheDossier ?? "").trim();
+  const ton = (input.tonalitaet ?? "").trim();
 
   const { rolle, model } = await resolveRomanKiRolle("co_autor");
 
@@ -189,6 +195,12 @@ ${BUCHTYP_LABELS[input.buchTyp]}
 # Ideendokumentation (Primärquelle für Figurenkerne)
 ${idee.slice(0, CLIP.idee)}
 
+# Hintergrundrecherche (Fakten/Kontext — keine Plot-Erfindung)
+${recherche.slice(0, CLIP.recherche) || "(keine — nur Idee + Grob-Regeln)"}
+
+# Sprache & Tonalität (Schreiber — verbindlich für Dialog/Innenstimme)
+${ton.slice(0, CLIP.grob) || "(keine — aus Idee/Grob-Regeln ableiten)"}
+
 # Grob-Regeln (Ton, Tabus, Zielgruppe, Länge — verbindliche Leitplanken)
 ${grob.slice(0, CLIP.grob) || "(leer — nur aus der Idee ableiten)"}
 
@@ -205,7 +217,8 @@ Feldregeln:
 - bogen ≠ motivation ≠ schwaeche.
 - Keine Eigennamen erfinden, wenn Idee/Grob-Regeln keine nennen — rolle füllen, name darf leer bleiben (Fachberater-Lauf folgt).
 - Belletristik: dramaturgisch tragfähige Besetzung. Sachbuch: ggf. Stimmen/Perspektiven statt Handlungsfiguren.
-- Jede Figur braucht erkennbare Eigenwilligkeit — kein austauschbares Genre-Mittelmaß.`;
+- Jede Figur braucht erkennbare Eigenwilligkeit — kein austauschbares Genre-Mittelmaß.
+- Recherche nutzen für glaubwürdige Berufe/Hintergründe — nicht als Figurenliste missverstehen.`;
 
   const system = `${rolle.systemPrompt}
 
@@ -213,7 +226,7 @@ ${ROMAN_EXCELLENCE_MANDATE}
 
 Zusatzauftrag Charakter-Steckbriefe:
 Du erstellst oder verwebst editierbare Figuren-Steckbriefe für dieses Buch.
-Quellen: Ideendokumentation + Grob-Regeln${weave ? " + bestehende Steckbriefe" : ""}.
+Quellen: Ideendokumentation + Hintergrundrecherche + Grob-Regeln${weave ? " + bestehende Steckbriefe" : ""}.
 ${weave ? "Verweben/Aufwerten/Hinzufügen/Entfernen — nicht blind überschreiben." : "Neu anlegen."}
 Antwort NUR als JSON mit Key "charaktere" (Array). Keine Markdown-Codeblöcke.`;
 

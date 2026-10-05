@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Book admin tab shell: Basics → Idee → Spec → Kapitelgerüst → Manuskript → Export.
+ * Book admin tab shell: Basics → Idee → Recherche → Spec → Kapitelgerüst → Manuskript → Export.
  * KI-Rollen live at `{basePath}/rollen` (Roman / Clever).
  */
 
@@ -21,6 +21,7 @@ import {
   type FundamentBasics,
 } from "@/components/features/admin/roman-fundament-panel";
 import { RomanIdeeQaPanel } from "@/components/features/admin/roman-idee-qa-panel";
+import { RomanRechercheQaPanel } from "@/components/features/admin/roman-recherche-qa-panel";
 import { RomanManuskriptPanel } from "@/components/features/admin/roman-manuskript-panel";
 import { RomanManuskriptVereinfachenControl } from "@/components/features/admin/roman-manuskript-vereinfachen-control";
 import { RomanManuskriptChapterControl } from "@/components/features/admin/roman-manuskript-chapter-control";
@@ -81,6 +82,7 @@ import { cn } from "@/lib/utils";
 const PIPELINE_TABS = [
   { id: "typ", label: "Basics" },
   { id: "idee", label: "Idee" },
+  { id: "recherche", label: "Recherche" },
   { id: "spec", label: "Spec" },
   { id: "outline", label: "Kapitelgerüst" },
   { id: "schreiben", label: "Manuskript" },
@@ -179,6 +181,7 @@ export function RomanAdminWorkspace({
       title: initialRoman.title,
       genre: initialRoman.genre,
       editorial: initialRoman.editorial ?? emptyRomanEditorial(),
+      tonalitaet: initialRoman.tonalitaet,
     }),
   );
   const [charaktere, setCharaktere] = useState<RomanCharakter[]>(() =>
@@ -224,7 +227,9 @@ export function RomanAdminWorkspace({
 
   const visibleTabs = useMemo(() => {
     const base = isCleverErzaehlt
-      ? PIPELINE_TABS.filter((t) => t.id !== "idee" && t.id !== "spec")
+      ? PIPELINE_TABS.filter(
+          (t) => t.id !== "idee" && t.id !== "recherche" && t.id !== "spec",
+        )
       : PIPELINE_TABS;
     if (!isCleverErzaehlt) return base;
     return base.map((t) => {
@@ -234,7 +239,10 @@ export function RomanAdminWorkspace({
     });
   }, [isCleverErzaehlt]);
 
-  if (isCleverErzaehlt && (tab === "idee" || tab === "spec")) {
+  if (
+    isCleverErzaehlt &&
+    (tab === "idee" || tab === "recherche" || tab === "spec")
+  ) {
     setTab("typ");
   }
 
@@ -271,6 +279,7 @@ export function RomanAdminWorkspace({
           fundament.genre.trim().length >= 2 ||
           fundament.grobRegeln.trim().length >= 20,
       idee: (editorial.ideeKurz ?? "").trim().length >= 40,
+      recherche: (editorial.rechercheDossier ?? "").trim().length >= 40,
       spec:
         hasFilledCharaktere(charaktere) &&
         hasFilledWelt(welt) &&
@@ -312,6 +321,7 @@ export function RomanAdminWorkspace({
         title: saved.title,
         genre: saved.genre,
         editorial: nextEd,
+        tonalitaet: saved.tonalitaet,
       }),
     );
     setCharaktere(
@@ -388,12 +398,16 @@ export function RomanAdminWorkspace({
     const directionTon = isCleverErzaehlt
       ? ""
       : tonalitaetFromRichtungen(fundament.richtungen);
+    const schreiberTon =
+      fundament.schreiberSpracheTonalitaet.trim() ||
+      directionTon ||
+      roman.tonalitaet;
     setSavePending(true);
     const result = await saveRomanKontextAction(
       romanToSavePayload(
         {
           ...roman,
-          tonalitaet: directionTon || roman.tonalitaet,
+          tonalitaet: schreiberTon,
         },
         nextEditorial,
         fixedBuchTyp,
@@ -416,6 +430,7 @@ export function RomanAdminWorkspace({
         title: saved.title,
         genre: saved.genre,
         editorial: saved.editorial ?? nextEditorial,
+        tonalitaet: saved.tonalitaet,
       }),
     );
     toast.success("Fundament gespeichert.");
@@ -802,6 +817,28 @@ export function RomanAdminWorkspace({
                 savePending={savePending}
                 onSave={() => void saveFundament()}
                 showRichtungen={!isCleverErzaehlt}
+                romanId={roman.id}
+                schreiberTonalitaetChat={
+                  editorial.schreiberTonalitaetChat ?? []
+                }
+                onSchreiberTonalitaetApplied={({ tonalitaet, chat }) => {
+                  setFundament((prev) => ({
+                    ...prev,
+                    schreiberSpracheTonalitaet: tonalitaet,
+                  }));
+                  setEditorial((prev) => ({
+                    ...prev,
+                    schreiberTonalitaetChat: chat,
+                  }));
+                  setRoman((prev) => ({
+                    ...prev,
+                    tonalitaet,
+                    editorial: {
+                      ...(prev.editorial ?? emptyRomanEditorial()),
+                      schreiberTonalitaetChat: chat,
+                    },
+                  }));
+                }}
               />
             </div>
 
@@ -903,6 +940,56 @@ export function RomanAdminWorkspace({
               )}
             </section>
           </div>
+        ) : tab === "recherche" ? (
+          <div className="space-y-4">
+            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-extrabold text-zinc-950">
+                  Recherche
+                </h2>
+                <RomanStepFertigToggle
+                  checked={isPipelineTabFertig(editorial, "recherche")}
+                  disabled={!canSave}
+                  pending={savePending}
+                  onCheckedChange={(v) =>
+                    void savePipelineFertig("recherche", v)
+                  }
+                />
+              </div>
+              {!typSet ? (
+                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+                  Zuerst Buchtyp wählen.
+                </p>
+              ) : (
+                <RomanRechercheQaPanel
+                  romanId={roman.id}
+                  messages={editorial.rechercheChat ?? []}
+                  rechercheDossier={editorial.rechercheDossier ?? ""}
+                  sources={editorial.rechercheSources ?? []}
+                  canSave={canSave}
+                  disabled={savePending || pipelineBusy}
+                  hasIdee={(editorial.ideeKurz ?? "").trim().length >= 40}
+                  onTurnComplete={({ messages, rechercheDossier, sources }) => {
+                    setEditorial((prev) => ({
+                      ...prev,
+                      rechercheChat: messages,
+                      rechercheDossier,
+                      rechercheSources: sources,
+                    }));
+                    setRoman((prev) => ({
+                      ...prev,
+                      editorial: {
+                        ...prev.editorial,
+                        rechercheChat: messages,
+                        rechercheDossier,
+                        rechercheSources: sources,
+                      },
+                    }));
+                  }}
+                />
+              )}
+            </section>
+          </div>
         ) : tab === "spec" ? (
           <div className="space-y-4">
             {typSet ? (
@@ -938,6 +1025,13 @@ export function RomanAdminWorkspace({
                 </p>
               ) : (
                 <div className="space-y-8">
+                  {(editorial.ideeKurz ?? "").trim().length >= 40 &&
+                  (editorial.rechercheDossier ?? "").trim().length < 40 ? (
+                    <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+                      Optional: Im Schritt Recherche Hintergründe vertiefen —
+                      Spec nutzt das Dossier mit.
+                    </p>
+                  ) : null}
                   <RomanPipelineStageActions
                     romanId={roman.id}
                     stage="expose"
@@ -1087,6 +1181,22 @@ export function RomanAdminWorkspace({
                     displayLabel="Kapitelgerüst"
                     rolesHref={rolesHref}
                   />
+                  {editorial.wissensGraph?.nodes?.length ? (
+                    <p className="rounded-2xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-700 ring-1 ring-zinc-950/8">
+                      Wissensgraph: {editorial.wissensGraph.nodes.length} Knoten ·{" "}
+                      {editorial.wissensGraph.edges.length} Relationen ·{" "}
+                      {editorial.wissensGraph.hardInvariants.length} Invarianten
+                      {editorial.wissensGraph.seededFrom?.length
+                        ? ` · Seed: ${editorial.wissensGraph.seededFrom.join(", ")}`
+                        : ""}
+                    </p>
+                  ) : (
+                    <p className="text-sm font-semibold text-zinc-600">
+                      Beim Erzeugen entsteht der Wissensgraph aus Idee,
+                      Recherche, Spec und Tonalität — und wächst mit jedem
+                      Kapitel-Batch.
+                    </p>
+                  )}
                   <RomanSzenenplotPanel
                     hasExpose={hasExposeDoc}
                     value={szenenplot}
@@ -1162,6 +1272,24 @@ export function RomanAdminWorkspace({
                     rolesHref={rolesHref}
                     cleverStories={isCleverErzaehlt}
                   />
+                  {!isCleverErzaehlt ? (
+                    editorial.wissensGraph?.nodes?.length ? (
+                      <p className="rounded-2xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-700 ring-1 ring-zinc-950/8">
+                        Wissensgraph: {editorial.wissensGraph.nodes.length}{" "}
+                        Knoten · {editorial.wissensGraph.edges.length} Relationen
+                        · {editorial.wissensGraph.hardInvariants.length}{" "}
+                        Invarianten
+                        {editorial.wissensGraph.seededFrom?.length
+                          ? ` · Seed: ${editorial.wissensGraph.seededFrom.join(", ")}`
+                          : ""}
+                      </p>
+                    ) : (
+                      <p className="text-sm font-semibold text-zinc-600">
+                        Wissensgraph kommt aus dem Kapitelgerüst und wächst beim
+                        Manuskript-Schreiben / Verbessern mit.
+                      </p>
+                    )
+                  ) : null}
                   {!isCleverErzaehlt ? (
                     <RomanManuskriptVereinfachenControl
                       romanId={roman.id}

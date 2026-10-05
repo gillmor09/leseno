@@ -44,6 +44,14 @@ import {
   buildWeaveSystemAddendum,
   resolveAuthorWeaveComment,
 } from "@/lib/roman/weave-comment";
+import { buildRomanStaticBookPrefix } from "@/lib/roman/prompt-prefix";
+import {
+  closeWissensGraphGaps,
+  formatWissensGraphForPrompt,
+  growWissensGraphFromSzenenBatch,
+  seedWissensGraphFromSources,
+} from "@/lib/roman/wissens-graph";
+import type { RomanWissensGraph } from "@/lib/roman/editorial";
 
 const MARK_KAPITEL_START = "===KAPITEL===";
 const MARK_KAPITEL_ENDE = "===ENDE===";
@@ -81,6 +89,8 @@ export type SzenenplotSuggestResult = {
   structured: RomanSzenenplotStructured;
   woven: boolean;
   modelLabel: string;
+  /** Knowledge graph seeded + grown during this Erzeugen run. */
+  wissensGraph: RomanWissensGraph | null;
 };
 
 export type SzenenplotCritiqueResult = {
@@ -122,6 +132,37 @@ function typHints(buchTyp: RomanBuchTyp): string {
   }
 }
 
+/** Stable book bible for prompt-caching (no live graph / chapter deltas). */
+function buildStaticBookPrefix(input: {
+  buchTyp: RomanBuchTyp;
+  title: string;
+  genre: string;
+  ideeKurz: string;
+  grobRegeln: string;
+  editorial: RomanEditorial;
+  charaktere: RomanCharakter[];
+  weltSchauplaetze: string;
+  weltRegeln: string;
+  rechercheDossier?: string;
+  tonalitaet?: string;
+}): string {
+  return `${buildRomanStaticBookPrefix({
+    buchTyp: input.buchTyp,
+    title: input.title,
+    genre: input.genre,
+    ideeKurz: input.ideeKurz,
+    rechercheDossier: input.rechercheDossier,
+    tonalitaet: input.tonalitaet,
+    grobRegeln: input.grobRegeln,
+    editorial: input.editorial,
+    charaktere: input.charaktere,
+    weltSchauplaetze: input.weltSchauplaetze,
+    weltRegeln: input.weltRegeln,
+  })}
+
+${typHints(input.buchTyp)}`;
+}
+
 function buildSharedContext(input: {
   buchTyp: RomanBuchTyp;
   title: string;
@@ -132,37 +173,16 @@ function buildSharedContext(input: {
   charaktere: RomanCharakter[];
   weltSchauplaetze: string;
   weltRegeln: string;
+  /** Background research dossier (Idee → Spec). */
+  rechercheDossier?: string;
+  /** Explicit Schreiber Sprache & Tonalität. */
+  tonalitaet?: string;
+  /** Optional knowledge-graph block for continuity. */
+  wissensGraphBlock?: string;
 }): string {
-  const expose = exposeTextFromEditorial(input.editorial);
-  const chars = formatCharaktere(input.charaktere) || "(noch keine Steckbriefe)";
-  const zielWort =
-    input.editorial.zielWortzahlRoman != null
-      ? String(input.editorial.zielWortzahlRoman)
-      : "?";
-
-  return `# Buch
-Titel: ${input.title.trim() || "(ohne)"}
-Buchtyp: ${BUCHTYP_LABELS[input.buchTyp]}
-Genre: ${input.genre.trim() || "—"}
-Zielwortzahl (Orientierung): ${zielWort}
-
-# Ideendokumentation
-${input.ideeKurz.trim().slice(0, CLIP.idee) || "(leer)"}
-
-# Grob-Regeln
-${input.grobRegeln.trim().slice(0, CLIP.grob) || "(leer)"}
-
-# Exposé (verbindliche grobe Handlung)
-${expose.slice(0, CLIP.expose)}
-
-# Charaktere
-${chars.slice(0, CLIP.charaktere)}
-
-# Welt
-Schauplätze: ${input.weltSchauplaetze.trim().slice(0, CLIP.weltSchau) || "(leer)"}
-Regeln: ${input.weltRegeln.trim().slice(0, CLIP.weltRegeln) || "(leer)"}
-
-${typHints(input.buchTyp)}`;
+  const prefix = buildStaticBookPrefix(input);
+  const graph = input.wissensGraphBlock?.trim() ?? "";
+  return graph ? `${prefix}\n\n${graph}` : prefix;
 }
 
 type SkeletonChapter = {
@@ -215,7 +235,7 @@ function renumberSceneIds(
 
 /**
  * Co-Autor: structured Szenenplot in two passes (skeleton → scene batches).
- * One-shot full-book JSON often truncates mid-object → parse failures.
+ * Seeds + grows knowledge graph (Idee/Recherche/Spec/Ton) so Gerüst has no gaps.
  */
 export async function suggestSzenenplotFromCoAutor(input: {
   buchTyp: RomanBuchTyp;
@@ -228,6 +248,8 @@ export async function suggestSzenenplotFromCoAutor(input: {
   weltSchauplaetze: string;
   weltRegeln: string;
   existingPlot: string;
+  /** Explicit Schreiber Sprache & Tonalität from Basics. */
+  tonalitaet?: string;
 }): Promise<SzenenplotSuggestResult> {
   const expose = exposeTextFromEditorial(input.editorial);
   const hasSpec =
@@ -243,22 +265,50 @@ export async function suggestSzenenplotFromCoAutor(input: {
   const weave = hasFilledSzenenplot(input.existingPlot);
   const { rolle, model } = await resolveRomanKiRolle("co_autor");
   const kapitelZiel = suggestedChapterCount(input.editorial.zielWortzahlRoman);
-  const sharedContext = buildSharedContext(input);
+  const rechercheDossier = input.editorial.rechercheDossier ?? "";
+  const tonalitaet = (input.tonalitaet ?? "").trim();
+
+  // Seed knowledge graph before skeleton so batches already see invariants.
+  let wissensGraph = await seedWissensGraphFromSources({
+    buchTyp: input.buchTyp,
+    title: input.title,
+    genre: input.genre,
+    ideeKurz: input.ideeKurz,
+    rechercheDossier,
+    tonalitaet,
+    grobRegeln: input.grobRegeln,
+    editorial: input.editorial,
+    charaktere: input.charaktere,
+    weltSchauplaetze: input.weltSchauplaetze,
+    weltRegeln: input.weltRegeln,
+  });
+
+  const staticPrefix = buildStaticBookPrefix({
+    ...input,
+    rechercheDossier,
+    tonalitaet,
+  });
   const systemBase = `${rolle.systemPrompt}
 
 ${ROMAN_EXCELLENCE_MANDATE}
 
-${SZENENPLOT_STRUCTURED_SYSTEM_ADDENDUM}`;
+${SZENENPLOT_STRUCTURED_SYSTEM_ADDENDUM}
+
+Zusatz: Wissensgraph und Recherche/Tonalität sind verbindlich — keine Lücken, keine Widersprüche zu hardInvariants.`;
 
   const weaveBlock = weave
     ? `Bestehenden Plot VERWEBEN/SCHÄRFEN — brauchbare Kapitel behalten, Lücken schließen, Widersprüche zum Exposé auflösen.`
-    : `Szenenplot NEU aus Exposé, Idee, Figuren und Welt.`;
+    : `Szenenplot NEU aus Exposé, Idee, Recherche, Figuren und Welt.`;
 
   // Pass 1: chapter skeleton only (small JSON — reliable).
+  // cacheablePrefix stays byte-identical across skeleton + all scene batches.
   const skeletonRaw = await generateText({
     model,
     systemInstruction: systemBase,
-    userText: `${sharedContext}
+    cacheablePrefix: staticPrefix,
+    userText: `${formatWissensGraphForPrompt(wissensGraph, {
+      maxChars: CLIP.sharedContext,
+    })}
 
 # Bisheriger Plot (Orientierung)
 ${weave ? input.existingPlot.trim().slice(0, CLIP.szenenplot) : "(leer — neu anlegen)"}
@@ -268,6 +318,7 @@ ${weaveBlock}
 Auftrag Pass 1 — nur Kapitelgerüst (Titel + Kernsatz), KEINE Szenen:
 - Ca. ${kapitelZiel} Kapitel (mind. ${Math.max(4, kapitelZiel - 2)}, max. ${Math.min(MAX_CHAPTERS, kapitelZiel + 2)}).
 - Chronologisch, Exposé-Bogen abdecken.
+- Wissensgraph/Recherche-Fakten und Tonalität in Kapitel-Funktionen spiegeln.
 - Auf Deutsch.
 
 Schema:
@@ -302,11 +353,15 @@ Nur JSON.`,
       )
       .join("\n");
 
+    const liveGraphBlock = formatWissensGraphForPrompt(wissensGraph, {
+      maxChars: CLIP.sharedContext,
+    });
+
     const batchRaw = await generateText({
       model,
       systemInstruction: systemBase,
-      userText: `${sharedContext}
-
+      cacheablePrefix: staticPrefix,
+      userText: `${liveGraphBlock ? `${liveGraphBlock}\n` : ""}
 # Gesamtes Kapitelgerüst (Orientierung)
 ${outlineBlock}
 
@@ -319,6 +374,7 @@ ${
 Schreibe NUR diese Kapitel mit vollständigen Szenen (typisch 2–5 pro Kapitel).
 Jede Szene: dramaturgy (inkl. outcome_value_change), information_flow, continuity.
 scene_id fortlaufend SZ_01… innerhalb des Batches ok (werden später normalisiert).
+Continuity muss Wissensgraph fortschreiben (character_states_after, next_scene_hook).
 Auf Deutsch. Felder kurz (1–2 Sätze).
 
 Schema (nur die Kapitel dieses Batches in chapters[]):
@@ -349,6 +405,7 @@ Nur JSON.`,
       );
     }
 
+    const batchFilled: RomanSzenenplotChapterNode[] = [];
     for (const sk of batch) {
       const found =
         batchParsed.chapters.find((c) => c.number === sk.number) ??
@@ -362,14 +419,26 @@ Nur JSON.`,
           `Szenenplot Kap. ${sk.number} („${sk.title}“) ohne gültige Szenen. Bitte erneut versuchen.`,
         );
       }
-      filled.push({
+      const node = {
         number: sk.number,
         title: sk.title,
         kernsatz: sk.kernsatz,
         scenes: found.scenes,
-      });
+      };
+      filled.push(node);
+      batchFilled.push(node);
       const last = found.scenes[found.scenes.length - 1];
       prevHook = last?.continuity.next_scene_hook?.trim() || prevHook;
+    }
+
+    try {
+      wissensGraph = await growWissensGraphFromSzenenBatch({
+        previous: wissensGraph,
+        batchChapters: batchFilled,
+        skeletonOutline: outlineBlock,
+      });
+    } catch {
+      // Fail-soft: keep previous graph if grow call fails.
     }
   }
 
@@ -386,11 +455,24 @@ Nur JSON.`,
   };
   const markdown = structuredSzenenplotToMarkdown(structured);
 
+  try {
+    wissensGraph = await closeWissensGraphGaps({
+      graph: wissensGraph,
+      structured,
+      ideeKurz: input.ideeKurz,
+      rechercheDossier,
+      tonalitaet,
+    });
+  } catch {
+    // Fail-soft: keep grown graph.
+  }
+
   return {
     szenenplot: markdown,
     structured,
     woven: weave,
     modelLabel: model.label,
+    wissensGraph,
   };
 }
 
@@ -527,10 +609,11 @@ export async function critiqueSzenenplotMitEntwicklungslektor(input: {
   editorial: RomanEditorial;
   title?: string;
   genre?: string;
+  tonalitaet?: string;
 }): Promise<SzenenplotCritiqueResult> {
   const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
   const compliance = buildCritiqueRulesAndNeedsBlock(input.editorial);
-  const shared = buildSharedContext({
+  const staticPrefix = buildStaticBookPrefix({
     buchTyp: input.buchTyp,
     title: input.title ?? "",
     genre: input.genre ?? "",
@@ -540,11 +623,23 @@ export async function critiqueSzenenplotMitEntwicklungslektor(input: {
     charaktere: input.charaktere,
     weltSchauplaetze: input.weltSchauplaetze,
     weltRegeln: input.weltRegeln,
+    rechercheDossier: input.editorial.rechercheDossier ?? "",
+    tonalitaet: input.tonalitaet ?? "",
+  });
+  const graphBlock = formatWissensGraphForPrompt(input.editorial.wissensGraph, {
+    maxChars: CLIP.sharedContext,
   });
 
-  const userText = `${compliance}
+  const critique = (
+    await generateText({
+      model,
+      systemInstruction: `${rolle.systemPrompt}
 
-${shared}
+Zusatzauftrag Kapitelgerüst-Gegenlese: entwicklungslektorisch, konkret, auf Deutsch.`,
+      cacheablePrefix: staticPrefix,
+      userText: `${compliance}
+
+${graphBlock}
 
 # Exposé (Kurz)
 ${input.expose.trim().slice(0, CLIP.expose) || "(leer)"}
@@ -555,19 +650,12 @@ ${input.szenenplot.trim().slice(0, CLIP.szenenplot)}
 Auftrag — knallharte Gegenlese:
 - Logik der Kapitelkette und Szenen (Ursache/Wirkung, Hooks).
 - Dramaturgie: Ziel/Hindernis/Wendepunkt/Wertänderung pro Szene.
-- Informationsfluss und Kontinuität.
+- Informationsfluss und Kontinuität; Abgleich mit Wissensgraph/Invarianten.
+- Keine doppelten Kapitel-/Beat-Funktionen (z. B. zwei Auflösungskapitel mit demselben Job).
 - Abdeckung des Exposés; keine Füllszenen.
 Struktur: Stärken → Risiken → max. 5 konkrete Nacharbeitspunkte (imperativ, mit Kap./Szene).
 
-${ROMAN_CRITIQUE_MANDATE}`;
-
-  const critique = (
-    await generateText({
-      model,
-      systemInstruction: `${rolle.systemPrompt}
-
-Zusatzauftrag Kapitelgerüst-Gegenlese: entwicklungslektorisch, konkret, auf Deutsch.`,
-      userText,
+${ROMAN_CRITIQUE_MANDATE}`,
       preferJson: false,
       maxTokens: ROMAN_CRITIQUE_MAX_TOKENS,
       timeoutMs: 90_000,

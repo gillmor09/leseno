@@ -11,6 +11,7 @@ import {
   isAiAbortError,
   mapAiFetchError,
 } from "@/lib/ai/fetch-timeout";
+import { isClaudeSonnet55Slug } from "@/lib/ai/reasoning-effort";
 import { recordAiUsage } from "@/lib/ai/usage";
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
@@ -23,12 +24,23 @@ const MIN_RETRY_BUDGET_MS = 12_000;
 export type ClaudeGenerateInput = {
   modelSlug: string;
   systemInstruction?: string;
+  /**
+   * Stable book bible (Idee/Recherche/Spec/Ton). Marked with
+   * `cache_control: ephemeral` so Anthropic prompt-caching can reuse it
+   * across Gerüst batches / Verbessern turns.
+   */
+  cacheablePrefix?: string;
   userText: string;
   jsonOutput?: boolean;
   /** Cap output size (default 8192). Lower for feedback/summary. */
   maxTokens?: number;
   /** Optional per-call wall-clock budget (ms). */
   timeoutMs?: number;
+  /**
+   * Claude Sonnet 5.5 `output_config.effort` (low|medium|high).
+   * Ignored on older Claude models that use `thinking: disabled`.
+   */
+  reasoningEffort?: string | null;
 };
 
 export type ClaudeGenerateResult = {
@@ -123,7 +135,8 @@ function networkErrorMessage(error: unknown): string {
 
 /**
  * Calls Anthropic `/v1/messages`.
- * Thinking is disabled for Leseno throughput/cost; Sonnet 5 still writes well without it.
+ * Sonnet 5: `thinking: disabled`. Sonnet 5.5: `between_tools` + `output_config.effort`
+ * (disabled returns 400 on 5.5).
  */
 export async function generateWithClaude(
   input: ClaudeGenerateInput,
@@ -135,10 +148,17 @@ export async function generateWithClaude(
     userText = `${userText}\n\nAntworte ausschließlich mit gültigem JSON, ohne Markdown-Codeblöcke.`;
   }
 
+  const cacheablePrefix = input.cacheablePrefix?.trim() ?? "";
+  const systemInstruction = input.systemInstruction?.trim() ?? "";
+  const sonnet55 = isClaudeSonnet55Slug(input.modelSlug);
+
+  const maxTokens = Math.max(
+    256,
+    Math.round(input.maxTokens ?? 8192),
+  );
   const body: Record<string, unknown> = {
     model: input.modelSlug,
-    max_tokens: input.maxTokens ?? 8192,
-    thinking: { type: "disabled" },
+    max_tokens: maxTokens,
     messages: [
       {
         role: "user",
@@ -146,9 +166,39 @@ export async function generateWithClaude(
       },
     ],
   };
+  if (process.env.NODE_ENV === "development") {
+    console.info(
+      `[claude] model=${input.modelSlug} max_tokens=${maxTokens}`,
+    );
+  }
 
-  if (input.systemInstruction?.trim()) {
-    body.system = input.systemInstruction.trim();
+  if (sonnet55) {
+    // No upfront thinking; only between tool calls (we don't use tools → text only).
+    body.thinking = { type: "between_tools" };
+    const effort = (input.reasoningEffort ?? "medium").trim().toLowerCase();
+    const allowed = new Set(["low", "medium", "high"]);
+    body.output_config = {
+      effort: allowed.has(effort) ? effort : "medium",
+    };
+  } else {
+    body.thinking = { type: "disabled" };
+  }
+
+  // Prompt caching: put stable book prefix last in `system` with cache_control.
+  // Anthropic caches from that breakpoint backward for ~5 minutes (ephemeral).
+  if (cacheablePrefix.length >= 200) {
+    const systemBlocks: Array<Record<string, unknown>> = [];
+    if (systemInstruction) {
+      systemBlocks.push({ type: "text", text: systemInstruction });
+    }
+    systemBlocks.push({
+      type: "text",
+      text: cacheablePrefix,
+      cache_control: { type: "ephemeral" },
+    });
+    body.system = systemBlocks;
+  } else if (systemInstruction) {
+    body.system = systemInstruction;
   }
 
   const bodyJson = JSON.stringify(body);

@@ -19,6 +19,12 @@ import { recordAiUsage } from "@/lib/ai/usage";
 export type OpenAiChatGenerateInput = {
   modelSlug: string;
   systemInstruction?: string;
+  /**
+   * Stable book bible appended to the system message.
+   * OpenAI automatic prefix caching rewards a byte-identical prompt head;
+   * keep this identical across related calls and put deltas only in `userText`.
+   */
+  cacheablePrefix?: string;
   userText: string;
   jsonOutput?: boolean;
   /** Optional output cap (`max_completion_tokens`). */
@@ -123,10 +129,14 @@ export async function generateWithOpenAiChat(
   const url = `${baseUrl}/chat/completions`;
 
   const messages: Array<{ role: "system" | "user"; content: string }> = [];
-  if (input.systemInstruction?.trim()) {
+  const systemParts = [
+    input.systemInstruction?.trim() ?? "",
+    input.cacheablePrefix?.trim() ?? "",
+  ].filter(Boolean);
+  if (systemParts.length > 0) {
     messages.push({
       role: "system",
-      content: input.systemInstruction.trim(),
+      content: systemParts.join("\n\n"),
     });
   }
   messages.push({ role: "user", content: input.userText });

@@ -7,8 +7,10 @@
 import { generateText } from "@/lib/ai/provider";
 import {
   formatStoryStateForPrompt,
+  formatWissensGraphForPrompt,
   parseRomanStoryState,
   type RomanStoryState,
+  type RomanWissensGraph,
 } from "@/lib/roman/editorial";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import {
@@ -39,8 +41,14 @@ export function buildDeterministicChapterContextBuffer(input: {
   chapter: PlotChapter;
   previousTail: string;
   lektorBriefSnippet?: string;
+  wissensGraph?: RomanWissensGraph | null;
 }): string {
   const parts: string[] = [];
+  const graphBlock = formatWissensGraphForPrompt(input.wissensGraph, {
+    throughChapter: input.chapter.number,
+    maxChars: 2_200,
+  });
+  if (graphBlock) parts.push(graphBlock);
   const stateBlock = formatStoryStateForPrompt(input.storyState);
   if (stateBlock) parts.push(stateBlock);
   parts.push(
@@ -60,7 +68,7 @@ export function buildDeterministicChapterContextBuffer(input: {
     );
   }
   parts.push(
-    "## Continuity-Regeln\n- Harte Fakten und offene Fäden nicht vergessen oder widersprechen.\n- Keine Figuren/Orte/Gegenstände „neu erfinden“, die dem State widersprechen.",
+    "## Continuity-Regeln\n- Wissensgraph und harte Fakten nicht vergessen oder widersprechen.\n- Keine Figuren/Orte/Gegenstände „neu erfinden“, die Graph/State widersprechen.",
   );
   return parts.join("\n\n").slice(0, CONTINUITY_BUFFER_MAX_CHARS);
 }
@@ -75,18 +83,26 @@ export async function assembleManuskriptChapterContext(input: {
   previousTail: string;
   sharedContextSnippet?: string;
   lektorBriefSnippet?: string;
+  wissensGraph?: RomanWissensGraph | null;
 }): Promise<{ buffer: string; modelLabel: string | null }> {
   const fallback = buildDeterministicChapterContextBuffer(input);
   try {
     const { model } = await resolveRomanKiRolle("bewerter");
+    const graphBlock = formatWissensGraphForPrompt(input.wissensGraph, {
+      throughChapter: input.chapter.number,
+      maxChars: 2_500,
+    });
     const raw = (
       await generateText({
         model,
         systemInstruction: `Du bereitest den Schreib-Kontext für EIN Manuskript-Kapitel vor.
 Antworte auf Deutsch als knappes Markdown (keine Code-Fences, kein JSON).
-Nur das, was der Co-Autor JETZT braucht: Continuity, Fokus, Übergang, Verbote.
+Nur das, was der Co-Autor JETZT braucht: Wissensgraph-Ausschnitt, Continuity, Fokus, Übergang, Verbote.
 Maximal ~350 Wörter. Keine Prosa schreiben.`,
-        userText: `# Bisheriger Continuity-State
+        userText: `# Wissensgraph (bis dieses Kapitel)
+${graphBlock || "(noch leer)"}
+
+# Bisheriger Continuity-State
 ${formatStoryStateForPrompt(input.storyState) || "(noch leer — Kapitelanfang)"}
 
 # Shared Setup (Ausschnitt)
@@ -103,6 +119,7 @@ ${input.chapter.body.slice(0, 1_500)}
 ${input.previousTail.trim().slice(-CONTINUITY_PREV_TAIL_CHARS) || "(Kapitel 1)"}
 
 Erstelle den Context-Buffer mit Überschriften:
+## Wissensgraph
 ## Continuity
 ## Fokus dieses Kapitels
 ## Übergang

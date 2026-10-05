@@ -207,17 +207,23 @@ export async function chatIdeeMitSchreibCoach(input: {
   ideeKurz: string;
   history: RomanIdeaChatMessage[];
   userMessage: string;
+  /** Explicit writer language/tone brief from Basics. */
+  schreiberSpracheTonalitaet?: string;
 }): Promise<{ reply: string; modelLabel: string }> {
   const { rolle, model } = await resolveRomanKiRolle("schreib_coach");
   const typLabel =
     input.buchTyp === "unbekannt"
       ? "noch offen"
       : BUCHTYP_LABELS[input.buchTyp];
+  const ton = (input.schreiberSpracheTonalitaet ?? "").trim();
 
   const userText = `# Buchtyp
 ${typLabel}
 
 ${IDEE_SCOPE_MANDATE}
+
+# Sprache & Tonalität (Schreiber-Vorgabe)
+${ton || "(noch keine Vorgabe — bei Ton-Fragen nachfragen)"}
 
 # Bisherige Ideendokumentation (nur Kontext — du schreibst sie nicht um)
 ${input.ideeKurz.trim() || "(noch leer)"}
@@ -230,6 +236,7 @@ ${input.userMessage.trim()}
 
 Antworte als Schreib-Coach.
 Befehle der Autor:in (Umbenennen, Streichen, Ton, Fokus) zuerst bestätigen und für den Redakteur klar formulieren.
+Die Schreiber-Vorgabe zu Sprache/Tonalität ist verbindlich, sofern gesetzt.
 Keine Kapitelpläne, keine Szenenfolgen — nur Konzeptfragen und Schärfung für die spätere Spec.`;
 
   const reply = (
@@ -257,17 +264,23 @@ export async function weaveIdeeKurz(input: {
   ideeKurz: string;
   userMessage: string;
   coachReply: string;
+  /** Explicit writer language/tone brief from Basics. */
+  schreiberSpracheTonalitaet?: string;
 }): Promise<{ ideeKurz: string; modelLabel: string }> {
   const { rolle, model } = await resolveRomanKiRolle("ideen_redakteur");
   const typLabel =
     input.buchTyp === "unbekannt"
       ? "noch offen"
       : BUCHTYP_LABELS[input.buchTyp];
+  const ton = (input.schreiberSpracheTonalitaet ?? "").trim();
 
   const userText = `# Buchtyp
 ${typLabel}
 
 ${IDEE_SCOPE_MANDATE}
+
+# Sprache & Tonalität (Schreiber-Vorgabe)
+${ton || "(keine)"}
 
 # Bisherige Ideendokumentation
 ${input.ideeKurz.trim() || "(leer — aus diesem Turn neu aufbauen)"}
@@ -284,6 +297,7 @@ Erzeuge die VOLLSTÄNDIGE verwobene Ideendokumentation (nicht nur Diff).
 Falls die bisherige Fassung Kapitel-/Szenenpläne enthält: streichen und auf Konzept-/Prämissen-Ebene verdichten.
 Kein Kapitelgerüst, keine Szenenfolge.
 Befehle der Autor:in (z. B. Umbenennen einer Rolle/Person, Streichen, Tonwechsel) verbindlich und konsistent umsetzen.
+Die Schreiber-Vorgabe zu Sprache/Tonalität in der Dokumentation spiegeln (kurz, ohne Stil-Essay).
 
 ${IDEE_OUTPUT_HINT}`;
 

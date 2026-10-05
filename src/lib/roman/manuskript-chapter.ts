@@ -29,6 +29,7 @@ import {
   type RomanReifegradImprovePlan,
   type RomanStoryState,
 } from "@/lib/roman/editorial";
+import { growWissensGraphFromChapterBodies } from "@/lib/roman/wissens-graph";
 import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
 import { formatCharaktere } from "@/lib/roman/fundament";
 import {
@@ -52,6 +53,7 @@ import {
 } from "@/lib/roman/pipeline/quality-brief";
 import { patchChapterBodies } from "@/lib/roman/pipeline/structure-guard";
 import {
+  extractManuskriptChapterBody,
   formatChapterHeading,
   formatManuskriptChapterHeading,
   normalizeManuskriptDocument,
@@ -63,6 +65,7 @@ import { getRomanKontext, upsertRomanKontext } from "@/lib/roman/repository";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import {
   briefManuskriptFromLektor,
+  buildManuskriptExpandMaterial,
   writeManuskriptChapterWithLengthGate,
 } from "@/lib/roman/suggest-manuskript";
 import { formatStructuredChapterForManuskript } from "@/lib/roman/szenenplot-structured";
@@ -525,12 +528,14 @@ export async function generateManuskriptChapter(input: {
       previousTail: prevTail,
       sharedContextSnippet: brief.sharedContext,
       lektorBriefSnippet: `${brief.lektorBrief}\n\n${SEAM_MANDATE}`,
+      wissensGraph: editorial.wissensGraph,
     });
 
     const { result: written, usage } = await runWithAiUsageCollector(() =>
       writeManuskriptChapterWithLengthGate({
         coAutorSystem: `${brief.coAutorSystem}\n\n${SEAM_MANDATE}`,
         sharedContext: brief.sharedContext,
+        cacheablePrefix: brief.cacheablePrefix,
         lektorBrief: `${brief.lektorBrief}\n\n${SEAM_MANDATE}`,
         chapter: plotChapterFresh,
         allChapters: chapters,
@@ -543,10 +548,24 @@ export async function generateManuskriptChapter(input: {
         autorBias: formatAutorBiasFromCharaktere(roman.charaktere),
         continuityBuffer: `${continuityBuffer}\n\n${SEAM_MANDATE}`,
         szenenplotStructured: editorial.szenenplotStructured,
+        expandMaterial: buildManuskriptExpandMaterial({
+          editorial,
+          chapterNumber: input.chapterNumber,
+        }),
+        maxExpands: 2,
       }),
     );
 
-    const body = parsePlotChapters(written.chapterMarkdown)[0]?.body ?? "";
+    const body =
+      extractManuskriptChapterBody(
+        written.chapterMarkdown,
+        input.chapterNumber,
+      ) || "";
+    if (!body.trim()) {
+      throw new Error(
+        `Kapitel ${input.chapterNumber}: kein Body nach Erzeugen — bitte erneut versuchen.`,
+      );
+    }
     const patched = patchChapterBodies(
       baseline,
       [{ chapterNumber: input.chapterNumber, body }],
@@ -568,7 +587,28 @@ export async function generateManuskriptChapter(input: {
       chapterBody: body,
     });
 
-    const saved = await persistManuskript(roman, sealed, storyState);
+    let wissensGraph = editorial.wissensGraph ?? null;
+    if (wissensGraph) {
+      try {
+        wissensGraph = await growWissensGraphFromChapterBodies({
+          previous: wissensGraph,
+          stage: "manuskript",
+          chapters: [
+            {
+              number: input.chapterNumber,
+              title: plotChapterFresh.title,
+              body,
+            },
+          ],
+        });
+      } catch {
+        // Fail-soft: keep previous graph.
+      }
+    }
+
+    const saved = await persistManuskript(roman, sealed, storyState, {
+      wissensGraph,
+    });
     events.push(
       historyEvent({
         type: "draft",

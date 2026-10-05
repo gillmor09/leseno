@@ -1,6 +1,10 @@
 /**
  * Routes AI calls by provider from `leseno.ai_models`.
  * Supported: Gemini, Claude, OpenAI (Astra / Luna), OpenAI-compatible (IONOS).
+ *
+ * Optional `cacheablePrefix`: stable book bible (Idee/Recherche/Spec/Ton).
+ * Claude uses `cache_control`; OpenAI relies on automatic prefix caching;
+ * Gemini uses explicit `cachedContents` when possible.
  */
 
 import type { AiModelConfig } from "@/lib/prompts/catalog";
@@ -13,6 +17,11 @@ import { resolveReasoningEffort } from "@/lib/ai/reasoning-effort";
 export type GenerateTextInput = {
   model: AiModelConfig;
   systemInstruction?: string;
+  /**
+   * Byte-stable book context for provider prompt-caching.
+   * Put live deltas (graph slice, chapter body, patch brief) only in `userText`.
+   */
+  cacheablePrefix?: string;
   userText: string;
   preferJson?: boolean;
   /** Optional output cap (Claude + Gemini + OpenAI). */
@@ -31,15 +40,21 @@ export type GenerateTextInput = {
 function buildUserText(
   model: AiModelConfig,
   systemInstruction: string | undefined,
+  cacheablePrefix: string | undefined,
   userText: string,
-): { systemInstruction?: string; userText: string } {
+): {
+  systemInstruction?: string;
+  cacheablePrefix?: string;
+  userText: string;
+} {
+  const prefix = cacheablePrefix?.trim() || undefined;
   if (model.supportsSystemPrompt) {
-    return { systemInstruction, userText };
+    return { systemInstruction, cacheablePrefix: prefix, userText };
   }
-  if (!systemInstruction) {
-    return { userText };
-  }
-  return { userText: `${systemInstruction}\n\n${userText}` };
+  // No system channel: fold role + stable prefix into the user message.
+  const head = [systemInstruction?.trim(), prefix].filter(Boolean).join("\n\n");
+  if (!head) return { userText };
+  return { userText: `${head}\n\n${userText}` };
 }
 
 export async function generateText(input: GenerateTextInput): Promise<string> {
@@ -51,6 +66,7 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
   const prompt = buildUserText(
     input.model,
     input.systemInstruction,
+    input.cacheablePrefix,
     input.userText,
   );
   const jsonOutput = Boolean(
@@ -61,6 +77,7 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
     const result = await generateWithGemini({
       modelSlug: input.model.modelSlug,
       systemInstruction: prompt.systemInstruction,
+      cacheablePrefix: prompt.cacheablePrefix,
       userText: prompt.userText,
       jsonOutput,
       maxTokens: input.maxTokens,
@@ -85,10 +102,15 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
     const result = await generateWithClaude({
       modelSlug: input.model.modelSlug,
       systemInstruction: prompt.systemInstruction,
+      cacheablePrefix: prompt.cacheablePrefix,
       userText: prompt.userText,
       jsonOutput,
       maxTokens: input.maxTokens,
       timeoutMs: input.timeoutMs,
+      reasoningEffort: resolveReasoningEffort(
+        input.model.modelSlug,
+        input.reasoningEffort ?? input.model.reasoningEffort ?? null,
+      ),
     });
     return result.text;
   }
@@ -97,6 +119,7 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
     const result = await generateWithOpenAiChat({
       modelSlug: input.model.modelSlug,
       systemInstruction: prompt.systemInstruction,
+      cacheablePrefix: prompt.cacheablePrefix,
       userText: prompt.userText,
       jsonOutput,
       maxTokens: input.maxTokens,
@@ -108,9 +131,15 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
   }
 
   if (provider === "openai-compatible") {
+    // IONOS: no native cache API — still keep prefix in system for consistency.
+    const systemParts = [
+      prompt.systemInstruction?.trim() ?? "",
+      prompt.cacheablePrefix?.trim() ?? "",
+    ].filter(Boolean);
     const result = await generateWithOpenAiCompatible({
       modelSlug: input.model.modelSlug,
-      systemInstruction: prompt.systemInstruction,
+      systemInstruction:
+        systemParts.length > 0 ? systemParts.join("\n\n") : undefined,
       userText: prompt.userText,
       jsonOutput,
       maxTokens: input.maxTokens,

@@ -92,6 +92,8 @@ function typHints(buchTyp: RomanBuchTyp): string {
 export async function suggestExposeFromCoAutor(input: {
   buchTyp: RomanBuchTyp;
   ideeKurz: string;
+  rechercheDossier?: string;
+  tonalitaet?: string;
   grobRegeln: string;
   charaktere: RomanCharakter[];
   weltSchauplaetze: string;
@@ -108,6 +110,8 @@ export async function suggestExposeFromCoAutor(input: {
   const weave = hasFilledExpose(input.existingExpose);
   const { rolle, model } = await resolveRomanKiRolle("co_autor");
   const chars = formatCharaktere(input.charaktere) || "(noch keine Steckbriefe)";
+  const recherche = (input.rechercheDossier ?? "").trim();
+  const ton = (input.tonalitaet ?? "").trim();
 
   const weaveBlock = weave
     ? `Bestehendes Exposé VERWEBEN und AUFWERTEN — nicht blind ersetzen. Brauchbares behalten, Lücken schließen, Widersprüche zur Idee auflösen.`
@@ -118,6 +122,12 @@ ${BUCHTYP_LABELS[input.buchTyp]}
 
 # Ideendokumentation
 ${idee.slice(0, CLIP.idee)}
+
+# Hintergrundrecherche (Fakten/Kontext)
+${recherche.slice(0, CLIP.recherche) || "(keine)"}
+
+# Sprache & Tonalität (Schreiber)
+${ton.slice(0, CLIP.grob) || "(keine)"}
 
 # Grob-Regeln
 ${input.grobRegeln.trim().slice(0, CLIP.grob) || "(leer)"}
@@ -156,6 +166,7 @@ ${ROMAN_EXCELLENCE_MANDATE}
 
 Zusatzauftrag Exposé:
 Du skizzierst die grobe Handlung (Anfang, Mitte, Ende) als editierbares Exposé.
+Quellen: Idee, Hintergrundrecherche, Regeln, Figuren, Welt.
 Nur ${MARK_START} … ${MARK_ENDE}. Kein JSON.`;
 
   const raw = await generateText({

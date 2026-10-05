@@ -214,7 +214,8 @@ export function RomanRolesPanel({
               <p className="mt-1.5 text-xs font-semibold text-zinc-500">
                 Wie gründlich das Modell vor der Antwort nachdenkt. Gemini:
                 thinking_level (low/medium/high). OpenAI: reasoning_effort.
-                Marktanalyse: high empfohlen.
+                Claude Sonnet 5.5: Effort low/medium/high. Marktanalyse: high
+                empfohlen.
               </p>
             </>
           ) : (

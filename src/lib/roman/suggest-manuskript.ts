@@ -16,6 +16,7 @@ import {
   buildCritiqueRulesAndNeedsBlock,
   countWords,
   exposeTextFromEditorial,
+  formatWissensGraphForPrompt,
   type RomanBuchTyp,
   type RomanEditorial,
   type RomanLeserFeedback,
@@ -44,10 +45,13 @@ import {
   manuskriptWordsPerChapter,
 } from "@/lib/roman/manuskript-contracts";
 import { formatCharaktere } from "@/lib/roman/fundament";
+import { buildRomanStaticBookPrefix } from "@/lib/roman/prompt-prefix";
 import {
   formatChapterHeading,
   formatManuskriptChapterBlock,
   formatManuskriptChapterHeading,
+  extractManuskriptChapterBody,
+  neutralizeEmbeddedChapterHeadings,
   MANUSKRIPT_CHAPTER_PROSE_RULES,
   MANUSKRIPT_HEADING_FORM_HINT,
   assertRealManuskriptProse,
@@ -81,16 +85,37 @@ const MARK_ENDE = "===ENDE===";
 /**
  * Chapter prose: long wall-clock budget (OpenAI reasoning models are slow).
  * Absolute max from {@link AI_FETCH_TIMEOUT_MAX_MS}.
+ *
+ * Why high maxTokens: German prose ≈ 1.5–2 tokens/word. A 3.5–5k-word chapter
+ * alone needs ~7–10k output tokens; if Claude hits max_tokens it truncates
+ * mid-scene (stop_reason length) and looks “voll im Anschlag”. Floor 20k so
+ * technical limits are not the bottleneck; upper cap for very long bands.
  */
-const MANUSKRIPT_CHAPTER_TOKENS = 8_000;
+/** Hard floor — Anthropic logs must not show 10k for chapter prose. */
+const MANUSKRIPT_CHAPTER_TOKENS_MIN = 20_000;
+const MANUSKRIPT_CHAPTER_TOKENS_MAX = 32_000;
 const MANUSKRIPT_CHAPTER_TIMEOUT_MS = AI_FETCH_TIMEOUT_MAX_MS;
 const MAX_CHAPTERS = 24;
+
+/** Output token floor/cap — never pin to the chapter word minimum. */
+function resolveManuskriptChapterMaxTokens(minWords: number, maxWords: number): number {
+  const need = Math.ceil(Math.max(minWords, maxWords, 900) * 1.7) + 2_000;
+  return Math.min(
+    MANUSKRIPT_CHAPTER_TOKENS_MAX,
+    Math.max(MANUSKRIPT_CHAPTER_TOKENS_MIN, need),
+  );
+}
 
 export type ManuskriptBriefResult = {
   lektorBrief: string;
   lektorLabel: string;
   chapters: PlotChapter[];
   sharedContext: string;
+  /**
+   * Stable book bible for provider prompt-caching across chapter writes.
+   * Same bytes until Idee/Recherche/Spec/Ton change.
+   */
+  cacheablePrefix: string;
   coAutorSystem: string;
   proseModelLabel: string;
   zielWortzahl: number | null;
@@ -163,8 +188,11 @@ function cleanChapterProse(raw: string, chapter: PlotChapter): string {
     .replace(MARK_START, "")
     .replace(MARK_ENDE, "")
     .trim();
-  // Drop any echoed chapter headings — we always re-attach from PlotChapter meta.
-  return stripLeadingChapterHeadings(body, chapter.number);
+  // Drop echoed heading + neutralize mid-prose „Kapitel N — …“ so length/parse
+  // cannot truncate this chapter or steal text into Kap. 1.
+  return neutralizeEmbeddedChapterHeadings(
+    stripLeadingChapterHeadings(body, chapter.number),
+  );
 }
 
 /** Parse Szenenplot Kapitel or throw a clear German error. */
@@ -201,51 +229,30 @@ export async function briefManuskriptFromLektor(input: {
   }
   const chapters = requirePlotChapters(plot);
   const weave = hasFilledManuskript(input.existingManuskript);
-  const expose = exposeTextFromEditorial(input.editorial);
-  const chars = formatCharaktere(input.charaktere) || "(noch keine Steckbriefe)";
-  const zielWort =
-    input.editorial.zielWortzahlRoman != null
-      ? String(input.editorial.zielWortzahlRoman)
-      : "?";
-  const alter =
-    input.editorial.zielAlterMin != null || input.editorial.zielAlterMax != null
-      ? `${input.editorial.zielAlterMin ?? "?"}-${input.editorial.zielAlterMax ?? "?"}`
-      : "?";
 
   const chapterIndex = chapters
     .map((c) => `- ${formatChapterHeading(c)}`)
     .join("\n");
 
   const lektor = await resolveRomanKiRolle("entwicklungslektor");
-  const lektorUser = `# Buch
-Titel: ${input.title.trim() || "(ohne)"}
-Buchtyp: ${BUCHTYP_LABELS[input.buchTyp]}
-Genre: ${input.genre.trim() || "—"}
-Alter: ${alter} · Lesestufe: ${input.editorial.lesestufe || "—"}
-Zielwortzahl: ${zielWort}
-Kapitelzahl: ${chapters.length}
-
-# Ideendokumentation (gekürzt)
-${input.ideeKurz.trim().slice(0, CLIP.idee) || "(leer)"}
-
-# Grob-Regeln
-${input.grobRegeln.trim().slice(0, CLIP.grob) || "(leer)"}
-
-# Exposé
-${expose.slice(0, CLIP.expose) || "(leer)"}
-
-# Kapitelübersicht (Kapitelgerüst)
+  const cacheablePrefix = buildRomanStaticBookPrefix({
+    buchTyp: input.buchTyp,
+    title: input.title,
+    genre: input.genre,
+    ideeKurz: input.ideeKurz,
+    rechercheDossier: input.editorial.rechercheDossier ?? "",
+    tonalitaet: undefined,
+    grobRegeln: input.grobRegeln,
+    editorial: input.editorial,
+    charaktere: input.charaktere,
+    weltSchauplaetze: input.weltSchauplaetze,
+    weltRegeln: input.weltRegeln,
+  });
+  const lektorDynamic = `# Kapitelübersicht (Kapitelgerüst)
 ${chapterIndex}
 
 # Kapitelgerüst
 ${plot.slice(0, CLIP.szenenplot)}
-
-# Charaktere
-${chars.slice(0, CLIP.charaktere)}
-
-# Welt
-Schauplätze: ${input.weltSchauplaetze.trim().slice(0, CLIP.weltSchau) || "(leer)"}
-Regeln: ${input.weltRegeln.trim().slice(0, CLIP.weltRegeln) || "(leer)"}
 
 # Bisheriges Manuskript
 ${weave ? input.existingManuskript.trim().slice(0, CLIP.manuskript) : "(leer — neu schreiben)"}
@@ -269,7 +276,8 @@ ${ROMAN_EXCELLENCE_MANDATE}
 
 Zusatzauftrag Manuskript-Brief:
 Du bereitest die kapitelweise Prosa dramaturgisch vor. Arbeitsbrief für den Co-Autor.`,
-      userText: lektorUser,
+      cacheablePrefix,
+      userText: lektorDynamic,
       maxTokens: 2_500,
       timeoutMs: 60_000,
     })
@@ -281,37 +289,16 @@ Du bereitest die kapitelweise Prosa dramaturgisch vor. Arbeitsbrief für den Co-
 
   const co = await resolveRomanKiRolle("co_autor");
 
-  const sharedContext = `# Buch
-Titel: ${input.title.trim() || "(ohne)"}
-Buchtyp: ${BUCHTYP_LABELS[input.buchTyp]}
-Genre: ${input.genre.trim() || "—"}
-Alter / Lesestufe: ${alter} / ${input.editorial.lesestufe || "—"}
-Zielwortzahl Buch: ${zielWort}
-Kapitel: ${chapters.length}
+  const sharedContext = `${cacheablePrefix}
 
-# Ideendokumentation
-${input.ideeKurz.trim().slice(0, CLIP.idee) || "(leer)"}
-
-# Grob-Regeln
-${input.grobRegeln.trim().slice(0, CLIP.grob) || "(leer)"}
-
-# Exposé
-${expose.slice(0, CLIP.expose) || "(leer)"}
-
-# Charaktere
-${chars.slice(0, CLIP.charaktere)}
-
-${formatAutorBiasFromCharaktere(input.charaktere)}
-
-# Welt
-Schauplätze: ${input.weltSchauplaetze.trim().slice(0, CLIP.weltSchau) || "(leer)"}
-Regeln: ${input.weltRegeln.trim().slice(0, CLIP.weltRegeln) || "(leer)"}`;
+${formatAutorBiasFromCharaktere(input.charaktere)}`;
 
   return {
     lektorBrief: lektorDraft.slice(0, CLIP.lektorBrief),
     lektorLabel: lektor.model.label,
     chapters,
     sharedContext,
+    cacheablePrefix,
     coAutorSystem: `${co.rolle.systemPrompt}\n\n${ROMAN_EXCELLENCE_MANDATE}`,
     proseModelLabel: co.model.label,
     zielWortzahl: input.editorial.zielWortzahlRoman,
@@ -328,6 +315,8 @@ Regeln: ${input.weltRegeln.trim().slice(0, CLIP.weltRegeln) || "(leer)"}`;
 export async function writeManuskriptChapter(input: {
   coAutorSystem: string;
   sharedContext: string;
+  /** Stable book bible — prompt-cached across chapter writes. */
+  cacheablePrefix?: string;
   lektorBrief: string;
   chapter: PlotChapter;
   allChapters: PlotChapter[];
@@ -349,6 +338,11 @@ export async function writeManuskriptChapter(input: {
   szenenplotStructured?: RomanSzenenplotStructured | null;
   /** When set, expand this body instead of writing from scratch. */
   expandBody?: string;
+  /**
+   * Research / knowledge-graph snippets for length expands —
+   * weave as anecdote or dialog (lived, not lecture).
+   */
+  expandMaterial?: string;
 }): Promise<ManuskriptChapterWriteResult & { wordCount: number }> {
   const { model } = await resolveRomanKiRolle("co_autor");
   const { min, max } = manuskriptWordsPerChapter(
@@ -359,9 +353,15 @@ export async function writeManuskriptChapter(input: {
   const chapter = input.chapter;
   const heading = formatManuskriptChapterHeading(chapter);
   const continuity = input.continuityBuffer?.trim() ?? "";
+  const cacheablePrefix =
+    input.cacheablePrefix?.trim() ||
+    (!continuity ? input.sharedContext.trim() : "");
+  // When prefix is cached separately, avoid duplicating the full bible in userText.
   const slimContext = continuity
     ? continuity.slice(0, 4_500)
-    : input.sharedContext.slice(0, CLIP.sharedContext);
+    : cacheablePrefix
+      ? "(Buch-Kontext liegt im Cache — hier nur der Schreibauftrag.)"
+      : input.sharedContext.slice(0, CLIP.sharedContext);
   const prev =
     input.previousChaptersMarkdown.trim().length > 80
       ? input.previousChaptersMarkdown
@@ -383,6 +383,7 @@ export async function writeManuskriptChapter(input: {
     ? `\n${input.pathBBlock.trim()}\n`
     : "";
   const expand = Boolean(input.expandBody?.trim());
+  const material = input.expandMaterial?.trim() ?? "";
   const contextHeader = continuity
     ? `# Context-Buffer (Continuity + Fokus)
 ${slimContext}`
@@ -397,15 +398,24 @@ ${input.lektorBrief.slice(0, CLIP.lektorBrief)}
 
 # Kapitel ${chapter.number} — expandieren (Handlung behalten)
 ${formatChapterHeading(chapter)}
+ZIEL: mindestens ${min} Wörter (Band ${min}–${max}). Aktuell zu kurz.
 
-# Bisheriger Body (zu kurz — erweitern, nicht ersetzen durch Kurzfassung)
+# Bisheriger Body (erweitern, nicht durch Kurzfassung ersetzen)
 ${input.expandBody!.trim().slice(0, CLIP.chapterBody)}
 
-Auftrag — schreibe den VOLLSTÄNDIGEN neuen Body für DIESES Kapitel:
+${
+  material
+    ? `# Recherche- & Wissensstoff zum Einweben (verbindlich nutzen)
+Wähle 2–4 passende Punkte und baue sie als Anekdote, Dialog, Erinnerung, Beobachtung oder Streit ein — erlebt, nicht doziniert. Keine Faktliste, kein Vortrag.
+${material.slice(0, 6_000)}
+`
+    : ""
+}
+Auftrag — schreibe den VOLLSTÄNDIGEN neuen Body für GENAU Kapitel ${chapter.number}:
 - HARTE Bandbreite: ${min}–${max} Wörter (zählbar). Unter ${min} unvollständig; über ${max} zu lang — streichen/verdichten.
 - Behalte Plot, Figuren und Wendungen; erweitere mit Dialog, Sinneseindruck, Innenleben, klaren Beats.
-- Autor-Bias und Figurenstimmen einhalten. Continuity-State nicht widersprechen.
-- KEINE Kapitel-Überschrift.
+${material ? "- Mindestens zwei konkrete Recherche-/Wissens-Details dramatisch einbauen (Dialog oder erlebte Anekdote).\n" : ""}- Autor-Bias und Figurenstimmen einhalten. Continuity-State nicht widersprechen.
+- KEINE Kapitel-Überschrift. Keine Meta-Zeile „Kapitel N“. Niemals eine Zeile der Form „Kapitel X — …“ im Fließtext (auch nicht als Rückblick).
 ${MANUSKRIPT_CHAPTER_PROSE_RULES}`
     : `${contextHeader}
 ${needs}${bias}${pathB}
@@ -427,11 +437,12 @@ ${
 # Noch folgende Kapitel (nur Orientierung, NICHT schreiben)
 ${remaining || "(keins — dies ist das letzte Kapitel)"}
 
-Auftrag — schreibe NUR den Fließtext für dieses eine Kapitel:
+Auftrag — schreibe NUR den Fließtext für GENAU Kapitel ${chapter.number} („${sanitizeChapterTitle(chapter.title, chapter.number) || heading}“):
 - HARTE Bandbreite: ${min}–${max} Wörter (zählbar). Zielnähe wichtiger als Aufblasen.
 - Unter ${min} unvollständig; über ${max} zu lang — lieber knapper und dichter.
 - Continuity-State und harte Fakten einhalten — keine Drift.
 - KEINE Kapitel-Überschrift — die setzt das System druckfertig („Kapitel N — Titel“ ohne Rauten).
+- Niemals im Fließtext eine Zeile „Kapitel X — …“ schreiben (zerstört die Kapitelstruktur).
 - Figurenstimmen und Autor-Bias aus den Steckbriefen einhalten (Subtext, Default unter Druck).
 ${pathB ? "- Pfad-B-Beat umsetzen (nicht den konventionellen Genre-Default).\n" : ""}- Nahtlos anschließen; Kernsatz/Funktion des Kapitels umsetzen; vollständig zu Ende schreiben.
 - Keine KI-Mittelmaß-Prosa: konkrete Bilder, klare Figurenstimmen, keine Logiklöcher oder Spannungshänger.
@@ -439,21 +450,22 @@ ${pathB ? "- Pfad-B-Beat umsetzen (nicht den konventionellen Genre-Default).\n" 
 ${MANUSKRIPT_HEADING_FORM_HINT}
 
 ${MANUSKRIPT_CHAPTER_PROSE_RULES}
-Du schreibst Kapitel ${chapter.number} („${sanitizeChapterTitle(chapter.title, chapter.number) || heading}“) — erzähle DIESES Kapitel als Prosa (Kontext + Kernsatz), nicht über andere Kapitel.`;
+Erzähle DIESES Kapitel als Prosa — nicht über andere Kapitel sprechen.`;
 
   const raw = await generateText({
     model,
     systemInstruction: `${input.coAutorSystem}
 
 Zusatzauftrag Manuskript-Kapitel ${chapter.number}${expand ? " (Expand)" : ""}:
-Genau EIN Kapitel als Fließtext. Keine Kapitel-Überschrift (weder Markdown noch „Kapitel N — …“).
+Genau Kapitel ${chapter.number} als Fließtext. Keine Kapitel-Überschrift (weder Markdown noch „Kapitel N — …“).
 Kein ${MARK_START}/${MARK_ENDE}. Keine anderen Kapitel. Mindestens ${min} Wörter.
 ${MANUSKRIPT_CHAPTER_PROSE_RULES}`,
+    cacheablePrefix: cacheablePrefix || undefined,
     userText,
     preferJson: false,
-    maxTokens: MANUSKRIPT_CHAPTER_TOKENS,
+    maxTokens: resolveManuskriptChapterMaxTokens(min, max),
     timeoutMs: MANUSKRIPT_CHAPTER_TIMEOUT_MS,
-    reasoningEffort: "none",
+    reasoningEffort: expand ? "low" : "none",
   });
 
   const cleaned = cleanChapterProse(raw, chapter);
@@ -476,6 +488,7 @@ ${MANUSKRIPT_CHAPTER_PROSE_RULES}`,
 export async function writeManuskriptChapterWithLengthGate(input: {
   coAutorSystem: string;
   sharedContext: string;
+  cacheablePrefix?: string;
   lektorBrief: string;
   chapter: PlotChapter;
   allChapters: PlotChapter[];
@@ -489,10 +502,22 @@ export async function writeManuskriptChapterWithLengthGate(input: {
   pathBBlock?: string;
   continuityBuffer?: string;
   szenenplotStructured?: RomanSzenenplotStructured | null;
+  /** Recherche + graph facts for anecdote/dialog expands. */
+  expandMaterial?: string;
   /** Live wait-dialog label (e.g. expand retries). */
   onProgress?: (label: string) => Promise<void>;
+  /**
+   * Stable prefix for progress lines, e.g. `Kapitel 3/16 — „Titel“`.
+   * Keeps the wait dialog on the chapter currently being written.
+   */
+  progressChapterLabel?: string;
   /** Cap expand retries (Alles erzeugen: 1; Einzelkapitel: 2). */
   maxExpands?: number;
+  /**
+   * Alles erzeugen: do not abort the whole book if a chapter stays under
+   * acceptFloor — keep prose and continue (listed in chaptersUnderMin).
+   */
+  softLengthGate?: boolean;
 }): Promise<ManuskriptChapterWriteResult & { wordCount: number; expanded: boolean }> {
   const { min, max } = manuskriptWordsPerChapter(
     input.zielWortzahl,
@@ -501,20 +526,35 @@ export async function writeManuskriptChapterWithLengthGate(input: {
   );
   const acceptFloor = Math.round(min * MANUSKRIPT_CHAPTER_ACCEPT_FLOOR_PCT);
   const maxExpands = Math.max(0, Math.min(2, input.maxExpands ?? 2));
-  const chapterLabel = `Kapitel ${input.chapter.number}${
-    input.chapter.title?.trim() ? ` — „${input.chapter.title.trim()}“` : ""
-  }`;
+  const chapterNum = input.chapter.number;
+  const chapterLabel =
+    input.progressChapterLabel?.trim() ||
+    `Kapitel ${chapterNum}${
+      input.chapter.title?.trim() ? ` — „${input.chapter.title.trim()}“` : ""
+    }`;
 
   async function once(expandBody?: string) {
     try {
-      return await writeManuskriptChapter({ ...input, expandBody });
+      return await writeManuskriptChapter({
+        ...input,
+        expandBody,
+        expandMaterial: expandBody ? input.expandMaterial : undefined,
+      });
     } catch (error) {
       if (!isAiAbortError(error) || expandBody) throw error;
-      return writeManuskriptChapter({ ...input, expandBody });
+      return writeManuskriptChapter({
+        ...input,
+        expandBody,
+        expandMaterial: expandBody ? input.expandMaterial : undefined,
+      });
     }
   }
 
+  await input.onProgress?.(
+    `${chapterLabel}: Co-Autor schreibt (Ziel ${min}–${max} Wörter) …`,
+  );
   let written = await once();
+
   let expanded = false;
   let expands = 0;
   while (
@@ -523,19 +563,70 @@ export async function writeManuskriptChapterWithLengthGate(input: {
     written.wordCount < max
   ) {
     expands += 1;
-    await input.onProgress?.(
-      `${chapterLabel}: zu kurz (${written.wordCount}/${min} Wörter) — Erweiterung ${expands}/${maxExpands} …`,
+    const body = extractManuskriptChapterBody(
+      written.chapterMarkdown,
+      chapterNum,
     );
-    const body = parsePlotChapters(written.chapterMarkdown)[0]?.body ?? "";
-    written = await once(body || undefined);
+    if (!body || manuskriptChapterWordCount(body) < 40) {
+      throw new Error(
+        `${chapterLabel}: Expand abgebrochen — Body für Kapitel ${chapterNum} nicht lesbar (${written.wordCount} Wörter gemeldet). Bitte erneut erzeugen.`,
+      );
+    }
+    await input.onProgress?.(
+      `${chapterLabel}: zu kurz (${written.wordCount}/${min} Wörter, Band bis ${max}) — Recherche/Dialog einweben ${expands}/${maxExpands} …`,
+    );
+    written = await once(body);
     expanded = true;
   }
   if (written.wordCount < acceptFloor) {
+    if (input.softLengthGate && written.wordCount >= 800) {
+      await input.onProgress?.(
+        `${chapterLabel}: noch unter Min (${written.wordCount}/${min}) — Lauf geht weiter; später Einzelkapitel nachziehen.`,
+      );
+      return { ...written, chapterNumber: chapterNum, expanded };
+    }
     throw new Error(
-      `Kapitel ${input.chapter.number} zu kurz (${written.wordCount} Wörter, Minimum ${min}). Bitte Erzeugen erneut.`,
+      `${chapterLabel} zu kurz (${written.wordCount} Wörter, Minimum ${min}, Band ${min}–${max}). Bitte Erzeugen erneut.`,
     );
   }
-  return { ...written, expanded };
+  return { ...written, chapterNumber: chapterNum, expanded };
+}
+
+/**
+ * Compact research + graph facts for length expands (anecdote / dialog weave).
+ */
+export function buildManuskriptExpandMaterial(input: {
+  editorial: RomanEditorial;
+  chapterNumber: number;
+}): string {
+  const parts: string[] = [];
+  const recherche = (input.editorial.rechercheDossier ?? "").trim();
+  if (recherche.length >= 40) {
+    parts.push(`## Recherche-Dossier (Ausschnitt)\n${recherche.slice(0, 4_500)}`);
+  }
+  const graph = formatWissensGraphForPrompt(input.editorial.wissensGraph, {
+    throughChapter: input.chapterNumber,
+    maxChars: 2_800,
+  });
+  if (graph) {
+    parts.push(graph);
+  }
+  const facts = (input.editorial.wissensGraph?.nodes ?? [])
+    .filter(
+      (n) =>
+        (n.kind === "fact" ||
+          n.kind === "concept" ||
+          n.kind === "secret" ||
+          n.kind === "prop") &&
+        n.sinceChapter <= input.chapterNumber,
+    )
+    .slice(0, 12)
+    .map((n) => `- [${n.kind}] ${n.label}: ${n.summary || "—"}`)
+    .join("\n");
+  if (facts) {
+    parts.push(`## Stoff-Kandidaten (Graph)\n${facts}`);
+  }
+  return parts.join("\n\n").trim();
 }
 
 /**
@@ -655,6 +746,7 @@ export async function critiqueManuskriptMitEntwicklungslektor(input: {
   weltRegeln?: string;
   szenenplot: string;
   manuskriptText: string;
+  tonalitaet?: string;
 }): Promise<ManuskriptCritiqueResult> {
   const text = input.manuskriptText.trim();
   if (!hasFilledManuskript(text)) {
@@ -666,6 +758,11 @@ export async function critiqueManuskriptMitEntwicklungslektor(input: {
   const chars =
     formatCharaktere(input.charaktere ?? []) || "(noch keine Steckbriefe)";
   const compliance = buildCritiqueRulesAndNeedsBlock(input.editorial);
+  const graphBlock = formatWissensGraphForPrompt(input.editorial.wissensGraph, {
+    maxChars: CLIP.sharedContext,
+  });
+  const recherche = (input.editorial.rechercheDossier ?? "").trim();
+  const ton = (input.tonalitaet ?? "").trim();
 
   const userText = `# Buch
 Titel: ${input.title.trim() || "(ohne)"}
@@ -682,6 +779,12 @@ ${compliance}
 # Ideendokumentation
 ${input.ideeKurz.trim().slice(0, CLIP.idee) || "(leer)"}
 
+# Hintergrundrecherche
+${recherche.slice(0, CLIP.recherche) || "(keine)"}
+
+# Sprache & Tonalität (Schreiber)
+${ton.slice(0, CLIP.grob) || "(keine)"}
+
 # Basis-Regeln
 ${(input.grobRegeln ?? "").trim().slice(0, CLIP.grob) || "(leer)"}
 
@@ -695,6 +798,7 @@ ${chars.slice(0, CLIP.charaktere)}
 Schauplätze: ${(input.weltSchauplaetze ?? "").trim().slice(0, CLIP.weltSchau) || "(leer)"}
 Regeln: ${(input.weltRegeln ?? "").trim().slice(0, CLIP.weltRegeln) || "(leer)"}
 
+${graphBlock ? `${graphBlock}\n` : ""}
 # Kapitelgerüst
 ${input.szenenplot.trim().slice(0, CLIP.szenenplot) || "(leer)"}
 
@@ -702,12 +806,12 @@ ${input.szenenplot.trim().slice(0, CLIP.szenenplot) || "(leer)"}
 ${text.slice(0, CLIP.manuskript)}
 
 Auftrag als Entwicklungslektor:
-Gegenlese dramaturgisch gegen ALLE Upstream-Artefakte — und knallhart gegen Regeln + innere Logik/Kontinuität — mit Vorschlägen, die man direkt einbauen kann.
-Fokus: Logiklöcher, Motivation, Figurenbögen, Spannungshänger, Pacing, Widersprüche zu Plot/Welt/Idee, Vermeidung von KI-Mittelmaß.
+Gegenlese dramaturgisch gegen ALLE Upstream-Artefakte und den Wissensgraphen — knallhart gegen Regeln + innere Logik/Kontinuität — mit Vorschlägen, die man direkt einbauen kann.
+Fokus: Logiklöcher, Motivation, Figurenbögen, Spannungshänger, Pacing, Widersprüche zu Plot/Welt/Idee/Graph, doppelte Beats/Kapiteljobs, Vermeidung von KI-Mittelmaß.
 Keine separate Marktanalyse-Bedürfnis-Pflicht.
 
 Form:
-1. Regel- & Logik-Check (Regeln / Logik — je erfüllt/teilweise/fehlt)
+1. Regel- & Logik-Check (Regeln / Logik / Graph-Invarianten — je erfüllt/teilweise/fehlt)
 2. Kurze Einschätzung (Stärken + Risiken, 4–8 Sätze)
 3. 4–8 konkrete Einbau-Vorschläge, nummeriert, actionable (zuerst Regel-/Logik-Lücken):
    - Wo (z. B. „Kapitel 3, nach dem Dialog …“)
@@ -1036,6 +1140,7 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
         chapter,
         previousTail,
         lektorBriefSnippet: brief.lektorBrief,
+        wissensGraph: input.editorial.wissensGraph,
       });
     } else {
       const assembled = await assembleManuskriptChapterContext({
@@ -1044,6 +1149,7 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
         previousTail,
         sharedContextSnippet: brief.sharedContext,
         lektorBriefSnippet: brief.lektorBrief,
+        wissensGraph: input.editorial.wissensGraph,
       });
       continuityBuffer = assembled.buffer;
     }
@@ -1052,6 +1158,7 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
     const written = await writeManuskriptChapterWithLengthGate({
       coAutorSystem: brief.coAutorSystem,
       sharedContext: brief.sharedContext,
+      cacheablePrefix: brief.cacheablePrefix,
       lektorBrief: brief.lektorBrief,
       chapter,
       allChapters: brief.chapters,
@@ -1065,16 +1172,25 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
       pathBBlock: pathBByChapter.get(chapter.number),
       continuityBuffer,
       szenenplotStructured: input.editorial.szenenplotStructured,
+      expandMaterial: buildManuskriptExpandMaterial({
+        editorial: input.editorial,
+        chapterNumber: chapter.number,
+      }),
+      progressChapterLabel: chapterLabel,
       onProgress: report,
-      maxExpands: lean ? 1 : 2,
+      // Lean: still allow 2 expands when clearly short; soft gate never aborts the book.
+      maxExpands: 2,
+      softLengthGate: lean,
     });
     if (written.expanded) expandedChapters.push(chapter.number);
     parts.push(written.chapterMarkdown);
 
     // Lean: skip story-state LLM — continuity uses previousTail + plot focus only.
     if (!lean) {
-      const body =
-        parsePlotChapters(written.chapterMarkdown)[0]?.body ?? "";
+      const body = extractManuskriptChapterBody(
+        written.chapterMarkdown,
+        chapter.number,
+      );
       await report(`${chapterLabel}: Story-State speichern …`);
       storyState = await extractManuskriptStoryState({
         previous: storyState,
@@ -1149,10 +1265,12 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
         previousTail: previousMarkdown.trim().slice(-CONTINUITY_PREV_TAIL_CHARS),
         sharedContextSnippet: brief.sharedContext,
         lektorBriefSnippet: brief.lektorBrief,
+        wissensGraph: input.editorial.wissensGraph,
       });
       const written = await writeManuskriptChapter({
         coAutorSystem: brief.coAutorSystem,
         sharedContext: brief.sharedContext,
+        cacheablePrefix: brief.cacheablePrefix,
         lektorBrief: brief.lektorBrief,
         chapter: item.chapter,
         allChapters: brief.chapters,
@@ -1166,6 +1284,10 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
         continuityBuffer,
         szenenplotStructured: input.editorial.szenenplotStructured,
         expandBody: item.body,
+        expandMaterial: buildManuskriptExpandMaterial({
+          editorial: input.editorial,
+          chapterNumber: item.chapter.number,
+        }),
       });
       const idx = brief.chapters.findIndex((c) => c.number === item.chapter.number);
       if (idx >= 0) {
@@ -1175,7 +1297,10 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
         }
       }
       const body =
-        parsePlotChapters(written.chapterMarkdown)[0]?.body ?? item.body;
+        extractManuskriptChapterBody(
+          written.chapterMarkdown,
+          item.chapter.number,
+        ) || item.body;
       storyState = await extractManuskriptStoryState({
         previous: storyState,
         chapterNumber: item.chapter.number,

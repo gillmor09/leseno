@@ -120,6 +120,7 @@ export type RomanPipelineFertig = Partial<
   Record<
     | "typ"
     | "idee"
+    | "recherche"
     | "spec"
     | "outline"
     | "schreiben"
@@ -128,6 +129,12 @@ export type RomanPipelineFertig = Partial<
     boolean
   >
 >;
+
+/** Grounding citation from Recherche (Gemini Google Search). */
+export type RomanRechercheSource = {
+  title: string;
+  uri: string;
+};
 
 /** One competitive title from Basics market scan. */
 export type RomanMarktanalyseBuch = {
@@ -358,6 +365,63 @@ export type RomanStoryState = {
   mood: string;
 };
 
+/** Knowledge-graph node kinds (Idee/Recherche/Spec → Gerüst → Manuskript). */
+export type RomanWissensGraphNodeKind =
+  | "person"
+  | "place"
+  | "prop"
+  | "fact"
+  | "secret"
+  | "thread"
+  | "rule"
+  | "tone"
+  | "motif"
+  | "event"
+  | "concept";
+
+export type RomanWissensGraphSeedSource =
+  | "idee"
+  | "recherche"
+  | "spec"
+  | "tonalitaet"
+  | "szenenplot"
+  | "manuskript";
+
+export type RomanWissensGraphNode = {
+  id: string;
+  kind: RomanWissensGraphNodeKind;
+  label: string;
+  summary: string;
+  attrs: Record<string, string>;
+  /** 0 = pre-book seed; else first chapter where active. */
+  sinceChapter: number;
+  sceneId?: string;
+};
+
+export type RomanWissensGraphEdge = {
+  id: string;
+  from: string;
+  to: string;
+  rel: string;
+  note: string;
+  chapter?: number;
+  sceneId?: string;
+};
+
+/**
+ * Durable book knowledge graph (entities + relations + hard invariants).
+ * Built from Idee/Recherche/Spec/Tonalität, grown during Kapitelgerüst.
+ * Distinct from compact {@link RomanStoryState} (Manuskript runtime pointer).
+ */
+export type RomanWissensGraph = {
+  updatedAt: string;
+  modelLabel: string;
+  seededFrom: RomanWissensGraphSeedSource[];
+  nodes: RomanWissensGraphNode[];
+  edges: RomanWissensGraphEdge[];
+  hardInvariants: string[];
+};
+
 /** Clock / countdown unit for book-wide logic canon. */
 export type RomanCanonClockUnit = "mm:ss" | "hh:mm" | "relative";
 
@@ -425,6 +489,20 @@ export type RomanEditorial = {
   buchTyp: RomanBuchTyp;
 /** Structured idea dossier from Ideen-Finder Q&A (Mistral fill; UI read-only). */
   ideeKurz: string;
+  /**
+   * Background research dossier (Idee → Spec): facts, context, sources.
+   * Crafted via Recherche dialog (Gemini + Google Search).
+   */
+  rechercheDossier: string;
+  /** Coach dialog history for the Recherche tab. */
+  rechercheChat: Array<{ role: "user" | "assistant"; content: string }>;
+  /** Merged grounding sources from Recherche turns. */
+  rechercheSources: RomanRechercheSource[];
+  /**
+   * Coach dialog for Basics „Sprache & Tonalität (Schreiber)“.
+   * Brief itself is stored on `roman_kontext.tonalitaet`.
+   */
+  schreiberTonalitaetChat: Array<{ role: "user" | "assistant"; content: string }>;
   /** Belletristik: acts, turning points, hard plot bans. */
   handlungsArchitektur: string;
   /** serie_welt: world rules, places, continuity. */
@@ -549,6 +627,11 @@ export type RomanEditorial = {
    */
   canon: RomanCanon | null;
   /**
+   * Durable knowledge graph (Idee/Recherche/Spec/Ton → Kapitelgerüst → Manuskript).
+   * See `src/lib/roman/wissens-graph.ts`.
+   */
+  wissensGraph: RomanWissensGraph | null;
+  /**
    * Structured Kapitelgerüst scenes (dramaturgy / info flow / continuity).
    * Cleared with Szenenplot. Markdown mirror stays in `manuskriptRaw`.
    * See `src/lib/roman/szenenplot-structured.ts`.
@@ -594,10 +677,63 @@ export function emptyEditorialGates(): RomanEditorialGates {
   };
 }
 
+function parseIdeaStyleChat(
+  value: unknown,
+  maxMessages = 40,
+): Array<{ role: "user" | "assistant"; content: string }> {
+  if (!Array.isArray(value)) return [];
+  const out: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const role = r.role === "assistant" || r.role === "user" ? r.role : null;
+    const content = String(r.content ?? "").trim();
+    if (!role || !content) continue;
+    out.push({ role, content: content.slice(0, 12_000) });
+    if (out.length >= maxMessages) break;
+  }
+  return out;
+}
+
+function parseSchreiberTonalitaetChat(
+  value: unknown,
+): RomanEditorial["schreiberTonalitaetChat"] {
+  return parseIdeaStyleChat(value, 40);
+}
+
+function parseRechercheSources(value: unknown): RomanRechercheSource[] {
+  if (!Array.isArray(value)) return [];
+  const out: RomanRechercheSource[] = [];
+  const seen = new Set<string>();
+  for (const row of value) {
+    if (!row || typeof row !== "object") continue;
+    const r = row as Record<string, unknown>;
+    const uri = String(r.uri ?? "").trim().slice(0, 2_000);
+    const title = String(r.title ?? "").trim().slice(0, 300);
+    if (!uri || seen.has(uri)) continue;
+    seen.add(uri);
+    out.push({ title: title || uri, uri });
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+
+/** Merge new grounding sources into existing list (uri-deduped). */
+export function mergeRechercheSources(
+  existing: RomanRechercheSource[] | null | undefined,
+  incoming: RomanRechercheSource[] | null | undefined,
+): RomanRechercheSource[] {
+  return parseRechercheSources([...(existing ?? []), ...(incoming ?? [])]);
+}
+
 export function emptyRomanEditorial(): RomanEditorial {
   return {
     buchTyp: "unbekannt",
     ideeKurz: "",
+    rechercheDossier: "",
+    rechercheChat: [],
+    rechercheSources: [],
+    schreiberTonalitaetChat: [],
     handlungsArchitektur: "",
     weltBibel: "",
     serienBibel: "",
@@ -637,6 +773,7 @@ export function emptyRomanEditorial(): RomanEditorial {
     stageImprove: {},
     storyState: null,
     canon: null,
+    wissensGraph: null,
     szenenplotStructured: null,
     reifegrade: {},
     pipelineFertig: {},
@@ -676,7 +813,7 @@ export function isPipelineTabFertig(
 /**
  * Pipeline tabs counted for list progress (Fertig-Toggles).
  * Clever: Basics → Unterthemen → Geschichten → Export (4).
- * Roman/Sachbuch: + Idee + Spec (6).
+ * Roman/Sachbuch: + Idee + Recherche + Spec (7).
  */
 export const PIPELINE_FERTIG_STEPS_CLEVER = [
   "typ",
@@ -688,6 +825,7 @@ export const PIPELINE_FERTIG_STEPS_CLEVER = [
 export const PIPELINE_FERTIG_STEPS_FULL = [
   "typ",
   "idee",
+  "recherche",
   "spec",
   "outline",
   "schreiben",
@@ -727,6 +865,7 @@ function parsePipelineFertig(raw: unknown): RomanPipelineFertig {
   const allowed = new Set([
     "typ",
     "idee",
+    "recherche",
     "spec",
     "outline",
     "schreiben",
@@ -2741,6 +2880,253 @@ export function formatStoryStateForPrompt(
   return lines.join("\n");
 }
 
+const WISSENS_NODE_KINDS = new Set<RomanWissensGraphNodeKind>([
+  "person",
+  "place",
+  "prop",
+  "fact",
+  "secret",
+  "thread",
+  "rule",
+  "tone",
+  "motif",
+  "event",
+  "concept",
+]);
+
+const WISSENS_SEED_SOURCES = new Set<RomanWissensGraphSeedSource>([
+  "idee",
+  "recherche",
+  "spec",
+  "tonalitaet",
+  "szenenplot",
+  "manuskript",
+]);
+
+function wissensSlugId(raw: string, fallback: string): string {
+  const s = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9äöüß]+/gi, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 48);
+  return s || fallback;
+}
+
+function asWissensAttrs(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const k = String(key).trim().slice(0, 40);
+    const v = String(value ?? "").trim().slice(0, 200);
+    if (!k || !v) continue;
+    out[k] = v;
+    if (Object.keys(out).length >= 8) break;
+  }
+  return out;
+}
+
+/** Tolerant parse of durable book knowledge graph. */
+export function parseRomanWissensGraph(raw: unknown): RomanWissensGraph | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const nodesRaw = Array.isArray(row.nodes) ? row.nodes : [];
+  // Models often use relationships / relations instead of edges.
+  const edgesRaw = Array.isArray(row.edges)
+    ? row.edges
+    : Array.isArray(row.relationships)
+      ? row.relationships
+      : Array.isArray(row.relations)
+        ? row.relations
+        : [];
+  const nodes: RomanWissensGraphNode[] = [];
+  const seenNodes = new Set<string>();
+  /** Map any model-supplied id/label variant → canonical node id. */
+  const idAliases = new Map<string, string>();
+
+  function rememberAlias(rawId: string, canonical: string) {
+    const key = wissensSlugId(rawId, "");
+    if (key) idAliases.set(key, canonical);
+  }
+
+  for (const item of nodesRaw.slice(0, 100)) {
+    if (!item || typeof item !== "object") continue;
+    const n = item as Record<string, unknown>;
+    const kind = String(n.kind ?? n.type ?? "")
+      .trim()
+      .toLowerCase() as RomanWissensGraphNodeKind;
+    const label = String(n.label ?? n.name ?? n.title ?? "")
+      .trim()
+      .slice(0, 160);
+    if (!WISSENS_NODE_KINDS.has(kind) || !label) continue;
+    const rawId = String(n.id ?? "").trim();
+    const id = wissensSlugId(rawId, `${kind}_${nodes.length + 1}`);
+    if (seenNodes.has(id)) continue;
+    seenNodes.add(id);
+    rememberAlias(rawId || id, id);
+    rememberAlias(label, id);
+    rememberAlias(`${kind}_${label}`, id);
+    const since = Number(n.sinceChapter ?? n.since_chapter ?? 0);
+    nodes.push({
+      id,
+      kind,
+      label,
+      summary: String(n.summary ?? n.description ?? "")
+        .trim()
+        .slice(0, 400),
+      attrs: asWissensAttrs(n.attrs ?? n.attributes),
+      sinceChapter:
+        Number.isFinite(since) && since > 0
+          ? Math.min(40, Math.round(since))
+          : 0,
+      sceneId:
+        String(n.sceneId ?? n.scene_id ?? "")
+          .trim()
+          .slice(0, 32) || undefined,
+    });
+  }
+
+  function resolveNodeRef(raw: unknown): string {
+    const s = String(raw ?? "").trim();
+    if (!s) return "";
+    const slug = wissensSlugId(s, "");
+    if (!slug) return "";
+    if (seenNodes.has(slug)) return slug;
+    return idAliases.get(slug) ?? "";
+  }
+
+  const edges: RomanWissensGraphEdge[] = [];
+  const seenEdges = new Set<string>();
+  for (const item of edgesRaw.slice(0, 160)) {
+    if (!item || typeof item !== "object") continue;
+    const e = item as Record<string, unknown>;
+    const from = resolveNodeRef(e.from ?? e.source ?? e.fromId ?? e.from_id);
+    const to = resolveNodeRef(e.to ?? e.target ?? e.toId ?? e.to_id);
+    const rel = String(e.rel ?? e.type ?? e.relation ?? e.label ?? "")
+      .trim()
+      .slice(0, 80);
+    if (!from || !to || !rel) continue;
+    const id = wissensSlugId(
+      String(e.id ?? `${from}_${rel}_${to}`),
+      `e_${edges.length + 1}`,
+    );
+    if (seenEdges.has(id)) continue;
+    seenEdges.add(id);
+    const chapter = Number(e.chapter ?? e.kapitel);
+    edges.push({
+      id,
+      from,
+      to,
+      rel,
+      note: String(e.note ?? e.description ?? "")
+        .trim()
+        .slice(0, 240),
+      chapter:
+        Number.isFinite(chapter) && chapter > 0
+          ? Math.min(40, Math.round(chapter))
+          : undefined,
+      sceneId:
+        String(e.sceneId ?? e.scene_id ?? "")
+          .trim()
+          .slice(0, 32) || undefined,
+    });
+  }
+  if (nodes.length < 2) return null;
+
+  const seededFrom = (
+    Array.isArray(row.seededFrom) ? row.seededFrom : []
+  )
+    .map((x) => String(x).trim() as RomanWissensGraphSeedSource)
+    .filter((x) => WISSENS_SEED_SOURCES.has(x))
+    .slice(0, 8);
+
+  // Models vary: hardInvariants | hard_invariants | invariants | rules.
+  const invRaw = Array.isArray(row.hardInvariants)
+    ? row.hardInvariants
+    : Array.isArray(row.hard_invariants)
+      ? row.hard_invariants
+      : Array.isArray(row.invariants)
+        ? row.invariants
+        : Array.isArray(row.rules)
+          ? row.rules
+          : [];
+  const hardInvariants = invRaw
+    .map((x) => {
+      if (typeof x === "string") return x.trim();
+      if (x && typeof x === "object") {
+        const o = x as Record<string, unknown>;
+        return String(o.text ?? o.rule ?? o.label ?? o.summary ?? "").trim();
+      }
+      return String(x ?? "").trim();
+    })
+    .filter((s) => s.length >= 8)
+    .slice(0, 32)
+    .map((s) => s.slice(0, 280));
+
+  return {
+    updatedAt:
+      String(row.updatedAt ?? "").trim() || new Date().toISOString(),
+    modelLabel: String(row.modelLabel ?? "").trim().slice(0, 80),
+    seededFrom: seededFrom.length ? seededFrom : ["spec"],
+    nodes,
+    edges,
+    hardInvariants,
+  };
+}
+
+/** Compact prompt block (optionally filtered up to a chapter). */
+export function formatWissensGraphForPrompt(
+  graph: RomanWissensGraph | null | undefined,
+  options?: { throughChapter?: number; maxChars?: number },
+): string {
+  if (!graph?.nodes.length) return "";
+  const through = options?.throughChapter;
+  const nodes = graph.nodes.filter(
+    (n) => through == null || n.sinceChapter <= through,
+  );
+  const nodeIds = new Set(nodes.map((n) => n.id));
+  const edges = graph.edges.filter(
+    (e) =>
+      nodeIds.has(e.from) &&
+      nodeIds.has(e.to) &&
+      (through == null || e.chapter == null || e.chapter <= through),
+  );
+  const byKind = new Map<string, string[]>();
+  for (const n of nodes) {
+    const line = `- ${n.label}${n.summary ? `: ${n.summary}` : ""}${
+      n.sinceChapter > 0 ? ` (ab Kap. ${n.sinceChapter})` : ""
+    }`;
+    const list = byKind.get(n.kind) ?? [];
+    list.push(line);
+    byKind.set(n.kind, list);
+  }
+  const parts: string[] = [
+    "## Wissensgraph (verbindlich — keine Lücken/Widersprüche)",
+  ];
+  for (const [kind, lines] of byKind) {
+    parts.push(`### ${kind}\n${lines.slice(0, 20).join("\n")}`);
+  }
+  if (edges.length) {
+    parts.push(
+      `### Relationen\n${edges
+        .slice(0, 40)
+        .map(
+          (e) =>
+            `- ${e.from} —[${e.rel}]→ ${e.to}${e.note ? ` (${e.note})` : ""}`,
+        )
+        .join("\n")}`,
+    );
+  }
+  if (graph.hardInvariants.length) {
+    parts.push(
+      `### Harte Invarianten\n${graph.hardInvariants
+        .map((h) => `– ${h}`)
+        .join("\n")}`,
+    );
+  }
+  return parts.join("\n\n").slice(0, options?.maxChars ?? 12_000);
+}
+
 /**
  * Compact patch brief from stored Testleser feedback for Co-Autor einarbeiten.
  * Prefer `aenderungsPrompts` (clear instructions); fall back to legacy Vorschläge.
@@ -3094,6 +3480,14 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
       }
       return t;
     })(),
+    rechercheDossier: String(row.rechercheDossier ?? "")
+      .trim()
+      .slice(0, 50_000),
+    rechercheChat: parseIdeaStyleChat(row.rechercheChat, 60),
+    rechercheSources: parseRechercheSources(row.rechercheSources),
+    schreiberTonalitaetChat: parseSchreiberTonalitaetChat(
+      row.schreiberTonalitaetChat,
+    ),
     handlungsArchitektur: String(row.handlungsArchitektur ?? "").trim(),
     weltBibel: String(row.weltBibel ?? "").trim(),
     serienBibel: String(row.serienBibel ?? "").trim(),
@@ -3172,6 +3566,7 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
     stageImprove: parseRomanStageImproveMap(row.stageImprove),
     storyState: parseRomanStoryState(row.storyState),
     canon: parseRomanCanon(row.canon),
+    wissensGraph: parseRomanWissensGraph(row.wissensGraph),
     szenenplotStructured: parseRomanSzenenplotStructured(
       row.szenenplotStructured,
     ),
@@ -3193,15 +3588,30 @@ export function formatWordCount(n: number): string {
 
 /**
  * MUST block for prompts: book type, structure docs, age, length, series, hard rules.
+ * Pass `schreiberTonalitaet` from `roman_kontext.tonalitaet` (Basics field).
  */
-export function buildEditorialMustBlock(editorial: RomanEditorial): string {
+export function buildEditorialMustBlock(
+  editorial: RomanEditorial,
+  options?: { schreiberTonalitaet?: string },
+): string {
   const lines: string[] = [];
   if (isBuchTypSet(editorial.buchTyp)) {
     lines.push(`Buchtyp (verbindlich): ${BUCHTYP_LABELS[editorial.buchTyp]}`);
   }
+  const schreiberTon = (options?.schreiberTonalitaet ?? "").trim();
+  if (schreiberTon) {
+    lines.push(
+      `Sprache & Tonalität (Schreiber — verbindliche Stil-Vorgabe):\n${schreiberTon}`,
+    );
+  }
   if (editorial.ideeKurz.trim()) {
     lines.push(
       `Idee (Dokumentation aus Ideen-Finder — Mythos/Plot/Ton; Figurennamen darin IGNORIEREN, nur Steckbriefe gelten):\n${editorial.ideeKurz.trim()}`,
+    );
+  }
+  if (editorial.rechercheDossier.trim()) {
+    lines.push(
+      `Hintergrundrecherche (Fakten/Kontext für Spec — belegte Hintergründe, keine Plot-Erfindung):\n${editorial.rechercheDossier.trim()}`,
     );
   }
   if (editorial.zielAlterMin != null || editorial.zielAlterMax != null) {

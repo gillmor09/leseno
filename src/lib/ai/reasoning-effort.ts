@@ -1,7 +1,8 @@
 /**
  * Reasoning depth options per wired model family.
- * OpenAI: `reasoning_effort`. Gemini 3.x: `thinking_level` (same role column).
- * Claude / IONOS: not applicable — UI shows “nicht unterstützt”.
+ * OpenAI: `reasoning_effort`. Gemini 3.x: `thinking_level`.
+ * Claude Sonnet 5.5: `output_config.effort` (+ `thinking: between_tools`).
+ * Older Claude / IONOS: not applicable.
  */
 
 import { findWiredAiEndpoint } from "@/lib/ai/wired-models";
@@ -30,6 +31,16 @@ function isGeminiTextSlug(slug: string, provider: string): boolean {
   return slug.startsWith("gemini-") && !slug.includes("image") && !slug.includes("veo");
 }
 
+/** Claude Sonnet 5.5 uses `output_config.effort` (not older Sonnet 5). */
+export function isClaudeSonnet55Slug(modelSlug: string): boolean {
+  const slug = modelSlug.trim().toLowerCase();
+  return (
+    slug === "claude-sonnet-5-5" ||
+    slug.startsWith("claude-sonnet-5-5-") ||
+    slug.includes("sonnet-5-5")
+  );
+}
+
 /**
  * Gemini 3.8 / 3.7 Flash: low|medium|high only (minimal → API error).
  * Flash-Lite / 3.5 / 3.6: also minimal.
@@ -56,6 +67,15 @@ function geminiThinkingOptions(slug: string): ReasoningEffortOption[] {
   return levels;
 }
 
+/** Sonnet 5.5: low|medium|high with `between_tools` (xhigh/max need adaptive). */
+function claudeSonnet55EffortOptions(): ReasoningEffortOption[] {
+  return [
+    { value: "low", label: "low — schnell (kein Upfront-Thinking)" },
+    { value: "medium", label: "medium — ausgewogen (Default Prosa)" },
+    { value: "high", label: "high — gründlicher (langsamer/teurer)" },
+  ];
+}
+
 /**
  * Supported reasoning / thinking values for a model slug.
  * Empty = provider does not take this parameter.
@@ -69,6 +89,10 @@ export function reasoningEffortOptionsForModel(
 
   if (isGeminiTextSlug(slug, provider)) {
     return geminiThinkingOptions(slug);
+  }
+
+  if (isClaudeSonnet55Slug(slug)) {
+    return claudeSonnet55EffortOptions();
   }
 
   if (!isOpenAiReasoningSlug(slug, provider)) {
@@ -100,13 +124,16 @@ export function modelSupportsReasoningEffort(modelSlug: string): boolean {
   return reasoningEffortOptionsForModel(modelSlug).length > 0;
 }
 
-/** UI label: OpenAI vs Gemini parameter name. */
+/** UI label: OpenAI vs Gemini vs Claude parameter name. */
 export function reasoningEffortUiLabel(modelSlug: string): string {
   const slug = modelSlug.trim().toLowerCase();
   const wired = findWiredAiEndpoint(modelSlug);
   const provider = (wired?.provider ?? "").trim().toLowerCase();
   if (isGeminiTextSlug(slug, provider)) {
     return "Thinking-Level (Gemini)";
+  }
+  if (isClaudeSonnet55Slug(slug)) {
+    return "Effort (Claude Sonnet 5.5)";
   }
   if (isOpenAiReasoningSlug(slug, provider)) {
     return "Reasoning-Effort (OpenAI)";
@@ -121,6 +148,10 @@ export function defaultReasoningEffortForModel(modelSlug: string): string | null
   const slug = modelSlug.trim().toLowerCase();
   const wired = findWiredAiEndpoint(modelSlug);
   const provider = (wired?.provider ?? "").trim().toLowerCase();
+
+  if (isClaudeSonnet55Slug(slug)) {
+    return "medium";
+  }
 
   if (isGeminiTextSlug(slug, provider)) {
     if (slug.includes("flash-lite") || slug.includes("lite")) {
@@ -137,7 +168,7 @@ export function defaultReasoningEffortForModel(modelSlug: string): string | null
 
 /**
  * Resolve stored role value to an API value, or null if the model ignores it.
- * Maps invalid OpenAI-only values (none/xhigh) away for Gemini.
+ * Maps invalid OpenAI-only values (none/xhigh) away for Gemini / Claude 5.5.
  */
 export function resolveReasoningEffort(
   modelSlug: string,
@@ -152,8 +183,8 @@ export function resolveReasoningEffort(
   if (options.some((o) => o.value === trimmed)) {
     return trimmed;
   }
-  // Soft map OpenAI → Gemini when switching models on a role.
-  if (trimmed === "none" || trimmed === "xhigh") {
+  // Soft map OpenAI → Gemini/Claude when switching models on a role.
+  if (trimmed === "none" || trimmed === "xhigh" || trimmed === "max") {
     const fallback =
       trimmed === "none"
         ? options.find((o) => o.value === "minimal" || o.value === "low")
@@ -166,6 +197,7 @@ export function resolveReasoningEffort(
 /**
  * Lowest supported effort for structured JSON scoring (Reifegrad).
  * OpenAI Luna: `none`. Gemini: `minimal` or `low` (never raw `none`).
+ * Claude Sonnet 5.5: `low`.
  */
 export function lowestReasoningEffortForScoring(
   modelSlug: string,

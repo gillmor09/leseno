@@ -14,9 +14,11 @@ import {
   countWords,
   emptyRomanEditorial,
   exposeTextFromEditorial,
+  formatWissensGraphForPrompt,
   withExposeText,
   type RomanBuchTyp,
   type RomanStoryState,
+  type RomanWissensGraph,
 } from "@/lib/roman/editorial";
 import { formatAutorBiasFromCharaktere } from "@/lib/roman/autor-bias";
 import {
@@ -32,12 +34,13 @@ import {
   manuskriptNeedsPromptBlock,
   manuskriptWordsPerChapter,
 } from "@/lib/roman/manuskript-contracts";
-import { formatCharaktere } from "@/lib/roman/fundament";
+import { buildRomanStaticBookPrefix } from "@/lib/roman/prompt-prefix";
 import {
   assertChapterStructure,
   patchChapterBodies,
 } from "@/lib/roman/pipeline/structure-guard";
 import type { RouteTarget } from "@/lib/roman/pipeline/critique-schema";
+import { growWissensGraphFromChapterBodies } from "@/lib/roman/wissens-graph";
 import {
   CLIP,
   ROMAN_EXCELLENCE_MANDATE,
@@ -290,6 +293,8 @@ async function patchOneChapterBody(input: {
   body: string;
   patchBrief: string;
   context: string;
+  /** Stable book bible for prompt-caching across multi-chapter patches. */
+  cacheablePrefix?: string;
   /** Manuskript: refuse patches shorter than this. */
   wordFloor?: number;
   /** Manuskript: prefer not to exceed this (overshoot guard). */
@@ -367,6 +372,7 @@ Buchdruck: Überschriften setzt das System (ohne Rauten). Erzähle Kapitel ${inp
 Continuity: Ende des Vorgängers ist BEREITS geschrieben — am Kapitelanfang nicht wiederholen oder paraphrasieren, nur organisch fortsetzen. Harte Fakten einhalten.`
 }
 ${noHeadingHint}`,
+      cacheablePrefix: input.cacheablePrefix?.trim() || undefined,
       userText: `# Patch-Brief (verbindlich)
 ${input.patchBrief}
 ${needs}${continuity}${extraHint}
@@ -446,6 +452,8 @@ async function applyChapterDoc(input: {
   baseline: string;
   target: RouteTarget;
   context: string;
+  /** Stable book bible for prompt-caching across chapter patches. */
+  cacheablePrefix?: string;
   critiqueText?: string;
   /** Book target for chapter min floor on manuskript patches. */
   zielWortzahlRoman?: number | null;
@@ -453,6 +461,8 @@ async function applyChapterDoc(input: {
   needsBlock?: string;
   /** Running continuity memory (Manuskript Verbessern / Feedback). */
   storyState?: RomanStoryState | null;
+  /** Durable knowledge graph — carried into patches and updated after. */
+  wissensGraph?: RomanWissensGraph | null;
   /** Optional per-chapter patch brief (Leser-Feedback: local + book-wide split). */
   patchBriefForChapter?: (chapterNumber: number) => string;
 }): Promise<{
@@ -460,6 +470,7 @@ async function applyChapterDoc(input: {
   summary: string;
   patchedChapters: number[];
   storyState?: RomanStoryState | null;
+  wissensGraph?: RomanWissensGraph | null;
 }> {
   const chapters = parsePlotChapters(input.baseline);
   if (chapters.length < 1) {
@@ -530,6 +541,7 @@ async function applyChapterDoc(input: {
 
   let liveStoryState: RomanStoryState | null | undefined =
     input.stage === "manuskript" ? (input.storyState ?? null) : undefined;
+  let liveGraph: RomanWissensGraph | null = input.wissensGraph ?? null;
 
   const patches: Array<{ chapterNumber: number; body: string }> = [];
   let rejectedShort = 0;
@@ -577,6 +589,10 @@ async function applyChapterDoc(input: {
     let continuityBuffer: string | undefined;
     const patchBrief =
       input.patchBriefForChapter?.(num) ?? input.target.patchBrief;
+    const graphSnippet = formatWissensGraphForPrompt(liveGraph, {
+      throughChapter: num,
+      maxChars: 2_200,
+    });
     if (input.stage === "manuskript") {
       const prev = chapters.find((c) => c.number === num - 1);
       const previousTail = prev?.body.trim().slice(-CONTINUITY_PREV_TAIL_CHARS) ?? "";
@@ -586,12 +602,19 @@ async function applyChapterDoc(input: {
         previousTail,
         sharedContextSnippet: input.context,
         lektorBriefSnippet: patchBrief,
+        wissensGraph: liveGraph,
       });
       continuityBuffer = [
         assembled.buffer,
         "## Patch-Übergang (verbindlich)",
         "Das Ende des Vorgänger-Kapitels ist BEREITS im Buch.",
         "Am Anfang DIESES Kapitels: nichts davon erneut erzählen, paraphrasieren oder als Dialog wiederholen — organisch danach ansetzen.",
+      ].join("\n");
+    } else if (graphSnippet) {
+      continuityBuffer = [
+        graphSnippet,
+        "## Patch-Regeln",
+        "Wissensgraph und hardInvariants einhalten; keine doppelten Kapitel-Beats erzeugen.",
       ].join("\n");
     }
 
@@ -602,6 +625,7 @@ async function applyChapterDoc(input: {
       body: ch.body,
       patchBrief,
       context: input.context,
+      cacheablePrefix: input.cacheablePrefix,
       wordFloor,
       wordCeiling,
       preferTighten,
@@ -640,6 +664,7 @@ async function applyChapterDoc(input: {
         summary: `Bedürfnis-Stichprobe: keine sichtbare Änderung in Kap. ${toPatch.join(", ")} (übersprungen).`,
         patchedChapters: [],
         storyState: liveStoryState,
+        wissensGraph: liveGraph,
       };
     }
     throw new Error(
@@ -664,6 +689,7 @@ async function applyChapterDoc(input: {
         summary: `Bedürfnis-Stichprobe: keine sichtbare Änderung in Kap. ${toPatch.join(", ")} (übersprungen).`,
         patchedChapters: [],
         storyState: liveStoryState,
+        wissensGraph: liveGraph,
       };
     }
     throw new Error(
@@ -688,14 +714,34 @@ async function applyChapterDoc(input: {
     }
   }
 
+  // Persist knowledge-graph updates from patched chapters (Gerüst + Manuskript).
+  if (liveGraph && changed.length > 0) {
+    const afterChapters = parsePlotChapters(check.text);
+    const changedBodies = changed
+      .map((p) => afterChapters.find((c) => c.number === p.chapterNumber))
+      .filter((c): c is NonNullable<typeof c> => Boolean(c))
+      .map((c) => ({ number: c.number, title: c.title, body: c.body }));
+    try {
+      liveGraph = await growWissensGraphFromChapterBodies({
+        previous: liveGraph,
+        stage: input.stage,
+        chapters: changedBodies,
+        patchBrief: input.target.patchBrief,
+      });
+    } catch {
+      // Fail-soft: keep previous graph.
+    }
+  }
+
   const scope = needsFocused
     ? `Bedürfnis-Stichprobe: ${changed.length} Kapitel (${changed.map((c) => c.chapterNumber).join(", ")})`
     : `Kapitel ${changed.map((c) => c.chapterNumber).join(", ")}`;
   return {
     text: check.text,
-    summary: `${scope} gepatcht (${input.stage})${preferTighten ? " · Straffen-Modus" : ""}${input.stage === "manuskript" ? " · Continuity" : ""}${rejectedShort > 0 ? ` · ${rejectedShort} Kürzung(en) verworfen` : ""}.`,
+    summary: `${scope} gepatcht (${input.stage})${preferTighten ? " · Straffen-Modus" : ""}${input.stage === "manuskript" ? " · Continuity" : ""}${liveGraph ? " · Wissensgraph" : ""}${rejectedShort > 0 ? ` · ${rejectedShort} Kürzung(en) verworfen` : ""}.`,
     patchedChapters: changed.map((c) => c.chapterNumber),
     storyState: liveStoryState,
+    wissensGraph: liveGraph,
   };
 }
 
@@ -721,13 +767,25 @@ export async function applyRouteTarget(input: {
   const editorial = roman.editorial ?? emptyRomanEditorial();
   const buchTyp = (editorial.buchTyp ?? "unbekannt") as RomanBuchTyp;
   const ideeKurz = editorial.ideeKurz ?? "";
+  const cacheablePrefix = buildRomanStaticBookPrefix({
+    buchTyp,
+    title: roman.title,
+    genre: roman.genre,
+    ideeKurz,
+    rechercheDossier: editorial.rechercheDossier ?? "",
+    tonalitaet: roman.tonalitaet,
+    grobRegeln: editorial.grobRegeln ?? "",
+    editorial,
+    charaktere: roman.charaktere,
+    weltSchauplaetze: roman.weltSchauplaetze,
+    weltRegeln: roman.weltRegeln,
+  });
+  // Live deltas only — book bible is in cacheablePrefix.
   const context = [
-    `Idee:\n${ideeKurz.slice(0, CLIP.idee)}`,
-    `Basis-Regeln:\n${(editorial.grobRegeln ?? "").slice(0, CLIP.grob)}`,
-    `Charaktere:\n${formatCharaktere(roman.charaktere).slice(0, CLIP.charaktere)}`,
     formatAutorBiasFromCharaktere(roman.charaktere),
-    `Welt:\n${roman.weltSchauplaetze.slice(0, CLIP.weltSchau)}\n${roman.weltRegeln.slice(0, CLIP.weltRegeln)}`,
-    `Exposé:\n${exposeTextFromEditorial(editorial).slice(0, CLIP.expose)}`,
+    formatWissensGraphForPrompt(editorial.wissensGraph, {
+      maxChars: CLIP.sharedContext,
+    }),
     `Szenenplot:\n${(roman.manuskriptRaw ?? "").slice(0, CLIP.szenenplot)}`,
   ]
     .filter(Boolean)
@@ -805,18 +863,23 @@ export async function applyRouteTarget(input: {
   }
 
   if (stage === "szenenplot") {
-    const { text, summary, patchedChapters } = await applyChapterDoc({
-      stage: "szenenplot",
-      baseline: roman.manuskriptRaw ?? "",
-      target: input.target,
-      context,
-      critiqueText: input.critiqueText,
-    });
-    // Markdown patch may diverge from dramaturgy JSON — clear so Manuskript
-    // falls back to the updated markdown until next Erzeugen.
+    const { text, summary, patchedChapters, wissensGraph } =
+      await applyChapterDoc({
+        stage: "szenenplot",
+        baseline: roman.manuskriptRaw ?? "",
+        target: input.target,
+        context,
+        cacheablePrefix,
+        critiqueText: input.critiqueText,
+        wissensGraph: editorial.wissensGraph ?? null,
+      });
+    // Markdown patch may diverge from dramaturgy JSON — clear structured so
+    // Manuskript falls back to updated markdown until next Erzeugen.
+    // Keep / update durable knowledge graph.
     const nextEd = {
       ...(roman.editorial ?? emptyRomanEditorial()),
       szenenplotStructured: null,
+      wissensGraph: wissensGraph ?? editorial.wissensGraph ?? null,
     };
     const saved = await persistRoman(roman, {
       manuskriptRaw: text,
@@ -828,18 +891,21 @@ export async function applyRouteTarget(input: {
   if (stage === "manuskript") {
     const baseline = editorial.manuskriptText ?? "";
     const plot = roman.manuskriptRaw ?? "";
-    const { text, summary, patchedChapters, storyState } = await applyChapterDoc({
-      stage: "manuskript",
-      baseline,
-      target: input.target,
-      context,
-      critiqueText: input.critiqueText,
-      zielWortzahlRoman: editorial.zielWortzahlRoman,
-      zielWortzahlSzeneMax: editorial.zielWortzahlSzeneMax,
-      needsBlock: manuskriptNeedsPromptBlock(),
-      storyState: editorial.storyState ?? null,
-      patchBriefForChapter: input.patchBriefForChapter,
-    });
+    const { text, summary, patchedChapters, storyState, wissensGraph } =
+      await applyChapterDoc({
+        stage: "manuskript",
+        baseline,
+        target: input.target,
+        context,
+        cacheablePrefix,
+        critiqueText: input.critiqueText,
+        zielWortzahlRoman: editorial.zielWortzahlRoman,
+        zielWortzahlSzeneMax: editorial.zielWortzahlSzeneMax,
+        needsBlock: manuskriptNeedsPromptBlock(),
+        storyState: editorial.storyState ?? null,
+        wissensGraph: editorial.wissensGraph ?? null,
+        patchBriefForChapter: input.patchBriefForChapter,
+      });
     const sealed = normalizeManuskriptDocument(text, {
       requiredFromPlot: plot,
     });
@@ -853,6 +919,7 @@ export async function applyRouteTarget(input: {
       ...editorial,
       manuskriptText: sealed,
       storyState: storyState ?? editorial.storyState ?? null,
+      wissensGraph: wissensGraph ?? editorial.wissensGraph ?? null,
     };
     const saved = await persistRoman(roman, { editorial: nextEd });
     return { roman: saved, summary, patchedChapters };

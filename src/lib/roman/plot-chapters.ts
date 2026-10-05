@@ -33,6 +33,44 @@ const SCENE_HEADING_RE =
   /^#{2,4}\s*Szene\s+(\d+(?:\.\d+)?)\s*(?:[—–\-:]\s*|\s+)(.+?)\s*$/i;
 
 /**
+ * True when this line is a structural chapter heading (not mid-prose).
+ * Manuskript print-style only at doc start or after ≥2 blank lines.
+ * Markdown `## Kapitel` stays recognized on any line (Szenenplot).
+ */
+function isStructuralChapterHeadingLine(
+  line: string,
+  previousBlankRun: number,
+  atDocStart: boolean,
+): RegExpMatchArray | null {
+  const trimmed = line.trimEnd();
+  const match = trimmed.match(CHAPTER_HEADING_RE);
+  if (!match) return null;
+  const isMarkdownHeading = /^\s*#{1,3}\s*Kapitel\b/i.test(trimmed);
+  if (isMarkdownHeading) return match;
+  // Print-style after ≥1 blank line (Manuskript often has 1–3). Mid-prose
+  // echoes have no blank line before them and stay in the body.
+  if (atDocStart || previousBlankRun >= 1) return match;
+  return null;
+}
+
+/**
+ * Demote mid-prose lines that look like „Kapitel N — …“ so they cannot
+ * split the document (models often echo earlier chapter titles inside Kap. 4+).
+ */
+export function neutralizeEmbeddedChapterHeadings(body: string): string {
+  if (!body.trim()) return body;
+  return body
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trimEnd();
+      if (!CHAPTER_HEADING_RE.test(trimmed)) return line;
+      return line.replace(/^(\s*)(?:#{1,3}\s*)?(Kapitel\s+\d+)/i, "$1($2)");
+    })
+    .join("\n");
+}
+
+/**
  * Suggested chapter count from Zielwortzahl.
  * Aimed high enough for full arcs — previously capped at 12 for mid-length books.
  */
@@ -67,17 +105,36 @@ export function stripLeadingChapterHeadings(
 /**
  * Split Szenenplot/Manuskript into Kapitel blocks.
  * Bodies are stored without a leading heading line.
- * Accepts `## Kapitel N — …` and print-style `Kapitel N — …`.
+ * Markdown `## Kapitel N — …` anywhere; print-style `Kapitel N — …` only at
+ * structure boundaries so mid-prose echoes do not truncate Kap. 4+ or
+ * overwrite Kap. 1 via dedupe.
  */
 export function parsePlotChapters(plot: string): PlotChapter[] {
   const lines = plot.replace(/\r\n/g, "\n").split("\n");
   const chapters: PlotChapter[] = [];
   let current: PlotChapter | null = null;
+  let blankRun = 0;
+  let sawContent = false;
 
   for (const line of lines) {
-    const match = line.match(CHAPTER_HEADING_RE);
+    if (!line.trim()) {
+      blankRun += 1;
+      if (current) {
+        current.body += (current.body ? "\n" : "") + line;
+      }
+      continue;
+    }
+
+    const atDocStart = !sawContent && !current;
+    const match = isStructuralChapterHeadingLine(line, blankRun, atDocStart);
+    blankRun = 0;
+    sawContent = true;
+
     if (match) {
-      if (current) chapters.push(current);
+      if (current) {
+        current.body = current.body.replace(/\n+$/g, "");
+        chapters.push(current);
+      }
       current = {
         number: Number(match[1]),
         title: (match[2] ?? "").trim(),
@@ -89,12 +146,17 @@ export function parsePlotChapters(plot: string): PlotChapter[] {
       current.body += (current.body ? "\n" : "") + line;
     }
   }
-  if (current) chapters.push(current);
+  if (current) {
+    current.body = current.body.replace(/\n+$/g, "");
+    chapters.push(current);
+  }
 
   return chapters
     .map((c) => ({
       ...c,
-      body: stripLeadingChapterHeadings(c.body.trim(), c.number),
+      body: neutralizeEmbeddedChapterHeadings(
+        stripLeadingChapterHeadings(c.body.trim(), c.number),
+      ),
     }))
     .filter((c) => c.body.length >= 20 || c.title.length >= 2)
     .sort((a, b) => a.number - b.number);
@@ -185,9 +247,40 @@ export function formatChapterBlock(chapter: PlotChapter): string {
  * Build one Manuskript chapter: heading, one blank line, then body.
  */
 export function formatManuskriptChapterBlock(chapter: PlotChapter): string {
-  const body = stripLeadingChapterHeadings(chapter.body, chapter.number).trim();
+  const body = neutralizeEmbeddedChapterHeadings(
+    stripLeadingChapterHeadings(chapter.body, chapter.number).trim(),
+  );
   const heading = formatManuskriptChapterHeading(chapter);
   return body ? `${heading}\n\n${body}` : heading;
+}
+
+/**
+ * Body for one chapter from a single-chapter write block or full Manuskript.
+ * Never re-split on mid-prose „Kapitel N — …“ lines (that truncated Kap. 4+
+ * and could overwrite Kap. 1 via dedupe).
+ */
+export function extractManuskriptChapterBody(
+  markdown: string,
+  chapterNumber: number,
+): string {
+  const text = markdown.replace(/\r\n/g, "\n").trim();
+  if (!text) return "";
+
+  // Fast path: block starts with this chapter's heading → rest is the body.
+  const leading = text.match(LEADING_CHAPTER_HEADING_RE);
+  if (leading && Number(leading[1]) === chapterNumber) {
+    return neutralizeEmbeddedChapterHeadings(text.slice(leading[0].length).trim());
+  }
+
+  const chapters = parsePlotChapters(text);
+  const match = chapters.find((c) => c.number === chapterNumber);
+  if (match?.body.trim()) return match.body.trim();
+  if (chapters.length === 1 && chapters[0]?.body.trim()) {
+    return neutralizeEmbeddedChapterHeadings(chapters[0].body.trim());
+  }
+  return neutralizeEmbeddedChapterHeadings(
+    stripLeadingChapterHeadings(text, chapterNumber).trim(),
+  );
 }
 
 /**

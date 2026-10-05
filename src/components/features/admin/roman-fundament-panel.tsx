@@ -6,7 +6,7 @@
  * Basis-Regeln are auto-filled from the selected fields (standard presets).
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ROMAN_ALTER_PRESETS,
   ROMAN_BUCHLAENGE_OPTIONS,
@@ -17,6 +17,7 @@ import {
   genreOptionsForBuchTyp,
   nearestBuchlaengeWords,
   normalizeRichtungen,
+  tonalitaetFromRichtungen,
   type RomanBuchTyp,
   type RomanEditorial,
 } from "@/lib/roman/editorial";
@@ -30,6 +31,8 @@ import {
   type CleverStanceArchetype,
   type CleverThemaStance,
 } from "@/lib/roman/clever-thema-stance";
+import { RomanSchreiberTonalitaetDialog } from "@/components/features/admin/roman-schreiber-tonalitaet-dialog";
+import type { RomanIdeaChatMessage } from "@/lib/roman/types";
 import { cn } from "@/lib/utils";
 
 const inputClass =
@@ -43,6 +46,10 @@ export type FundamentBasics = {
   alterPresetId: string;
   zielWortzahlRoman: number | "";
   richtungen: string[];
+  /**
+   * Explicit writer language/tone brief → persisted as `roman.tonalitaet`.
+   */
+  schreiberSpracheTonalitaet: string;
   grobRegeln: string;
   /** Clever only — book-level Themen-Stance. */
   cleverThemaStance: CleverThemaStance | null;
@@ -52,6 +59,8 @@ export function fundamentBasicsFromState(input: {
   title: string;
   genre: string;
   editorial: RomanEditorial;
+  /** Existing `roman_kontext.tonalitaet` (Schreiber-Vorgabe). */
+  tonalitaet?: string;
 }): FundamentBasics {
   const length = nearestBuchlaengeWords(input.editorial.zielWortzahlRoman);
   const alterPresetId = findAlterPresetId(input.editorial);
@@ -77,6 +86,7 @@ export function fundamentBasicsFromState(input: {
     alterPresetId,
     zielWortzahlRoman,
     richtungen,
+    schreiberSpracheTonalitaet: (input.tonalitaet ?? "").trim(),
     grobRegeln: stored || generated,
     cleverThemaStance: isClever ? stance : null,
   };
@@ -95,6 +105,9 @@ export function RomanFundamentPanel({
   onSave,
   mode,
   showRichtungen = true,
+  romanId,
+  schreiberTonalitaetChat = [],
+  onSchreiberTonalitaetApplied,
 }: {
   buchTyp: RomanBuchTyp;
   value: FundamentBasics;
@@ -107,9 +120,17 @@ export function RomanFundamentPanel({
   mode: "fields" | "rules-save";
   /** Optional reader-promise chips (hidden for Clever erzählt). */
   showRichtungen?: boolean;
+  /** Required to open the coach dialog for Sprache & Tonalität. */
+  romanId?: string;
+  schreiberTonalitaetChat?: RomanIdeaChatMessage[];
+  onSchreiberTonalitaetApplied?: (next: {
+    tonalitaet: string;
+    chat: RomanIdeaChatMessage[];
+  }) => void;
 }) {
   const genres = useMemo(() => genreOptionsForBuchTyp(buchTyp), [buchTyp]);
   const busy = Boolean(disabled || savePending);
+  const [tonDialogOpen, setTonDialogOpen] = useState(false);
   const prevBuchTyp = useRef(buchTyp);
   const grobRegelnRef = useRef<HTMLTextAreaElement>(null);
   const showFields = mode === "fields";
@@ -210,7 +231,16 @@ export function RomanFundamentPanel({
     } else {
       next = [...current, id];
     }
-    patch({ richtungen: next }, true);
+    const fromRichtung = tonalitaetFromRichtungen(next);
+    const keepTon = value.schreiberSpracheTonalitaet.trim();
+    patch(
+      {
+        richtungen: next,
+        // Prefill empty Schreiber field from Richtungen; never overwrite custom text.
+        schreiberSpracheTonalitaet: keepTon || fromRichtung,
+      },
+      true,
+    );
   }
 
   return (
@@ -338,6 +368,43 @@ export function RomanFundamentPanel({
               </p>
             </div>
           ) : null}
+
+          <div className="sm:col-span-2 space-y-2">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <span className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                Sprache & Tonalität (Schreiber)
+              </span>
+              {romanId ? (
+                <button
+                  type="button"
+                  disabled={!canSave || busy}
+                  onClick={() => setTonDialogOpen(true)}
+                  className="text-xs font-bold text-orange-800 underline-offset-2 hover:underline disabled:opacity-50"
+                >
+                  Im Dialog erarbeiten
+                </button>
+              ) : null}
+            </div>
+            <textarea
+              value={value.schreiberSpracheTonalitaet}
+              onChange={(e) =>
+                patch({ schreiberSpracheTonalitaet: e.target.value })
+              }
+              disabled={!canSave || busy}
+              rows={4}
+              className={`${inputClass} font-sans min-h-[6rem] resize-y`}
+              placeholder={
+                isClever
+                  ? "z. B. kindgerecht, neugierig, klare Sätze, Abenteuer-Ton ohne Dozieren …"
+                  : "z. B. nahe Erzählerstimme, trockener Humor, knappe Dialoge, kein Pathos …"
+              }
+            />
+            <p className="text-xs font-semibold text-zinc-500">
+              Explizite Vorgabe für den Schreibstil — gilt für Ideen-Coach,
+              Spec und Manuskript. Optional mit Schreib-Coach im Dialog
+              schärfen (auch per Mikrofon).
+            </p>
+          </div>
 
           {isClever && stance ? (
             <div className="sm:col-span-2 space-y-4 rounded-2xl bg-zinc-50 px-4 py-4 ring-1 ring-zinc-950/8">
@@ -526,6 +593,21 @@ export function RomanFundamentPanel({
             {savePending ? "Speichern …" : "Speichern"}
           </button>
         </div>
+      ) : null}
+
+      {romanId ? (
+        <RomanSchreiberTonalitaetDialog
+          open={tonDialogOpen}
+          romanId={romanId}
+          canSave={canSave}
+          initialBrief={value.schreiberSpracheTonalitaet}
+          initialChat={schreiberTonalitaetChat}
+          onClose={() => setTonDialogOpen(false)}
+          onApplied={({ tonalitaet, chat }) => {
+            patch({ schreiberSpracheTonalitaet: tonalitaet });
+            onSchreiberTonalitaetApplied?.({ tonalitaet, chat });
+          }}
+        />
       ) : null}
     </div>
   );

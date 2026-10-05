@@ -1,11 +1,9 @@
 "use server";
 
 /**
- * Idea Q&A: Schreib-Coach turns woven into ideeKurz by Ideen-Redakteur.
- * Critique / Verbessern is handled by the vertical pipeline (Entwicklungslektor).
+ * Basics: coach dialog to craft `roman.tonalitaet` (Sprache & Tonalität Schreiber).
  */
 
-import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
 import { z } from "zod";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import {
@@ -14,33 +12,34 @@ import {
   type RomanBuchTyp,
   type RomanEditorial,
 } from "@/lib/roman/editorial";
+import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
 import {
-  chatIdeeMitSchreibCoach,
-  weaveIdeeKurz,
-} from "@/lib/roman/idea-qa";
-import {
-  getRomanKontext,
-  setRomanIdeenChat,
-  upsertRomanKontext,
-} from "@/lib/roman/repository";
+  chatSchreiberTonalitaetCoach,
+  weaveSchreiberTonalitaetBrief,
+} from "@/lib/roman/schreiber-tonalitaet-qa";
+import { getRomanKontext, upsertRomanKontext } from "@/lib/roman/repository";
 import type { RomanIdeaChatMessage, RomanKontext } from "@/lib/roman/types";
 import type { ActionResult } from "@/lib/types/actions";
 
-const romanIdeeQaTurnSchema = z.object({
+const turnSchema = z.object({
   romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
   userMessage: z
     .string()
     .trim()
     .min(1, { message: "Nachricht eingeben." })
-    .max(8000),
+    .max(6000),
 });
 
-async function persistIdeeKurz(
+async function persistTonalitaetTurn(
   roman: RomanKontext,
   editorial: RomanEditorial,
-  ideeKurz: string,
+  tonalitaet: string,
+  chat: RomanIdeaChatMessage[],
 ): Promise<RomanKontext> {
-  const nextEditorial = { ...editorial, ideeKurz };
+  const nextEditorial: RomanEditorial = {
+    ...editorial,
+    schreiberTonalitaetChat: chat,
+  };
   const saved = await upsertRomanKontext({
     id: roman.id,
     title: roman.title,
@@ -50,7 +49,7 @@ async function persistIdeeKurz(
     praemisse: roman.praemisse,
     perspektive: roman.perspektive,
     zeitform: roman.zeitform,
-    tonalitaet: roman.tonalitaet,
+    tonalitaet,
     charaktere: roman.charaktere,
     weltSchauplaetze: roman.weltSchauplaetze,
     weltRegeln: roman.weltRegeln,
@@ -65,21 +64,21 @@ async function persistIdeeKurz(
 }
 
 /**
- * One Q&A turn: coach chat → weave ideeKurz → save chat + editorial.
+ * One coach turn → update tonalitaet brief + persist chat on editorial.
  */
-export async function romanIdeeQaTurnAction(
+export async function romanSchreiberTonalitaetQaTurnAction(
   input: unknown,
 ): Promise<
   ActionResult<{
     roman: RomanKontext;
     reply: string;
-    ideeKurz: string;
+    tonalitaet: string;
   }>
 > {
   const denied = await denyUnlessAdmin();
   if (denied) return { success: false, error: denied };
 
-  const parsed = romanIdeeQaTurnSchema.safeParse(input);
+  const parsed = turnSchema.safeParse(input);
   if (!parsed.success) {
     return {
       success: false,
@@ -93,52 +92,56 @@ export async function romanIdeeQaTurnAction(
       return { success: false, error: "Buch nicht gefunden." };
     }
 
-    const buchTyp = roman.editorial?.buchTyp ?? "unbekannt";
-    if (!isBuchTypSet(buchTyp as RomanBuchTyp)) {
+    const buchTyp = (roman.editorial?.buchTyp ?? "unbekannt") as RomanBuchTyp;
+    if (!isBuchTypSet(buchTyp)) {
       return {
         success: false,
-        error: "Zuerst Buchtyp wählen (Belletristik oder Sachbuch).",
+        error: "Zuerst Buchtyp wählen.",
       };
     }
 
     const editorial = roman.editorial ?? emptyRomanEditorial();
-    const history = roman.ideenChat ?? [];
+    const history = editorial.schreiberTonalitaetChat ?? [];
     const userMessage = parsed.data.userMessage;
+    const currentBrief = roman.tonalitaet ?? "";
 
-    const schreiberSpracheTonalitaet = roman.tonalitaet ?? "";
-
-    const coach = await chatIdeeMitSchreibCoach({
-      buchTyp: buchTyp as RomanBuchTyp,
-      ideeKurz: editorial.ideeKurz ?? "",
+    const coach = await chatSchreiberTonalitaetCoach({
+      buchTyp,
+      genre: roman.genre,
+      lesestufe: editorial.lesestufe ?? "",
+      currentBrief,
       history,
       userMessage,
-      schreiberSpracheTonalitaet,
     });
 
-    const woven = await weaveIdeeKurz({
-      buchTyp: buchTyp as RomanBuchTyp,
-      ideeKurz: editorial.ideeKurz ?? "",
+    const woven = await weaveSchreiberTonalitaetBrief({
+      buchTyp,
+      genre: roman.genre,
+      lesestufe: editorial.lesestufe ?? "",
+      currentBrief,
       userMessage,
       coachReply: coach.reply,
-      schreiberSpracheTonalitaet,
     });
 
     const nextChat: RomanIdeaChatMessage[] = [
       ...history,
       { role: "user" as const, content: userMessage },
       { role: "assistant" as const, content: coach.reply },
-    ].slice(-60);
+    ].slice(-40);
 
-    const saved = await persistIdeeKurz(roman, editorial, woven.ideeKurz);
-    await setRomanIdeenChat({ id: saved.id, messages: nextChat });
+    const saved = await persistTonalitaetTurn(
+      roman,
+      editorial,
+      woven.brief,
+      nextChat,
+    );
 
-    const withChat: RomanKontext = { ...saved, ideenChat: nextChat };
     return {
       success: true,
       data: {
-        roman: withChat,
+        roman: saved,
         reply: coach.reply,
-        ideeKurz: woven.ideeKurz,
+        tonalitaet: woven.brief,
       },
     };
   } catch (error) {
@@ -147,7 +150,7 @@ export async function romanIdeeQaTurnAction(
       error:
         error instanceof Error
           ? error.message
-          : "Ideen-Q&A fehlgeschlagen.",
+          : "Tonalitäts-Dialog fehlgeschlagen.",
     };
   }
 }

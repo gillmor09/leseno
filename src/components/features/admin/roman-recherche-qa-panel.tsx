@@ -1,29 +1,34 @@
 "use client";
 
 /**
- * Idea Q&A layout: Verlauf, Coach Q&A (text + Deepgram STT), Ideendokumentation.
- * Critique / Verbessern runs via pipeline stage actions above the panel.
+ * Recherche Q&A: Verlauf, Coach (text + Deepgram STT), Hintergrunddossier + Quellen.
  */
 
 import { useMemo, useState } from "react";
 import { ChevronDown, Mic, MicOff } from "lucide-react";
 import { toast } from "sonner";
-import { romanIdeeQaTurnAction } from "@/app/actions/roman-idee-qa";
+import { romanRechercheQaTurnAction } from "@/app/actions/roman-recherche-qa";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import { useDeepgramLiveStt } from "@/hooks/use-deepgram-live-stt";
-import { countWords, formatWordCount } from "@/lib/roman/editorial";
+import {
+  countWords,
+  formatWordCount,
+  type RomanRechercheSource,
+} from "@/lib/roman/editorial";
 import type { RomanIdeaChatMessage } from "@/lib/roman/types";
 import { cn } from "@/lib/utils";
 
 const STARTER_QUESTION =
-  "Womit soll die Idee starten? Genre, Kernkonflikt/These, Figurrolle oder Setting — ohne Kapitelplan, ohne feste Eigennamen.";
+  "Worauf soll die Hintergrundrecherche zuerst gehen — Fakten, Historie, Fachbegriffe, Orte, Kontroversen? Oder tippe „Aus Idee recherchieren“.";
+
+const FROM_IDEE_PROMPT =
+  "Recherchiere aus der aktuellen Idee die wichtigsten Hintergrundfakten, Kontexte und typischen Missverständnisse — mit Google Search, spez-fähig verdichtet.";
 
 const textareaClass =
   "w-full min-h-[14rem] flex-1 resize-y rounded-2xl bg-gray-100 px-4 py-3 text-base font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700 font-sans";
 
 function splitDialog(messages: RomanIdeaChatMessage[]): {
   history: RomanIdeaChatMessage[];
-  /** Empty = no open Coach question. */
   openQuestion: string;
 } {
   if (messages.length === 0) {
@@ -36,7 +41,6 @@ function splitDialog(messages: RomanIdeaChatMessage[]): {
       openQuestion: last.content.trim() || STARTER_QUESTION,
     };
   }
-  // Last turn answered — no pending Coach question.
   return {
     history: messages,
     openQuestion: "",
@@ -68,22 +72,27 @@ function historyPairs(
   return pairs;
 }
 
-export function RomanIdeeQaPanel({
+export function RomanRechercheQaPanel({
   romanId,
   messages,
-  ideeKurz,
+  rechercheDossier,
+  sources,
   canSave,
   disabled,
+  hasIdee,
   onTurnComplete,
 }: {
   romanId: string;
   messages: RomanIdeaChatMessage[];
-  ideeKurz: string;
+  rechercheDossier: string;
+  sources: RomanRechercheSource[];
   canSave: boolean;
   disabled?: boolean;
+  hasIdee: boolean;
   onTurnComplete: (next: {
     messages: RomanIdeaChatMessage[];
-    ideeKurz: string;
+    rechercheDossier: string;
+    sources: RomanRechercheSource[];
   }) => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -95,7 +104,7 @@ export function RomanIdeeQaPanel({
     startListening,
     stopListening,
     clearTranscript,
-  } = useDeepgramLiveStt({ enabled: canSave && !disabled });
+  } = useDeepgramLiveStt({ enabled: canSave && !disabled && hasIdee });
 
   const { history, openQuestion } = useMemo(
     () => splitDialog(messages),
@@ -107,6 +116,10 @@ export function RomanIdeeQaPanel({
 
   async function sendText(text: string) {
     if (!canSave || busy) return;
+    if (!hasIdee) {
+      toast.message("Zuerst Idee erarbeiten.");
+      return;
+    }
     const trimmed = text.trim();
     if (!trimmed) {
       toast.message("Antwort eingeben.");
@@ -115,22 +128,24 @@ export function RomanIdeeQaPanel({
     if (listening) stopListening();
     setPending(true);
     try {
-      const result = await romanIdeeQaTurnAction({
+      const result = await romanRechercheQaTurnAction({
         romanId,
         userMessage: trimmed,
       });
       if (!result.success) {
-        toast.error(result.error ?? "Ideen-Q&A fehlgeschlagen.");
+        toast.error(result.error ?? "Recherche-Q&A fehlgeschlagen.");
         return;
       }
       setDraft("");
       clearTranscript();
       setVerlaufOpen(false);
+      const ed = result.data!.roman.editorial;
       onTurnComplete({
-        messages: result.data!.roman.ideenChat,
-        ideeKurz: result.data!.ideeKurz,
+        messages: ed?.rechercheChat ?? [],
+        rechercheDossier: result.data!.rechercheDossier,
+        sources: ed?.rechercheSources ?? [],
       });
-      toast.success("Idee aktualisiert.");
+      toast.success("Recherche aktualisiert.");
     } finally {
       setPending(false);
     }
@@ -146,14 +161,20 @@ export function RomanIdeeQaPanel({
 
   return (
     <div className="space-y-5">
-      <RomanSceneWaitDialog open={pending} variant="idee" />
+      <RomanSceneWaitDialog open={pending} variant="recherche" />
 
       <p className="text-sm font-semibold text-zinc-600">
-        Offene Frage vom Schreib-Coach beantworten — tippen oder per Mikrofon
-        (Deepgram). Nach dem Senden aktualisiert der Ideen-Redakteur die
-        Ideendokumentation — als Saat für die Spec, ohne Kapitel- oder
-        Szenenpläne.
+        Recherche-Coach mit Google Search (Gemini) — tippen oder Mikrofon.
+        Der Recherche-Redakteur verwebt jede Runde in das Hintergrunddossier für
+        die Spec.
       </p>
+
+      {!hasIdee ? (
+        <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+          Zuerst im Schritt Idee eine Dokumentation anlegen (mind. etwas
+          Substanz).
+        </p>
+      ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
         <div className="space-y-4">
@@ -192,7 +213,7 @@ export function RomanIdeeQaPanel({
                       {pair.question ? (
                         <div className="mb-2">
                           <p className="text-[10px] font-extrabold tracking-wide text-zinc-500 uppercase">
-                            Schreib-Coach
+                            Recherche-Coach
                           </p>
                           <pre className="mt-1 whitespace-pre-wrap font-sans text-sm font-semibold text-zinc-700">
                             {pair.question}
@@ -218,12 +239,12 @@ export function RomanIdeeQaPanel({
 
           <section className="flex min-h-[16rem] flex-col rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
             <p className="text-[11px] font-extrabold tracking-wide text-zinc-500 uppercase">
-              Offene Frage · Schreib-Coach
+              Offene Frage · Recherche-Coach
             </p>
             <div className="mt-3 flex-1 overflow-y-auto rounded-2xl bg-zinc-50 px-4 py-4 ring-1 ring-zinc-950/5">
               <pre className="whitespace-pre-wrap font-sans text-base font-semibold leading-relaxed text-zinc-900">
                 {openQuestion ||
-                  "Keine offene Frage. Schreib dem Coach etwas Neues, oder nutze Verbessern oben."}
+                  "Keine offene Frage. Schreib dem Coach etwas Neues oder starte „Aus Idee recherchieren“."}
               </pre>
             </div>
           </section>
@@ -236,10 +257,10 @@ export function RomanIdeeQaPanel({
               <textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                disabled={!canSave || busy}
+                disabled={!canSave || busy || !hasIdee}
                 rows={8}
                 className={cn(textareaClass, "mt-3")}
-                placeholder="Hier tippen oder per Mikrofon diktieren …"
+                placeholder="Recherche-Winkel nennen oder Fragen beantworten …"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
@@ -251,18 +272,26 @@ export function RomanIdeeQaPanel({
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                disabled={!canSave || busy}
+                disabled={!canSave || busy || !hasIdee}
                 onClick={() => void sendText(draft)}
                 className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
               >
                 {pending
-                  ? "An Schreib-Coach senden …"
-                  : "An Schreib-Coach senden"}
+                  ? "An Recherche-Coach senden …"
+                  : "An Recherche-Coach senden"}
+              </button>
+              <button
+                type="button"
+                disabled={!canSave || busy || !hasIdee}
+                onClick={() => void sendText(FROM_IDEE_PROMPT)}
+                className="rounded-full bg-white px-4 py-2.5 text-sm font-bold text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 disabled:opacity-50"
+              >
+                Aus Idee recherchieren
               </button>
               {!listening ? (
                 <button
                   type="button"
-                  disabled={!canSave || busy}
+                  disabled={!canSave || busy || !hasIdee}
                   onClick={() => void startListening()}
                   className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 disabled:opacity-50"
                 >
@@ -312,29 +341,51 @@ export function RomanIdeeQaPanel({
         <div className="space-y-4">
           <section className="flex min-h-[20rem] flex-col rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
             <h3 className="text-[11px] font-extrabold tracking-wide text-zinc-500 uppercase">
-              Ideendokumentation
+              Hintergrunddossier
             </h3>
             <div
               className={cn(
                 "mt-3 max-h-[80vh] flex-1 overflow-y-auto rounded-2xl px-4 py-4 text-sm font-semibold leading-relaxed ring-1",
-                ideeKurz.trim()
+                rechercheDossier.trim()
                   ? "bg-zinc-50 text-zinc-800 ring-zinc-950/8"
                   : "bg-zinc-100 text-zinc-500 ring-zinc-950/8",
               )}
             >
-              {ideeKurz.trim() ? (
+              {rechercheDossier.trim() ? (
                 <pre className="whitespace-pre-wrap font-sans text-sm">
-                  {ideeKurz}
+                  {rechercheDossier}
                 </pre>
               ) : (
-                "Noch leer — entsteht nach der ersten Runde mit dem Ideen-Redakteur."
+                "Noch leer — entsteht nach der ersten Runde mit Google Search."
               )}
             </div>
             <p className="mt-1.5 text-xs font-semibold text-zinc-500">
-              {formatWordCount(countWords(ideeKurz))} Wörter · Konzept für Spec
-              (Figuren/Welt/Exposé), kein Kapitelgerüst.
+              {formatWordCount(countWords(rechercheDossier))} Wörter · Fakten
+              für Spec, kein Kapitelgerüst.
             </p>
           </section>
+
+          {sources.length > 0 ? (
+            <section className="rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+              <h3 className="text-[11px] font-extrabold tracking-wide text-zinc-500 uppercase">
+                Quellen ({sources.length})
+              </h3>
+              <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto text-sm font-semibold">
+                {sources.map((s) => (
+                  <li key={s.uri}>
+                    <a
+                      href={s.uri}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-orange-800 underline-offset-2 hover:underline"
+                    >
+                      {s.title || s.uri}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
         </div>
       </div>
     </div>

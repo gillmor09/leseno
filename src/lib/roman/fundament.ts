@@ -60,16 +60,25 @@ Alters- und Lesestufe aus Stilbibel/Regelwerk strikt einhalten (z. B. 8–10 Jah
 export function buildStyleMustBlocks(roman: {
   kiRegelwerk: string;
   stilbibel: string;
+  /** Explicit Schreiber Sprache & Tonalität (Basics). */
+  tonalitaet?: string;
   editorial?: RomanEditorial;
 }): string {
   const rules = roman.kiRegelwerk.trim() || DEFAULT_KI_REGELWERK;
   const stil = roman.stilbibel.trim();
+  const ton = (roman.tonalitaet ?? "").trim();
   const parts: string[] = [];
   if (roman.editorial) {
-    const editorialBlock = buildEditorialMustBlock(roman.editorial);
+    const editorialBlock = buildEditorialMustBlock(roman.editorial, {
+      schreiberTonalitaet: ton,
+    });
     if (editorialBlock) parts.push(editorialBlock);
     const strukturBlock = buildStrukturMustBlock(roman.editorial);
     if (strukturBlock) parts.push(strukturBlock);
+  } else if (ton) {
+    parts.push(
+      `## MUSS — Sprache & Tonalität (Schreiber)\n${ton}`,
+    );
   }
   parts.push(`## MUSS — KI-Regelwerk (verbindlich, keine Ausnahme)
 Jeder Satz, jede Formulierung und jede Idee muss zu diesen Regeln passen. Bei Konflikt mit Eleganz, „literarischem“ Ton oder Dramaturgie gewinnen DIESE Regeln.
