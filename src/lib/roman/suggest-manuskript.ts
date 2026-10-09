@@ -698,23 +698,38 @@ export async function writeManuskriptChapterWithLengthGate(input: {
     chapterNum,
     { storyState: input.storyState, maxChars: 1_600 },
   );
-  written = await runManuskriptPostDraftQualityGates({
-    written,
-    chapterNumber: chapterNum,
-    chapterLabel,
-    chapterPacket: input.chapterPacket,
-    structuredChapter: structuredCh,
-    factContractsBlock,
-    extractBody: extractManuskriptChapterBody,
-    wordCountOf: manuskriptChapterWordCount,
-    rewrite: async (patchedPacket) =>
-      writeManuskriptChapter({
-        ...input,
-        chapterPacket: patchedPacket || input.chapterPacket,
-        expandBody: undefined,
-      }),
-    onProgress: input.onProgress,
-  });
+  {
+    const gated = await runManuskriptPostDraftQualityGates({
+      written: {
+        chapterMarkdown: written.chapterMarkdown,
+        wordCount: written.wordCount,
+      },
+      chapterNumber: chapterNum,
+      chapterLabel,
+      chapterPacket: input.chapterPacket,
+      structuredChapter: structuredCh,
+      factContractsBlock,
+      extractBody: extractManuskriptChapterBody,
+      wordCountOf: manuskriptChapterWordCount,
+      rewrite: async (patchedPacket) => {
+        const next = await writeManuskriptChapter({
+          ...input,
+          chapterPacket: patchedPacket || input.chapterPacket,
+          expandBody: undefined,
+        });
+        return {
+          chapterMarkdown: next.chapterMarkdown,
+          wordCount: next.wordCount,
+        };
+      },
+      onProgress: input.onProgress,
+    });
+    written = {
+      ...written,
+      chapterMarkdown: gated.chapterMarkdown,
+      wordCount: gated.wordCount,
+    };
+  }
 
   let expanded = false;
   let expands = 0;

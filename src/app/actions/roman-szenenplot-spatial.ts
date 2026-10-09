@@ -81,10 +81,9 @@ export async function enrichSzenenplotSpatialAction(
     weltSchauplaetze: roman.weltSchauplaetze,
     weltRegeln: roman.weltRegeln,
     szenenRaster: roman.szenenRaster,
+    kiRegelwerk: roman.kiRegelwerk,
     fanPersonaName: roman.fanPersonaName,
     fanPersonaProfil: roman.fanPersonaProfil,
-    coverAssetPath: roman.coverAssetPath,
-    coverPrompt: roman.coverPrompt,
     editorial: {
       ...editorial,
       szenenplotStructured: structured,

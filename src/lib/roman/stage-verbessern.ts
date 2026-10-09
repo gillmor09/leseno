@@ -76,7 +76,6 @@ import {
   structuredSzenenplotToMarkdown,
 } from "@/lib/roman/szenenplot-structured";
 import type { RomanKontext } from "@/lib/roman/types";
-import type { AiModelConfig } from "@/lib/prompts/catalog";
 
 /** Chapter list for Verbessern scope — prefer structured remirror. */
 function improveChapterDoc(
