@@ -57,7 +57,7 @@ import {
   structureStageAnalyzePolicy,
 } from "@/lib/roman/pipeline/quality-brief";
 import {
-  findDimensionDef,
+  findDimensionDefForAssessKey,
   formatCraftScoresLine,
   pctForDimension,
   REIFEGRAD_DIMENSION_ANALYZE_MODEL_SLUG,
@@ -69,6 +69,8 @@ import {
   formatAssessCoverageLabel,
   getStageArtifactText,
 } from "@/lib/roman/reifegrad";
+import type { ReifegradAssessKey } from "@/lib/roman/reifegrad-model";
+import { applyRomanDimensionToRomanText } from "@/lib/roman/roman-reifegrad-apply";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import { getRomanKontext, upsertRomanKontext } from "@/lib/roman/repository";
 import {
@@ -76,10 +78,18 @@ import {
   structuredSzenenplotToMarkdown,
 } from "@/lib/roman/szenenplot-structured";
 import type { RomanKontext } from "@/lib/roman/types";
-import type { AiModelConfig } from "@/lib/prompts/catalog";
 
-function improveChapterDoc(roman: RomanKontext, stage: PipelineStage): string {
+const REIFEGRAD_ASSESS_LABELS: Record<ReifegradAssessKey, string> = {
+  ...PIPELINE_STAGE_LABELS,
+  roman: "Roman",
+};
+
+function improveChapterDoc(
+  roman: RomanKontext,
+  stage: ReifegradAssessKey,
+): string {
   const ed = roman.editorial ?? emptyRomanEditorial();
+  if (stage === "roman") return ed.romanText ?? "";
   if (stage === "manuskript") return ed.manuskriptText ?? "";
   if (stage === "kapitelgeruest") {
     if (ed.kapitelGeruestStructured?.chapters.length) {
@@ -137,8 +147,12 @@ export {
   dimensionLabel,
   dimensionsForStage,
   findDimensionDef,
+  findDimensionDefForAssessKey,
   formatCraftScoresLine,
+  formatCraftScoresLineForAssessKey,
+  improveDimensionsForAssessKey,
   improveDimensionsForStage,
+  isReifegradDimensionForAssessKey,
   isReifegradDimensionForStage,
   pctForDimension,
   statusForDimension,
@@ -211,7 +225,7 @@ async function parseDimensionAnalyzeRaw(
   raw: string,
   model: AiModelConfig,
   meta: {
-    stage: PipelineStage;
+    stage: ReifegradAssessKey;
     dimension: ReifegradDimension;
     dimensionLabel: string;
     modelLabel: string;
@@ -298,7 +312,7 @@ async function parseDimensionAnalyzeRaw(
  */
 export async function analyzeReifegradDimension(input: {
   romanId: string;
-  stage: PipelineStage;
+  stage: ReifegradAssessKey;
   dimension: ReifegradDimension;
 }): Promise<{
   roman: RomanKontext;
@@ -306,14 +320,16 @@ export async function analyzeReifegradDimension(input: {
   summary: string;
   runId: string;
 }> {
-  const def = findDimensionDef(input.stage, input.dimension);
+  const def = findDimensionDefForAssessKey(input.stage, input.dimension);
   if (!def) {
     throw new Error(
       `Dimension „${input.dimension}“ gilt nicht für Stufe ${input.stage}.`,
     );
   }
   const dimLabel = def.label;
-  const stageLabel = PIPELINE_STAGE_LABELS[input.stage];
+  const stageLabel = REIFEGRAD_ASSESS_LABELS[input.stage];
+  const craftScoreStage =
+    input.stage === "roman" ? "manuskript" : input.stage;
   const events: PipelineHistoryEvent[] = [];
   const runId = await startPipelineHistoryRun({
     romanId: input.romanId,
@@ -344,7 +360,8 @@ export async function analyzeReifegradDimension(input: {
     const chapterStages =
       input.stage === "kapitelgeruest" ||
       input.stage === "szenenplot" ||
-      input.stage === "manuskript";
+      input.stage === "manuskript" ||
+      input.stage === "roman";
     const previousScore = editorial.reifegrade?.[input.stage] ?? null;
     const axisPct = previousScore
       ? pctForDimension(previousScore, def)
@@ -385,13 +402,15 @@ ${stageLabel} (${input.stage})${
       ? "\nArtefakt = STRUCTURED Kapitelgerüst (JSON-Spiegel: centralArcs + Kapitel-Lifecycle/arcBeats)."
       : input.stage === "szenenplot"
         ? "\nArtefakt = STRUCTURED Szenenplot (JSON-Spiegel: Arcs, Szenenverträge, schreibPrompt)."
-        : ""
+        : input.stage === "roman"
+          ? "\nArtefakt = Roman-Prosa (romanText) nach Stil-Pass. Content frozen: Nur Stil/Lesefluss vorschlagen — keine neuen Beats/Fakten."
+          : ""
 }
 
 # Aktueller Reifegrad
 ${
   previousScore
-    ? `Gesamt ${previousScore.gesamtPct}% · Logik ${previousScore.regelnPct}% · ${formatCraftScoresLine(input.stage, previousScore)}${axisPct != null ? ` · Fokus „${def.label}“ ${axisPct}%` : ""}`
+    ? `Gesamt ${previousScore.gesamtPct}% · Logik ${previousScore.regelnPct}% · ${formatCraftScoresLine(craftScoreStage, previousScore)}${axisPct != null ? ` · Fokus „${def.label}“ ${axisPct}%` : ""}`
     : "(noch nicht gemessen)"
 }
 
@@ -403,7 +422,9 @@ ${def.brief}
 ${
   input.stage === "expose"
     ? specStageAnalyzePolicy("dimension")
-    : structureStageAnalyzePolicy(input.stage)
+    : input.stage === "roman"
+      ? ""
+      : structureStageAnalyzePolicy(input.stage)
 }
 
 # Artefakt
@@ -476,7 +497,10 @@ Antworte AUSSCHLIESSLICH als JSON-Objekt mit Keys kritik und aenderungsPrompts �
     const { kept } = filterAenderungsPromptsByGrounding(
       planRaw.aenderungsPrompts,
       artifact,
-      { stage: input.stage },
+      {
+        stage:
+          input.stage === "roman" ? "manuskript" : (input.stage as PipelineStage),
+      },
     );
     const plan = {
       ...planRaw,
@@ -550,7 +574,7 @@ Antworte AUSSCHLIESSLICH als JSON-Objekt mit Keys kritik und aenderungsPrompts �
  */
 export async function applyReifegradDimensionPlan(input: {
   romanId: string;
-  stage: PipelineStage;
+  stage: ReifegradAssessKey;
   dimension: ReifegradDimension;
   /** Author answers keyed by index in plan.aenderungsPrompts. */
   autorEntscheidungen?: Record<number, string>;
@@ -560,7 +584,7 @@ export async function applyReifegradDimensionPlan(input: {
   runId: string;
   patchedChapters: number[];
 }> {
-  const stageLabel = PIPELINE_STAGE_LABELS[input.stage];
+  const stageLabel = REIFEGRAD_ASSESS_LABELS[input.stage];
   const events: PipelineHistoryEvent[] = [];
   const loaded = await getRomanKontext(input.romanId);
   if (!loaded) throw new Error("Buch nicht gefunden.");
@@ -636,7 +660,33 @@ export async function applyReifegradDimensionPlan(input: {
     const allPatched: number[] = [];
     const chapterDoc = improveChapterDoc(roman, input.stage);
 
-    if (
+    if (input.stage === "roman") {
+      const chapterPlan = resolveReifegradImproveChapters(chapterDoc, plan);
+      if (chapterPlan.chapterNumbers.length === 0) {
+        throw new Error(
+          "Keine Kapitel für die Änderungsaufträge gefunden (scope/kapitel prüfen).",
+        );
+      }
+      const { result: applied, usage } = await runWithAiUsageCollector(() =>
+        applyRomanDimensionToRomanText({
+          roman,
+          plan,
+          chapterNumbers: chapterPlan.chapterNumbers,
+          patchBrief: formatReifegradImprovePatchBrief(plan, briefOpts),
+        }),
+      );
+      roman = applied.roman;
+      allPatched.push(...applied.patchedChapters);
+      events.push(
+        historyEvent({
+          type: "apply",
+          stage: "roman",
+          roleKey: "autor",
+          summary: `Roman · ${dimLabel}: Kap. ${applied.patchedChapters.join(", ")}`,
+          usage,
+        }),
+      );
+    } else if (
       input.stage === "manuskript" ||
       input.stage === "szenenplot" ||
       input.stage === "kapitelgeruest"
@@ -658,12 +708,13 @@ export async function applyReifegradDimensionPlan(input: {
         );
       }
       for (const chapterNumbers of batches) {
+        const applyStage = input.stage as PipelineStage;
         const { result: applied, usage } = await runWithAiUsageCollector(() =>
           applyRouteTarget({
             roman,
             critiqueText: plan.kritik,
             target: {
-              stage: input.stage,
+              stage: applyStage,
               reason: `Fokussierte Nacharbeit: ${dimLabel}`,
               patchBrief: formatReifegradImprovePatchBrief(plan, briefOpts),
               chapterNumbers,
@@ -680,8 +731,8 @@ export async function applyReifegradDimensionPlan(input: {
         events.push(
           historyEvent({
             type: "apply",
-            stage: input.stage,
-            roleKey: romanApplyRoleKey(input.stage),
+            stage: applyStage,
+            roleKey: romanApplyRoleKey(applyStage),
             summary: applied.summary,
             usage,
           }),
@@ -689,7 +740,7 @@ export async function applyReifegradDimensionPlan(input: {
       }
     } else {
       const applyStages = applyStagesForDimension(
-        input.stage,
+        input.stage as PipelineStage,
         plan.dimension,
       );
       for (const applyStage of applyStages) {
@@ -721,6 +772,8 @@ export async function applyReifegradDimensionPlan(input: {
     const ed = roman.editorial ?? emptyRomanEditorial();
     const previous = snapshotEditorial.reifegrade?.[input.stage] ?? null;
     let nextEd = ed;
+    const craftLineStage =
+      input.stage === "roman" ? "manuskript" : input.stage;
 
     try {
       const { result: assessed, usage: reifeUsage } =
@@ -794,7 +847,7 @@ export async function applyReifegradDimensionPlan(input: {
           type: "info",
           stage: input.stage,
           modelLabel: score.modelLabel,
-          summary: `Reifegrad nach ${dimLabel}: ${score.gesamtPct}%${deltaLabel} · ${coverageLabel} (Logik ${score.regelnPct}% · ${formatCraftScoresLine(input.stage, score)})`,
+          summary: `Reifegrad nach ${dimLabel}: ${score.gesamtPct}%${deltaLabel} · ${coverageLabel} (Logik ${score.regelnPct}% · ${formatCraftScoresLine(craftLineStage, score)})`,
           usage: reifeUsage,
         }),
       );
@@ -859,13 +912,13 @@ export async function applyReifegradDimensionPlan(input: {
  */
 export async function discardReifegradDimensionPlan(input: {
   romanId: string;
-  stage: PipelineStage;
+  stage: ReifegradAssessKey;
   dimension: ReifegradDimension;
 }): Promise<{
   roman: RomanKontext;
   summary: string;
 }> {
-  const def = findDimensionDef(input.stage, input.dimension);
+  const def = findDimensionDefForAssessKey(input.stage, input.dimension);
   const dimLabel = def?.label ?? input.dimension;
   const loaded = await getRomanKontext(input.romanId);
   if (!loaded) throw new Error("Buch nicht gefunden.");
@@ -902,7 +955,7 @@ export async function discardReifegradDimensionPlan(input: {
  */
 export async function improveReifegradDimension(input: {
   romanId: string;
-  stage: PipelineStage;
+  stage: ReifegradAssessKey;
   dimension: ReifegradDimension;
 }): Promise<{
   roman: RomanKontext;

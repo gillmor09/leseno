@@ -718,7 +718,9 @@ export function RomanAdminWorkspace({
 
   async function clearRomanBook() {
     if (!canSave || savePending || isCleverErzaehlt) return;
-    const nextEditorial = { ...editorial, romanText: "" };
+    const reifegrade = { ...(editorial.reifegrade ?? {}) };
+    delete reifegrade.roman;
+    const nextEditorial = { ...editorial, romanText: "", reifegrade };
     setEditorial(nextEditorial);
     setRomanBook("");
     setSavePending(true);
@@ -1857,10 +1859,21 @@ export function RomanAdminWorkspace({
               ) : (
                 <div className="space-y-5">
                   <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
-                    Feinschliff aus dem Manuskript: Verbessern (Autor / Opus,
-                    Claude Batch) füllt Kapitel hier — das Manuskript bleibt als
-                    Entwurf und Vergleich erhalten.
+                    Feinschliff aus dem Manuskript: Zwei-Wellen-Batch (Opus) mit
+                    Stilanker, Freeze-QA und Stimmen-Check. Vorher: Manuskript-
+                    Reifegrad + Idee-Versprechen. Manuskript bleibt als Entwurf.
                   </p>
+                  {typSet && !isCleverErzaehlt ? (
+                    <RomanReifegradCard
+                      value={editorial.reifegrade?.roman ?? null}
+                      romanId={roman.id}
+                      stage="roman"
+                      canSave={canSave}
+                      disabled={savePending || pipelineBusy}
+                      improvePlans={editorial.reifegradImprove?.roman}
+                      onComplete={syncFromPipelineRoman}
+                    />
+                  ) : null}
                   <RomanManuskriptVerbessernControl
                     romanId={roman.id}
                     editorial={editorial}

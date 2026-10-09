@@ -146,6 +146,7 @@ function anthropicHeaders(apiKey: string): HeadersInit {
 
 /**
  * Submit a Message Batch. Processing starts immediately (async, up to 24h).
+ * Retries once on transient network / 5xx.
  */
 export async function createClaudeMessageBatch(
   requests: ClaudeBatchRequest[],
@@ -165,32 +166,51 @@ export async function createClaudeMessageBatch(
     })),
   };
 
-  const response = await fetch(BATCHES_URL, {
-    method: "POST",
-    headers: anthropicHeaders(apiKey),
-    body: JSON.stringify(body),
-    signal: aiFetchSignal(AI_FETCH_TIMEOUT_MS),
-  });
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(BATCHES_URL, {
+        method: "POST",
+        headers: anthropicHeaders(apiKey),
+        body: JSON.stringify(body),
+        signal: aiFetchSignal(AI_FETCH_TIMEOUT_MS),
+      });
 
-  let payload: AnthropicBatchPayload;
-  try {
-    payload = (await response.json()) as AnthropicBatchPayload;
-  } catch {
-    throw new Error(
-      `Claude Batch anlegen fehlgeschlagen (${response.status}).`,
-    );
-  }
+      let payload: AnthropicBatchPayload;
+      try {
+        payload = (await response.json()) as AnthropicBatchPayload;
+      } catch {
+        throw new Error(
+          `Claude Batch anlegen fehlgeschlagen (${response.status}).`,
+        );
+      }
 
-  if (!response.ok || payload.error) {
-    throw new Error(
-      payload.error?.message ??
-        `Claude Batch anlegen fehlgeschlagen (${response.status}).`,
-    );
+      if (!response.ok || payload.error) {
+        const retryable = response.status >= 500 || response.status === 429;
+        const err = new Error(
+          payload.error?.message ??
+            `Claude Batch anlegen fehlgeschlagen (${response.status}).`,
+        );
+        if (retryable && attempt < 2) {
+          lastError = err;
+          await new Promise((r) => setTimeout(r, 1_200 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+      if (!payload.id?.trim()) {
+        throw new Error("Claude Batch: keine Batch-ID zurückgegeben.");
+      }
+      return mapBatch(payload);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= 2) break;
+      await new Promise((r) => setTimeout(r, 1_200 * (attempt + 1)));
+    }
   }
-  if (!payload.id?.trim()) {
-    throw new Error("Claude Batch: keine Batch-ID zurückgegeben.");
-  }
-  return mapBatch(payload);
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Claude Batch anlegen fehlgeschlagen.");
 }
 
 /** Poll a single Message Batch by id. */
@@ -291,22 +311,37 @@ export async function fetchClaudeMessageBatchResults(
     );
   }
   const apiKey = getClaudeApiKey();
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": ANTHROPIC_VERSION,
-    },
-    signal: aiFetchSignal(AI_FETCH_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Claude Batch-Ergebnisse laden fehlgeschlagen (${response.status}).`,
-    );
+  let raw = "";
+  let lastFetchError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": ANTHROPIC_VERSION,
+        },
+        signal: aiFetchSignal(AI_FETCH_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        throw new Error(
+          `Claude Batch-Ergebnisse laden fehlgeschlagen (${response.status}).`,
+        );
+      }
+      raw = await response.text();
+      lastFetchError = null;
+      break;
+    } catch (error) {
+      lastFetchError = error;
+      if (attempt >= 2) break;
+      await new Promise((r) => setTimeout(r, 1_000 * (attempt + 1)));
+    }
   }
-
-  const raw = await response.text();
+  if (lastFetchError) {
+    throw lastFetchError instanceof Error
+      ? lastFetchError
+      : new Error("Claude Batch-Ergebnisse laden fehlgeschlagen.");
+  }
   const results: ClaudeBatchIndividualResult[] = [];
   const usages: AiTokenUsage[] = [];
 

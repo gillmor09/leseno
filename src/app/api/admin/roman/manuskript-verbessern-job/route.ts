@@ -51,6 +51,21 @@ export async function POST(request: Request) {
 
   const { romanId, runId } = parsed.data;
 
+  // Idempotent kick: already finished → 202 without starting another worker.
+  const existing = await getPipelineHistoryRun(romanId, runId);
+  if (!existing) {
+    return NextResponse.json(
+      { error: "Pipeline-Lauf nicht gefunden — Verbessern erneut starten." },
+      { status: 404 },
+    );
+  }
+  if (existing.status === "ok" || existing.status === "error") {
+    return NextResponse.json(
+      { accepted: true, runId, alreadyFinished: true, status: existing.status },
+      { status: 202 },
+    );
+  }
+
   after(async () => {
     try {
       await runManuskriptVerbessernJob({ romanId, runId });

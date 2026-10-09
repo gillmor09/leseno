@@ -48,7 +48,7 @@ const STAGE_TO_FERTIG_TABS: Partial<
   ],
   grobplot: ["grobplot", "feinplot", "schreiben", "export", "szenenplot"],
   feinplot: ["feinplot", "schreiben", "export", "szenenplot"],
-  manuskript: ["schreiben", "export"],
+  manuskript: ["schreiben", "export", "roman"],
 };
 
 /**
@@ -137,17 +137,23 @@ export function invalidateDownstreamEditorial(
     };
   }
   if (downstream.includes("manuskript")) {
+    const reifegrade = clearReifegradeForStages(next.reifegrade, [
+      "manuskript",
+      "roman",
+    ]);
     next = {
       ...next,
       manuskriptText: "",
       manuskriptOriginalText: "",
       manuskriptOriginalSavedAt: null,
+      romanText: "",
       storyState: null,
       canon: null,
       leserFeedback: null,
       klappentext: "",
       einzeiler: "",
       amazonKeywords: [],
+      reifegrade,
     };
   }
 
@@ -175,11 +181,13 @@ export function clearManuskriptAndExportEditorial(
   const pipelineFertig = { ...(editorial.pipelineFertig ?? {}) };
   delete pipelineFertig.schreiben;
   delete pipelineFertig.export;
+  delete pipelineFertig.roman;
   return {
     ...editorial,
     manuskriptText: "",
     manuskriptOriginalText: "",
     manuskriptOriginalSavedAt: null,
+    romanText: "",
     storyState: null,
     canon: null,
     leserFeedback: null,
@@ -187,6 +195,10 @@ export function clearManuskriptAndExportEditorial(
     einzeiler: "",
     amazonKeywords: [],
     pipelineFertig,
+    reifegrade: clearReifegradeForStages(editorial.reifegrade, [
+      "manuskript",
+      "roman",
+    ]),
   };
 }
 

@@ -1,8 +1,8 @@
 /**
- * Deterministic audits: Kapitelgerüst (arcs/lifecycle) vs Szenenplot
+ * Deterministic audits: Feingerüst (arcs/lifecycle) vs Feinplot
  * (scene chain, schreibPrompt, arc→scene coverage) before Manuskript.
- * Soft warnings vs hard errors; override via pipelineFertig.szenenplot
- * (or legacy outline).
+ * Soft warnings vs hard errors; override via pipelineFertig.feinplot
+ * (or legacy szenenplot / outline).
  */
 
 import { isPipelineTabFertig, type RomanEditorial } from "@/lib/roman/editorial";
@@ -351,14 +351,16 @@ export function auditSzenenplotStructured(
 }
 
 /**
- * Block Manuskript Erzeugen unless Szenenplot passes audit + Reifegrad
- * (Logik + Dramaturgie ≥ 75%), or Szenenplot/outline marked fertig (override).
+ * Block Manuskript Erzeugen unless Feinplot passes audit + Reifegrad
+ * (Logik + Übergänge + Abdeckung ≥ 75%), or Feinplot fertig (override).
+ * Scores live under `feinplot` (legacy key `szenenplot` still accepted).
  */
 export function assertGeruestReadyForManuskript(input: {
   editorial: RomanEditorial;
 }): void {
   const editorial = input.editorial;
   const override =
+    isPipelineTabFertig(editorial, "feinplot") ||
     isPipelineTabFertig(editorial, "szenenplot") ||
     isPipelineTabFertig(editorial, "outline");
   const structured = editorial.szenenplotStructured;
@@ -366,7 +368,7 @@ export function assertGeruestReadyForManuskript(input: {
 
   if (!structured?.chapters.length && !override) {
     throw new Error(
-      "Kein Szenenplot — bitte Tab „Szenenplot“ erzeugen und freigeben, bevor das Manuskript startet.",
+      "Kein Feinplot — bitte Tab „Feinplot“ erzeugen und freigeben, bevor das Manuskript startet.",
     );
   }
 
@@ -376,20 +378,32 @@ export function assertGeruestReadyForManuskript(input: {
       .map((e) => `• ${e.message}`)
       .join("\n");
     throw new Error(
-      `Szenenplot-Preflight fehlgeschlagen — bitte Szenenplot Verbessern oder „Szenenplot fertig“ setzen (Override):\n${detail}`,
+      `Feinplot-Preflight fehlgeschlagen — bitte Feinplot Verbessern oder „Feinplot fertig“ setzen (Override):\n${detail}`,
     );
   }
 
-  const score = editorial.reifegrade?.szenenplot ?? null;
-  if (score && !override) {
+  if (!override) {
+    const score =
+      editorial.reifegrade?.feinplot ??
+      editorial.reifegrade?.szenenplot ??
+      null;
+    if (!score) {
+      throw new Error(
+        `Feinplot-Reifegrad fehlt — bitte zuerst Feinplot messen (Logik, Übergänge, Abdeckung je ≥${GERUEST_MANUSKRIPT_AXIS_MIN_PCT}%), bevor das Manuskript startet. Oder „Feinplot fertig“ setzen.`,
+      );
+    }
     const logik = score.regelnPct;
-    const drama = score.dramaturgiePct;
+    /** Feinplot craft B = Übergänge (Drama/Ursache→Wirkung). */
+    const uebergaenge = score.dramaturgiePct;
+    /** Feinplot craft C = Abdeckung (Arc-/Versprechen-Anker). */
+    const abdeckung = score.leseflussPct;
     if (
       logik < GERUEST_MANUSKRIPT_AXIS_MIN_PCT ||
-      drama < GERUEST_MANUSKRIPT_AXIS_MIN_PCT
+      uebergaenge < GERUEST_MANUSKRIPT_AXIS_MIN_PCT ||
+      abdeckung < GERUEST_MANUSKRIPT_AXIS_MIN_PCT
     ) {
       throw new Error(
-        `Szenenplot noch nicht freigabefähig für Manuskript (Logik ${logik}%, Dramaturgie ${drama}% — Ziel je ≥${GERUEST_MANUSKRIPT_AXIS_MIN_PCT}%). Bitte Szenenplot Verbessern oder „Szenenplot fertig“ setzen.`,
+        `Feinplot noch nicht freigabefähig für Manuskript (Logik ${logik}%, Übergänge ${uebergaenge}%, Abdeckung ${abdeckung}% — Ziel je ≥${GERUEST_MANUSKRIPT_AXIS_MIN_PCT}%). Bitte Feinplot Verbessern oder „Feinplot fertig“ setzen.`,
       );
     }
   }
@@ -403,7 +417,7 @@ export function assertGeruestReadyForManuskript(input: {
     );
     if (critical.length >= 4) {
       throw new Error(
-        `Wissensgraph noch zu unkonkret für Manuskript (${critical.length} Props/Orte/Events ohne Farbe/Kennzeichen/Adresse/Uhrzeit/Name). Bitte Szenenplot neu erzeugen oder Verbessern — Details müssen spätestens im Plot kanonisch sein.`,
+        `Wissensgraph noch zu unkonkret für Manuskript (${critical.length} Props/Orte/Events ohne Farbe/Kennzeichen/Adresse/Uhrzeit/Name). Bitte Feinplot neu erzeugen oder Verbessern — Details müssen spätestens im Plot kanonisch sein.`,
       );
     }
   }
@@ -412,18 +426,20 @@ export function assertGeruestReadyForManuskript(input: {
 }
 
 /**
- * Gate Szenenplot Erzeugen: Gerüst must exist (structure).
- * Override: outline fertig.
+ * Gate Grob-/Feinplot Erzeugen: Feingerüst must exist (structure).
+ * Override: feingeruest / outline fertig.
  */
 export function assertGeruestReadyForSzenenplot(input: {
   editorial: RomanEditorial;
 }): void {
   const editorial = input.editorial;
-  const override = isPipelineTabFertig(editorial, "outline");
+  const override =
+    isPipelineTabFertig(editorial, "feingeruest") ||
+    isPipelineTabFertig(editorial, "outline");
   const geruest = editorial.kapitelGeruestStructured;
   if ((!geruest?.chapters.length || geruest.chapters.length < 2) && !override) {
     throw new Error(
-      "Zuerst Kapitelgerüst erzeugen (mind. 2 Kapitel) — oder „Kapitelgerüst fertig“ setzen.",
+      "Zuerst Feingerüst erzeugen (mind. 2 Kapitel) — oder „Feingerüst fertig“ setzen.",
     );
   }
   const audit = auditKapitelGeruestStructured(geruest);
@@ -433,7 +449,7 @@ export function assertGeruestReadyForSzenenplot(input: {
       .map((e) => `• ${e.message}`)
       .join("\n");
     throw new Error(
-      `Kapitelgerüst-Preflight fehlgeschlagen — bitte Gerüst Verbessern:\n${detail}`,
+      `Feingerüst-Preflight fehlgeschlagen — bitte Feingerüst Verbessern:\n${detail}`,
     );
   }
 }

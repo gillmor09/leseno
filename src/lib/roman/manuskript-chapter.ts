@@ -528,6 +528,8 @@ export async function generateManuskriptChapter(input: {
       ideeKurz: editorial.ideeKurz ?? "",
       grobRegeln: editorial.grobRegeln ?? "",
       tonalitaet: roman.tonalitaet ?? "",
+      stilbibel: roman.stilbibel ?? "",
+      kiRegelwerk: roman.kiRegelwerk ?? "",
       editorial,
       charaktere: roman.charaktere,
       weltSchauplaetze: roman.weltSchauplaetze,

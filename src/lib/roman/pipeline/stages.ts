@@ -1,8 +1,9 @@
 /**
  * Pipeline stage IDs and display order (tabs).
  * Roman path: Spec → Grobgerüst → Feingerüst → Grobplot → Feinplot
- * → Manuskript (Co-Autor) → Verbessern (Autor / Opus, content-frozen style).
- * Verbessern (Analyse/Einarbeiten) may invalidate downstream (see cascade.ts).
+ * (Reifegrad-Gate) → Manuskript (Co-Autor) → Reifegrad-Gate → Roman Verbessern
+ * (Autor / Opus, content-frozen style + Stilanker/Ton/Regeln).
+ * Stage Verbessern (Analyse/Einarbeiten) may invalidate downstream (cascade.ts).
  */
 
 export const PIPELINE_STAGES = [

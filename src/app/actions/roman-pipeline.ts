@@ -46,6 +46,8 @@ import { ALL_REIFEGRAD_DIMENSION_KEYS } from "@/lib/roman/reifegrad-craft";
 import type { ActionResult } from "@/lib/types/actions";
 
 const stageSchema = z.enum(PIPELINE_STAGES);
+/** Pipeline stages plus assess-only `roman` (post-Verbessern polish). */
+const assessKeySchema = z.enum([...PIPELINE_STAGES, "roman"]);
 const dimensionSchema = z.enum(ALL_REIFEGRAD_DIMENSION_KEYS);
 
 const runSchema = z.object({
@@ -589,7 +591,7 @@ export async function romanPipelineDimensionAnalyzeAction(
   const parsed = z
     .object({
       romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
-      stage: stageSchema,
+      stage: assessKeySchema,
       dimension: dimensionSchema,
     })
     .safeParse(input);
@@ -598,17 +600,22 @@ export async function romanPipelineDimensionAnalyzeAction(
   }
 
   try {
-    const blocked = await denyCleverManuskriptReifegrad(
-      parsed.data.romanId,
-      parsed.data.stage,
-    );
-    if (blocked) return { success: false, error: blocked };
+    if (parsed.data.stage !== "roman") {
+      const blocked = await denyCleverManuskriptReifegrad(
+        parsed.data.romanId,
+        parsed.data.stage,
+      );
+      if (blocked) return { success: false, error: blocked };
+    }
     const {
       analyzeReifegradDimension,
-      isReifegradDimensionForStage,
+      isReifegradDimensionForAssessKey,
     } = await import("@/lib/roman/reifegrad-dimension");
     if (
-      !isReifegradDimensionForStage(parsed.data.stage, parsed.data.dimension)
+      !isReifegradDimensionForAssessKey(
+        parsed.data.stage,
+        parsed.data.dimension,
+      )
     ) {
       return {
         success: false,
@@ -648,7 +655,7 @@ export async function romanPipelineDimensionApplyAction(
   const parsed = z
     .object({
       romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
-      stage: stageSchema,
+      stage: assessKeySchema,
       dimension: dimensionSchema,
       autorEntscheidungen: z
         .record(z.string(), z.string().max(4_000))
@@ -660,11 +667,13 @@ export async function romanPipelineDimensionApplyAction(
   }
 
   try {
-    const blocked = await denyCleverManuskriptReifegrad(
-      parsed.data.romanId,
-      parsed.data.stage,
-    );
-    if (blocked) return { success: false, error: blocked };
+    if (parsed.data.stage !== "roman") {
+      const blocked = await denyCleverManuskriptReifegrad(
+        parsed.data.romanId,
+        parsed.data.stage,
+      );
+      if (blocked) return { success: false, error: blocked };
+    }
     const { applyReifegradDimensionPlan } = await import(
       "@/lib/roman/reifegrad-dimension"
     );
@@ -710,7 +719,7 @@ export async function romanPipelineDimensionDiscardAction(
   const parsed = z
     .object({
       romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
-      stage: stageSchema,
+      stage: assessKeySchema,
       dimension: dimensionSchema,
     })
     .safeParse(input);
@@ -721,10 +730,13 @@ export async function romanPipelineDimensionDiscardAction(
   try {
     const {
       discardReifegradDimensionPlan,
-      isReifegradDimensionForStage,
+      isReifegradDimensionForAssessKey,
     } = await import("@/lib/roman/reifegrad-dimension");
     if (
-      !isReifegradDimensionForStage(parsed.data.stage, parsed.data.dimension)
+      !isReifegradDimensionForAssessKey(
+        parsed.data.stage,
+        parsed.data.dimension,
+      )
     ) {
       return {
         success: false,
@@ -954,6 +966,129 @@ export async function romanPipelineDimensionImproveAction(
         error instanceof Error
           ? error.message
           : "Dimensions-Verbessern fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Measure Reifegrad on romanText (assess-only key, not a pipeline stage).
+ */
+export async function romanReifegradAssessAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    roman: import("@/lib/roman/types").RomanKontext;
+    summary: string;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = z
+    .object({
+      romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
+      stage: assessKeySchema.default("roman"),
+    })
+    .safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstIssue(parsed.error) };
+  }
+
+  try {
+    const { getRomanKontext, upsertRomanKontext } = await import(
+      "@/lib/roman/repository"
+    );
+    const {
+      assessStageReifegrad,
+      editorialWithReifegrad,
+      formatAssessCoverageLabel,
+    } = await import("@/lib/roman/reifegrad");
+    const { formatCraftScoresLineForAssessKey } = await import(
+      "@/lib/roman/reifegrad-craft"
+    );
+    const { startPipelineHistoryRun, updatePipelineHistoryRun, historyEvent } =
+      await import("@/lib/roman/pipeline/history");
+
+    const loaded = await getRomanKontext(parsed.data.romanId);
+    if (!loaded) {
+      return { success: false, error: "Buch nicht gefunden." };
+    }
+    const stage = parsed.data.stage;
+    const editorial = loaded.editorial ?? emptyRomanEditorial();
+    const artifact =
+      stage === "roman"
+        ? (editorial.romanText ?? "").trim()
+        : (editorial.manuskriptText ?? "").trim();
+    if (artifact.length < 80) {
+      return {
+        success: false,
+        error:
+          stage === "roman"
+            ? "Kein Roman-Text — zuerst Verbessern oder Manuskript übernehmen."
+            : "Kein Artefakt für die Bewertung.",
+      };
+    }
+
+    const runId = await startPipelineHistoryRun({
+      romanId: parsed.data.romanId,
+      trigger: "reifegrad_assess",
+      originStage: stage,
+      firstEvent: historyEvent({
+        type: "info",
+        stage,
+        summary: `Reifegrad messen · ${stage}`,
+      }),
+    });
+
+    const { score, coverage } = await assessStageReifegrad({
+      roman: loaded,
+      stage,
+      previous: editorial.reifegrade?.[stage] ?? null,
+      changeSummary: "Manuelle Messung",
+    });
+    const nextEd = editorialWithReifegrad(editorial, stage, score);
+    const roman = await upsertRomanKontext({
+      id: loaded.id,
+      title: loaded.title,
+      manuskriptRaw: loaded.manuskriptRaw,
+      stilbibel: loaded.stilbibel,
+      genre: loaded.genre,
+      praemisse: loaded.praemisse,
+      perspektive: loaded.perspektive,
+      zeitform: loaded.zeitform,
+      tonalitaet: loaded.tonalitaet,
+      charaktere: loaded.charaktere,
+      weltSchauplaetze: loaded.weltSchauplaetze,
+      weltRegeln: loaded.weltRegeln,
+      szenenRaster: loaded.szenenRaster,
+      kiRegelwerk: loaded.kiRegelwerk,
+      fanPersonaName: loaded.fanPersonaName,
+      fanPersonaProfil: loaded.fanPersonaProfil,
+      editorial: nextEd,
+    });
+
+    const summary = `Reifegrad ${score.gesamtPct}% · Logik ${score.regelnPct}% · ${formatCraftScoresLineForAssessKey(stage, score)} · ${formatAssessCoverageLabel(coverage)}`;
+    await updatePipelineHistoryRun({
+      runId,
+      status: "ok",
+      events: [
+        historyEvent({
+          type: "info",
+          stage,
+          modelLabel: score.modelLabel,
+          summary,
+        }),
+      ],
+    });
+    revalidateBook(parsed.data.romanId);
+    return { success: true, data: { roman, summary } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Reifegrad-Bewertung fehlgeschlagen.",
     };
   }
 }

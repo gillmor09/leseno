@@ -3,6 +3,7 @@
 /**
  * Roman tab: Verbessern — prose quality up (Autor / Opus via Claude Batch).
  * Source = Manuskript draft; writes chapter-wise into editorial.romanText.
+ * Kick+poll are resilient: retries on kick, long poll, partial reload on timeout.
  */
 
 import { useState } from "react";
@@ -14,6 +15,7 @@ import {
 import { romanPipelineReloadRomanAction } from "@/app/actions/roman-pipeline";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import type { RomanEditorial } from "@/lib/roman/editorial";
+import { parsePlotChapters } from "@/lib/roman/plot-chapters";
 import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
 import type { RomanKontext } from "@/lib/roman/types";
 
@@ -25,6 +27,38 @@ type ProgressPollPayload = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function kickVerbessernJob(
+  romanId: string,
+  runId: string,
+): Promise<{ ok: boolean; message?: string }> {
+  let lastMessage = "Verbessern konnte nicht gestartet werden.";
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const kick = await fetch("/api/admin/roman/manuskript-verbessern-job", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ romanId, runId }),
+      });
+      if (kick.ok) return { ok: true };
+      try {
+        const body = (await kick.json()) as { error?: string };
+        if (body.error?.trim()) lastMessage = body.error.trim();
+      } catch {
+        /* ignore */
+      }
+      if (kick.status >= 500 || kick.status === 429) {
+        await sleep(800 * (attempt + 1));
+        continue;
+      }
+      return { ok: false, message: lastMessage };
+    } catch {
+      await sleep(800 * (attempt + 1));
+    }
+  }
+  return { ok: false, message: lastMessage };
 }
 
 export function RomanManuskriptVerbessernControl({
@@ -64,34 +98,30 @@ export function RomanManuskriptVerbessernControl({
         `Claude Batch einreichen · ${chapterCount} Kapitel …`,
       );
 
-      const kick = await fetch("/api/admin/roman/manuskript-verbessern-job", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ romanId, runId }),
-      });
+      const kick = await kickVerbessernJob(romanId, runId);
       if (!kick.ok) {
-        let message = "Verbessern konnte nicht gestartet werden.";
-        try {
-          const body = (await kick.json()) as { error?: string };
-          if (body.error?.trim()) message = body.error.trim();
-        } catch {
-          /* ignore */
-        }
-        toast.error(message);
+        toast.error(
+          kick.message ??
+            "Worker-Start fehlgeschlagen — bitte erneut „Verbessern“ (hängt am gleichen Lauf bzw. Resume).",
+        );
         return;
       }
 
-      const deadline = Date.now() + 90 * 60_000;
+      const deadline = Date.now() + 95 * 60_000;
       let finalPoll: ProgressPollPayload | null = null;
+      let consecutivePollErrors = 0;
       while (Date.now() < deadline) {
-        await sleep(1_500);
+        await sleep(1_800);
         try {
           const res = await fetch(
             `/api/admin/roman/pipeline-progress?romanId=${encodeURIComponent(romanId)}&runId=${encodeURIComponent(runId)}`,
             { credentials: "same-origin", cache: "no-store" },
           );
-          if (!res.ok) continue;
+          if (!res.ok) {
+            consecutivePollErrors += 1;
+            continue;
+          }
+          consecutivePollErrors = 0;
           const data = (await res.json()) as ProgressPollPayload;
           if (data.progressLabel?.trim()) {
             setProgressLabel(data.progressLabel.trim());
@@ -101,29 +131,48 @@ export function RomanManuskriptVerbessernControl({
             break;
           }
         } catch {
+          consecutivePollErrors += 1;
           /* keep polling */
+        }
+        if (consecutivePollErrors >= 40) {
+          // ~72s of pure poll failures — still wait out deadline, but surface hint.
+          setProgressLabel(
+            "Verbindung zum Fortschritt wackelig — Job läuft im Hintergrund weiter …",
+          );
         }
       }
 
       const reloaded = await romanPipelineReloadRomanAction({ romanId });
+      let polishedCount = 0;
       if (reloaded.success && reloaded.data?.roman) {
         onComplete?.(reloaded.data.roman);
+        const rt = reloaded.data.roman.editorial?.romanText ?? "";
+        polishedCount = parsePlotChapters(rt).filter(
+          (c) => c.body.trim().length >= 80,
+        ).length;
       }
 
       if (!finalPoll) {
-        toast.error(
-          "Verbessern läuft noch im Hintergrund — Fortschritt in der Pipeline-Historie prüfen.",
+        toast.message(
+          polishedCount > 0
+            ? `Verbessern läuft noch oder Poll-Timeout — ${polishedCount} Kapitel bereits im Roman. Erneut „Verbessern“ setzt nur offene Kapitel fort.`
+            : "Verbessern läuft noch im Hintergrund — Fortschritt in der Pipeline-Historie prüfen. Erneut starten setzt fort.",
         );
         return;
       }
       if (finalPoll.status === "error") {
         toast.error(
-          finalPoll.error?.trim() || "Verbessern fehlgeschlagen.",
+          finalPoll.error?.trim() ||
+            (polishedCount > 0
+              ? `Verbessern mit Fehlern beendet — ${polishedCount} Kapitel bleiben im Roman. Erneut starten setzt fehlende fort.`
+              : "Verbessern fehlgeschlagen."),
         );
         return;
       }
       toast.success(
-        `Roman verbessert (Claude Batch · ${chapterCount} Kapitel). Manuskript unverändert.`,
+        polishedCount > 0
+          ? `Roman verbessert (Claude Batch · ${polishedCount}/${chapterCount} Kapitel). Manuskript unverändert.`
+          : `Roman verbessert (Claude Batch · ${chapterCount} Kapitel). Manuskript unverändert.`,
       );
     } catch (error) {
       toast.error(
@@ -185,9 +234,10 @@ export function RomanManuskriptVerbessernControl({
           </button>
         ) : null}
         <p className="max-w-xl text-xs font-semibold text-zinc-500">
-          Autor (Claude Opus, Message Batch ~50%): liest das Manuskript, schreibt
-          den Feinschliff kapitelweise in den Roman. Das Manuskript bleibt zum
-          Vergleich unverändert.
+          Zwei Wellen (Stilanker zuerst), Freeze-QA + Soft-Repair, Resume:
+          bereits polierte Kapitel werden übersprungen. Gate: Logik/Dramaturgie
+          ≥70%, Stil/Lesefluss ≥60%, Versprechen ≥70%. Danach Auto-Reifegrad.
+          Override: „Roman fertig“.
         </p>
       </div>
 

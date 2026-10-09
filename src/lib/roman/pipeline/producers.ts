@@ -555,6 +555,8 @@ export async function draftStage(
       ideeKurz,
       grobRegeln,
       tonalitaet,
+      stilbibel: roman.stilbibel ?? "",
+      kiRegelwerk: roman.kiRegelwerk ?? "",
       editorial: editorialForMs,
       charaktere: roman.charaktere,
       weltSchauplaetze: roman.weltSchauplaetze,

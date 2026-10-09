@@ -16,6 +16,7 @@ import {
   romanPipelineStageVerbessernAnalyzeAction,
   romanPipelineStageVerbessernApplyAction,
   romanPipelineStageVerbessernDiscardAction,
+  romanReifegradAssessAction,
 } from "@/app/actions/roman-pipeline";
 import { loadRomanKiRollenAction } from "@/app/actions/roman-roles-admin";
 import {
@@ -44,8 +45,9 @@ import {
 } from "@/components/features/admin/roman-kritik-wichtigkeit";
 import {
   dimensionLabel,
-  improveDimensionsForStage,
+  improveDimensionsForAssessKey,
   pctForDimension,
+  pipelineStageForAssessKey,
   statusForDimension,
   REIFEGRAD_DIMENSION_ANALYZE_MODEL_SLUG,
   type ReifegradDimension,
@@ -54,12 +56,15 @@ import {
 import {
   REIFEGRAD_ERFUELLUNG_LABEL,
   REIFEGRAD_FREIGABE_LABEL,
+  type ReifegradAssessKey,
   type StageReifegrad,
 } from "@/lib/roman/reifegrad-model";
-import {
-  PIPELINE_STAGE_LABELS,
-  type PipelineStage,
-} from "@/lib/roman/pipeline/stages";
+import { PIPELINE_STAGE_LABELS } from "@/lib/roman/pipeline/stages";
+
+const ASSESS_STAGE_LABELS: Record<ReifegradAssessKey, string> = {
+  ...PIPELINE_STAGE_LABELS,
+  roman: "Roman",
+};
 import type { RomanKontext } from "@/lib/roman/types";
 import { cn } from "@/lib/utils";
 import { lockBodyScroll } from "@/lib/ui/body-scroll-lock";
@@ -230,7 +235,7 @@ export function RomanReifegradCard({
 }: {
   value: StageReifegrad | null | undefined;
   romanId: string;
-  stage: PipelineStage;
+  stage: ReifegradAssessKey;
   canSave: boolean;
   disabled?: boolean;
   /** Open analyze plans for this stage, keyed by dimension. */
@@ -241,7 +246,7 @@ export function RomanReifegradCard({
   className?: string;
 }) {
   const [pending, setPending] = useState<
-    "analyze" | "apply" | "discard" | null
+    "analyze" | "apply" | "discard" | "assess" | null
   >(null);
   const [pendingDim, setPendingDim] = useState<ReifegradDimension | null>(
     null,
@@ -249,10 +254,13 @@ export function RomanReifegradCard({
   const [pendingGesamt, setPendingGesamt] = useState(false);
   const [pendingFocus, setPendingFocus] =
     useState<StageVerbessernFocus>("gesamt");
+  const isRomanAssess = stage === "roman";
   const showFocusPresets =
-    stage === "manuskript" ||
-    stage === "szenenplot" ||
-    stage === "expose";
+    !isRomanAssess &&
+    (stage === "manuskript" ||
+      stage === "szenenplot" ||
+      stage === "expose");
+  const showGesamtKnob = !isRomanAssess;
 
   function focusFromPlan(
     plan: RomanReifegradImprovePlan | null,
@@ -279,7 +287,7 @@ export function RomanReifegradCard({
     modelLabel: string;
   } | null>(null);
   const busy = Boolean(disabled || pending);
-  const dims = improveDimensionsForStage(stage);
+  const dims = improveDimensionsForAssessKey(stage);
   const isStagePlan = (plan: RomanReifegradImprovePlan | null) =>
     plan?.dimension === STAGE_VERBESSERN_DIMENSION;
 
@@ -323,8 +331,20 @@ export function RomanReifegradCard({
         return;
       }
 
-      // Alle Stufen außer Manuskript: Analyse + Einarbeiten = Entwicklungslektor (Flash + Thinking).
-      // Manuskript: Analyse Lektor (Flash), Einarbeiten Co-Autor-Prosa (Sonnet etc.).
+      // Alle Stufen außer Manuskript/Roman: Analyse + Einarbeiten = Entwicklungslektor.
+      // Manuskript: Analyse Lektor, Einarbeiten Co-Autor. Roman: Einarbeiten Autor.
+      if (pending === "apply" && stage === "roman") {
+        const autor = byKey.get("autor");
+        setAgentInfo({
+          roleLabel: autor?.label ?? "Autor",
+          modelLabel: waitModelLabelForRole(
+            autor?.key ?? "autor",
+            autor?.modelSlug ?? ROMAN_ASSIST_MODEL_SLUG,
+            { allowProseModel: true },
+          ),
+        });
+        return;
+      }
       if (pending === "apply" && stage === "manuskript") {
         setAgentInfo({
           roleLabel: co?.label ?? "Co-Autor",
@@ -351,6 +371,25 @@ export function RomanReifegradCard({
       cancelled = true;
     };
   }, [structureStage, stage, pending]);
+
+  async function assessRoman() {
+    if (!canSave || busy || !isRomanAssess) return;
+    setPending("assess");
+    try {
+      const result = await romanReifegradAssessAction({
+        romanId,
+        stage: "roman",
+      });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Reifegrad-Messung fehlgeschlagen.");
+        return;
+      }
+      onComplete?.(result.data.roman);
+      toast.success(result.data.summary);
+    } finally {
+      setPending(null);
+    }
+  }
 
   async function analyzeDimension(def: ReifegradDimensionDef) {
     if (!canSave || busy) return;
@@ -546,8 +585,8 @@ export function RomanReifegradCard({
         variant="pipeline-critique"
         contextLabel={
           pending === "apply"
-            ? `${PIPELINE_STAGE_LABELS[stage]} · Einarbeiten`
-            : `${PIPELINE_STAGE_LABELS[stage]} · Analyse`
+            ? `${ASSESS_STAGE_LABELS[stage]} · Einarbeiten`
+            : `${ASSESS_STAGE_LABELS[stage]} · Analyse`
         }
         title={
           pending === "apply"
@@ -556,13 +595,16 @@ export function RomanReifegradCard({
                 (pendingGesamt
                   ? STAGE_VERBESSERN_FOCUS_LABELS[pendingFocus]
                   : pendingDim
-                    ? dimensionLabel(stage, pendingDim)
+                    ? dimensionLabel(
+                        pipelineStageForAssessKey(stage),
+                        pendingDim,
+                      )
                     : "Aufträge")
               }`
             : pendingGesamt
               ? `Analyse · ${STAGE_VERBESSERN_FOCUS_LABELS[pendingFocus]}`
               : pendingDim
-                ? `Analyse · ${dimensionLabel(stage, pendingDim)}`
+                ? `Analyse · ${dimensionLabel(pipelineStageForAssessKey(stage), pendingDim)}`
                 : "Analyse"
         }
         footer={
@@ -570,13 +612,17 @@ export function RomanReifegradCard({
             ? pending === "apply"
               ? "Nur Einarbeiten: Struktur patchen (+ Wissensgraph), danach neuer Reifegrad. Tab offen lassen."
               : "Nur Analyse: Struktur prüfen und Aufträge verdichten — Text noch unverändert. Tab offen lassen."
-            : stage === "manuskript"
+            : stage === "roman"
               ? pending === "apply"
-                ? "Nur Einarbeiten: Co-Autor (Prosa + Continuity/Graph), danach neuer Reifegrad. Tab offen lassen."
-                : "Nur Analyse: Entwicklungslektor — Prosa noch unverändert. Tab offen lassen."
-              : pending === "apply"
-                ? "Nur Einarbeiten: Entwicklungslektor, danach neuer Reifegrad. Tab offen lassen."
-                : "Nur Analyse: Entwicklungslektor — Text noch unverändert. Tab offen lassen."
+                ? "Nur Einarbeiten: Autor (content-frozen Stil/Lesefluss), danach neuer Reifegrad. Tab offen lassen."
+                : "Nur Analyse: Entwicklungslektor — Roman-Prosa noch unverändert. Tab offen lassen."
+              : stage === "manuskript"
+                ? pending === "apply"
+                  ? "Nur Einarbeiten: Co-Autor (Prosa + Continuity/Graph), danach neuer Reifegrad. Tab offen lassen."
+                  : "Nur Analyse: Entwicklungslektor — Prosa noch unverändert. Tab offen lassen."
+                : pending === "apply"
+                  ? "Nur Einarbeiten: Entwicklungslektor, danach neuer Reifegrad. Tab offen lassen."
+                  : "Nur Analyse: Entwicklungslektor — Text noch unverändert. Tab offen lassen."
         }
         progressLabel={
           pending === "analyze" && pendingGesamt
@@ -590,7 +636,7 @@ export function RomanReifegradCard({
                       : "Entwicklungslektor analysiert …"
               }`
             : pending === "analyze" && pendingDim
-              ? `${dimensionLabel(stage, pendingDim)}: ${
+              ? `${dimensionLabel(pipelineStageForAssessKey(stage), pendingDim)}: ${
                   stage === "kapitelgeruest"
                     ? "Entwicklungslektor prüft Gerüst-Struktur …"
                     : stage === "szenenplot"
@@ -605,9 +651,11 @@ export function RomanReifegradCard({
                         ? "Entwicklungslektor patcht Szenenverträge (+ Wissensgraph) …"
                         : stage === "manuskript"
                           ? "Co-Autor arbeitet Prosa ein (+ Continuity/Graph) …"
-                          : stage === "expose"
-                            ? "Entwicklungslektor arbeitet Spec ein (Figuren/Welt/Exposé) …"
-                            : "Entwicklungslektor arbeitet Aufträge ein …"
+                          : stage === "roman"
+                            ? "Autor arbeitet Stil/Lesefluss ein (content frozen) …"
+                            : stage === "expose"
+                              ? "Entwicklungslektor arbeitet Spec ein (Figuren/Welt/Exposé) …"
+                              : "Entwicklungslektor arbeitet Aufträge ein …"
                   }`
                 : null
         }
@@ -618,7 +666,7 @@ export function RomanReifegradCard({
         <ReifegradImproveDialog
           plan={dialogPlan}
           stage={stage}
-          pending={pending}
+          pending={pending === "assess" ? null : pending}
           autorEntscheidungen={autorEntscheidungen}
           onAutorEntscheidungChange={(index, value) => {
             setAutorEntscheidungen((prev) => ({ ...prev, [index]: value }));
@@ -659,22 +707,38 @@ export function RomanReifegradCard({
       />
 
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-sm font-extrabold text-zinc-950">Reifegrad</h3>
-        {value ? (
-          <p className="text-xs font-semibold text-zinc-500">
-            geprüft {new Date(value.assessedAt).toLocaleString("de-DE")}
-            {value.modelLabel ? ` · ${value.modelLabel}` : ""}
-          </p>
-        ) : null}
+        <h3 className="text-sm font-extrabold text-zinc-950">
+          {isRomanAssess ? "Roman-Reifegrad" : "Reifegrad"}
+        </h3>
+        <div className="flex flex-wrap items-center gap-2">
+          {isRomanAssess ? (
+            <button
+              type="button"
+              disabled={!canSave || busy}
+              onClick={() => void assessRoman()}
+              className="rounded-full bg-sky-800 px-3 py-1 text-[11px] font-bold text-white hover:bg-sky-900 disabled:opacity-50"
+            >
+              {pending === "assess" ? "Misst …" : "Reifegrad messen"}
+            </button>
+          ) : null}
+          {value ? (
+            <p className="text-xs font-semibold text-zinc-500">
+              geprüft {new Date(value.assessedAt).toLocaleString("de-DE")}
+              {value.modelLabel ? ` · ${value.modelLabel}` : ""}
+            </p>
+          ) : null}
+        </div>
       </div>
 
       {!value ? (
         <p className="mt-3 text-sm font-semibold text-zinc-600">
-          {stage === "kapitelgeruest"
-            ? "Noch nicht bewertet — erscheint nach „Erzeugen“. Danach Gesamt oder Dimensionen: Analyse prüft Arcs/Lifecycle, Einarbeiten patcht die Gerüst-Struktur."
-            : stage === "szenenplot"
-              ? "Noch nicht bewertet — erscheint nach „Erzeugen“. Danach „Nur Logik“ / „Nur Craft“ / „Gesamt“ oder Einzeldimensionen: Analyse an Szenenverträgen, Einarbeiten patcht die Struktur."
-              : "Noch nicht bewertet — erscheint automatisch nach „Erzeugen“ und nach Analyse/Einarbeiten. Danach Gesamt oder einzelne Dimensionen analysieren und gezielt einarbeiten."}
+          {isRomanAssess
+            ? "Noch nicht bewertet — „Reifegrad messen“ oder nach Verbessern automatisch. Dann Stil/Lesefluss analysieren und content-frozen einarbeiten."
+            : stage === "kapitelgeruest"
+              ? "Noch nicht bewertet — erscheint nach „Erzeugen“. Danach Gesamt oder Dimensionen: Analyse prüft Arcs/Lifecycle, Einarbeiten patcht die Gerüst-Struktur."
+              : stage === "szenenplot"
+                ? "Noch nicht bewertet — erscheint nach „Erzeugen“. Danach „Nur Logik“ / „Nur Craft“ / „Gesamt“ oder Einzeldimensionen: Analyse an Szenenverträgen, Einarbeiten patcht die Struktur."
+                : "Noch nicht bewertet — erscheint automatisch nach „Erzeugen“ und nach Analyse/Einarbeiten. Danach Gesamt oder einzelne Dimensionen analysieren und gezielt einarbeiten."}
         </p>
       ) : (
         <div className="mt-4 flex flex-col items-stretch gap-4 sm:flex-row sm:items-center">
@@ -729,6 +793,8 @@ export function RomanReifegradCard({
             </div>
           </div>
 
+          {showGesamtKnob ? (
+            <>
           <div
             className="hidden w-px self-stretch bg-zinc-200 sm:block"
             aria-hidden
@@ -799,6 +865,17 @@ export function RomanReifegradCard({
               }
             />
           </div>
+            </>
+          ) : (
+            <div className="flex shrink-0 flex-col items-center justify-center gap-1 px-2 sm:min-w-[6rem]">
+              <p className="text-2xl font-extrabold text-zinc-950">
+                {value.gesamtPct}%
+              </p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-zinc-500">
+                Gesamt
+              </p>
+            </div>
+          )}
         </div>
       )}
     </section>
@@ -809,7 +886,10 @@ export function RomanReifegradCard({
  * Kritik + Änderungsaufträge dialog (Reifegrad / Clever Verbessern).
  * Autor-Entscheidungen are off by default — Analyse picks the patch path.
  */
-function improveDialogSubtitle(stage?: PipelineStage): string {
+function improveDialogSubtitle(stage?: ReifegradAssessKey): string {
+  if (stage === "roman") {
+    return "Analyse an der Roman-Prosa. Einarbeiten bleibt content-frozen (Stil/Lesefluss) und schreibt nur den Roman-Tab.";
+  }
   if (stage === "kapitelgeruest") {
     return "Analyse am Gerüst (Arcs, Kapitel-Lifecycle). Einarbeiten patcht die Strukturfelder und aktualisiert die Anzeige.";
   }
@@ -825,7 +905,8 @@ function improveDialogSubtitle(stage?: PipelineStage): string {
   return "Analyse und Einarbeiten durch Entwicklungslektor (außer Manuskript-Prosa = Co-Autor).";
 }
 
-function improveApplyActor(stage?: PipelineStage): string {
+function improveApplyActor(stage?: ReifegradAssessKey): string {
+  if (stage === "roman") return "Autor";
   if (stage === "manuskript") return "Co-Autor";
   return "Entwicklungslektor";
 }
@@ -847,7 +928,7 @@ export function ReifegradImproveDialog({
 }: {
   plan: RomanReifegradImprovePlan;
   /** When set, subtitle and decision copy match Gerüst / Plot / Manuskript. */
-  stage?: PipelineStage;
+  stage?: ReifegradAssessKey;
   pending: "analyze" | "apply" | "discard" | "fertig" | null;
   autorEntscheidungen: Record<number, string>;
   onAutorEntscheidungChange: (index: number, value: string) => void;

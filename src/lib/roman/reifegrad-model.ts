@@ -52,7 +52,15 @@ export type StageReifegrad = {
   modelLabel: string;
 };
 
-export type RomanReifegrade = Partial<Record<PipelineStage, StageReifegrad>>;
+/**
+ * Pipeline stage scores plus optional `roman` (post-Verbessern polish).
+ * `roman` is assess-only — not in {@link PIPELINE_STAGES} / cascade generate.
+ */
+export type ReifegradAssessKey = PipelineStage | "roman";
+
+export type RomanReifegrade = Partial<
+  Record<ReifegradAssessKey, StageReifegrad>
+>;
 
 export const REIFEGRAD_ERFUELLUNG_LABEL: Record<ReifegradErfuellung, string> = {
   nicht_erfuellt: "Nicht erfüllt",
@@ -281,6 +289,8 @@ export function parseRomanReifegrade(raw: unknown): RomanReifegrade {
     const parsed = parseOneReifegrad(row[stage]);
     if (parsed) out[stage] = parsed;
   }
+  const romanScore = parseOneReifegrad(row.roman);
+  if (romanScore) out.roman = romanScore;
   return out;
 }
 
@@ -288,10 +298,10 @@ export function emptyRomanReifegrade(): RomanReifegrade {
   return {};
 }
 
-/** Drop maturity for cleared downstream stages. */
+/** Drop maturity for cleared downstream stages (and optional `roman`). */
 export function clearReifegradeForStages(
   current: RomanReifegrade | undefined,
-  stages: PipelineStage[],
+  stages: Array<PipelineStage | "roman">,
 ): RomanReifegrade {
   if (!current || stages.length === 0) return current ?? {};
   const next = { ...current };
@@ -303,7 +313,7 @@ export function clearReifegradeForStages(
 
 export function withStageReifegrad<
   T extends { reifegrade?: RomanReifegrade },
->(editorial: T, stage: PipelineStage, score: StageReifegrad): T {
+>(editorial: T, stage: ReifegradAssessKey, score: StageReifegrad): T {
   return {
     ...editorial,
     reifegrade: {

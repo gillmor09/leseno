@@ -7,7 +7,10 @@
  */
 
 import type { PipelineStage } from "@/lib/roman/pipeline/stages";
-import type { StageReifegrad } from "@/lib/roman/reifegrad-model";
+import type {
+  ReifegradAssessKey,
+  StageReifegrad,
+} from "@/lib/roman/reifegrad-model";
 
 export const REIFEGRAD_CORE_DIMENSIONS = ["logik"] as const;
 
@@ -370,11 +373,38 @@ Ignoriere Motivations- und Regelthemen, außer sie brechen den Fluss.`,
   ],
 };
 
+/**
+ * Craft axes for assess keys — `roman` reuses Manuskript Stil/Dramaturgie/Lesefluss.
+ */
+export function craftDimensionsForAssessKey(
+  key: ReifegradAssessKey,
+): [ReifegradDimensionDef, ReifegradDimensionDef, ReifegradDimensionDef] {
+  if (key === "roman") return STAGE_CRAFT_DIMENSIONS.manuskript;
+  return STAGE_CRAFT_DIMENSIONS[key];
+}
+
+/** Resolve PipelineStage craft lookup for assess keys (roman → manuskript axes). */
+export function pipelineStageForAssessKey(
+  key: ReifegradAssessKey,
+): PipelineStage {
+  return key === "roman" ? "manuskript" : key;
+}
+
 /** All four dimension defs for a stage (Logik + craft). Used for assess. */
 export function dimensionsForStage(
   stage: PipelineStage,
 ): ReifegradDimensionDef[] {
   return [...REIFEGRAD_CORE_DEFS, ...STAGE_CRAFT_DIMENSIONS[stage]];
+}
+
+/** Dimension defs for pipeline stages or post-polish `roman`. */
+export function dimensionsForAssessKey(
+  key: ReifegradAssessKey,
+): ReifegradDimensionDef[] {
+  return [
+    ...REIFEGRAD_CORE_DEFS,
+    ...craftDimensionsForAssessKey(key),
+  ];
 }
 
 /**
@@ -385,6 +415,21 @@ export function improveDimensionsForStage(
   stage: PipelineStage,
 ): ReifegradDimensionDef[] {
   return dimensionsForStage(stage);
+}
+
+/**
+ * Analyze/apply knobs for assess keys.
+ * Roman (content-frozen polish): only Stil + Lesefluss — Logik/Dramaturgie
+ * belong in the Manuskript draft, not a stil-pass rework.
+ */
+export function improveDimensionsForAssessKey(
+  key: ReifegradAssessKey,
+): ReifegradDimensionDef[] {
+  if (key === "roman") {
+    const [stil, , lesefluss] = STAGE_CRAFT_DIMENSIONS.manuskript;
+    return [stil, lesefluss];
+  }
+  return improveDimensionsForStage(key);
 }
 
 /**
@@ -401,6 +446,14 @@ export function craftDimensionsForStage(
   return STAGE_CRAFT_DIMENSIONS[stage];
 }
 
+export function formatCraftScoresLineForAssessKey(
+  key: ReifegradAssessKey,
+  score: Pick<StageReifegrad, "stilPct" | "dramaturgiePct" | "leseflussPct">,
+): string {
+  const [a, b, c] = craftDimensionsForAssessKey(key);
+  return `${a.label} ${score.stilPct}% · ${b.label} ${score.dramaturgiePct}% · ${c.label} ${score.leseflussPct}%`;
+}
+
 export function findDimensionDef(
   stage: PipelineStage,
   key: string,
@@ -409,12 +462,31 @@ export function findDimensionDef(
   return dimensionsForStage(stage).find((d) => d.key === normalized) ?? null;
 }
 
+export function findDimensionDefForAssessKey(
+  key: ReifegradAssessKey,
+  dimKey: string,
+): ReifegradDimensionDef | null {
+  const normalized = dimKey === "regeln" ? "logik" : dimKey;
+  return (
+    improveDimensionsForAssessKey(key).find((d) => d.key === normalized) ??
+    null
+  );
+}
+
 export function isReifegradDimensionForStage(
   stage: PipelineStage,
   value: string,
 ): value is ReifegradDimension {
   const normalized = value === "regeln" ? "logik" : value;
   return improveDimensionsForStage(stage).some((d) => d.key === normalized);
+}
+
+export function isReifegradDimensionForAssessKey(
+  key: ReifegradAssessKey,
+  value: string,
+): value is ReifegradDimension {
+  const normalized = value === "regeln" ? "logik" : value;
+  return improveDimensionsForAssessKey(key).some((d) => d.key === normalized);
 }
 
 export const REIFEGRAD_DIMENSION_LABELS: Record<string, string> = {

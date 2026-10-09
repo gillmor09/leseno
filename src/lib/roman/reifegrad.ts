@@ -37,12 +37,15 @@ import {
   structuredSzenenplotToMarkdown,
 } from "@/lib/roman/szenenplot-structured";
 import {
+  craftDimensionsForAssessKey,
   craftDimensionsForStage,
+  pipelineStageForAssessKey,
   type ReifegradCraftSlot,
 } from "@/lib/roman/reifegrad-craft";
 import {
   buildStageReifegrad,
   withStageReifegrad,
+  type ReifegradAssessKey,
   type StageReifegrad,
 } from "@/lib/roman/reifegrad-model";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
@@ -168,7 +171,7 @@ function formatSpecBrief(roman: RomanKontext): string {
 
 function rawStageArtifact(
   roman: RomanKontext,
-  stage: PipelineStage,
+  stage: ReifegradAssessKey,
 ): string {
   const ed = roman.editorial ?? emptyRomanEditorial();
   switch (stage) {
@@ -210,8 +213,15 @@ function rawStageArtifact(
     }
     case "manuskript":
       return (ed.manuskriptText ?? "").trim();
+    case "roman":
+      return (ed.romanText ?? "").trim();
   }
 }
+
+const REIFEGRAD_ASSESS_LABELS: Record<ReifegradAssessKey, string> = {
+  ...PIPELINE_STAGE_LABELS,
+  roman: "Roman",
+};
 
 /**
  * Full stage artifact for Reifegrad assess. Only samples chapters if the
@@ -219,7 +229,7 @@ function rawStageArtifact(
  */
 export function getStageArtifactForAssess(
   roman: RomanKontext,
-  stage: PipelineStage,
+  stage: ReifegradAssessKey,
   options?: { focusChapterNumbers?: number[] },
 ): { text: string; coverage: StageArtifactCoverage } {
   const source = rawStageArtifact(roman, stage);
@@ -232,7 +242,8 @@ export function getStageArtifactForAssess(
   if (
     stage === "kapitelgeruest" ||
     stage === "szenenplot" ||
-    stage === "manuskript"
+    stage === "manuskript" ||
+    stage === "roman"
   ) {
     const sampled = sampleChapterDocForAssess(
       source,
@@ -254,7 +265,7 @@ export function getStageArtifactForAssess(
  */
 export function getStageArtifactText(
   roman: RomanKontext,
-  stage: PipelineStage,
+  stage: ReifegradAssessKey,
   options?: { focusChapterNumbers?: number[]; budget?: number },
 ): string {
   const ed = roman.editorial ?? emptyRomanEditorial();
@@ -340,6 +351,14 @@ export function getStageArtifactText(
       return (
         sampleChapterDocForAssess(
           ed.manuskriptText ?? "",
+          budget ?? CLIP.manuskript,
+          options?.focusChapterNumbers,
+        ) || "(leer)"
+      );
+    case "roman":
+      return (
+        sampleChapterDocForAssess(
+          ed.romanText ?? "",
           budget ?? CLIP.manuskript,
           options?.focusChapterNumbers,
         ) || "(leer)"
@@ -649,7 +668,7 @@ function parseScoresFromModel(
  */
 export async function assessStageReifegrad(input: {
   roman: RomanKontext;
-  stage: PipelineStage;
+  stage: ReifegradAssessKey;
   /** Prefer these chapters if soft-cap sampling is forced (just-patched). */
   focusChapterNumbers?: number[];
   /** Prior score for calibration — model should re-evaluate, not copy. */
@@ -664,9 +683,10 @@ export async function assessStageReifegrad(input: {
     input.stage,
     { focusChapterNumbers: input.focusChapterNumbers },
   );
-  const label = PIPELINE_STAGE_LABELS[input.stage];
+  const label = REIFEGRAD_ASSESS_LABELS[input.stage];
   const alter = altergruppeLabel(editorial);
-  const [craftA, craftB, craftC] = craftDimensionsForStage(input.stage);
+  const [craftA, craftB, craftC] = craftDimensionsForAssessKey(input.stage);
+  const scoreStage = pipelineStageForAssessKey(input.stage);
   const previous = input.previous;
   const prevBlock = previous
     ? `# Vorherige Messung (Orientierung — neu bewerten, nicht kopieren)
@@ -698,7 +718,9 @@ ${label} (${input.stage})${
       ? "\nArtefakt = STRUCTURED Kapitelgerüst (Skizze): centralArcs Setup/Peak/Payoff; je Kapitel kernsatz, knappe inhaltKurz, props/events, Threads, arcBeats. Tragfähigkeit bewerten — nicht wie ein fertiges Buch. Offene Threads und Skizzenkürze sind erlaubt. ALLE Kapitel zählen."
       : input.stage === "szenenplot"
         ? "\nArtefakt = STRUCTURED Szenenplot (Arcs, Lifecycle, Szenen mit dramaturgy/info_flow/continuity/schreibPrompt). Felder exakt bewerten. ALLE Kapitel zählen — nicht nur Kap. 1–3."
-        : ""
+        : input.stage === "roman"
+          ? "\nArtefakt = Roman-Prosa nach Stil-Pass (romanText). Bewerte Stimme, Stil, Dramaturgie und Lesefluss der polierten Fassung — nicht den Manuskript-Entwurf."
+          : ""
 }
 ${specAssessPolicy}
 
@@ -803,12 +825,12 @@ Gib jetzt korrektes JSON.`,
   for (const attempt of attempts) {
     try {
       const raw = await assessCall(attempt);
-      const scores = parseScoresFromModel(raw, input.stage);
+      const scores = parseScoresFromModel(raw, scoreStage);
       return {
         score: buildStageReifegrad({
           ...scores,
           modelLabel: model.label,
-          stage: input.stage,
+          stage: scoreStage,
         }),
         coverage,
       };
@@ -825,7 +847,7 @@ Gib jetzt korrektes JSON.`,
 /** Persist assessed score onto roman editorial via caller’s upsert. */
 export function editorialWithReifegrad(
   editorial: RomanEditorial,
-  stage: PipelineStage,
+  stage: ReifegradAssessKey,
   score: StageReifegrad,
 ): RomanEditorial {
   return withStageReifegrad(editorial, stage, score);

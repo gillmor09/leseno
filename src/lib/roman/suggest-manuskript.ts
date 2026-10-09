@@ -66,6 +66,10 @@ import {
   buildRomanStaticBookPrefix,
 } from "@/lib/roman/prompt-prefix";
 import {
+  buildCrossChapterStyleAnchor,
+  buildVerbessernRulesAndTone,
+} from "@/lib/roman/roman-verbessern-context";
+import {
   formatChapterHeading,
   formatManuskriptChapterBlock,
   formatManuskriptChapterHeading,
@@ -246,6 +250,8 @@ export async function briefManuskriptFromLektor(input: {
   grobRegeln: string;
   /** Schreiber Sprache & Tonalität from Basics (`roman_kontext.tonalitaet`). */
   tonalitaet?: string;
+  stilbibel?: string;
+  kiRegelwerk?: string;
   editorial: RomanEditorial;
   charaktere: RomanCharakter[];
   weltSchauplaetze: string;
@@ -341,7 +347,18 @@ Du bereitest die kapitelweise Prosa dramaturgisch vor. Arbeitsbrief für den Co-
 
   const co = await resolveRomanKiRolle("co_autor");
   const autorBias = formatAutorBiasFromCharaktere(input.charaktere);
-  const sharedContext = `${slimCanon}
+  const rulesAndTone = buildVerbessernRulesAndTone({
+    roman: {
+      tonalitaet,
+      stilbibel: (input.stilbibel ?? "").trim(),
+      kiRegelwerk: (input.kiRegelwerk ?? "").trim(),
+      genre: input.genre,
+    },
+    editorial: input.editorial,
+  });
+  /** Slim canon + Regeln/Ton — Stilanker injected after Kap. 1–2 exist. */
+  const baseCacheablePrefix = `${slimCanon}\n\n${rulesAndTone}`.trim();
+  const sharedContext = `${baseCacheablePrefix}
 
 ${autorBias}`;
 
@@ -350,7 +367,7 @@ ${autorBias}`;
     lektorLabel: assistModel.label,
     chapters,
     sharedContext,
-    cacheablePrefix: slimCanon,
+    cacheablePrefix: baseCacheablePrefix,
     coAutorSystem: `${co.rolle.systemPrompt}\n\n${ROMAN_EXCELLENCE_MANDATE}`,
     proseModelLabel: co.model.label,
     zielWortzahl: input.editorial.zielWortzahlRoman,
@@ -1099,6 +1116,8 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
   grobRegeln: string;
   /** Schreiber Sprache & Tonalität — must reach slim canon / prose. */
   tonalitaet?: string;
+  stilbibel?: string;
+  kiRegelwerk?: string;
   editorial: RomanEditorial;
   charaktere: RomanCharakter[];
   weltSchauplaetze: string;
@@ -1281,7 +1300,15 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
           ? `${chapterLabel}: Kapitel-Paket (frozen contracts) …`
           : `${chapterLabel}: Kapitel-Paket (Gemini) …`,
       );
-      const { packet: chapterPacket } = await resolveManuskriptChapterPacket({
+        const writtenSoFar = parsePlotChapters(parts.join("\n\n\n\n")).filter(
+          (c) => c.body.trim().length >= 80,
+        );
+        const chapterCacheablePrefix =
+          writtenSoFar.length >= 2
+            ? `${brief.cacheablePrefix}\n\n${buildCrossChapterStyleAnchor(writtenSoFar)}`.trim()
+            : brief.cacheablePrefix;
+
+        const { packet: chapterPacket } = await resolveManuskriptChapterPacket({
         storyState,
         chapter,
         allChapters: brief.chapters,
@@ -1293,14 +1320,14 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
           ? undefined
           : pathBByChapter.get(chapter.number),
         autorBias: contractsFrozen ? undefined : autorBias,
-        slimCanonSnippet: brief.cacheablePrefix,
+        slimCanonSnippet: chapterCacheablePrefix,
       });
 
       const writeOnce = () =>
         writeManuskriptChapterWithLengthGate({
           coAutorSystem: brief.coAutorSystem,
           sharedContext: brief.sharedContext,
-          cacheablePrefix: brief.cacheablePrefix,
+          cacheablePrefix: chapterCacheablePrefix,
           lektorBrief: brief.lektorBrief,
           chapter,
           allChapters: brief.chapters,
@@ -1467,6 +1494,13 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
       await report(expandLabel);
       const previousMarkdown = parts.join("\n\n\n\n");
       const previousTail = previousMarkdown.trim().slice(-prevTailChars);
+      const expandSoFar = parsePlotChapters(previousMarkdown).filter(
+        (c) => c.body.trim().length >= 80,
+      );
+      const expandCacheablePrefix =
+        expandSoFar.length >= 2
+          ? `${brief.cacheablePrefix}\n\n${buildCrossChapterStyleAnchor(expandSoFar)}`.trim()
+          : brief.cacheablePrefix;
       const { packet: chapterPacket } = await resolveManuskriptChapterPacket({
         storyState,
         chapter: item.chapter,
@@ -1476,12 +1510,12 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
         wissensGraph: liveGraph,
         szenenplotStructured: liveStructured,
         autorBias: contractsFrozen ? undefined : autorBias,
-        slimCanonSnippet: brief.cacheablePrefix,
+        slimCanonSnippet: expandCacheablePrefix,
       });
       const written = await writeManuskriptChapter({
         coAutorSystem: brief.coAutorSystem,
         sharedContext: brief.sharedContext,
-        cacheablePrefix: brief.cacheablePrefix,
+        cacheablePrefix: expandCacheablePrefix,
         lektorBrief: brief.lektorBrief,
         chapter: item.chapter,
         allChapters: brief.chapters,
