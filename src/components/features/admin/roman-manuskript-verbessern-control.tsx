@@ -234,10 +234,11 @@ export function RomanManuskriptVerbessernControl({
           </button>
         ) : null}
         <p className="max-w-xl text-xs font-semibold text-zinc-500">
-          Zwei Wellen (Stilanker zuerst), Freeze-QA + Soft-Repair, Resume:
-          bereits polierte Kapitel werden übersprungen. Gate: Logik/Dramaturgie
-          ≥70%, Stil/Lesefluss ≥60%, Versprechen ≥70%. Danach Auto-Reifegrad.
-          Override: „Roman fertig“.
+          Zuerst Seam/Payoff und emotionale Konsequenzen (Wertwechsel /
+          Nachwirkung) im Manuskript, dann zwei Wellen Stil (Stilanker zuerst),
+          Freeze-QA + Soft-Repair. Resume: polierte Kapitel werden übersprungen.
+          Gate: Logik/Dramaturgie ≥70%, Stil/Lesefluss ≥60%, Versprechen ≥70%.
+          Danach Auto-Reifegrad. Override: „Roman fertig“.
         </p>
       </div>
 

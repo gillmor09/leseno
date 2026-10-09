@@ -76,6 +76,16 @@ import {
 import { assertRomanChapterContentFrozen } from "@/lib/roman/roman-verbessern-freeze-qa";
 import { assertManuskriptReadyForRoman } from "@/lib/roman/roman-verbessern-preflight";
 import { checkRomanBookVoice } from "@/lib/roman/roman-verbessern-voice-check";
+import {
+  EMOTIONAL_CONSEQUENCE_DONE_DETAIL,
+  emotionalConsequenceAlreadyDone,
+  runManuskriptEmotionalConsequencePass,
+} from "@/lib/roman/manuskript-emotional-consequence";
+import {
+  runManuskriptSeamPayoffPass,
+  SEAM_PAYOFF_DONE_DETAIL,
+  seamPayoffAlreadyDone,
+} from "@/lib/roman/manuskript-seam-payoff";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
 import type { RomanKontext } from "@/lib/roman/types";
@@ -763,7 +773,7 @@ export async function startManuskriptVerbessern(input: {
     firstEvent: historyEvent({
       type: "info",
       stage: "manuskript",
-      summary: `Roman Verbessern · ${chapters.length} Kapitel (2 Wellen · Freeze-QA)`,
+      summary: `Roman Verbessern · ${chapters.length} Kapitel (Seam/Payoff → Emotion → 2 Wellen · Freeze-QA)`,
       detail: MANUSKRIPT_VERBESSERN_BRIEF.slice(0, 2_000),
     }),
   });
@@ -838,13 +848,13 @@ export async function runManuskriptVerbessernJob(input: {
 
     const { result, usage } = await runWithAiUsageCollector(async () => {
       let roman = roman0;
-      const editorial = roman.editorial ?? emptyRomanEditorial();
-      const baseline = (editorial.manuskriptText ?? "").trim();
+      let editorial = roman.editorial ?? emptyRomanEditorial();
+      let baseline = (editorial.manuskriptText ?? "").trim();
       if (!hasFilledManuskript(baseline)) {
         throw new Error("Zuerst ein Manuskript anlegen.");
       }
 
-      const chapters = parsePlotChapters(baseline).filter((c) => c.body.trim());
+      let chapters = parsePlotChapters(baseline).filter((c) => c.body.trim());
       if (chapters.length < 1) {
         throw new Error("Keine Manuskript-Kapitel zum Verbessern gefunden.");
       }
@@ -860,6 +870,128 @@ export async function runManuskriptVerbessernJob(input: {
           ...editorial,
           romanText: liveRomanText,
         });
+        editorial = roman.editorial ?? editorial;
+      }
+
+      const romanByNumPre = new Map(
+        parsePlotChapters(liveRomanText).map((c) => [c.number, c] as const),
+      );
+      const alreadyDonePre = chapters.filter((c) =>
+        chapterAlreadyPolished(c, romanByNumPre.get(c.number)?.body),
+      );
+      const hasOpenBatch = events.some((e) =>
+        Boolean(e.detail?.startsWith("BATCH_META:")),
+      );
+      // Craft passes before content-freeze — skip on Opus resume (would desync draft).
+      const skipCraftPasses = alreadyDonePre.length > 0 || hasOpenBatch;
+
+      const syncBaselineAfterCraft = async (patchedChapters: number[]) => {
+        editorial = roman.editorial ?? editorial;
+        baseline = (editorial.manuskriptText ?? "").trim();
+        chapters = parsePlotChapters(baseline).filter((c) => c.body.trim());
+        liveRomanText = ensureRomanSkeleton(
+          chapters,
+          editorial.romanText ?? liveRomanText,
+        );
+        if (patchedChapters.length === 0) return;
+        const byDraft = new Map(chapters.map((c) => [c.number, c] as const));
+        for (const num of patchedChapters) {
+          const draft = byDraft.get(num);
+          if (!draft) continue;
+          liveRomanText = replaceManuskriptChapterBody(
+            liveRomanText,
+            plot || baseline,
+            num,
+            draft.body,
+          );
+        }
+        liveRomanText = normalizeManuskriptDocument(liveRomanText, {
+          requiredFromPlot: plot || baseline,
+        });
+        roman = await upsertRomanEditorial(roman, {
+          ...(roman.editorial ?? editorial),
+          manuskriptText: baseline,
+          romanText: liveRomanText,
+        });
+        editorial = roman.editorial ?? editorial;
+      };
+
+      if (!skipCraftPasses && !seamPayoffAlreadyDone(events)) {
+        await reportLiveProgress(
+          input.runId,
+          events,
+          "Verbessern · Seam/Payoff (Nähte & Bögen) …",
+        );
+        const seam = await runManuskriptSeamPayoffPass({
+          roman,
+          onProgress: (label) =>
+            reportLiveProgress(input.runId, events, label),
+        });
+        roman = seam.roman;
+        await syncBaselineAfterCraft(seam.patchedChapters);
+        events.push(
+          historyEvent({
+            type: "info",
+            stage: "manuskript",
+            summary: seam.summary,
+            detail: SEAM_PAYOFF_DONE_DETAIL,
+          }),
+        );
+        if (seam.findings.length > 0) {
+          events.push(
+            historyEvent({
+              type: "info",
+              stage: "manuskript",
+              summary: `Seam/Payoff-Befunde · ${seam.findings.length}`,
+              detail: seam.findings
+                .map(
+                  (f) =>
+                    `[${f.kind}] Kap. ${f.chapterNumbers.join("+")}: ${f.summary}`,
+                )
+                .join("\n")
+                .slice(0, 2_000),
+            }),
+          );
+        }
+      }
+
+      if (!skipCraftPasses && !emotionalConsequenceAlreadyDone(events)) {
+        await reportLiveProgress(
+          input.runId,
+          events,
+          "Verbessern · Emotionale Konsequenzen …",
+        );
+        const emo = await runManuskriptEmotionalConsequencePass({
+          roman,
+          onProgress: (label) =>
+            reportLiveProgress(input.runId, events, label),
+        });
+        roman = emo.roman;
+        await syncBaselineAfterCraft(emo.patchedChapters);
+        events.push(
+          historyEvent({
+            type: "info",
+            stage: "manuskript",
+            summary: emo.summary,
+            detail: EMOTIONAL_CONSEQUENCE_DONE_DETAIL,
+          }),
+        );
+        if (emo.findings.length > 0) {
+          events.push(
+            historyEvent({
+              type: "info",
+              stage: "manuskript",
+              summary: `Emotion-Befunde · ${emo.findings.length}`,
+              detail: emo.findings
+                .map(
+                  (f) =>
+                    `[${f.kind}] Kap. ${f.chapterNumbers.join("+")}: ${f.summary}`,
+                )
+                .join("\n")
+                .slice(0, 2_000),
+            }),
+          );
+        }
       }
 
       const romanByNum = new Map(

@@ -43,6 +43,8 @@ import {
   formatManuskriptWordMetrics,
   suggestManuskriptFromLektorUndCoAutor,
 } from "@/lib/roman/suggest-manuskript";
+import { runManuskriptEmotionalConsequencePass } from "@/lib/roman/manuskript-emotional-consequence";
+import { runManuskriptSeamPayoffPass } from "@/lib/roman/manuskript-seam-payoff";
 import { invalidateDownstreamEditorial } from "@/lib/roman/pipeline/cascade";
 import {
   assertGeruestReadyForManuskript,
@@ -626,7 +628,7 @@ export async function draftStage(
       );
     }
     const prevEdFinal = liveRoman.editorial ?? emptyRomanEditorial();
-    const nextEd = withStageImprove(
+    let nextEd = withStageImprove(
       withLeserFeedbackForStage(
         {
           ...prevEdFinal,
@@ -650,7 +652,45 @@ export async function draftStage(
       "manuskript",
       null,
     );
-    const saved = await persist(liveRoman, { editorial: nextEd });
+    let saved = await persist(liveRoman, { editorial: nextEd });
+
+    // Book-wide craft passes before Reifegrad / Opus freeze (fail-soft).
+    let craftNote = "";
+    try {
+      await options?.onProgress?.("Seam/Payoff · Nähte & Bögen …");
+      const seam = await runManuskriptSeamPayoffPass({
+        roman: saved,
+        onProgress: options?.onProgress,
+      });
+      saved = seam.roman;
+      nextEd = saved.editorial ?? nextEd;
+      sealed = (nextEd.manuskriptText ?? sealed).trim() || sealed;
+      if (seam.patchedChapters.length > 0) {
+        craftNote += ` Seam/Payoff Kap. ${seam.patchedChapters.join(", ")}.`;
+      } else if (!seam.skipped) {
+        craftNote += " Seam/Payoff geprüft.";
+      }
+    } catch {
+      /* fail-soft — draft remains usable */
+    }
+    try {
+      await options?.onProgress?.("Emotion · Wertwechsel & Nachwirkung …");
+      const emo = await runManuskriptEmotionalConsequencePass({
+        roman: saved,
+        onProgress: options?.onProgress,
+      });
+      saved = emo.roman;
+      nextEd = saved.editorial ?? nextEd;
+      sealed = (nextEd.manuskriptText ?? sealed).trim() || sealed;
+      if (emo.patchedChapters.length > 0) {
+        craftNote += ` Emotion Kap. ${emo.patchedChapters.join(", ")}.`;
+      } else if (!emo.skipped) {
+        craftNote += " Emotion geprüft.";
+      }
+    } catch {
+      /* fail-soft */
+    }
+
     // Guard against silent truncation on read/re-save (old 500k cap wiped Kap. 19–22).
     const verified = await getRomanKontext(saved.id, { omitCover: true });
     const verifiedText = verified?.editorial?.manuskriptText ?? "";
@@ -667,8 +707,8 @@ export async function draftStage(
     }
     const metrics = formatManuskriptWordMetrics(data.wordMetrics);
     return {
-      roman: saved,
-      summary: `Manuskript entworfen (${data.modelLabel}). ${metrics}.`,
+      roman: verified ?? saved,
+      summary: `Manuskript entworfen (${data.modelLabel}). ${metrics}.${craftNote}`,
       modelLabel: data.modelLabel,
     };
   }
