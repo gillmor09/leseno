@@ -1,5 +1,6 @@
 import "@/lib/validations/configure-zod";
 import { z, type ZodError } from "zod";
+import { ROMAN_MANUSKRIPT_TEXT_MAX_CHARS } from "@/lib/roman/editorial";
 
 /** German field labels for the first Zod issue path (Roman admin toasts). */
 const ROMAN_FIELD_LABELS: Record<string, string> = {
@@ -12,6 +13,9 @@ const ROMAN_FIELD_LABELS: Record<string, string> = {
   stilbibel: "Stilbibel",
   kiRegelwerk: "KI-Regelwerk",
   manuskriptRaw: "Outline/Manuskript",
+  manuskriptText: "Manuskript-Text",
+  manuskriptOriginalText: "Manuskript-Original",
+  romanText: "Roman-Text",
   weltSchauplaetze: "Hauptschauplätze",
   weltRegeln: "Regeln & Grenzen",
   fanPersonaName: "Fan-Name",
@@ -115,7 +119,20 @@ export const romanEditorialSchema = z.object({
   weltBibel: z.string().max(100_000),
   serienBibel: z.string().max(100_000),
   sachbuchStruktur: z.string().max(100_000),
-  manuskriptText: z.string().max(500_000).default(""),
+  manuskriptText: z
+    .string()
+    .max(ROMAN_MANUSKRIPT_TEXT_MAX_CHARS)
+    .default(""),
+  manuskriptOriginalText: z
+    .string()
+    .max(ROMAN_MANUSKRIPT_TEXT_MAX_CHARS)
+    .optional()
+    .default(""),
+  romanText: z
+    .string()
+    .max(ROMAN_MANUSKRIPT_TEXT_MAX_CHARS)
+    .optional()
+    .default(""),
   klappentext: z.string().max(4_000).optional().default(""),
   einzeiler: z.string().max(120).optional().default(""),
   gates: z.object({
@@ -262,7 +279,7 @@ export const romanUpsertSchema = z.object({
     .trim()
     .min(1, { message: "Titel angeben." })
     .max(200),
-  manuskriptRaw: z.string().max(500_000),
+  manuskriptRaw: z.string().max(ROMAN_MANUSKRIPT_TEXT_MAX_CHARS),
   stilbibel: z.string().max(100_000),
   genre: z.string().max(200),
   praemisse: z.string().max(4000),

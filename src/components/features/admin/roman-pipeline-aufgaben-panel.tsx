@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Edit pipeline task → role bindings, grouped by stage (Entwurf / Gegenlese).
+ * Edit pipeline task → role bindings, grouped by stage.
+ * Roman: one role per stage (draft). Clever: draft + verify/feedback where needed.
  */
 
 import { useMemo, useState } from "react";
@@ -31,14 +32,23 @@ function stageTitle(stage: string): string {
   return stage;
 }
 
+function critiqueKindLabel(stage: string): string {
+  if (stage === "wissen") return "Faktencheck";
+  if (stage === "geschichte") return "Feedback";
+  return "Gegenlese";
+}
+
 export function RomanPipelineAufgabenPanel({
   initialAufgaben,
   rollen,
   canSave,
+  /** Clever: show verify/feedback row. Roman: one role per stage only. */
+  showCritiqueRoles = false,
 }: {
   initialAufgaben: RomanPipelineAufgabe[];
   rollen: RomanKiRolle[];
   canSave: boolean;
+  showCritiqueRoles?: boolean;
 }) {
   const [aufgaben, setAufgaben] = useState(initialAufgaben);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -119,11 +129,14 @@ export function RomanPipelineAufgabenPanel({
     <div className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10">
       <div>
         <h2 className="text-lg font-extrabold text-zinc-950">
-          Wer schreibt / wer gegenliest
+          {showCritiqueRoles
+            ? "Wer schreibt / wer prüft"
+            : "Wer arbeitet pro Schritt"}
         </h2>
         <p className="mt-1 text-sm font-semibold text-zinc-600">
-          Pro Pipeline-Schritt: Entwurf-Rolle und Gegenlese-Rolle. Speichern
-          gilt sofort für alle Bücher.
+          {showCritiqueRoles
+            ? "Pro Pipeline-Schritt die passende Rolle. Speichern gilt sofort für alle Bücher."
+            : "Pro Pipeline-Schritt eine Rolle. Speichern gilt sofort für alle Bücher."}
         </p>
       </div>
       <ul className="space-y-4">
@@ -136,10 +149,16 @@ export function RomanPipelineAufgabenPanel({
               {stageTitle(g.stage)}
             </h3>
             {g.draft ? (
-              <RoleRow aufgabe={g.draft} kindLabel="Entwurf" />
+              <RoleRow
+                aufgabe={g.draft}
+                kindLabel={showCritiqueRoles ? "Entwurf" : "Rolle"}
+              />
             ) : null}
-            {g.critique ? (
-              <RoleRow aufgabe={g.critique} kindLabel="Gegenlese" />
+            {showCritiqueRoles && g.critique ? (
+              <RoleRow
+                aufgabe={g.critique}
+                kindLabel={critiqueKindLabel(g.stage)}
+              />
             ) : null}
             {g.other.map((a) => (
               <RoleRow

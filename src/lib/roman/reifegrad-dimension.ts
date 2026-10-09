@@ -1,13 +1,14 @@
 /**
  * Reifegrad-dimension improve: analyze (Lektor → plan + dialog) then apply
- * (Co-Autor from aenderungsPrompts → re-score). Same two-step pattern as
- * Leser-Feedback.
+ * Apply from aenderungsPrompts → re-score (Gerüst/Plot: Lektor-Struktur-Patch;
+ * Manuskript: Co-Autor). Same two-step pattern as Leser-Feedback.
  */
 
 import { generateText } from "@/lib/ai/provider";
-import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
+import { parseModelJsonObjectWithRepair } from "@/lib/ai/repair-model-json";
 import { runWithAiUsageCollector } from "@/lib/ai/usage-collector";
 import { resolveReasoningEffort } from "@/lib/ai/reasoning-effort";
+import type { AiModelConfig } from "@/lib/prompts/catalog";
 import {
   ROMAN_ALTER_PRESETS,
   buildCritiqueRulesAndNeedsBlock,
@@ -17,6 +18,7 @@ import {
   onlyNiceToHavePrompts,
   actionableAenderungsPrompts,
   missingAutorEntscheidungen,
+  narrowAenderungsPromptsWithKritikChapters,
   parseAenderungsPrompts,
   parseRomanReifegradImprovePlan,
   replaceReifegradImproveStageWithApplied,
@@ -37,12 +39,27 @@ import {
 } from "@/lib/roman/pipeline/history";
 import {
   PIPELINE_STAGE_LABELS,
+  romanApplyRoleKey,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
-import { ROMAN_CRITIQUE_FOCUS_MANDATE } from "@/lib/roman/pipeline/quality-brief";
+import { filterAenderungsPromptsByGrounding } from "@/lib/roman/critique-grounding";
+import {
+  formatReifegradRegressionSummary,
+  reifegradGesamtRegressed,
+} from "@/lib/roman/improve-apply-guard";
+import {
+  ROMAN_CRITIQUE_FOCUS_MANDATE,
+  ROMAN_CRITIQUE_QUOTE_GROUNDING,
+  ROMAN_CRITIQUE_SCOPE_MANDATE,
+  highBandLastGapsMandate,
+  REIFEGRAD_HIGH_BAND_PP,
+  specStageAnalyzePolicy,
+  structureStageAnalyzePolicy,
+} from "@/lib/roman/pipeline/quality-brief";
 import {
   findDimensionDef,
   formatCraftScoresLine,
+  pctForDimension,
   REIFEGRAD_DIMENSION_ANALYZE_MODEL_SLUG,
   type ReifegradDimension,
 } from "@/lib/roman/reifegrad-craft";
@@ -54,8 +71,30 @@ import {
 } from "@/lib/roman/reifegrad";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import { getRomanKontext, upsertRomanKontext } from "@/lib/roman/repository";
+import {
+  structuredKapitelGeruestToMarkdown,
+  structuredSzenenplotToMarkdown,
+} from "@/lib/roman/szenenplot-structured";
 import type { RomanKontext } from "@/lib/roman/types";
 import type { AiModelConfig } from "@/lib/prompts/catalog";
+
+function improveChapterDoc(roman: RomanKontext, stage: PipelineStage): string {
+  const ed = roman.editorial ?? emptyRomanEditorial();
+  if (stage === "manuskript") return ed.manuskriptText ?? "";
+  if (stage === "kapitelgeruest") {
+    if (ed.kapitelGeruestStructured?.chapters.length) {
+      return structuredKapitelGeruestToMarkdown(ed.kapitelGeruestStructured);
+    }
+    return ed.kapitelGeruestRaw ?? "";
+  }
+  if (stage === "szenenplot") {
+    if (ed.szenenplotStructured?.chapters.length) {
+      return structuredSzenenplotToMarkdown(ed.szenenplotStructured);
+    }
+    return roman.manuskriptRaw ?? "";
+  }
+  return "";
+}
 
 /**
  * Spec (stage `expose`) dimensions map onto the three Spec parts for apply.
@@ -151,16 +190,41 @@ function parsePrompts(raw: unknown): RomanAenderungsPrompt[] {
   return parseAenderungsPrompts(raw);
 }
 
-function parseDimensionAnalyzeRaw(
+const DIMENSION_ANALYZE_SCHEMA_HINT = `{
+  "kritik": "2–4 Absätze Prosa zur Dimension (oder kurz, wenn wenig fehlt)",
+  "aenderungsPrompts": [
+    {
+      "titel": "kurzer Name",
+      "wichtigkeit": "kritisch" | "wichtig" | "nice_to_have",
+      "scope": "lokal" | "buchweit",
+      "kapitel": [],
+      "anweisung": "Imperativ: was genau ändern",
+      "entscheidungNoetig": false,
+      "entscheidungFrage": ""
+    }
+  ]
+}
+Maximal 3 aenderungsPrompts. Leeres Array [] ist erlaubt.
+Nummerierte Prosa-Listen → in kritik + aenderungsPrompts überführen.`;
+
+async function parseDimensionAnalyzeRaw(
   raw: string,
+  model: AiModelConfig,
   meta: {
     stage: PipelineStage;
     dimension: ReifegradDimension;
     dimensionLabel: string;
     modelLabel: string;
   },
-): RomanReifegradImprovePlan {
-  const obj = parseModelJsonObject(raw, "Dimensions-Analyse");
+): Promise<RomanReifegradImprovePlan> {
+  const obj = await parseModelJsonObjectWithRepair({
+    raw,
+    model,
+    schemaHint: DIMENSION_ANALYZE_SCHEMA_HINT,
+    errorLabel: "Dimensions-Analyse",
+    maxTokens: 4_000,
+    timeoutMs: 60_000,
+  });
 
   let kritik = String(
     obj.kritik ?? obj.critique ?? obj.leserFeedback ?? "",
@@ -278,7 +342,22 @@ export async function analyzeReifegradDimension(input: {
     const artifact = getStageArtifactText(roman, input.stage);
     const alter = altergruppeLabel(editorial);
     const chapterStages =
-      input.stage === "szenenplot" || input.stage === "manuskript";
+      input.stage === "kapitelgeruest" ||
+      input.stage === "szenenplot" ||
+      input.stage === "manuskript";
+    const previousScore = editorial.reifegrade?.[input.stage] ?? null;
+    const axisPct = previousScore
+      ? pctForDimension(previousScore, def)
+      : null;
+    const highBand = highBandLastGapsMandate({
+      gesamtPct: previousScore?.gesamtPct,
+      axisPct,
+      axisLabel: def.label,
+    });
+    const inHighBand =
+      (axisPct != null && axisPct >= REIFEGRAD_HIGH_BAND_PP) ||
+      (previousScore != null &&
+        previousScore.gesamtPct >= REIFEGRAD_HIGH_BAND_PP);
 
     const { rolle } = await resolveRomanKiRolle("entwicklungslektor");
     const analyzeBase = await resolveRomanSchreibModel(
@@ -301,13 +380,31 @@ lesestufe: ${editorial.lesestufe?.trim() || "—"}
 # Stufe
 ${stageLabel} (${input.stage})${
   input.stage === "expose"
-    ? "\nSpec = Charaktere + Welt + Exposé als ein Brief (Artefakt unten)."
-    : ""
+    ? "\nSpec = Charaktere + Welt + Exposé als ein Brief (Artefakt unten).\nRoman-Tragfähigkeit: Diese Dimension gegen „reicht für einen ganzen Roman?“ prüfen."
+    : input.stage === "kapitelgeruest"
+      ? "\nArtefakt = STRUCTURED Kapitelgerüst (JSON-Spiegel: centralArcs + Kapitel-Lifecycle/arcBeats)."
+      : input.stage === "szenenplot"
+        ? "\nArtefakt = STRUCTURED Szenenplot (JSON-Spiegel: Arcs, Szenenverträge, schreibPrompt)."
+        : ""
 }
+
+# Aktueller Reifegrad
+${
+  previousScore
+    ? `Gesamt ${previousScore.gesamtPct}% · Logik ${previousScore.regelnPct}% · ${formatCraftScoresLine(input.stage, previousScore)}${axisPct != null ? ` · Fokus „${def.label}“ ${axisPct}%` : ""}`
+    : "(noch nicht gemessen)"
+}
+
+${highBand}
 
 # Dimension (EINZIGER Fokus — alles andere ignorieren)
 ${def.label}
 ${def.brief}
+${
+  input.stage === "expose"
+    ? specStageAnalyzePolicy("dimension")
+    : structureStageAnalyzePolicy(input.stage)
+}
 
 # Artefakt
 ${artifact}
@@ -315,8 +412,8 @@ ${artifact}
 Auftrag:
 Analysiere knallhart NUR diese Dimension. Liefere ZWEI Schichten:
 1) kritik — Prosa zum Lesen (konkrete Schwächen mit Belegen). Darf kurz sein, wenn wenig fehlt.
-2) aenderungsPrompts — maximal 3 ausführbare Co-Autor-Aufträge (WO + WAS), die wichtigsten zuerst.
-   Leer [] ist OK, wenn nichts kritisch/wichtig fehlt. Nur nice_to_have, wenn wirklich nur Feinschliff übrig ist.
+2) aenderungsPrompts — maximal ${inHighBand ? "2" : "3"} ausführbare Änderungsaufträge (WO + WAS), die wichtigsten zuerst.
+   ${inHighBand ? `Hochband: lieber 1–2 tragfähige Pflichtpunkte auf dieser Achse als leere Liste aus Bequemlichkeit. Leer [] nur mit Begründung in kritik.` : `Leer [] ist OK, wenn nichts kritisch/wichtig fehlt. Nur nice_to_have, wenn wirklich nur Feinschliff übrig ist.`}
 
 Antwort NUR als JSON:
 {
@@ -339,8 +436,10 @@ Regeln:
 - aenderungsPrompts: max. 3; titel, wichtigkeit, scope, anweisung Pflicht. Leeres Array erlaubt, wenn keine Pflichtpunkte.
 - wichtigkeit: kritisch (bricht Logik/Versprechen), wichtig (spürbarer Mangel), nice_to_have nur wenn nichts Härteres übrig.
 - Kein Nice-to-have / Feinschliff, solange kritisch oder wichtig existiert.
-- Wenn der Autor zwischen Varianten wählen MUSS (Entweder/Oder, offene Canon-Frage): setze entscheidungNoetig=true und entscheidungFrage als kurze, klare Frage. In anweisung die Alternativen und Folgeschritte beschreiben — KEINE Variante selbst wählen.
-- Bei Szenenplot/Manuskript: scope „lokal“ mit kapitel, oder „buchweit“ für Kontinuität über alle Kapitel.
+- KEINE Autor-Entscheidung: entscheidungNoetig immer false, entscheidungFrage leer. Bei Entweder/Oder selbst die tragfähigste Variante wählen und nur diese in anweisung festschreiben (Begründung kurz in kritik).
+- Bei Kapitelgerüst/Szenenplot/Manuskript: ${ROMAN_CRITIQUE_SCOPE_MANDATE}
+- Kapitelgerüst: anweisung nennt Structured-Felder (centralArcs, arcBeats, props/events …).
+- Szenenplot: anweisung nennt scene_id oder Dramaturgie-/Continuity-Feld.
 - Bei anderen Stufen: meist scope „buchweit“, kapitel [].
 - Spec (expose): Aufträge dürfen Figuren, Welt oder Exposé betreffen — klar benennen WO.
 - Nur diese Dimension. Kein Umschreiben des Artefakts hier. Nur valides JSON.`;
@@ -351,11 +450,14 @@ ${ROMAN_CRITIQUE_FOCUS_MANDATE}
 
 Zusatzauftrag Dimensions-Analyse (${def.label} · ${stageLabel}):
 Du bist Entwicklungslektor:in. Fokus ausschließlich auf ${def.label}.
-Zwei Schichten: kritik (Prosa, darf kurz sein) + aenderungsPrompts (0–3, mit wichtigkeit).
-Offene Autor-Entscheidungen als entscheidungNoetig markieren — nicht selbst entscheiden.
-Wenn die Dimension schon trägt: kurze Bestätigung + leere aenderungsPrompts — kein erfundener Mangel. Nur JSON.`;
+Zwei Schichten: kritik (Prosa, darf kurz sein) + aenderungsPrompts (0–${inHighBand ? "2" : "3"}, mit wichtigkeit).
+${ROMAN_CRITIQUE_QUOTE_GROUNDING}
+Keine Autor-Entscheidungen: bei Alternativen selbst die beste Variante wählen und in anweisung festschreiben.
+${inHighBand ? `Hochband (≥${REIFEGRAD_HIGH_BAND_PP}%): letzte tragfähige Lücken auf dieser Achse suchen — kein automatisches „trägt schon → leer“.` : `Unter Hochband: leere aenderungsPrompts nur wenn wirklich nichts Pflichtiges fehlt — kein erfundener Mangel.`}
+${highBand}
+Antworte AUSSCHLIESSLICH als JSON-Objekt mit Keys kritik und aenderungsPrompts — keine nummerierte Prosa außerhalb von JSON.`;
 
-    const { result: plan, usage } = await runWithAiUsageCollector(async () => {
+    const { result: planRaw, usage } = await runWithAiUsageCollector(async () => {
       const raw = await generateText({
         model,
         systemInstruction: system,
@@ -364,13 +466,25 @@ Wenn die Dimension schon trägt: kurze Bestätigung + leere aenderungsPrompts �
         maxTokens: 4_000,
         timeoutMs: 90_000,
       });
-      return parseDimensionAnalyzeRaw(raw, {
+      return parseDimensionAnalyzeRaw(raw, model, {
         stage: input.stage,
         dimension: input.dimension,
         dimensionLabel: dimLabel,
         modelLabel: model.label,
       });
     });
+    const { kept } = filterAenderungsPromptsByGrounding(
+      planRaw.aenderungsPrompts,
+      artifact,
+      { stage: input.stage },
+    );
+    const plan = {
+      ...planRaw,
+      aenderungsPrompts: narrowAenderungsPromptsWithKritikChapters(
+        kept,
+        planRaw.kritik,
+      ),
+    };
 
     events.push(
       historyEvent({
@@ -431,7 +545,7 @@ Wenn die Dimension schon trägt: kurze Bestätigung + leere aenderungsPrompts �
 }
 
 /**
- * Apply stored Reifegrad-improve plan for one dimension (Co-Autor → re-score).
+ * Apply stored Reifegrad-improve plan for one dimension (Struktur-Patch oder Co-Autor → re-score).
  * Clears sibling open plans on this stage after a successful weave.
  */
 export async function applyReifegradDimensionPlan(input: {
@@ -509,17 +623,24 @@ export async function applyReifegradDimensionPlan(input: {
     }),
   );
 
+  const snapshotEditorial = structuredClone(editorial);
+  const snapshotRoots = {
+    manuskriptRaw: loaded.manuskriptRaw,
+    charaktere: loaded.charaktere,
+    weltSchauplaetze: loaded.weltSchauplaetze,
+    weltRegeln: loaded.weltRegeln,
+  };
+
   try {
     let roman = loaded;
     const allPatched: number[] = [];
-    const chapterDoc =
-      input.stage === "manuskript"
-        ? (editorial.manuskriptText ?? "")
-        : input.stage === "szenenplot"
-          ? (roman.manuskriptRaw ?? "")
-          : "";
+    const chapterDoc = improveChapterDoc(roman, input.stage);
 
-    if (input.stage === "manuskript" || input.stage === "szenenplot") {
+    if (
+      input.stage === "manuskript" ||
+      input.stage === "szenenplot" ||
+      input.stage === "kapitelgeruest"
+    ) {
       const chapterPlan = resolveReifegradImproveChapters(chapterDoc, plan);
       if (chapterPlan.chapterNumbers.length === 0) {
         throw new Error(
@@ -560,7 +681,7 @@ export async function applyReifegradDimensionPlan(input: {
           historyEvent({
             type: "apply",
             stage: input.stage,
-            roleKey: "co_autor",
+            roleKey: romanApplyRoleKey(input.stage),
             summary: applied.summary,
             usage,
           }),
@@ -588,7 +709,7 @@ export async function applyReifegradDimensionPlan(input: {
           historyEvent({
             type: "apply",
             stage: applyStage,
-            roleKey: "co_autor",
+            roleKey: romanApplyRoleKey(applyStage),
             summary: applied.summary,
             usage,
           }),
@@ -598,35 +719,68 @@ export async function applyReifegradDimensionPlan(input: {
 
     const uniquePatched = [...new Set(allPatched)].sort((a, b) => a - b);
     const ed = roman.editorial ?? emptyRomanEditorial();
-    const markedPlan: RomanReifegradImprovePlan = {
-      ...plan,
-      appliedAt: new Date().toISOString(),
-    };
-    let nextEd = {
-      ...ed,
-      reifegradImprove: replaceReifegradImproveStageWithApplied(
-        ed.reifegradImprove,
-        input.stage,
-        markedPlan,
-      ),
-    };
+    const previous = snapshotEditorial.reifegrade?.[input.stage] ?? null;
+    let nextEd = ed;
 
-    const previous = nextEd.reifegrade?.[input.stage] ?? null;
     try {
       const { result: assessed, usage: reifeUsage } =
         await runWithAiUsageCollector(() =>
           assessStageReifegrad({
             roman: { ...roman, editorial: nextEd },
             stage: input.stage,
-            focusChapterNumbers: uniquePatched,
+            // Full artifact (no focus sample) so Gesamt is not skewed by local patch.
             previous,
             changeSummary: `Dimension ${dimLabel} eingearbeitet`,
           }),
         );
-      nextEd = editorialWithReifegrad(nextEd, input.stage, assessed.score);
-      roman = await persistEditorial(roman, nextEd);
       const score = assessed.score;
       const coverageLabel = formatAssessCoverageLabel(assessed.coverage);
+
+      if (reifegradGesamtRegressed(previous, score)) {
+        roman = await persistEditorial(
+          { ...roman, ...snapshotRoots },
+          snapshotEditorial,
+        );
+        const regression = formatReifegradRegressionSummary({
+          label: dimLabel,
+          previousPct: previous!.gesamtPct,
+          nextPct: score.gesamtPct,
+        });
+        events.push(
+          historyEvent({
+            type: "info",
+            stage: input.stage,
+            modelLabel: score.modelLabel,
+            summary: regression,
+            usage: reifeUsage,
+          }),
+        );
+        await updatePipelineHistoryRun({ runId, status: "ok", events });
+        return {
+          roman,
+          summary: regression,
+          runId,
+          patchedChapters: [],
+        };
+      }
+
+      const markedPlan: RomanReifegradImprovePlan = {
+        ...plan,
+        appliedAt: new Date().toISOString(),
+      };
+      nextEd = editorialWithReifegrad(
+        {
+          ...ed,
+          reifegradImprove: replaceReifegradImproveStageWithApplied(
+            ed.reifegradImprove,
+            input.stage,
+            markedPlan,
+          ),
+        },
+        input.stage,
+        score,
+      );
+      roman = await persistEditorial(roman, nextEd);
       const delta =
         previous != null ? score.gesamtPct - previous.gesamtPct : null;
       const deltaLabel =
@@ -652,6 +806,18 @@ export async function applyReifegradDimensionPlan(input: {
         patchedChapters: uniquePatched,
       };
     } catch (assessError) {
+      const markedPlan: RomanReifegradImprovePlan = {
+        ...plan,
+        appliedAt: new Date().toISOString(),
+      };
+      nextEd = {
+        ...ed,
+        reifegradImprove: replaceReifegradImproveStageWithApplied(
+          ed.reifegradImprove,
+          input.stage,
+          markedPlan,
+        ),
+      };
       roman = await persistEditorial(roman, nextEd);
       events.push(
         historyEvent({

@@ -16,6 +16,7 @@ import type {
   CleverUnterthemen,
   RomanEditorial,
 } from "@/lib/roman/editorial";
+import { ROMAN_PROSE_MAX_TOKENS } from "@/lib/roman/pipeline/quality-brief";
 import {
   parsePlotChapters,
   sanitizeChapterTitle,
@@ -381,7 +382,7 @@ Regeln:
     userText,
     googleSearch: true,
     preferJson: true,
-    maxTokens: 20_000,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
     timeoutMs: 240_000,
   });
 
@@ -515,7 +516,7 @@ Regeln:
             : `${userText}\n\nWICHTIG (Wiederholung): Liefere GENAU ${expected} fakten-Einträge mit index 1…${expected}. Beginne mit { und ende mit }.`,
         googleSearch: true,
         preferJson: true,
-        maxTokens: 8_000,
+        maxTokens: ROMAN_PROSE_MAX_TOKENS,
         timeoutMs: 180_000,
         reasoningEffort: attempt === 1 ? undefined : "medium",
       });

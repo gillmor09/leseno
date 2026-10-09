@@ -1,10 +1,14 @@
 /**
- * Kapitelgerüst: structured Szenenplot (dramaturgy JSON) + markdown mirror.
- * Co-Autor generates scenes with goal/obstacle/turn/value-change + continuity.
+ * Legacy combined Pass-1+2 Szenenplot (still used by outline helpers).
+ * Role: Entwicklungslektor (analytical). Preferred path:
+ * `suggest-kapitelgeruest.ts` then `suggest-szenenplot-detail.ts`.
  */
 
+import { AI_LONG_PROSE_TIMEOUT_MS } from "@/lib/ai/fetch-timeout";
 import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
+import { parseModelJsonObjectWithRepair } from "@/lib/ai/repair-model-json";
 import { generateText } from "@/lib/ai/provider";
+import type { AiModelConfig } from "@/lib/prompts/catalog";
 import {
   BUCHTYP_LABELS,
   buildCritiqueRulesAndNeedsBlock,
@@ -27,14 +31,18 @@ import {
   ROMAN_CRITIQUE_MANDATE,
   ROMAN_CRITIQUE_MAX_TOKENS,
   ROMAN_EXCELLENCE_MANDATE,
+  ROMAN_PROSE_MAX_TOKENS,
 } from "@/lib/roman/pipeline/quality-brief";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import {
+  parseCentralArcs,
+  parseChapterPlan,
   parseRomanSzenenplotStructured,
   structuredSzenenplotToMarkdown,
   SZENENPLOT_SKELETON_SCHEMA_HINT,
   SZENENPLOT_STRUCTURED_SCHEMA_HINT,
   SZENENPLOT_STRUCTURED_SYSTEM_ADDENDUM,
+  type RomanSzenenplotCentralArc,
   type RomanSzenenplotChapterNode,
   type RomanSzenenplotStructured,
 } from "@/lib/roman/szenenplot-structured";
@@ -48,6 +56,7 @@ import { buildRomanStaticBookPrefix } from "@/lib/roman/prompt-prefix";
 import {
   closeWissensGraphGaps,
   formatWissensGraphForPrompt,
+  growWissensGraphFromSkeleton,
   growWissensGraphFromSzenenBatch,
   seedWissensGraphFromSources,
 } from "@/lib/roman/wissens-graph";
@@ -57,15 +66,14 @@ const MARK_KAPITEL_START = "===KAPITEL===";
 const MARK_KAPITEL_ENDE = "===ENDE===";
 
 /**
- * Beat sheets + outline use Co-Autor (Claude by default).
- * Gemini often blocks mid-book fiction conflict as PROHIBITED_CONTENT —
- * same reason Co-Autor was moved off Gemini in roman_ki_rollen.
+ * Beat sheets + outline use Entwicklungslektor (analytical Flash).
+ * Manuskript prose stays on co_autor (expensive model).
  */
 const MAX_CHAPTERS = 24;
 /** Chapters per scene-batch call — keeps JSON under output-token limits. */
 const SCENES_BATCH_SIZE = 3;
-const SKELETON_MAX_TOKENS = 4_096;
-const SCENES_BATCH_MAX_TOKENS = 8_192;
+const SKELETON_MAX_TOKENS = 12_000;
+const SCENES_BATCH_MAX_TOKENS = ROMAN_PROSE_MAX_TOKENS;
 const SCENES_BATCH_TIMEOUT_MS = 120_000;
 
 export type SzenenplotOutlineResult = {
@@ -189,10 +197,33 @@ type SkeletonChapter = {
   number: number;
   title: string;
   kernsatz: string;
+  props: string[];
+  events: string[];
+  openThreads: string[];
+  mustNotRepeat: string[];
+  introduces: string[];
+  resolves: string[];
+  arcBeats: ReturnType<typeof parseChapterPlan>["arcBeats"];
 };
 
-function parseSkeletonChapters(raw: string): SkeletonChapter[] {
-  const obj = parseModelJsonObject(raw, "Szenenplot-Gerüst");
+async function parseSkeletonPayload(
+  raw: string,
+  model: AiModelConfig,
+): Promise<{
+  chapters: SkeletonChapter[];
+  centralArcs: RomanSzenenplotCentralArc[];
+}> {
+  const obj = await parseModelJsonObjectWithRepair({
+    raw,
+    model,
+    schemaHint: SZENENPLOT_SKELETON_SCHEMA_HINT,
+    errorLabel: "Szenenplot-Gerüst",
+    timeoutMs: AI_LONG_PROSE_TIMEOUT_MS,
+    maxTokens: SKELETON_MAX_TOKENS,
+  });
+  const centralArcs = parseCentralArcs(
+    obj.centralArcs ?? obj.central_arcs ?? obj.arcs,
+  );
   const list = Array.isArray(obj.chapters) ? obj.chapters : [];
   const out: SkeletonChapter[] = [];
   for (const item of list.slice(0, MAX_CHAPTERS)) {
@@ -207,14 +238,16 @@ function parseSkeletonChapters(raw: string): SkeletonChapter[] {
       .trim()
       .slice(0, 400);
     if (kernsatz.length < 8 && title.length < 2) continue;
+    const plan = parseChapterPlan(c);
     out.push({
       number: Math.min(40, Math.round(number)),
       title: title || `Kapitel ${Math.round(number)}`,
       kernsatz: kernsatz || "Kapitel-Funktion klären.",
+      ...plan,
     });
   }
   out.sort((a, b) => a.number - b.number);
-  return out;
+  return { chapters: out, centralArcs };
 }
 
 function renumberSceneIds(
@@ -234,7 +267,7 @@ function renumberSceneIds(
 }
 
 /**
- * Co-Autor: structured Szenenplot in two passes (skeleton → scene batches).
+ * Entwicklungslektor: structured Szenenplot in two passes (skeleton → scene batches).
  * Seeds + grows knowledge graph (Idee/Recherche/Spec/Ton) so Gerüst has no gaps.
  */
 export async function suggestSzenenplotFromCoAutor(input: {
@@ -263,7 +296,7 @@ export async function suggestSzenenplotFromCoAutor(input: {
   }
 
   const weave = hasFilledSzenenplot(input.existingPlot);
-  const { rolle, model } = await resolveRomanKiRolle("co_autor");
+  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
   const kapitelZiel = suggestedChapterCount(input.editorial.zielWortzahlRoman);
   const rechercheDossier = input.editorial.rechercheDossier ?? "";
   const tonalitaet = (input.tonalitaet ?? "").trim();
@@ -315,9 +348,14 @@ ${weave ? input.existingPlot.trim().slice(0, CLIP.szenenplot) : "(leer — neu a
 
 ${weaveBlock}
 
-Auftrag Pass 1 — nur Kapitelgerüst (Titel + Kernsatz), KEINE Szenen:
+Auftrag Pass 1 — Kapitelgerüst MIT Prop-/Event-Lebenszyklus UND Spannungsbögen, KEINE Szenen:
 - Ca. ${kapitelZiel} Kapitel (mind. ${Math.max(4, kapitelZiel - 2)}, max. ${Math.min(MAX_CHAPTERS, kapitelZiel + 2)}).
 - Chronologisch, Exposé-Bogen abdecken.
+- centralArcs (1–3, PFLICHT): zentrale Konflikte/Beziehungen (z. B. Vater–Sohn, Rivalität, Geheimnis) mit setupChapter / peakChapter / payoffChapter und parties.
+- Pro Kapitel: props, events, openThreads, mustNotRepeat, introduces, resolves, arcBeats.
+- arcBeats: für jeden aktiven Arc in diesem Kapitel tension 1–5, mustShow (was sichtbar wird), delta (wie sich der Bogen bewegt). Peak-/Payoff-Kapitel müssen die höchste Spannung bzw. die Auflösung tragen.
+- Jedes zentrale Prop/Event (Verträge, Geräte, Beweise, Schlüsselorte) genau EINMAL in introduces planen — später nur referenzieren.
+- resolves nur bei echtem Abschluss; mustNotRepeat für bereits erledigte Beats in Folgekapiteln setzen.
 - Wissensgraph/Recherche-Fakten und Tonalität in Kapitel-Funktionen spiegeln.
 - Auf Deutsch.
 
@@ -330,11 +368,23 @@ Nur JSON.`,
     timeoutMs: 90_000,
   });
 
-  const skeleton = parseSkeletonChapters(skeletonRaw);
+  const { chapters: skeleton, centralArcs } = await parseSkeletonPayload(
+    skeletonRaw,
+    model,
+  );
   if (skeleton.length < 2) {
     throw new Error(
       "Szenenplot-Gerüst: zu wenige Kapitel. Bitte erneut versuchen.",
     );
+  }
+
+  try {
+    wissensGraph = await growWissensGraphFromSkeleton({
+      previous: wissensGraph,
+      skeleton,
+    });
+  } catch {
+    // Fail-soft: Pass 2 still has seed graph.
   }
 
   // Pass 2: scenes in small batches so JSON stays under output limits.
@@ -345,13 +395,35 @@ Nur JSON.`,
     const batch = skeleton.slice(i, i + SCENES_BATCH_SIZE);
     const batchNums = batch.map((c) => c.number).join(", ");
     const outlineBlock = skeleton
-      .map(
-        (c) =>
-          `- Kap. ${c.number} — ${c.title}: ${c.kernsatz}${
-            batch.some((b) => b.number === c.number) ? " ← DIESES BATCH" : ""
-          }`,
-      )
+      .map((c) => {
+        const planBits = [
+          c.props.length ? `props=${c.props.join(", ")}` : "",
+          c.introduces.length ? `neu=${c.introduces.join(", ")}` : "",
+          c.resolves.length ? `zu=${c.resolves.join(", ")}` : "",
+          c.arcBeats.length
+            ? `arcs=${c.arcBeats
+                .map((b) => `${b.arcId}@T${b.tension}:${b.mustShow}`)
+                .join("; ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("; ");
+        return `- Kap. ${c.number} — ${c.title}: ${c.kernsatz}${
+          planBits ? ` [${planBits}]` : ""
+        }${batch.some((b) => b.number === c.number) ? " ← DIESES BATCH" : ""}`;
+      })
       .join("\n");
+
+    const arcsHint = centralArcs.length
+      ? `# Zentrale Spannungsbögen (beibehalten, in Szenen spiegeln)
+${centralArcs
+  .map(
+    (a) =>
+      `- ${a.id}: ${a.label} | Setup Kap.${a.setupChapter} · Peak Kap.${a.peakChapter} · Payoff Kap.${a.payoffChapter}`,
+  )
+  .join("\n")}
+`
+      : "";
 
     const liveGraphBlock = formatWissensGraphForPrompt(wissensGraph, {
       maxChars: CLIP.sharedContext,
@@ -361,7 +433,7 @@ Nur JSON.`,
       model,
       systemInstruction: systemBase,
       cacheablePrefix: staticPrefix,
-      userText: `${liveGraphBlock ? `${liveGraphBlock}\n` : ""}
+      userText: `${liveGraphBlock ? `${liveGraphBlock}\n` : ""}${arcsHint}
 # Gesamtes Kapitelgerüst (Orientierung)
 ${outlineBlock}
 
@@ -374,10 +446,12 @@ ${
 Schreibe NUR diese Kapitel mit vollständigen Szenen (typisch 2–5 pro Kapitel).
 Jede Szene: dramaturgy (inkl. outcome_value_change), information_flow, continuity.
 scene_id fortlaufend SZ_01… innerhalb des Batches ok (werden später normalisiert).
-Continuity muss Wissensgraph fortschreiben (character_states_after, next_scene_hook).
+Continuity muss Wissensgraph fortschreiben (character_states_after mit Ort/Etage, prop_placements_after, next_scene_hook).
+Gerüst-Plan (props/events/introduces/resolves/arcBeats) aus dem Outline übernehmen und in Szenen umsetzen — keine Doppel-Einführung; Arc-mustShow in dramaturgy/Wertänderung spiegeln.
+KONKRET: Farben, Kennzeichen, Hausnummern, Adressen, Uhrzeiten, Daten, Namen in Summary/schreibPrompt/props festhalten (kanonisch für Wissensgraph/Manuskript).
 Auf Deutsch. Felder kurz (1–2 Sätze).
 
-Schema (nur die Kapitel dieses Batches in chapters[]):
+Schema (nur die Kapitel dieses Batches in chapters[]; centralArcs weglassen):
 ${SZENENPLOT_STRUCTURED_SCHEMA_HINT}
 
 Nur JSON.`,
@@ -419,10 +493,22 @@ Nur JSON.`,
           `Szenenplot Kap. ${sk.number} („${sk.title}“) ohne gültige Szenen. Bitte erneut versuchen.`,
         );
       }
-      const node = {
+      // Pass-1 lifecycle + arcs win; batch may enrich empty fields.
+      const node: RomanSzenenplotChapterNode = {
         number: sk.number,
         title: sk.title,
         kernsatz: sk.kernsatz,
+        props: sk.props.length ? sk.props : found.props,
+        events: sk.events.length ? sk.events : found.events,
+        openThreads: sk.openThreads.length
+          ? sk.openThreads
+          : found.openThreads,
+        mustNotRepeat: sk.mustNotRepeat.length
+          ? sk.mustNotRepeat
+          : found.mustNotRepeat,
+        introduces: sk.introduces.length ? sk.introduces : found.introduces,
+        resolves: sk.resolves.length ? sk.resolves : found.resolves,
+        arcBeats: sk.arcBeats.length ? sk.arcBeats : found.arcBeats,
         scenes: found.scenes,
       };
       filled.push(node);
@@ -444,13 +530,14 @@ Nur JSON.`,
 
   if (filled.length < 2) {
     throw new Error(
-      "Co-Autor lieferte zu wenige Kapitel im Szenenplot. Bitte erneut versuchen.",
+      "Entwicklungslektor lieferte zu wenige Kapitel im Szenenplot. Bitte erneut versuchen.",
     );
   }
 
   const structured: RomanSzenenplotStructured = {
     updatedAt: new Date().toISOString(),
     modelLabel: model.label,
+    centralArcs,
     chapters: renumberSceneIds(filled),
   };
   const markdown = structuredSzenenplotToMarkdown(structured);
@@ -477,7 +564,7 @@ Nur JSON.`,
 }
 
 /**
- * Co-Autor: structured plot as outline result (legacy shape for callers).
+ * Entwicklungslektor: structured plot as outline result (legacy shape for callers).
  */
 export async function outlineSzenenplotFromCoAutor(input: {
   buchTyp: RomanBuchTyp;
@@ -493,7 +580,7 @@ export async function outlineSzenenplotFromCoAutor(input: {
 }): Promise<SzenenplotOutlineResult> {
   const data = await suggestSzenenplotFromCoAutor(input);
   const chapters = parsePlotChapters(data.szenenplot).slice(0, MAX_CHAPTERS);
-  const { rolle } = await resolveRomanKiRolle("co_autor");
+  const { rolle } = await resolveRomanKiRolle("entwicklungslektor");
   return {
     chapters,
     outlineMarkdown: data.szenenplot,
@@ -506,7 +593,7 @@ export async function outlineSzenenplotFromCoAutor(input: {
 }
 
 /**
- * Co-Autor fills one chapter beat sheet — short, complete response.
+ * Entwicklungslektor fills one chapter beat sheet — short, complete response.
  */
 export async function writeSzenenplotChapterBeat(input: {
   coAutorSystem: string;
@@ -517,7 +604,7 @@ export async function writeSzenenplotChapterBeat(input: {
   existingPlot: string;
   weave: boolean;
 }): Promise<SzenenplotChapterBeatResult> {
-  const { model } = await resolveRomanKiRolle("co_autor");
+  const { model } = await resolveRomanKiRolle("entwicklungslektor");
   const chapter = input.chapter;
   const slimContext = input.sharedContext.slice(0, CLIP.sharedContext);
   const index = input.allChapters
@@ -570,7 +657,7 @@ Zusatzauftrag Kapitel-Beats:
 Nur Stichpunkte für EIN Kapitel. ${MARK_KAPITEL_START} … ${MARK_KAPITEL_ENDE}.`,
     userText,
     preferJson: false,
-    maxTokens: 3_500,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
     timeoutMs: 90_000,
   });
 
@@ -583,7 +670,7 @@ Nur Stichpunkte für EIN Kapitel. ${MARK_KAPITEL_START} … ${MARK_KAPITEL_ENDE}
 
   if (body.length < 40) {
     throw new Error(
-      `Co-Autor lieferte kein brauchbares Kapitel ${input.chapter.number}.`,
+      `Entwicklungslektor lieferte kein brauchbares Kapitel ${input.chapter.number}.`,
     );
   }
 
@@ -595,7 +682,7 @@ Nur Stichpunkte für EIN Kapitel. ${MARK_KAPITEL_START} … ${MARK_KAPITEL_ENDE}
 }
 
 /**
- * Entwicklungslektor critiques the Kapitelgerüst.
+ * Entwicklungslektor critiques the Kapitelgerüst / Szenenplot.
  */
 export async function critiqueSzenenplotMitEntwicklungslektor(input: {
   buchTyp: RomanBuchTyp;
@@ -650,6 +737,7 @@ ${input.szenenplot.trim().slice(0, CLIP.szenenplot)}
 Auftrag — knallharte Gegenlese:
 - Logik der Kapitelkette und Szenen (Ursache/Wirkung, Hooks).
 - Dramaturgie: Ziel/Hindernis/Wendepunkt/Wertänderung pro Szene.
+- Spannungsbögen: Sind zentrale Arcs (centralArcs / Arc-Beats im Markdown) gesetzt? Tragen Peak-/Payoff-Kapitel die höchste Spannung bzw. Auflösung? Fehlen Beziehungsbögen aus Exposé/Figuren?
 - Informationsfluss und Kontinuität; Abgleich mit Wissensgraph/Invarianten.
 - Keine doppelten Kapitel-/Beat-Funktionen (z. B. zwei Auflösungskapitel mit demselben Job).
 - Abdeckung des Exposés; keine Füllszenen.
@@ -685,7 +773,7 @@ export async function weaveSzenenplotChapterFromLektorKritik(input: {
     throw new Error("Lektor-Kritik fehlt.");
   }
 
-  const { rolle, model } = await resolveRomanKiRolle("co_autor");
+  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
   const { comment, hasExplicitComment } = resolveAuthorWeaveComment(
     input.authorComment,
   );
@@ -736,7 +824,7 @@ ${buildWeaveSystemAddendum({
 })}`,
     userText,
     preferJson: false,
-    maxTokens: 3_500,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
     timeoutMs: 90_000,
   });
 
@@ -749,7 +837,7 @@ ${buildWeaveSystemAddendum({
 
   if (body.length < 40) {
     throw new Error(
-      `Co-Autor lieferte kein brauchbares Kapitel ${input.chapter.number}.`,
+      `Entwicklungslektor lieferte kein brauchbares Kapitel ${input.chapter.number}.`,
     );
   }
 

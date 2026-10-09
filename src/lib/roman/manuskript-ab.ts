@@ -5,6 +5,7 @@
 
 import { generateText } from "@/lib/ai/provider";
 import type { PlotChapter } from "@/lib/roman/plot-chapters";
+import { resolveRomanAssistModel } from "@/lib/roman/assist-model";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 
 const MAX_KEY_CHAPTERS = 4;
@@ -45,7 +46,8 @@ export async function chooseUnconventionalChapterBeat(input: {
   sharedContext: string;
   needsHint?: string;
 }): Promise<string> {
-  const { rolle, model } = await resolveRomanKiRolle("co_autor");
+  const { rolle } = await resolveRomanKiRolle("co_autor");
+  const model = await resolveRomanAssistModel();
   const kern = input.chapter.body.trim().slice(0, 800) || "(kein Kernsatz)";
   const raw = await generateText({
     model,

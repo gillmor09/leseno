@@ -129,9 +129,37 @@ function blockedContentMessage(reason: string, detail?: string): string {
   return base;
 }
 
+function visibleTextFromParts(parts: GeminiPart[] | undefined): string {
+  return (
+    parts
+      ?.filter((part) => !part.thought)
+      .map((part) => part.text ?? "")
+      .join("")
+      .trim() ?? ""
+  );
+}
+
+function emptyResponseHint(
+  finish: string,
+  thoughts: number | undefined,
+): string {
+  const reason = finish || "unbekannt";
+  if (thoughts && thoughts > 0) {
+    return ` Thinking hat ${thoughts} Tokens verbraucht — sichtbare Ausgabe leer (finishReason: ${reason}).`;
+  }
+  if (reason === "MAX_TOKENS") {
+    return " Token-Limit erreicht, bevor sichtbarer Text kam.";
+  }
+  if (reason === "STOP") {
+    return " Antwort kam leer zurück (oft flüchtiger Flash-/Thinking-Glitch).";
+  }
+  return "";
+}
+
 /**
  * Calls Gemini generateContent and returns concatenated text parts.
  * Optional thinkingLevel + googleSearch from KI-Rollen / callers.
+ * Retries once on empty STOP/MAX_TOKENS (Flash sometimes returns no visible parts).
  */
 export async function generateWithGemini(
   input: GeminiGenerateInput,
@@ -139,31 +167,10 @@ export async function generateWithGemini(
   const apiKey = getGeminiApiKey();
   const url = `${GEMINI_API_BASE}/${encodeURIComponent(input.modelSlug)}:generateContent`;
 
-  const maxOutputTokens = Math.max(
+  const baseMaxOutputTokens = Math.max(
     1_024,
     Math.min(65_536, input.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS),
   );
-
-  const generationConfig: Record<string, unknown> = {
-    maxOutputTokens,
-  };
-
-  // JSON mime type is unreliable with googleSearch tools — parse text instead.
-  if (input.jsonOutput && !input.googleSearch) {
-    generationConfig.responseMimeType = "application/json";
-  }
-
-  const level = (input.thinkingLevel ?? "").trim().toLowerCase();
-  // Gemini rejects OpenAI-only values like "none" / "xhigh".
-  if (
-    level &&
-    (level === "minimal" ||
-      level === "low" ||
-      level === "medium" ||
-      level === "high")
-  ) {
-    generationConfig.thinkingConfig = { thinkingLevel: level };
-  }
 
   const cacheablePrefix = input.cacheablePrefix?.trim() ?? "";
   const systemInstruction = input.systemInstruction?.trim() ?? "";
@@ -178,129 +185,159 @@ export async function generateWithGemini(
     });
   }
 
-  const body: Record<string, unknown> = {
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: input.userText }],
-      },
-    ],
-    generationConfig,
-    safetySettings: [...CREATIVE_WRITING_SAFETY_SETTINGS],
-  };
-
-  if (input.googleSearch) {
-    body.tools = [{ googleSearch: {} }];
-  }
-
-  if (cachedContentName) {
-    body.cachedContent = cachedContentName;
-  } else {
-    if (systemInstruction) {
-      body.systemInstruction = {
-        parts: [{ text: systemInstruction }],
-      };
-    }
-    if (cacheablePrefix) {
-      // Fallback: prepend stable prefix to user (no explicit cache).
-      body.contents = [
-        {
-          role: "user",
-          parts: [{ text: `${cacheablePrefix}\n\n${input.userText}` }],
-        },
-      ];
-    }
-  }
+  const level = (input.thinkingLevel ?? "").trim().toLowerCase();
+  const thinkingOk =
+    level === "minimal" ||
+    level === "low" ||
+    level === "medium" ||
+    level === "high";
 
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify(body),
-      signal: aiFetchSignal(input.timeoutMs),
-    });
+    let lastFinish = "";
+    let lastThoughts: number | undefined;
 
-    const payload = (await response.json()) as GeminiResponse;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const generationConfig: Record<string, unknown> = {
+        // Second try: a bit more room — thinking can eat the first budget.
+        maxOutputTokens: Math.min(
+          65_536,
+          baseMaxOutputTokens + (attempt > 0 ? 2_048 : 0),
+        ),
+      };
 
-    if (!response.ok || payload.error) {
-      throw new Error(
-        payload.error?.message ??
-          `Gemini-Anfrage fehlgeschlagen (${response.status}).`,
-      );
-    }
+      if (input.jsonOutput && !input.googleSearch) {
+        generationConfig.responseMimeType = "application/json";
+      }
 
-    const block = payload.promptFeedback?.blockReason;
-    if (block) {
-      throw new Error(
-        blockedContentMessage(block, payload.promptFeedback?.blockReasonMessage),
-      );
-    }
+      // Retry without thinking when the first pass returned only thought tokens.
+      if (thinkingOk && attempt === 0) {
+        generationConfig.thinkingConfig = { thinkingLevel: level };
+      } else if (thinkingOk && attempt > 0 && level !== "low") {
+        generationConfig.thinkingConfig = { thinkingLevel: "low" };
+      }
 
-    const candidate = payload.candidates?.[0];
-    const finish = candidate?.finishReason ?? "";
-    if (finish === "SAFETY" || finish === "PROHIBITED_CONTENT") {
-      throw new Error(blockedContentMessage(finish));
-    }
+      const body: Record<string, unknown> = {
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: input.userText }],
+          },
+        ],
+        generationConfig,
+        safetySettings: [...CREATIVE_WRITING_SAFETY_SETTINGS],
+      };
 
-    const text =
-      candidate?.content?.parts
-        ?.filter((part) => !part.thought)
-        .map((part) => part.text ?? "")
-        .join("")
-        .trim() ?? "";
+      if (input.googleSearch) {
+        body.tools = [{ googleSearch: {} }];
+      }
 
-    const meta = payload.usageMetadata;
-    if (meta) {
-      recordAiUsage({
-        inputTokens: meta.promptTokenCount ?? 0,
-        outputTokens: meta.candidatesTokenCount ?? 0,
-        reasoningTokens: meta.thoughtsTokenCount,
-        cacheReadTokens: meta.cachedContentTokenCount,
+      if (cachedContentName) {
+        body.cachedContent = cachedContentName;
+      } else {
+        if (systemInstruction) {
+          body.systemInstruction = {
+            parts: [{ text: systemInstruction }],
+          };
+        }
+        if (cacheablePrefix) {
+          body.contents = [
+            {
+              role: "user",
+              parts: [{ text: `${cacheablePrefix}\n\n${input.userText}` }],
+            },
+          ];
+        }
+      }
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify(body),
+        signal: aiFetchSignal(input.timeoutMs),
       });
+
+      const payload = (await response.json()) as GeminiResponse;
+
+      if (!response.ok || payload.error) {
+        throw new Error(
+          payload.error?.message ??
+            `Gemini-Anfrage fehlgeschlagen (${response.status}).`,
+        );
+      }
+
+      const block = payload.promptFeedback?.blockReason;
+      if (block) {
+        throw new Error(
+          blockedContentMessage(
+            block,
+            payload.promptFeedback?.blockReasonMessage,
+          ),
+        );
+      }
+
+      const candidate = payload.candidates?.[0];
+      const finish = candidate?.finishReason ?? "";
+      lastFinish = finish;
+      if (finish === "SAFETY" || finish === "PROHIBITED_CONTENT") {
+        throw new Error(blockedContentMessage(finish));
+      }
+
+      const text = visibleTextFromParts(candidate?.content?.parts);
+
+      const meta = payload.usageMetadata;
+      lastThoughts = meta?.thoughtsTokenCount;
+      if (meta) {
+        recordAiUsage({
+          inputTokens: meta.promptTokenCount ?? 0,
+          outputTokens: meta.candidatesTokenCount ?? 0,
+          reasoningTokens: meta.thoughtsTokenCount,
+          cacheReadTokens: meta.cachedContentTokenCount,
+        });
+      }
+
+      if (text) {
+        const gm = candidate?.groundingMetadata;
+        const groundingSources =
+          gm?.groundingChunks
+            ?.map((c) => ({
+              title: (c.web?.title ?? "").trim(),
+              uri: (c.web?.uri ?? "").trim(),
+            }))
+            .filter((s) => s.uri.length > 0) ?? undefined;
+        const searchSuggestionsHtml =
+          gm?.searchEntryPoint?.renderedContent?.trim() || undefined;
+        const webSearchQueries = gm?.webSearchQueries?.filter(Boolean);
+
+        return {
+          text,
+          modelSlug: input.modelSlug,
+          groundingSources:
+            groundingSources && groundingSources.length > 0
+              ? groundingSources
+              : undefined,
+          searchSuggestionsHtml,
+          webSearchQueries:
+            webSearchQueries && webSearchQueries.length > 0
+              ? webSearchQueries
+              : undefined,
+        };
+      }
+
+      // Empty visible text — retry once (common Flash STOP / thinking glitch).
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 400));
+        continue;
+      }
     }
 
-    if (!text) {
-      const thoughts = meta?.thoughtsTokenCount;
-      const reason = finish || "unbekannt";
-      const hint =
-        reason === "MAX_TOKENS" && thoughts && thoughts > 0
-          ? ` Thinking hat ${thoughts} Tokens verbraucht — Ausgabe leer.`
-          : reason === "MAX_TOKENS"
-            ? " Token-Limit erreicht, bevor sichtbarer Text kam."
-            : "";
-      throw new Error(
-        `Gemini hat keinen Text zurückgegeben (finishReason: ${reason}).${hint}`,
-      );
-    }
-
-    const gm = candidate?.groundingMetadata;
-    const groundingSources =
-      gm?.groundingChunks
-        ?.map((c) => ({
-          title: (c.web?.title ?? "").trim(),
-          uri: (c.web?.uri ?? "").trim(),
-        }))
-        .filter((s) => s.uri.length > 0) ?? undefined;
-    const searchSuggestionsHtml =
-      gm?.searchEntryPoint?.renderedContent?.trim() || undefined;
-    const webSearchQueries = gm?.webSearchQueries?.filter(Boolean);
-
-    return {
-      text,
-      modelSlug: input.modelSlug,
-      groundingSources:
-        groundingSources && groundingSources.length > 0
-          ? groundingSources
-          : undefined,
-      searchSuggestionsHtml,
-      webSearchQueries:
-        webSearchQueries && webSearchQueries.length > 0
-          ? webSearchQueries
-          : undefined,
-    };
+    throw new Error(
+      `Gemini hat keinen Text zurückgegeben (finishReason: ${
+        lastFinish || "unbekannt"
+      }).${emptyResponseHint(lastFinish, lastThoughts)}`,
+    );
   } catch (error) {
     throw mapAiFetchError(error, "Gemini", input.timeoutMs);
   }

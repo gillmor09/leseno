@@ -117,21 +117,94 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
     updatedAt: null,
   },
   {
-    taskKey: "szenenplot.draft",
-    label: "Szenenplot · Entwurf",
-    stage: "szenenplot",
+    taskKey: "grobgeruest.draft",
+    label: "Grobgerüst · Entwurf",
+    stage: "grobgeruest",
     kind: "draft",
-    rolleKey: "co_autor",
+    rolleKey: "entwicklungslektor",
     sortOrder: 100,
     updatedAt: null,
   },
   {
-    taskKey: "szenenplot.critique",
-    label: "Szenenplot · Gegenlese",
-    stage: "szenenplot",
+    taskKey: "grobgeruest.critique",
+    label: "Grobgerüst · Gegenlese",
+    stage: "grobgeruest",
     kind: "critique",
     rolleKey: "entwicklungslektor",
+    sortOrder: 105,
+    updatedAt: null,
+  },
+  {
+    taskKey: "feingeruest.draft",
+    label: "Feingerüst · Entwurf",
+    stage: "feingeruest",
+    kind: "draft",
+    rolleKey: "entwicklungslektor",
     sortOrder: 110,
+    updatedAt: null,
+  },
+  {
+    taskKey: "feingeruest.critique",
+    label: "Feingerüst · Gegenlese",
+    stage: "feingeruest",
+    kind: "critique",
+    rolleKey: "entwicklungslektor",
+    sortOrder: 115,
+    updatedAt: null,
+  },
+  {
+    taskKey: "grobplot.draft",
+    label: "Grobplot · Entwurf",
+    stage: "grobplot",
+    kind: "draft",
+    rolleKey: "entwicklungslektor",
+    sortOrder: 120,
+    updatedAt: null,
+  },
+  {
+    taskKey: "grobplot.critique",
+    label: "Grobplot · Gegenlese",
+    stage: "grobplot",
+    kind: "critique",
+    rolleKey: "entwicklungslektor",
+    sortOrder: 125,
+    updatedAt: null,
+  },
+  {
+    taskKey: "feinplot.draft",
+    label: "Feinplot · Entwurf",
+    stage: "feinplot",
+    kind: "draft",
+    rolleKey: "entwicklungslektor",
+    sortOrder: 130,
+    updatedAt: null,
+  },
+  {
+    taskKey: "feinplot.critique",
+    label: "Feinplot · Gegenlese",
+    stage: "feinplot",
+    kind: "critique",
+    rolleKey: "entwicklungslektor",
+    sortOrder: 135,
+    updatedAt: null,
+  },
+  // Legacy aliases (history / old DB rows)
+  {
+    taskKey: "kapitelgeruest.draft",
+    label: "Kapitelgerüst · Entwurf (Legacy)",
+    stage: "feingeruest",
+    kind: "draft",
+    rolleKey: "entwicklungslektor",
+    sortOrder: 136,
+    updatedAt: null,
+  },
+  {
+    taskKey: "szenenplot.draft",
+    label: "Szenenplot · Entwurf (Legacy)",
+    stage: "feinplot",
+    kind: "draft",
+    rolleKey: "entwicklungslektor",
+    sortOrder: 137,
     updatedAt: null,
   },
   {
@@ -140,7 +213,7 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
     stage: "manuskript",
     kind: "draft",
     rolleKey: "co_autor",
-    sortOrder: 120,
+    sortOrder: 140,
     updatedAt: null,
   },
   {
@@ -149,7 +222,16 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
     stage: "manuskript",
     kind: "critique",
     rolleKey: "entwicklungslektor",
-    sortOrder: 130,
+    sortOrder: 150,
+    updatedAt: null,
+  },
+  {
+    taskKey: "manuskript.verbessern",
+    label: "Manuskript · Verbessern",
+    stage: "manuskript",
+    kind: "draft",
+    rolleKey: "autor",
+    sortOrder: 155,
     updatedAt: null,
   },
 ];
@@ -279,6 +361,8 @@ export async function savePipelineAufgabe(
 
 /**
  * Resolve task → role + wired model.
+ * Manuskript draft keeps expensive co_autor (prose). Gerüst/Szenenplot use
+ * Entwicklungslektor (analytical Flash). allowProseModel only for MS draft.
  */
 export async function resolvePipelineTask(taskKey: string): Promise<{
   aufgabe: RomanPipelineAufgabe;
@@ -292,7 +376,13 @@ export async function resolvePipelineTask(taskKey: string): Promise<{
   if (!aufgabe) {
     throw new Error(`Unbekannte Pipeline-Aufgabe „${taskKey}“.`);
   }
-  const { rolle, model } = await resolveRomanKiRolle(aufgabe.rolleKey);
+  const allowProseModel =
+    (aufgabe.rolleKey === "co_autor" || aufgabe.rolleKey === "autor") &&
+    aufgabe.stage === "manuskript" &&
+    aufgabe.kind === "draft";
+  const { rolle, model } = await resolveRomanKiRolle(aufgabe.rolleKey, {
+    allowProseModel,
+  });
   return { aufgabe, rolle, model };
 }
 
@@ -349,6 +439,7 @@ export function groupAufgabenByStage(
     "charaktere",
     "welt",
     "expose",
+    "kapitelgeruest",
     "szenenplot",
     "manuskript",
     "pipeline",

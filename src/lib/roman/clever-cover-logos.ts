@@ -3,7 +3,11 @@
  * No frames, no backgrounds, no extra type — only the PNG pixels (with alpha).
  */
 
-import { createCanvas, loadImage } from "@napi-rs/canvas";
+import {
+  createCanvas,
+  loadImage,
+  type SKRSContext2D,
+} from "@napi-rs/canvas";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -26,6 +30,23 @@ function readPublicPng(fileName: string): Buffer {
   return readFileSync(/*turbopackIgnore: true*/ path.join(PUBLIC_DIR, fileName));
 }
 
+/** Draw leseno mark bottom-right (scaled ≤22% of cover width). */
+export async function drawLesenoMarkBottomRight(
+  ctx: SKRSContext2D,
+  width: number,
+  height: number,
+): Promise<void> {
+  const mark = await loadImage(readPublicPng(LESENO_MARK_FILE));
+  const markW = Math.min(mark.width, Math.round(width * 0.22));
+  const markH = Math.round((markW / mark.width) * mark.height);
+  // Extra inset from the right edge so the mark breathes on shelf thumbnails.
+  const marginRight = Math.max(40, Math.round(width * 0.065));
+  const marginBottom = Math.max(28, Math.round(height * 0.04));
+  const markX = width - marginRight - markW;
+  const markY = height - marginBottom - markH;
+  ctx.drawImage(mark, markX, markY, markW, markH);
+}
+
 /**
  * Draw series PNG top-center + leseno PNG bottom-right at native pixel size (1:1).
  * Transparent PNG alpha shows the cover art underneath — no fill, no frame.
@@ -45,7 +66,6 @@ export async function overlayCleverCoverLogos(input: {
   ctx.drawImage(cover, 0, 0, width, height);
 
   const badge = await loadImage(readPublicPng(CLEVER_SERIES_BADGE_FILE));
-  const mark = await loadImage(readPublicPng(LESENO_MARK_FILE));
 
   // 1:1 native pixels — never stretch; only shrink if cover is smaller than asset.
   const badgeW = Math.min(badge.width, Math.round(width * 0.42));
@@ -54,12 +74,7 @@ export async function overlayCleverCoverLogos(input: {
   const badgeY = Math.max(24, Math.round(height * 0.035));
   ctx.drawImage(badge, badgeX, badgeY, badgeW, badgeH);
 
-  const markW = Math.min(mark.width, Math.round(width * 0.22));
-  const markH = Math.round((markW / mark.width) * mark.height);
-  const markMargin = Math.max(24, Math.round(width * 0.035));
-  const markX = width - markMargin - markW;
-  const markY = height - markMargin - markH;
-  ctx.drawImage(mark, markX, markY, markW, markH);
+  await drawLesenoMarkBottomRight(ctx, width, height);
 
   const out = canvas.toBuffer("image/jpeg", 90);
   return `data:image/jpeg;base64,${out.toString("base64")}`;

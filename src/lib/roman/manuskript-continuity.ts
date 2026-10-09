@@ -5,14 +5,15 @@
  */
 
 import { generateText } from "@/lib/ai/provider";
+import { resolveRomanAssistModel } from "@/lib/roman/assist-model";
 import {
+  formatPropLifecycleMandates,
   formatStoryStateForPrompt,
   formatWissensGraphForPrompt,
   parseRomanStoryState,
   type RomanStoryState,
   type RomanWissensGraph,
 } from "@/lib/roman/editorial";
-import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import {
   formatChapterHeading,
   type PlotChapter,
@@ -20,6 +21,11 @@ import {
 
 /** Tail of previous prose for transition (not full book). */
 export const CONTINUITY_PREV_TAIL_CHARS = 3_500;
+
+/**
+ * Shorter seam when Szenenplot schreibPrompts are frozen — contracts carry plot.
+ */
+export const CONTINUITY_PREV_TAIL_CHARS_FROZEN = 1_000;
 
 /** Max assembled buffer passed to Co-Autor. */
 export const CONTINUITY_BUFFER_MAX_CHARS = 4_500;
@@ -46,9 +52,14 @@ export function buildDeterministicChapterContextBuffer(input: {
   const parts: string[] = [];
   const graphBlock = formatWissensGraphForPrompt(input.wissensGraph, {
     throughChapter: input.chapter.number,
-    maxChars: 2_200,
+    maxChars: 2_000,
   });
   if (graphBlock) parts.push(graphBlock);
+  const lifecycle = formatPropLifecycleMandates(
+    input.wissensGraph,
+    input.chapter.number,
+  );
+  if (lifecycle) parts.push(lifecycle);
   const stateBlock = formatStoryStateForPrompt(input.storyState);
   if (stateBlock) parts.push(stateBlock);
   parts.push(
@@ -68,7 +79,7 @@ export function buildDeterministicChapterContextBuffer(input: {
     );
   }
   parts.push(
-    "## Continuity-Regeln\n- Wissensgraph und harte Fakten nicht vergessen oder widersprechen.\n- Keine Figuren/Orte/Gegenstände „neu erfinden“, die Graph/State widersprechen.",
+    "## Continuity-Regeln\n- Wissensgraph und harte Fakten nicht vergessen oder widersprechen.\n- Props/Events mit status=resolved nicht neu erfinden.\n- Keine Figuren/Orte/Gegenstände „neu erfinden“, die Graph/State widersprechen.",
   );
   return parts.join("\n\n").slice(0, CONTINUITY_BUFFER_MAX_CHARS);
 }
@@ -87,20 +98,27 @@ export async function assembleManuskriptChapterContext(input: {
 }): Promise<{ buffer: string; modelLabel: string | null }> {
   const fallback = buildDeterministicChapterContextBuffer(input);
   try {
-    const { model } = await resolveRomanKiRolle("bewerter");
+    const model = await resolveRomanAssistModel();
     const graphBlock = formatWissensGraphForPrompt(input.wissensGraph, {
       throughChapter: input.chapter.number,
-      maxChars: 2_500,
+      maxChars: 2_200,
     });
+    const lifecycle = formatPropLifecycleMandates(
+      input.wissensGraph,
+      input.chapter.number,
+    );
     const raw = (
       await generateText({
         model,
         systemInstruction: `Du bereitest den Schreib-Kontext für EIN Manuskript-Kapitel vor.
 Antworte auf Deutsch als knappes Markdown (keine Code-Fences, kein JSON).
-Nur das, was der Co-Autor JETZT braucht: Wissensgraph-Ausschnitt, Continuity, Fokus, Übergang, Verbote.
+Nur das, was der Co-Autor JETZT braucht: Wissensgraph-Ausschnitt, Prop-Lebenszyklus, Continuity, Fokus, Übergang, Verbote.
 Maximal ~350 Wörter. Keine Prosa schreiben.`,
         userText: `# Wissensgraph (bis dieses Kapitel)
 ${graphBlock || "(noch leer)"}
+
+# Prop-/Event-Lebenszyklus
+${lifecycle || "(keine)"}
 
 # Bisheriger Continuity-State
 ${formatStoryStateForPrompt(input.storyState) || "(noch leer — Kapitelanfang)"}
@@ -120,6 +138,7 @@ ${input.previousTail.trim().slice(-CONTINUITY_PREV_TAIL_CHARS) || "(Kapitel 1)"}
 
 Erstelle den Context-Buffer mit Überschriften:
 ## Wissensgraph
+## Prop-/Event-Lebenszyklus
 ## Continuity
 ## Fokus dieses Kapitels
 ## Übergang
@@ -157,7 +176,7 @@ export async function extractManuskriptStoryState(input: {
   chapterBody: string;
 }): Promise<RomanStoryState | null> {
   try {
-    const { model } = await resolveRomanKiRolle("bewerter");
+    const model = await resolveRomanAssistModel();
     const prevBlock = formatStoryStateForPrompt(input.previous) || "(leer)";
     const raw = (
       await generateText({

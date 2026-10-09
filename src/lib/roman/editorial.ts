@@ -11,7 +11,11 @@ import {
 } from "@/lib/roman/reifegrad-model";
 import { parsePlotChapters } from "@/lib/roman/plot-chapters";
 import {
+  deriveKapitelGeruestFromSzenenplot,
+  parseRomanKapitelGeruestStructured,
   parseRomanSzenenplotStructured,
+  structuredKapitelGeruestToMarkdown,
+  type RomanKapitelGeruestStructured,
   type RomanSzenenplotStructured,
 } from "@/lib/roman/szenenplot-structured";
 import {
@@ -20,6 +24,13 @@ import {
 } from "@/lib/roman/clever-thema-stance";
 
 export type { CleverThemaStance } from "@/lib/roman/clever-thema-stance";
+
+/**
+ * Max stored length for `editorial.manuskriptText` / original snapshot.
+ * ~90–120k DE words ≈ 0.6–0.9 M chars; 500k silently truncated mid-novel
+ * and Reifegrad re-saves then wiped the last chapters.
+ */
+export const ROMAN_MANUSKRIPT_TEXT_MAX_CHARS = 2_000_000;
 
 /** Clever erzählt: per-fact Faktenchecker result. */
 export type CleverFaktCheckStatus =
@@ -123,7 +134,14 @@ export type RomanPipelineFertig = Partial<
     | "recherche"
     | "spec"
     | "outline"
+    | "grobgeruest"
+    | "feingeruest"
+    | "szenenplot"
+    | "grobplot"
+    | "feinplot"
     | "schreiben"
+    /** Belletristik: polished prose (Verbessern / Claude Batch) — distinct from Manuskript draft. */
+    | "roman"
     | "cover"
     | "export",
     boolean
@@ -193,27 +211,22 @@ export type RomanAenderungsPrompt = {
   /** Priority for UI + apply filtering (nice_to_have = optional polish). */
   wichtigkeit: RomanKritikWichtigkeit;
   /**
-   * Author must choose before Einarbeiten (fork / open question).
-   * When true, UI shows a text field; decision is injected into the patch brief.
+   * Legacy: author fork before Einarbeiten. Always off — Analyse/Feedback
+   * must pick one path in `anweisung` (no UI gate). Kept for stored JSON.
    */
   entscheidungNoetig?: boolean;
-  /** Short question shown above the author text field. */
+  /** Legacy question field; unused while author decisions are disabled. */
   entscheidungFrage?: string;
 };
 
-/** Heuristic + explicit flag: prompt needs a human decision before apply. */
+/**
+ * Author decision gate is disabled for all Analyse / Einarbeiten flows.
+ * Lektor or Testleser must choose the patch path in `anweisung` themselves.
+ */
 export function aenderungsPromptNeedsAuthorDecision(
-  prompt: RomanAenderungsPrompt,
+  _prompt: RomanAenderungsPrompt,
 ): boolean {
-  if (prompt.entscheidungNoetig) return true;
-  if ((prompt.entscheidungFrage ?? "").trim().length >= 8) return true;
-  const blob = `${prompt.titel}\n${prompt.anweisung}`;
-  return (
-    /\bentscheide\b/i.test(blob) ||
-    /\bentscheidung\b/i.test(blob) ||
-    /\bentweder\b[\s\S]{0,80}\boder\b/i.test(blob) ||
-    /\bODER\b/.test(blob)
-  );
+  return false;
 }
 
 /** Actionable prompts that still need an author decision field. */
@@ -514,15 +527,25 @@ export type RomanEditorial = {
   /**
    * Continuous manuscript prose (Manuskript tab).
    * Distinct from `manuskriptRaw` on roman_kontext (Szenenplot / beat sheet).
+   * Cap must fit a full ~90–120k-word DE novel (~0.7–1 MB); 500k truncated
+   * mid-book and Reifegrad re-saves wiped Kap. 19–22.
    */
   manuskriptText: string;
   /**
-   * Snapshot of `manuskriptText` taken before the first „Vereinfachen“ pass.
-   * Empty until Vereinfachen runs; restore copies this back to `manuskriptText`.
+   * Snapshot of `manuskriptText` taken before the first legacy Vereinfachen
+   * pass. Empty until then; restore copies this back.
+   * Verbessern (Stil-Pass) writes {@link romanText} instead and leaves the
+   * Manuskript draft untouched.
    */
   manuskriptOriginalText: string;
   /** ISO timestamp when {@link manuskriptOriginalText} was saved; null if none. */
   manuskriptOriginalSavedAt: string | null;
+  /**
+   * Polished book prose (Roman tab) — filled chapter-wise by Autor Verbessern
+   * (Claude Batch). Manuskript draft stays in {@link manuskriptText} for
+   * fallback / compare / export choice.
+   */
+  romanText: string;
   /**
    * Amazon / Klappentext: back-cover style product description (Export tab).
    */
@@ -632,8 +655,14 @@ export type RomanEditorial = {
    */
   wissensGraph: RomanWissensGraph | null;
   /**
-   * Structured Kapitelgerüst scenes (dramaturgy / info flow / continuity).
-   * Cleared with Szenenplot. Markdown mirror stays in `manuskriptRaw`.
+   * Pass-1 Kapitelgerüst (chapters + arcs + lifecycle, no scenes).
+   * Markdown mirror in `kapitelGeruestRaw`.
+   */
+  kapitelGeruestStructured: RomanKapitelGeruestStructured | null;
+  /** Markdown mirror for Kapitelgerüst tab. */
+  kapitelGeruestRaw: string;
+  /**
+   * Pass-2 Szenenplot (scenes + schreibPrompt). Markdown mirror in `manuskriptRaw`.
    * See `src/lib/roman/szenenplot-structured.ts`.
    */
   szenenplotStructured: RomanSzenenplotStructured | null;
@@ -645,7 +674,7 @@ export type RomanEditorial = {
   reifegrade?: RomanReifegrade;
   /**
    * Manual author „Fertig“ toggle per pipeline tab (soft-green tab chrome).
-   * Keys: typ | idee | spec | outline | schreiben | export
+   * Keys: typ | idee | spec | outline | szenenplot | schreiben | export
    * (`cover` kept for legacy stored flags; UI lives under Export).
    */
   pipelineFertig: RomanPipelineFertig;
@@ -741,6 +770,7 @@ export function emptyRomanEditorial(): RomanEditorial {
     manuskriptText: "",
     manuskriptOriginalText: "",
     manuskriptOriginalSavedAt: null,
+    romanText: "",
     klappentext: "",
     einzeiler: "",
     amazonKeywords: [],
@@ -774,6 +804,8 @@ export function emptyRomanEditorial(): RomanEditorial {
     storyState: null,
     canon: null,
     wissensGraph: null,
+    kapitelGeruestStructured: null,
+    kapitelGeruestRaw: "",
     szenenplotStructured: null,
     reifegrade: {},
     pipelineFertig: {},
@@ -827,8 +859,12 @@ export const PIPELINE_FERTIG_STEPS_FULL = [
   "idee",
   "recherche",
   "spec",
-  "outline",
+  "grobgeruest",
+  "feingeruest",
+  "grobplot",
+  "feinplot",
   "schreiben",
+  "roman",
   "export",
 ] as const satisfies ReadonlyArray<keyof RomanPipelineFertig>;
 
@@ -868,7 +904,13 @@ function parsePipelineFertig(raw: unknown): RomanPipelineFertig {
     "recherche",
     "spec",
     "outline",
+    "grobgeruest",
+    "feingeruest",
+    "szenenplot",
+    "grobplot",
+    "feinplot",
     "schreiben",
+    "roman",
     "cover",
     "export",
   ]);
@@ -2115,11 +2157,10 @@ export function parseRomanLeserFeedback(
   };
 }
 
-/** Stages that support Leser-Feedback collect + apply. */
+/** Stages that support Leser-Feedback (Idee/Spec/Manuskript — not Gerüst/Plot). */
 export const LESER_FEEDBACK_STAGES = [
   "idee",
   "expose",
-  "szenenplot",
   "manuskript",
 ] as const;
 
@@ -2191,9 +2232,6 @@ export function parseAenderungsPrompts(
     const titel = String(o.titel ?? o.title ?? o.name ?? "")
       .trim()
       .slice(0, 120) || anweisung.slice(0, 60);
-    const scopeRaw = String(o.scope ?? o.umfang ?? "")
-      .trim()
-      .toLowerCase();
     const kapitelFromArr = Array.isArray(o.kapitel)
       ? o.kapitel
           .map((n) => Number(n))
@@ -2206,39 +2244,21 @@ export function parseAenderungsPrompts(
     const kapitel = [
       ...new Set([...kapitelFromArr, ...kapitelFromText]),
     ].sort((a, b) => a - b);
-    const bookWideHint =
-      scopeRaw === "buchweit" ||
-      scopeRaw === "global" ||
-      LESER_FEEDBACK_BOOK_WIDE_RE.test(`${scopeRaw} ${titel} ${anweisung}`);
-    const scope: "lokal" | "buchweit" =
-      bookWideHint || kapitel.length === 0 ? "buchweit" : "lokal";
+    // Concrete chapter numbers always win over a "buchweit" label / wording.
+    // Empty kapitel → buchweit (whole artifact / all chapters when resolve expands).
+    const resolvedScope: "lokal" | "buchweit" =
+      kapitel.length > 0 ? "lokal" : "buchweit";
     const wichtigkeit = asKritikWichtigkeit(
       o.wichtigkeit ?? o.severity ?? o.priority ?? o.prio,
     );
-    const entscheidungFrage = String(
-      o.entscheidungFrage ?? o.entscheidung_frage ?? o.frage ?? "",
-    )
-      .trim()
-      .slice(0, 800);
-    const entscheidungFlag = o.entscheidungNoetig ?? o.entscheidung_noetig;
-    const entscheidungNoetig =
-      entscheidungFlag === true ||
-      entscheidungFlag === "true" ||
-      entscheidungFlag === 1 ||
-      entscheidungFrage.length >= 8;
+    // Never persist author-decision forks — the apply actor needs one clear path.
     const prompt: RomanAenderungsPrompt = {
       titel,
-      scope,
-      kapitel: scope === "buchweit" ? [] : kapitel,
+      scope: resolvedScope,
+      kapitel: resolvedScope === "buchweit" ? [] : kapitel,
       anweisung: anweisung.slice(0, 4_000),
       wichtigkeit,
     };
-    if (entscheidungNoetig || aenderungsPromptNeedsAuthorDecision(prompt)) {
-      prompt.entscheidungNoetig = true;
-      prompt.entscheidungFrage =
-        entscheidungFrage ||
-        "Welche Variante soll verbindlich gelten? (kurz und klar)";
-    }
     out.push(prompt);
     if (out.length >= 3) break;
   }
@@ -2252,15 +2272,43 @@ function vorschlaegeToAenderungsPrompts(
     const chapters = extractChapterNumbersFromStelleText(
       `${v.stelle}\n${v.text}`,
     );
-    const bookWide =
-      LESER_FEEDBACK_BOOK_WIDE_RE.test(`${v.stelle}\n${v.text}`) ||
-      chapters.length === 0;
+    // Concrete chapters win; without numbers → buchweit (whole artifact).
+    if (chapters.length > 0) {
+      return {
+        titel: v.stelle.trim() || `Auftrag ${i + 1}`,
+        scope: "lokal" as const,
+        kapitel: chapters,
+        anweisung: v.text,
+        wichtigkeit: "wichtig" as const,
+      };
+    }
     return {
       titel: v.stelle.trim() || `Auftrag ${i + 1}`,
-      scope: bookWide ? ("buchweit" as const) : ("lokal" as const),
-      kapitel: bookWide ? [] : chapters,
+      scope: "buchweit" as const,
+      kapitel: [],
       anweisung: v.text,
       wichtigkeit: "wichtig" as const,
+    };
+  });
+}
+
+/**
+ * When analyze marks a prompt buchweit but kritik/feedback names Kap. N,
+ * demote to lokal with those chapters — avoids rewriting the whole book for
+ * a Prop that only appears in a few places.
+ */
+export function narrowAenderungsPromptsWithKritikChapters(
+  prompts: RomanAenderungsPrompt[],
+  kritikOrFeedback: string,
+): RomanAenderungsPrompt[] {
+  const fromKritik = extractChapterNumbersFromStelleText(kritikOrFeedback ?? "");
+  if (fromKritik.length === 0) return prompts;
+  return prompts.map((p) => {
+    if (p.kapitel.length > 0) return p;
+    return {
+      ...p,
+      scope: "lokal" as const,
+      kapitel: fromKritik,
     };
   });
 }
@@ -2304,6 +2352,21 @@ function looksLikeReifegradImprovePlan(raw: unknown): boolean {
 
 /** Reserved dimension key for stage-wide Verbessern plans in {@link RomanEditorial.stageImprove}. */
 export const STAGE_VERBESSERN_DIMENSION = "verbessern";
+
+/**
+ * Stage-Verbessern Analyse-Fokus (max. 1–2 Läufe: erst Logik, dann Craft).
+ * Safe to import from client components.
+ */
+export type StageVerbessernFocus = "gesamt" | "logik" | "craft";
+
+export const STAGE_VERBESSERN_FOCUS_LABELS: Record<
+  StageVerbessernFocus,
+  string
+> = {
+  gesamt: "Gesamt",
+  logik: "Nur Logik",
+  craft: "Nur Craft",
+};
 
 /** Stored Verbessern plan for one pipeline stage (or null). */
 export function stageImproveForStage(
@@ -2524,6 +2587,8 @@ export function formatReifegradImprovePatchBrief(
             p.kapitel.includes(chapterNumber),
         )
       : prompts.filter((p) => p.scope === "lokal");
+  const structureStage =
+    plan.stage === "kapitelgeruest" || plan.stage === "szenenplot";
 
   function decisionFor(prompt: RomanAenderungsPrompt): string {
     const idx = plan.aenderungsPrompts.indexOf(prompt);
@@ -2554,8 +2619,13 @@ export function formatReifegradImprovePatchBrief(
 
   const lines = [
     `ARBEITSAUFTRAG — Reifegrad-Dimension „${plan.dimensionLabel}“:`,
-    "Setze die folgenden Änderungsanweisungen SICHTBAR um. Nur diese Dimension.",
+    structureStage
+      ? "Setze die Anweisungen an den Structured-Feldern um — nur wo der Brief es verlangt. Keine Prosa fertigschreiben, kein Kapitel „abrunden“."
+      : "Setze die folgenden Änderungsanweisungen SICHTBAR und ENTSCHIEDEN um. Nur diese Dimension.",
     "Keine Meta-Kommentare. Handlung behalten. Kein Nice-to-have / Kosmetik.",
+    structureStage
+      ? "Arrays/Felder nur leeren, wenn der Auftrag explizit streicht. Sonst bestehende Lifecycle-/Arc-Daten behalten."
+      : "Wenn ein Auftrag Duplikate/Doppelungen/Wiederholungen nennt: die überzählige Passage komplett entfernen — nicht nur umformulieren. Kapitel-Mindestlänge halten: wo nötig woanders erweitern, nicht die Doppelung zurückholen.",
     chapterNumber != null
       ? `Du bearbeitest NUR Kapitel ${chapterNumber}.`
       : "",
@@ -2577,8 +2647,51 @@ export function formatReifegradImprovePatchBrief(
       pushPrompt(lines, i, p);
     }
   }
-  lines.push("Mindestens eine klar erkennbare Änderung laut den Anweisungen.");
+  lines.push(
+    structureStage
+      ? "Keine erzwungene kosmetische Änderung: wenn ein Feld schon passt, lassen. Lieber unverändert als erfundene Fixes."
+      : "Mindestens eine klar erkennbare Änderung laut den Anweisungen — Prüfer muss den Unterschied sofort sehen.",
+  );
   return lines.filter(Boolean).join("\n").slice(0, 8_000);
+}
+
+/**
+ * Titles/anweisungen from recently applied improve plans — for Testleser
+ * so they do not re-raise the same point 1:1 after Einarbeiten.
+ */
+export function formatRecentlyAppliedImproveHints(
+  editorial: RomanEditorial | null | undefined,
+  stage: string,
+  maxItems = 8,
+): string {
+  if (!editorial) return "";
+  const items: string[] = [];
+  const stagePlans = Object.values(
+    reifegradImprovePlansForStage(editorial.reifegradImprove, stage) ?? {},
+  );
+  for (const p of stagePlans) {
+    if (!p?.appliedAt) continue;
+    for (const ap of p.aenderungsPrompts ?? []) {
+      const t = ap.titel?.trim();
+      if (t) items.push(`- [${p.dimensionLabel}] ${t}`);
+    }
+  }
+  const stagePlan = stageImproveForStage(editorial, stage);
+  if (stagePlan?.appliedAt) {
+    for (const ap of stagePlan.aenderungsPrompts ?? []) {
+      const t = ap.titel?.trim();
+      if (t) items.push(`- [Verbessern] ${t}`);
+    }
+  }
+  const unique = [...new Set(items)].slice(0, maxItems);
+  if (unique.length === 0) return "";
+  return [
+    "# Gerade eingearbeitete Punkte (nicht 1:1 wiederholen)",
+    "Diese Aufträge wurden kürzlich eingearbeitet. Melde sie NUR erneut,",
+    "wenn der Fehler im vorliegenden Text noch klar sichtbar ist —",
+    "nicht weil der Titel ähnlich klingt oder „man könnte noch nachschärfen“.",
+    ...unique,
+  ].join("\n");
 }
 
 /** Validate that every decision-needed actionable prompt has an author answer. */
@@ -2611,15 +2724,29 @@ export function resolveReifegradImproveChapters(
     .sort((a, b) => a - b);
   const availableSet = new Set(available);
   const prompts = actionableAenderungsPrompts(plan.aenderungsPrompts);
-  const bookWide = prompts.some(
-    (p) => p.scope === "buchweit" || p.kapitel.length === 0,
-  );
-  const localChapters = [
-    ...new Set(prompts.flatMap((p) => p.kapitel)),
+  const knownChapters = [
+    ...new Set(
+      prompts.flatMap((p) => [
+        ...p.kapitel,
+        ...extractChapterNumbersFromStelleText(`${p.titel}\n${p.anweisung}`),
+      ]),
+    ),
   ]
     .filter((n) => availableSet.has(n))
     .sort((a, b) => a - b);
-  if (bookWide) {
+  const localChapters = knownChapters;
+  const wantsBookWide = prompts.some(
+    (p) => p.scope === "buchweit" || p.kapitel.length === 0,
+  );
+  // Known chapter refs win: never expand to all chapters when any numbers exist.
+  if (knownChapters.length > 0) {
+    return {
+      chapterNumbers: knownChapters,
+      bookWide: false,
+      localChapters,
+    };
+  }
+  if (wantsBookWide) {
     return { chapterNumbers: available, bookWide: true, localChapters };
   }
   return {
@@ -2921,7 +3048,7 @@ function asWissensAttrs(raw: unknown): Record<string, string> {
     const v = String(value ?? "").trim().slice(0, 200);
     if (!k || !v) continue;
     out[k] = v;
-    if (Object.keys(out).length >= 8) break;
+    if (Object.keys(out).length >= 12) break;
   }
   return out;
 }
@@ -3093,18 +3220,29 @@ export function formatWissensGraphForPrompt(
   );
   const byKind = new Map<string, string[]>();
   for (const n of nodes) {
+    const status = n.attrs.status?.trim();
+    const intro = n.attrs.introducedChapter?.trim();
+    const resolved = n.attrs.resolvedChapter?.trim();
+    const lifecycle = [
+      status ? `status=${status}` : "",
+      intro && intro !== "0" ? `ab Kap.${intro}` : "",
+      resolved ? `gelöst Kap.${resolved}` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
     const line = `- ${n.label}${n.summary ? `: ${n.summary}` : ""}${
       n.sinceChapter > 0 ? ` (ab Kap. ${n.sinceChapter})` : ""
-    }`;
+    }${lifecycle ? ` [${lifecycle}]` : ""}`;
     const list = byKind.get(n.kind) ?? [];
     list.push(line);
     byKind.set(n.kind, list);
   }
   const parts: string[] = [
-    "## Wissensgraph (verbindlich — keine Lücken/Widersprüche)",
+    "## Wissensgraph (verbindlich — Canon; keine Lücken, keine stillen Widersprüche)",
+    "GESETZ: Labels/Attrs/Relationen und harte Invarianten gelten; Props/Fakten nicht erfinden, umbenennen oder still wechseln.",
   ];
   for (const [kind, lines] of byKind) {
-    parts.push(`### ${kind}\n${lines.slice(0, 20).join("\n")}`);
+    parts.push(`### ${kind}\n${lines.slice(0, 24).join("\n")}`);
   }
   if (edges.length) {
     parts.push(
@@ -3125,6 +3263,278 @@ export function formatWissensGraphForPrompt(
     );
   }
   return parts.join("\n\n").slice(0, options?.maxChars ?? 12_000);
+}
+
+/**
+ * Deterministic continuity mandates from graph lifecycle for chapter N.
+ * No LLM — inject into writer buffer so resolved props stay closed.
+ */
+export function formatPropLifecycleMandates(
+  graph: RomanWissensGraph | null | undefined,
+  chapterNumber: number,
+): string {
+  if (!graph?.nodes.length) return "";
+  const mustNot: string[] = [];
+  const active: string[] = [];
+  const due: string[] = [];
+  for (const n of graph.nodes) {
+    if (n.kind !== "prop" && n.kind !== "event" && n.kind !== "thread") {
+      continue;
+    }
+    const status = (n.attrs.status ?? "").toLowerCase();
+    const intro = Number(n.attrs.introducedChapter ?? n.sinceChapter ?? 0);
+    const resolved = Number(n.attrs.resolvedChapter ?? 0);
+    if (
+      status === "resolved" ||
+      (Number.isFinite(resolved) && resolved > 0 && resolved < chapterNumber)
+    ) {
+      mustNot.push(
+        `${n.label}${n.summary ? ` (${n.summary})` : ""} — bereits gelöst, nicht neu erfinden`,
+      );
+      continue;
+    }
+    if (
+      Number.isFinite(resolved) &&
+      resolved === chapterNumber
+    ) {
+      due.push(`${n.label} — in diesem Kapitel abschließen`);
+    }
+    if (
+      (status === "active" || status === "planned") &&
+      Number.isFinite(intro) &&
+      intro > 0 &&
+      intro < chapterNumber
+    ) {
+      active.push(
+        `${n.label}${n.summary ? `: ${n.summary}` : ""} — existiert schon (nicht neu einführen)`,
+      );
+    }
+    if (
+      Number.isFinite(intro) &&
+      intro === chapterNumber
+    ) {
+      due.push(`${n.label} — hier erstmals einführen`);
+    }
+  }
+  const lines: string[] = [];
+  if (due.length) {
+    lines.push(
+      "### Dieses Kapitel (MUSS)\n" +
+        due.slice(0, 12).map((x) => `- ${x}`).join("\n"),
+    );
+  }
+  if (active.length) {
+    lines.push(
+      "### Bereits aktiv (nur referenzieren — nicht neu einführen)\n" +
+        active.slice(0, 12).map((x) => `- ${x}`).join("\n"),
+    );
+  }
+  if (mustNot.length) {
+    lines.push(
+      "### DARF NICHT (bereits erledigt)\n" +
+        mustNot.slice(0, 12).map((x) => `- ${x}`).join("\n"),
+    );
+  }
+  if (!lines.length) return "";
+  return (
+    "## Prop-/Event-Lebenszyklus (verbindlich — kein Drift)\n" +
+    lines.join("\n\n")
+  ).slice(0, 2_000);
+}
+
+/** Attr keys that identify a prop/fact/place/person (order = display priority). */
+const FACT_CONTRACT_ATTR_KEYS = [
+  "kennzeichen",
+  "nummernschild",
+  "plate",
+  "besitzer",
+  "owner",
+  "fahrer",
+  "marke",
+  "brand",
+  "modell",
+  "model",
+  "farbe",
+  "color",
+  "hausnummer",
+  "strasse",
+  "adresse",
+  "plz",
+  "ort",
+  "stadt",
+  "etage",
+  "zimmer",
+  "standort",
+  "location",
+  "uhrzeit",
+  "zeit",
+  "datum",
+  "wochentag",
+  "name",
+  "vorname",
+  "nachname",
+  "spitzname",
+  "alter",
+  "telefon",
+  "handy",
+  "email",
+  "zustand",
+  "usage",
+  "in_use",
+  "verfuegbar",
+  "status",
+] as const;
+
+function formatCanonicalAttrs(attrs: Record<string, string>): string {
+  const parts: string[] = [];
+  const used = new Set<string>();
+  for (const key of FACT_CONTRACT_ATTR_KEYS) {
+    const val = attrs[key]?.trim();
+    if (!val) continue;
+    if (key === "status" && /^(planned|active|resolved)$/i.test(val)) {
+      continue; // lifecycle status is separate
+    }
+    parts.push(`${key}=${val.slice(0, 80)}`);
+    used.add(key);
+  }
+  for (const [k, v] of Object.entries(attrs)) {
+    if (used.has(k)) continue;
+    if (
+      k === "introducedChapter" ||
+      k === "resolvedChapter" ||
+      k === "status"
+    ) {
+      continue;
+    }
+    const val = v.trim();
+    if (!val) continue;
+    parts.push(`${k}=${val.slice(0, 80)}`);
+    if (parts.length >= 12) break;
+  }
+  return parts.join("; ");
+}
+
+/**
+ * Hard fact contracts for Manuskript Co-Autor (car plate, ownership, …).
+ * Stronger than lifecycle alone: attrs are canonical until an explicit delta.
+ */
+export function formatFactContractsForChapter(
+  graph: RomanWissensGraph | null | undefined,
+  chapterNumber: number,
+  options?: {
+    maxChars?: number;
+    storyState?: RomanStoryState | null;
+  },
+): string {
+  if (!graph?.nodes.length) return "";
+  const maxChars = options?.maxChars ?? 2_200;
+  const frozen: string[] = [];
+  const deltas: string[] = [];
+  const closed: string[] = [];
+
+  for (const n of graph.nodes) {
+    if (
+      n.kind !== "prop" &&
+      n.kind !== "event" &&
+      n.kind !== "fact" &&
+      n.kind !== "secret"
+    ) {
+      continue;
+    }
+    const status = (n.attrs.status ?? "").toLowerCase();
+    const intro = Number(n.attrs.introducedChapter ?? n.sinceChapter ?? 0);
+    const resolved = Number(n.attrs.resolvedChapter ?? 0);
+    const canon = formatCanonicalAttrs(n.attrs);
+    const summaryBit = n.summary.trim() ? ` — ${n.summary.trim().slice(0, 120)}` : "";
+    const canonBit = canon ? ` | ${canon}` : "";
+
+    if (
+      status === "resolved" ||
+      (Number.isFinite(resolved) && resolved > 0 && resolved < chapterNumber)
+    ) {
+      closed.push(
+        `${n.label}${summaryBit}${canonBit} — ERLEDIGT, nicht neu erfinden / nicht still ändern`,
+      );
+      continue;
+    }
+
+    // Not yet introduced — skip unless due this chapter.
+    if (
+      Number.isFinite(intro) &&
+      intro > 0 &&
+      intro > chapterNumber &&
+      status !== "active"
+    ) {
+      continue;
+    }
+
+    if (Number.isFinite(intro) && intro === chapterNumber) {
+      deltas.push(
+        `${n.label}${summaryBit}${canonBit} — HIER erstmals einführen; danach attrs unverändert halten`,
+      );
+      continue;
+    }
+    if (Number.isFinite(resolved) && resolved === chapterNumber) {
+      deltas.push(
+        `${n.label}${summaryBit}${canonBit} — HIER abschließen/ändern (sichtbarer Beat Pflicht)`,
+      );
+      continue;
+    }
+
+    if (
+      status === "active" ||
+      status === "planned" ||
+      (Number.isFinite(intro) && intro > 0 && intro < chapterNumber) ||
+      n.sinceChapter === 0
+    ) {
+      frozen.push(
+        `${n.label}${summaryBit}${canonBit} — FROZEN: Kennzeichen/Besitz/Zustand nicht still wechseln`,
+      );
+    }
+  }
+
+  // Story-state inventory as extra freeze lines (if not already covered).
+  const inv = options?.storyState?.inventoryAndProps ?? [];
+  for (const item of inv.slice(0, 8)) {
+    const label = item.trim();
+    if (label.length < 2) continue;
+    if (frozen.some((f) => f.toLowerCase().includes(label.toLowerCase()))) {
+      continue;
+    }
+    frozen.push(`${label} — in Continuity-Inventar (nicht verschwinden lassen)`);
+  }
+
+  const invHints = (graph.hardInvariants ?? [])
+    .filter((h) => h.trim().length >= 12)
+    .filter((h) =>
+      /kennzeichen|nummernschild|auto|fahrzeug|besitz|vertrag|prop|farbe|hausnummer|uhrzeit|datum|adresse|name|nicht\s+ändern|muss|gilt/i.test(
+        h,
+      ),
+    )
+    .slice(0, 8);
+
+  const lines: string[] = [
+    "## Fakten-Verträge (verbindlich — Canon-Attrs)",
+    "GESETZ: FROZEN unverändert lassen; Deltas nur wo „HIER“ steht; Geschlossenes nicht wiederbeleben. Keine stillen Kennzeichen-/Besitz-/Zustandswechsel.",
+  ];
+  if (deltas.length) {
+    lines.push("### Dieses Kapitel (MUSS — erlaubt / Pflicht)");
+    for (const d of deltas.slice(0, 10)) lines.push(`- ${d}`);
+  }
+  if (frozen.length) {
+    lines.push("### Gilt unverändert (FROZEN — hart)");
+    for (const f of frozen.slice(0, 14)) lines.push(`- ${f}`);
+  }
+  if (closed.length) {
+    lines.push("### Geschlossen (DARF NICHT neu erfinden)");
+    for (const c of closed.slice(0, 8)) lines.push(`- ${c}`);
+  }
+  if (invHints.length) {
+    lines.push("### Harte Invarianten (Logik)");
+    for (const h of invHints) lines.push(`- ${h.trim().slice(0, 200)}`);
+  }
+  if (lines.length <= 2) return "";
+  return lines.join("\n").slice(0, maxChars);
 }
 
 /**
@@ -3216,8 +3626,9 @@ export function formatLeserFeedbackPatchBrief(
         )
       : plan.filter((p) => !p.bookWide);
 
-  const unit =
-    stage === "szenenplot" ? "Kapitelgerüst-Kapitel" : "Manuskript-Kapitel";
+  // Below: only Manuskript chapter briefs (idee/expose returned above).
+  const unit = "Manuskript-Kapitel";
+  void stage;
   const lines = [
     `ARBEITSAUFTRAG: Setze die folgenden Änderungsanweisungen SICHTBAR in DIESEM ${unit} um.`,
     "Konkrete Handlung/Dialog/Beat ändern — kein kosmetisches Umformulieren.",
@@ -3225,7 +3636,7 @@ export function formatLeserFeedbackPatchBrief(
     chapterNumber != null
       ? `Du bearbeitest NUR Kapitel ${chapterNumber}. Andere Kapitel nicht anfassen.`
       : "",
-    "Wenn Anweisungen Duplikate/Wiederholungen streichen: Kürzen ist erwünscht — Länge darf unter der Baseline liegen; gelöschte Übergangs-Wiederholungen nicht wieder einfügen.",
+    "Wenn Anweisungen Duplikate/Wiederholungen streichen: Kürzen der Doppelung ist erwünscht — gelöschte Übergangs-Wiederholungen nicht wieder einfügen. Die Kapitel-Mindestlänge trotzdem halten: wo nötig woanders erweitern (Dialog/Detail), nicht unter dem Kapitel-Minimum landen.",
     "",
   ];
 
@@ -3264,7 +3675,7 @@ export function formatLeserFeedbackPatchBrief(
   }
 
   lines.push(
-    "Wenn das Buch schon lang genug ist: umformulieren und verdichten — nicht sinnlos aufblasen.",
+    "Wenn das Buch schon lang genug ist: umformulieren und verdichten — nicht sinnlos aufblasen. Kapitel-Mindestlänge trotzdem einhalten.",
     "Mindestens eine klar erkennbare Änderung laut den Anweisungen oben.",
   );
   return lines
@@ -3321,8 +3732,14 @@ function leserFeedbackChapterRoleHint(
   return "";
 }
 
+/** True book-wide wording only — “über mehrere Kapitel” is a local chapter list. */
 const LESER_FEEDBACK_BOOK_WIDE_RE =
-  /\bbuchweit\b|\büberall\b|\bdurchgehend\b|\balle\s+kapitel\b|\bin\s+jedem\s+kapitel\b|\bgesamte[nm]?\s+(?:roman|buch|manuskript)\b|\büber\s+(?:alle|mehrere)\s+kapitel/i;
+  /\bbuchweit\b|\büberall\b|\bdurchgehend\b|\balle\s+kapitel\b|\bin\s+jedem\s+kapitel\b|\bgesamte[nm]?\s+(?:roman|buch|manuskript)\b|\büber\s+alle\s+kapitel/i;
+
+/** Exposed for tests / callers that need the same book-wide wording bar. */
+export function isLeserFeedbackBookWideWording(text: string): boolean {
+  return LESER_FEEDBACK_BOOK_WIDE_RE.test(text ?? "");
+}
 
 /** Extract Kap. N / ranges from free text (Stellen + Vorschlagstext). */
 export function extractChapterNumbersFromStelleText(text: string): number[] {
@@ -3380,9 +3797,8 @@ export function classifyLeserFeedbackVorschlaege(
 
 /**
  * Chapters to patch for Feedback einarbeiten:
- * - local Stellen → exactly those chapters
- * - any book-wide item → all manuscript chapters (batched by caller if needed)
- * No random sample fill.
+ * - concrete Kapitel refs (any prompt) → union of those chapters
+ * - only pure book-wide with no numbers → all manuscript chapters
  */
 export function resolveLeserFeedbackApplyChapters(
   manuskriptText: string,
@@ -3399,14 +3815,29 @@ export function resolveLeserFeedbackApplyChapters(
     .sort((a, b) => a - b);
   const availableSet = new Set(available);
   const items = classifyLeserFeedbackVorschlaege(feedback);
-  const bookWide = items.some((i) => i.bookWide);
-  const localChapters = [
-    ...new Set(items.flatMap((i) => i.chapters)),
+  const knownChapters = [
+    ...new Set(
+      items.flatMap((i) => [
+        ...i.chapters,
+        ...extractChapterNumbersFromStelleText(`${i.stelle}\n${i.text}`),
+      ]),
+    ),
   ]
     .filter((n) => availableSet.has(n))
     .sort((a, b) => a - b);
+  const localChapters = knownChapters;
+  const wantsBookWide = items.some((i) => i.bookWide);
 
-  if (bookWide) {
+  if (knownChapters.length > 0) {
+    return {
+      chapterNumbers: knownChapters,
+      bookWide: false,
+      localChapters,
+      items,
+    };
+  }
+
+  if (wantsBookWide) {
     return {
       chapterNumbers: available,
       bookWide: true,
@@ -3492,14 +3923,19 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
     weltBibel: String(row.weltBibel ?? "").trim(),
     serienBibel: String(row.serienBibel ?? "").trim(),
     sachbuchStruktur: String(row.sachbuchStruktur ?? "").trim(),
-    manuskriptText: String(row.manuskriptText ?? "").trim().slice(0, 500_000),
+    manuskriptText: String(row.manuskriptText ?? "")
+      .trim()
+      .slice(0, ROMAN_MANUSKRIPT_TEXT_MAX_CHARS),
     manuskriptOriginalText: String(row.manuskriptOriginalText ?? "")
       .trim()
-      .slice(0, 500_000),
+      .slice(0, ROMAN_MANUSKRIPT_TEXT_MAX_CHARS),
     manuskriptOriginalSavedAt: (() => {
       const a = String(row.manuskriptOriginalSavedAt ?? "").trim();
       return a || null;
     })(),
+    romanText: String(row.romanText ?? "")
+      .trim()
+      .slice(0, ROMAN_MANUSKRIPT_TEXT_MAX_CHARS),
     klappentext: String(row.klappentext ?? "").trim().slice(0, 4_000),
     einzeiler: String(row.einzeiler ?? "").trim().slice(0, 120),
     amazonKeywords: parseAmazonKeywordsField(row.amazonKeywords),
@@ -3567,9 +4003,32 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
     storyState: parseRomanStoryState(row.storyState),
     canon: parseRomanCanon(row.canon),
     wissensGraph: parseRomanWissensGraph(row.wissensGraph),
-    szenenplotStructured: parseRomanSzenenplotStructured(
-      row.szenenplotStructured,
-    ),
+    ...(() => {
+      const szenenplotStructured = parseRomanSzenenplotStructured(
+        row.szenenplotStructured,
+      );
+      let kapitelGeruestStructured = parseRomanKapitelGeruestStructured(
+        row.kapitelGeruestStructured,
+      );
+      let kapitelGeruestRaw = String(row.kapitelGeruestRaw ?? "")
+        .trim()
+        .slice(0, 200_000);
+      // Migration: derive Gerüst from legacy combined Szenenplot.
+      if (!kapitelGeruestStructured && szenenplotStructured) {
+        kapitelGeruestStructured =
+          deriveKapitelGeruestFromSzenenplot(szenenplotStructured);
+        if (!kapitelGeruestRaw) {
+          kapitelGeruestRaw = structuredKapitelGeruestToMarkdown(
+            kapitelGeruestStructured,
+          );
+        }
+      }
+      return {
+        kapitelGeruestStructured,
+        kapitelGeruestRaw,
+        szenenplotStructured,
+      };
+    })(),
     reifegrade: parseRomanReifegrade(row.reifegrade),
     pipelineFertig: parsePipelineFertig(row.pipelineFertig),
   };

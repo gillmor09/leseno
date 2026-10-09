@@ -7,6 +7,7 @@ export type WeaveDocKind =
   | "idee"
   | "welt"
   | "expose"
+  | "kapitelgeruest"
   | "szenenplot"
   | "manuskript";
 
@@ -37,6 +38,8 @@ function docLabel(kind: WeaveDocKind): string {
       return "Welt";
     case "expose":
       return "Exposé";
+    case "kapitelgeruest":
+      return "Kapitelgerüst";
     case "szenenplot":
       return "Szenenplot";
     case "manuskript":
@@ -85,11 +88,13 @@ export function buildWeaveSystemAddendum(input: {
       ? "Ideen-Kritik einweben"
       : input.kind === "welt"
         ? "Welt-Kritik einweben"
-        : input.kind === "expose"
+          : input.kind === "expose"
           ? "Exposé-Kritik einweben"
-          : input.kind === "szenenplot"
-            ? "Szenenplot-Kritik einweben"
-            : "Manuskript-Kritik einweben";
+          : input.kind === "kapitelgeruest"
+            ? "Kapitelgerüst-Kritik einweben"
+            : input.kind === "szenenplot"
+              ? "Szenenplot-Kritik einweben"
+              : "Manuskript-Kritik einweben";
 
   return `Zusatzauftrag ${label}:
 Die Autor:in übernimmt kommentiert — ihr Kommentar ist die verbindliche Leitplanke.

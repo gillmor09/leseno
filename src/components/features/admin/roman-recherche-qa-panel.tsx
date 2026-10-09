@@ -161,7 +161,13 @@ export function RomanRechercheQaPanel({
 
   return (
     <div className="space-y-5">
-      <RomanSceneWaitDialog open={pending} variant="recherche" />
+      <RomanSceneWaitDialog
+        open={pending}
+        variant="recherche"
+        contextLabel="Recherche · Dialogrunde"
+        title="Recherche vertiefen"
+        progressLabel="Recherche-Coach und -Redakteur arbeiten an dieser Runde …"
+      />
 
       <p className="text-sm font-semibold text-zinc-600">
         Recherche-Coach mit Google Search (Gemini) — tippen oder Mikrofon.

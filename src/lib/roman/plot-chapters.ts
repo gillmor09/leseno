@@ -564,8 +564,16 @@ export const MANUSKRIPT_HEADING_FORM_HINT = `Kapitelüberschriften (Buchdruck, v
  * Hard rules so models never invent “chapter deleted / merged” stubs.
  * Szenenplot chapters must become real prose in the Manuskript.
  */
-export const MANUSKRIPT_CHAPTER_PROSE_RULES = `Kapitel-Prosa (verbindlich — Szenenplot ist Gesetz):
-- Jedes Kapitel aus dem Szenenplot MUSS als eigenständige erzählte Szene/Prosa existieren.
+export const MANUSKRIPT_CHAPTER_PROSE_RULES = `Kapitel-Prosa (verbindlich — Arbeitsteilung):
+- PLOT/LOGIK = Paket-Abschnitte „Szenenverträge“, „Gerüst-Plan“, „Verbote“, „Raum-/Prop-Spine“, „Fakten-Verträge“, „Arc-Verträge“, Invarianten: lückenlos umsetzen, nichts weglassen, nichts dazuerfinden.
+- DEINE ARBEIT = Ton, Stimme, Register, Humor, Emotion, SHOW (Körper/Dialog/Wahrnehmung) — innerhalb der Verträge.
+- Korrektes Deutsch: Rektion/Kasus/Kongruenz stimmen — lieber klar als falsch-literarisch (z. B. „sich an einen Tag erinnern“, nicht „einen Tag erinnern“).
+- Jedes Kapitel aus dem Szenenplot MUSS als eigenständige erzählte Prosa existieren.
+- Handlung NUR aus den Verträgen ausformulieren — KEINE neuen Stränge, Wendungen, Figuren, Props oder Enthüllungen, um „Lücken“ zu füllen.
+- Raum: hoch/runter nur laut Spine; Props bleiben am Ablageort (keine zweite Garderobe oben).
+- DARF-NICHT / kept_secret / mustNotRepeat: weder Dialog noch Narration andeuten.
+- KEINE Plot-Analyse, KEINE Meta-Begründung, KEINE „bedeutet das…“-Kommentare — Dramaturgie steckt schon im Paket.
+- Plot-Fixes gehören in den Szenenplot, nicht in die Prosa.
 - VERBOTEN: Meta-Kommentare, Autor:innen-Notizen, Kursiv-Hinweise in Klammern an die Redaktion.
 - VERBOTEN: Behaupten, ein Kapitel sei „gestrichen“, „gibt es nicht mehr“, „sei in anderen Kapiteln aufgegangen“, „nur noch Markierung“.
 - VERBOTEN: Kapitel zusammenlegen, überspringen, umnummerieren oder weglassen.

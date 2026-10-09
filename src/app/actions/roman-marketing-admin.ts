@@ -1,8 +1,8 @@
 "use server";
 
 /**
- * Verkaufstexte (Klappentext + Einzeiler + Amazon-Keywords) — isolated from
- * roman-admin.ts so Turbopack/cover payload issues cannot break this path.
+ * Verkaufstexte (Klappentext + Einzeiler + Amazon-Keywords) + Titelei
+ * (Titelseite, Copyright, Motto) — isolated from roman-admin.ts.
  */
 
 import { z } from "zod";
@@ -14,7 +14,18 @@ import {
 import {
   getRomanMarketingSource,
   patchRomanMarketingCopy,
+  patchRomanVorsatzCopy,
 } from "@/lib/roman/marketing-copy-store";
+import {
+  ROMAN_DEFAULT_AUTHOR,
+  ROMAN_DEFAULT_IMPRINT,
+  emptyBuchruecken,
+  emptyVorsatz,
+  generateRomanFrontMatter,
+  mergeVorsatzFromUiFields,
+  vorsatzToUiFields,
+  type RomanVorsatzUiFields,
+} from "@/lib/roman/front-matter";
 import { revalidateRomanAdminLists } from "@/lib/roman/revalidate-admin";
 import type { ActionResult } from "@/lib/types/actions";
 import { firstZodMessage } from "@/lib/validations/roman-admin";
@@ -23,11 +34,21 @@ const generateSchema = z.object({
   romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
 });
 
+const vorsatzSaveSchema = z.object({
+  titel: z.string().max(300),
+  untertitel: z.string().max(400).optional().default(""),
+  autor: z.string().max(200),
+  imprint: z.string().max(200),
+  copyrightHinweis: z.string().max(2_000),
+  motto: z.string().max(1_200),
+});
+
 const saveSchema = z.object({
   romanId: z.string().uuid({ message: "Ungültige Roman-ID." }),
   klappentext: z.string().max(4_000),
   einzeiler: z.string().max(120),
   amazonKeywords: z.array(z.string().max(50)).max(7).default([]),
+  vorsatz: vorsatzSaveSchema.optional(),
 });
 
 function alterLabelFromEditorial(ed: {
@@ -50,6 +71,8 @@ export async function generateRomanMarketingCopyAction(
     einzeiler: string;
     amazonKeywords: string[];
     keywordsWarning?: string;
+    autorName: string;
+    vorsatz: RomanVorsatzUiFields;
   }>
 > {
   const denied = await denyUnlessAdmin();
@@ -94,6 +117,35 @@ export async function generateRomanMarketingCopyAction(
       einzeiler: copy.einzeiler,
       amazonKeywords,
     });
+
+    const front = await generateRomanFrontMatter({
+      title: roman.title,
+      autorName: ROMAN_DEFAULT_AUTHOR,
+      genre: roman.genre,
+      praemisse: roman.praemisse || roman.editorial.ideeKurz || "",
+      tonalitaet: roman.tonalitaet,
+      manuskriptRaw: prose || roman.manuskriptRaw,
+      aktuelleZusammenfassung: roman.editorial.ideeKurz ?? "",
+    });
+
+    if (!front.vorsatz.titelseite.titel.trim()) {
+      front.vorsatz.titelseite.titel =
+        roman.title.trim() || "Unbenannter Roman";
+    }
+    const buchruecken = {
+      ...emptyBuchruecken(),
+      ...front.buchruecken,
+      autorZeile: ROMAN_DEFAULT_AUTHOR,
+      verlagZeile: ROMAN_DEFAULT_IMPRINT,
+    };
+
+    await patchRomanVorsatzCopy({
+      id: roman.id,
+      autorName: ROMAN_DEFAULT_AUTHOR,
+      buchruecken,
+      vorsatz: front.vorsatz,
+    });
+
     revalidateRomanAdminLists();
 
     return {
@@ -103,6 +155,8 @@ export async function generateRomanMarketingCopyAction(
         einzeiler: copy.einzeiler,
         amazonKeywords,
         keywordsWarning: copy.keywordsWarning,
+        autorName: ROMAN_DEFAULT_AUTHOR,
+        vorsatz: vorsatzToUiFields(front.vorsatz, roman.title),
       },
     };
   } catch (error) {
@@ -135,6 +189,35 @@ export async function saveRomanMarketingCopyAction(
       einzeiler: parsed.data.einzeiler,
       amazonKeywords: normalizeAmazonKeywords(parsed.data.amazonKeywords),
     });
+
+    if (parsed.data.vorsatz) {
+      const roman = await getRomanMarketingSource(parsed.data.romanId);
+      if (!roman) throw new Error("Roman nicht gefunden.");
+      const previous = roman.vorsatz ?? emptyVorsatz();
+      const vorsatz = mergeVorsatzFromUiFields(previous, {
+        titel: parsed.data.vorsatz.titel,
+        untertitel: parsed.data.vorsatz.untertitel ?? "",
+        autor: parsed.data.vorsatz.autor,
+        imprint: parsed.data.vorsatz.imprint,
+        copyrightHinweis: parsed.data.vorsatz.copyrightHinweis,
+        motto: parsed.data.vorsatz.motto,
+      });
+      const buchruecken = {
+        ...(roman.buchruecken ?? emptyBuchruecken()),
+        autorZeile: vorsatz.titelseite.autor,
+        verlagZeile: vorsatz.titelseite.imprint,
+        titelKurz:
+          (roman.buchruecken?.titelKurz ?? "").trim() ||
+          vorsatz.titelseite.titel.slice(0, 40),
+      };
+      await patchRomanVorsatzCopy({
+        id: parsed.data.romanId,
+        autorName: vorsatz.titelseite.autor,
+        buchruecken,
+        vorsatz,
+      });
+    }
+
     revalidateRomanAdminLists();
     return { success: true, data: { saved: true } };
   } catch (error) {

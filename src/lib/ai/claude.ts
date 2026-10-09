@@ -11,11 +11,15 @@ import {
   isAiAbortError,
   mapAiFetchError,
 } from "@/lib/ai/fetch-timeout";
-import { isClaudeSonnet55Slug } from "@/lib/ai/reasoning-effort";
+import {
+  isClaudeOpus55Slug,
+  isClaudeSonnet55Slug,
+} from "@/lib/ai/reasoning-effort";
 import { recordAiUsage } from "@/lib/ai/usage";
 
 const ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_VERSION = "2023-06-01";
+/** Shared with Message Batches client (`claude-batches.ts`). */
+export const ANTHROPIC_VERSION = "2023-06-01";
 /** At most one retry — shared wall-clock budget must not multiply to minutes. */
 const MAX_ATTEMPTS = 2;
 const RETRY_BASE_MS = 1_500;
@@ -30,6 +34,11 @@ export type ClaudeGenerateInput = {
    * across Gerüst batches / Verbessern turns.
    */
   cacheablePrefix?: string;
+  /**
+   * Prompt-cache TTL for `cacheablePrefix` breakpoint.
+   * Prefer `1h` for Message Batches (often longer than default 5m).
+   */
+  cacheTtl?: "5m" | "1h";
   userText: string;
   jsonOutput?: boolean;
   /** Cap output size (default 8192). Lower for feedback/summary. */
@@ -50,7 +59,8 @@ export type ClaudeGenerateResult = {
   stopReason?: string;
 };
 
-function getClaudeApiKey(): string {
+/** Resolve `CLAUDE_API_KEY` (also used by Message Batches). */
+export function getClaudeApiKey(): string {
   const key = process.env.CLAUDE_API_KEY?.trim().replace(/^["']|["']$/g, "") ?? "";
   if (!key) {
     throw new Error(
@@ -66,6 +76,72 @@ function getClaudeApiKey(): string {
     }
   }
   return key;
+}
+
+/**
+ * Build Anthropic Messages body (sync + Message Batches `params`).
+ * Does not call the network.
+ */
+export function buildClaudeMessagesParams(
+  input: ClaudeGenerateInput,
+): Record<string, unknown> {
+  let userText = input.userText;
+  if (input.jsonOutput) {
+    userText = `${userText}\n\nAntworte ausschließlich mit gültigem JSON, ohne Markdown-Codeblöcke.`;
+  }
+
+  const cacheablePrefix = input.cacheablePrefix?.trim() ?? "";
+  const systemInstruction = input.systemInstruction?.trim() ?? "";
+  const sonnet55 = isClaudeSonnet55Slug(input.modelSlug);
+  const opus55 = isClaudeOpus55Slug(input.modelSlug);
+
+  const maxTokens = Math.max(256, Math.round(input.maxTokens ?? 8192));
+  const body: Record<string, unknown> = {
+    model: input.modelSlug,
+    max_tokens: maxTokens,
+    messages: [
+      {
+        role: "user",
+        content: userText,
+      },
+    ],
+  };
+
+  const effortRaw = (input.reasoningEffort ?? "medium").trim().toLowerCase();
+  const allowedEffort = new Set(["low", "medium", "high"]);
+  const effort = allowedEffort.has(effortRaw) ? effortRaw : "medium";
+
+  if (opus55) {
+    body.thinking = { type: "adaptive" };
+    body.output_config = { effort };
+  } else if (sonnet55) {
+    body.thinking = { type: "between_tools" };
+    body.output_config = { effort };
+  } else {
+    body.thinking = { type: "disabled" };
+  }
+
+  const cacheTtl = input.cacheTtl === "1h" ? "1h" : undefined;
+
+  // Prompt caching: put stable book prefix last in `system` with cache_control.
+  if (cacheablePrefix.length >= 200) {
+    const systemBlocks: Array<Record<string, unknown>> = [];
+    if (systemInstruction) {
+      systemBlocks.push({ type: "text", text: systemInstruction });
+    }
+    const cacheControl: Record<string, unknown> = { type: "ephemeral" };
+    if (cacheTtl) cacheControl.ttl = cacheTtl;
+    systemBlocks.push({
+      type: "text",
+      text: cacheablePrefix,
+      cache_control: cacheControl,
+    });
+    body.system = systemBlocks;
+  } else if (systemInstruction) {
+    body.system = systemInstruction;
+  }
+
+  return body;
 }
 
 type ClaudeContentBlock = {
@@ -135,70 +211,18 @@ function networkErrorMessage(error: unknown): string {
 
 /**
  * Calls Anthropic `/v1/messages`.
- * Sonnet 5: `thinking: disabled`. Sonnet 5.5: `between_tools` + `output_config.effort`
- * (disabled returns 400 on 5.5).
+ * Sonnet 5: `thinking: disabled`. Sonnet 5.5: `between_tools` + effort.
+ * Opus 5.5: `thinking: adaptive` + `output_config.effort` (required shape).
  */
 export async function generateWithClaude(
   input: ClaudeGenerateInput,
 ): Promise<ClaudeGenerateResult> {
   const apiKey = getClaudeApiKey();
-
-  let userText = input.userText;
-  if (input.jsonOutput) {
-    userText = `${userText}\n\nAntworte ausschließlich mit gültigem JSON, ohne Markdown-Codeblöcke.`;
-  }
-
-  const cacheablePrefix = input.cacheablePrefix?.trim() ?? "";
-  const systemInstruction = input.systemInstruction?.trim() ?? "";
-  const sonnet55 = isClaudeSonnet55Slug(input.modelSlug);
-
-  const maxTokens = Math.max(
-    256,
-    Math.round(input.maxTokens ?? 8192),
-  );
-  const body: Record<string, unknown> = {
-    model: input.modelSlug,
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: "user",
-        content: userText,
-      },
-    ],
-  };
+  const body = buildClaudeMessagesParams(input);
   if (process.env.NODE_ENV === "development") {
     console.info(
-      `[claude] model=${input.modelSlug} max_tokens=${maxTokens}`,
+      `[claude] model=${input.modelSlug} max_tokens=${body.max_tokens}`,
     );
-  }
-
-  if (sonnet55) {
-    // No upfront thinking; only between tool calls (we don't use tools → text only).
-    body.thinking = { type: "between_tools" };
-    const effort = (input.reasoningEffort ?? "medium").trim().toLowerCase();
-    const allowed = new Set(["low", "medium", "high"]);
-    body.output_config = {
-      effort: allowed.has(effort) ? effort : "medium",
-    };
-  } else {
-    body.thinking = { type: "disabled" };
-  }
-
-  // Prompt caching: put stable book prefix last in `system` with cache_control.
-  // Anthropic caches from that breakpoint backward for ~5 minutes (ephemeral).
-  if (cacheablePrefix.length >= 200) {
-    const systemBlocks: Array<Record<string, unknown>> = [];
-    if (systemInstruction) {
-      systemBlocks.push({ type: "text", text: systemInstruction });
-    }
-    systemBlocks.push({
-      type: "text",
-      text: cacheablePrefix,
-      cache_control: { type: "ephemeral" },
-    });
-    body.system = systemBlocks;
-  } else if (systemInstruction) {
-    body.system = systemInstruction;
   }
 
   const bodyJson = JSON.stringify(body);

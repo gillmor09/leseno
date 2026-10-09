@@ -1,8 +1,9 @@
 /**
  * Amazon/KDP-oriented EPUB 3 export from Manuskript chapters
- * (or legacy revised scenes). Reflowable XHTML; no book cover image
- * (PDF keeps the cover). Clever: chapter Infografik + Abenteuer-Wissen
- * after prose. Client-side via JSZip.
+ * (or legacy revised scenes). Reflowable XHTML; optional cover image.
+ * Front matter = separate spine docs: Titelseite, Copyright, Motto
+ * (plus optional Widmung). Clever: Infografik + Abenteuer-Wissen after prose.
+ * Client-side via JSZip.
  */
 
 import JSZip from "jszip";
@@ -30,6 +31,8 @@ export type RomanEpubInput = {
   autorName: string;
   language?: string;
   vorsatz?: RomanVorsatz;
+  /** Optional cover data URL (JPEG/PNG/WebP) — first spine item + OPF cover. */
+  coverImageDataUrl?: string;
   /** Manuskript chapters (preferred). */
   chapters?: RomanExportChapter[];
   /** Legacy: revised scenes grouped into chapters. */
@@ -110,19 +113,34 @@ const EPUB_CSS = `body {
   line-height: 1.5;
   margin: 1em;
 }
+/* Each front-matter / chapter file is its own EPUB spine page. */
+.cover {
+  margin: 0;
+  padding: 0;
+  text-align: center;
+}
+.cover img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
 h1 {
   font-size: 1.6em;
   font-weight: bold;
   text-align: center;
   margin: 2em 0 1em;
-  page-break-before: always;
 }
 h1.chapter {
   font-size: 1.15em;
   font-weight: bold;
   text-align: left;
   margin: 0 0 1em;
-  page-break-before: always;
+}
+.titlepage {
+  text-align: center;
+  margin-top: 25%;
 }
 .subtitle, .author, .imprint {
   text-align: center;
@@ -130,6 +148,14 @@ h1.chapter {
 }
 .author { font-size: 1.15em; margin-top: 1.5em; }
 .imprint { font-size: 0.9em; color: #444; margin-top: 2em; }
+.copyright {
+  margin-top: 20%;
+}
+.copyright h1 {
+  font-size: 1.2em;
+  text-align: left;
+  margin: 0 0 1.25em;
+}
 .copyright p, .dedication p, .epigraph p {
   margin: 0.75em 0;
 }
@@ -236,7 +262,9 @@ type SpineItem = {
   id: string;
   href: string;
   title: string;
-  landmark?: "titlepage" | "bodymatter" | "toc";
+  landmark?: "cover" | "titlepage" | "bodymatter" | "toc";
+  /** OPF spine properties, e.g. cover image page. */
+  properties?: string;
 };
 
 type ManifestExtra = {
@@ -303,7 +331,8 @@ ${fakten
 }
 
 /**
- * Builds a reflowable EPUB 3 blob (Manuskript, ohne Buch-Cover).
+ * Builds a reflowable EPUB 3 blob.
+ * Optional cover; Titelei as three separate spine pages (Titelseite, Copyright, Motto).
  */
 export async function buildRomanEpubBlob(
   input: RomanEpubInput,
@@ -349,10 +378,45 @@ export async function buildRomanEpubBlob(
 
   const spine: SpineItem[] = [];
   const manifestExtra: ManifestExtra[] = [];
+  let coverMetaId: string | null = null;
 
+  const coverParsed = input.coverImageDataUrl
+    ? parseImageDataUrl(input.coverImageDataUrl)
+    : null;
+  if (coverParsed) {
+    const coverHref = `cover.${coverParsed.ext}`;
+    oebps.file(coverHref, coverParsed.bytes);
+    coverMetaId = "cover-image";
+    manifestExtra.push({
+      id: coverMetaId,
+      href: coverHref,
+      mediaType: coverParsed.mediaType,
+    });
+    oebps.file(
+      "cover.xhtml",
+      xhtmlDoc(
+        "Cover",
+        `<section class="cover" epub:type="cover">
+  <img src="${escapeXml(coverHref)}" alt="Cover: ${escapeXml(title)}" />
+</section>`,
+      ),
+    );
+    spine.push({
+      id: "cover",
+      href: "cover.xhtml",
+      title: "Cover",
+      landmark: "cover",
+    });
+  }
+
+  // Titelei: always three separate spine documents when front matter is usable.
   if (hasUsableVorsatz(vorsatz) || title) {
     const t = vorsatz.titelseite;
-    const body = `<section class="titlepage" epub:type="titlepage">
+    oebps.file(
+      "titlepage.xhtml",
+      xhtmlDoc(
+        "Titelseite",
+        `<section class="titlepage" epub:type="titlepage">
   <h1>${escapeXml(t.titel.trim() || title)}</h1>
   ${
     t.untertitel.trim()
@@ -365,8 +429,9 @@ export async function buildRomanEpubBlob(
       ? `<p class="imprint">${escapeXml(t.imprint.trim())}</p>`
       : ""
   }
-</section>`;
-    oebps.file("titlepage.xhtml", xhtmlDoc(title, body));
+</section>`,
+      ),
+    );
     spine.push({
       id: "titlepage",
       href: "titlepage.xhtml",
@@ -378,7 +443,7 @@ export async function buildRomanEpubBlob(
     const copyrightBlocks: string[] = [];
     if (imp.hinweis.trim()) {
       copyrightBlocks.push(imp.hinweis.trim());
-    } else if (imp.rechteinhaber.trim() || author) {
+    } else {
       copyrightBlocks.push(
         `© ${imp.jahr.trim() || String(new Date().getFullYear())} ${
           imp.rechteinhaber.trim() || author
@@ -386,23 +451,21 @@ export async function buildRomanEpubBlob(
       );
     }
     if (imp.disclaimer.trim()) copyrightBlocks.push(imp.disclaimer.trim());
-    if (copyrightBlocks.length) {
-      oebps.file(
-        "copyright.xhtml",
-        xhtmlDoc(
-          "Impressum",
-          `<section class="copyright" epub:type="copyright-page">
-  <h1>Impressum</h1>
+    oebps.file(
+      "copyright.xhtml",
+      xhtmlDoc(
+        "Copyright",
+        `<section class="copyright" epub:type="copyright-page">
+  <h1>Copyright</h1>
   ${copyrightBlocks.map((b) => `<p>${escapeXml(b)}</p>`).join("\n")}
 </section>`,
-        ),
-      );
-      spine.push({
-        id: "copyright",
-        href: "copyright.xhtml",
-        title: "Impressum",
-      });
-    }
+      ),
+    );
+    spine.push({
+      id: "copyright",
+      href: "copyright.xhtml",
+      title: "Copyright",
+    });
 
     if (vorsatz.widmung.trim()) {
       oebps.file(
@@ -421,6 +484,7 @@ export async function buildRomanEpubBlob(
       });
     }
 
+    // Motto / Zitat — own page (third Titelei page).
     if (vorsatz.motto.trim()) {
       oebps.file(
         "epigraph.xhtml",
@@ -503,7 +567,8 @@ ${tocItems}
       (s) =>
         s.id.startsWith("chapter-") ||
         s.id === "toc" ||
-        s.landmark === "titlepage",
+        s.landmark === "titlepage" ||
+        s.landmark === "cover",
     )
     .map(
       (s) =>
@@ -515,11 +580,13 @@ ${tocItems}
     .filter((s) => s.landmark)
     .map((s) => {
       const type =
-        s.landmark === "titlepage"
-          ? "titlepage"
-          : s.landmark === "toc"
-            ? "toc"
-            : "bodymatter";
+        s.landmark === "cover"
+          ? "cover"
+          : s.landmark === "titlepage"
+            ? "titlepage"
+            : s.landmark === "toc"
+              ? "toc"
+              : "bodymatter";
       return `    <li><a epub:type="${type}" href="${s.href}">${escapeXml(s.title)}</a></li>`;
     })
     .join("\n");
@@ -558,13 +625,19 @@ ${navLandmarks}
       (s) =>
         `<item id="${s.id}" href="${s.href}" media-type="application/xhtml+xml"/>`,
     ),
-    ...manifestExtra.map(
-      (m) =>
-        `<item id="${m.id}" href="${m.href}" media-type="${m.mediaType}"/>`,
-    ),
+    ...manifestExtra.map((m) => {
+      const coverProp =
+        m.id === coverMetaId ? ` properties="cover-image"` : "";
+      return `<item id="${m.id}" href="${m.href}" media-type="${m.mediaType}"${coverProp}/>`;
+    }),
   ].join("\n    ");
 
-  const spineXml = spine.map((s) => `<itemref idref="${s.id}"/>`).join("\n    ");
+  const spineXml = spine
+    .map((s) => {
+      const props = s.properties ? ` properties="${s.properties}"` : "";
+      return `<itemref idref="${s.id}"${props}/>`;
+    })
+    .join("\n    ");
 
   oebps.file(
     "content.opf",
@@ -579,6 +652,11 @@ ${navLandmarks}
       vorsatz.titelseite.imprint.trim() || "Eigenverlag",
     )}</dc:publisher>
     <meta property="dcterms:modified">${modified}</meta>
+    ${
+      coverMetaId
+        ? `<meta name="cover" content="${escapeXml(coverMetaId)}"/>`
+        : ""
+    }
   </metadata>
   <manifest>
     ${manifestXml}

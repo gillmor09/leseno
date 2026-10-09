@@ -31,6 +31,7 @@ const TRIGGER_LABELS: Record<string, string> = {
   leser_feedback: "Leser-Feedback",
   leser_feedback_apply: "Feedback einarbeiten",
   manuskript_vereinfachen: "Vereinfachen",
+  manuskript_verbessern: "Verbessern",
   manuskript_original_restore: "Original wiederherstellen",
   stage_verbessern_analyze: "Gesamt-Analyse",
   stage_verbessern_apply: "Gesamt einarbeiten",

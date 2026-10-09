@@ -18,7 +18,11 @@ import {
   type RomanEditorial,
 } from "@/lib/roman/editorial";
 import { formatCharaktere } from "@/lib/roman/fundament";
-import { CLIP, PROMPT_SOFT_CAP_CHARS } from "@/lib/roman/pipeline/quality-brief";
+import {
+  CLIP,
+  PROMPT_SOFT_CAP_CHARS,
+  specStageAnalyzePolicy,
+} from "@/lib/roman/pipeline/quality-brief";
 import {
   PIPELINE_STAGE_LABELS,
   type PipelineStage,
@@ -28,6 +32,10 @@ import {
   parsePlotChapters,
   type PlotChapter,
 } from "@/lib/roman/plot-chapters";
+import {
+  structuredKapitelGeruestToMarkdown,
+  structuredSzenenplotToMarkdown,
+} from "@/lib/roman/szenenplot-structured";
 import {
   craftDimensionsForStage,
   type ReifegradCraftSlot,
@@ -180,8 +188,26 @@ function rawStageArtifact(
     case "expose":
       // Spec tab = combined brief (Figuren + Welt + Exposé).
       return formatSpecBrief(roman);
+    case "kapitelgeruest":
+    case "grobgeruest":
+    case "feingeruest": {
+      // Always remirror from JSON so Analyse/Reifegrad see the live structure
+      // (arcs, lifecycle) — never a drifted raw markdown copy.
+      const structured = ed.kapitelGeruestStructured;
+      if (structured?.chapters?.length) {
+        return structuredKapitelGeruestToMarkdown(structured).trim();
+      }
+      return (ed.kapitelGeruestRaw ?? "").trim();
+    }
     case "szenenplot":
+    case "grobplot":
+    case "feinplot": {
+      const structured = ed.szenenplotStructured;
+      if (structured?.chapters?.length) {
+        return structuredSzenenplotToMarkdown(structured).trim();
+      }
       return (roman.manuskriptRaw ?? "").trim();
+    }
     case "manuskript":
       return (ed.manuskriptText ?? "").trim();
   }
@@ -203,7 +229,11 @@ export function getStageArtifactForAssess(
   if (source.length <= ASSESS_SOFT_CAP_CHARS) {
     return { text: source, coverage: coverageFor(source, source) };
   }
-  if (stage === "szenenplot" || stage === "manuskript") {
+  if (
+    stage === "kapitelgeruest" ||
+    stage === "szenenplot" ||
+    stage === "manuskript"
+  ) {
     const sampled = sampleChapterDocForAssess(
       source,
       ASSESS_SOFT_CAP_CHARS,
@@ -256,14 +286,56 @@ export function getStageArtifactText(
       return (
         formatSpecBrief(roman).slice(0, budget ?? CLIP.expose) || "(leer)"
       );
-    case "szenenplot":
+    case "kapitelgeruest":
+    case "grobgeruest":
+    case "feingeruest": {
+      // Prefer full structured remirror (assess soft-cap) so Analyse
+      // cannot invent off-sample Kapitel work from a CLIP slice.
+      const structured = ed.kapitelGeruestStructured;
+      const geruestText =
+        (structured?.chapters?.length
+          ? structuredKapitelGeruestToMarkdown(structured).trim()
+          : (ed.kapitelGeruestRaw ?? "").trim());
+      const cap = budget ?? ASSESS_SOFT_CAP_CHARS;
+      if (!geruestText) return "(leer)";
+      const toc =
+        structured?.chapters?.length
+          ? `# Kapitelübersicht (vollständig)\n${structured.chapters.map((c) => `- Kap. ${c.number}: ${c.title}`).join("\n")}\n\n`
+          : "";
+      const full = `${toc}${geruestText}`;
+      if (full.length <= cap) return full;
       return (
         sampleChapterDocForAssess(
-          roman.manuskriptRaw ?? "",
-          budget ?? CLIP.szenenplot,
+          full,
+          cap,
           options?.focusChapterNumbers,
-        ) || "(leer)"
+        ) || full.slice(0, cap)
       );
+    }
+    case "szenenplot":
+    case "grobplot":
+    case "feinplot": {
+      const structured = ed.szenenplotStructured;
+      const plotText =
+        (structured?.chapters?.length
+          ? structuredSzenenplotToMarkdown(structured).trim()
+          : (roman.manuskriptRaw ?? "").trim());
+      const cap = budget ?? ASSESS_SOFT_CAP_CHARS;
+      if (!plotText) return "(leer)";
+      const toc =
+        structured?.chapters?.length
+          ? `# Kapitelübersicht (vollständig)\n${structured.chapters.map((c) => `- Kap. ${c.number}: ${c.title} (${c.scenes.length} Szenen)`).join("\n")}\n\n`
+          : "";
+      const full = `${toc}${plotText}`;
+      if (full.length <= cap) return full;
+      return (
+        sampleChapterDocForAssess(
+          full,
+          cap,
+          options?.focusChapterNumbers,
+        ) || full.slice(0, cap)
+      );
+    }
     case "manuskript":
       return (
         sampleChapterDocForAssess(
@@ -278,6 +350,9 @@ export function getStageArtifactText(
 /**
  * Emergency sample when a document exceeds the soft cap: prefer focus
  * chapters, then evenly sample the rest (never used under the soft cap).
+ *
+ * Budget is split fairly across picked chapters — never fill Kap. 1…N until
+ * the cap and silently drop later picks (classic “only first chapters” bug).
  */
 function sampleChapterDocForAssess(
   doc: string,
@@ -309,34 +384,34 @@ function sampleChapterDocForAssess(
   if (remaining.length > 0) {
     const slots = Math.max(2, Math.min(remaining.length, 10));
     for (let i = 0; i < slots; i += 1) {
-      const idx = Math.round((i * (remaining.length - 1)) / (slots - 1));
+      const idx = Math.round((i * (remaining.length - 1)) / Math.max(1, slots - 1));
       const ch = remaining[idx]!;
       if (!picked.some((p) => p.number === ch.number)) picked.push(ch);
     }
   }
 
   picked.sort((a, b) => a.number - b.number);
-  const parts: string[] = [
-    `(Notfall-Auszug ${picked.length}/${chapters.length} Kapitel — Soft-Cap ${budget.toLocaleString("de-DE")} Zeichen; Fokus: ${
-      focusChapters.length
-        ? focusChapters.map((c) => c.number).join(", ")
-        : "Streuung"
-    })`,
-  ];
-  let used = parts[0]!.length;
+  const allNums = chapters.map((c) => c.number).join(", ");
+  const header = `(Notfall-Auszug ${picked.length}/${chapters.length} Kapitel — Soft-Cap ${budget.toLocaleString("de-DE")} Zeichen; alle Nummern: ${allNums}; im Auszug: ${picked.map((c) => c.number).join(", ")}; Fokus: ${
+    focusChapters.length
+      ? focusChapters.map((c) => c.number).join(", ")
+      : "Streuung"
+  })`;
+  const sep = "\n\n";
+  const perChapter = Math.max(
+    500,
+    Math.floor((budget - header.length - sep.length * picked.length) / picked.length),
+  );
+  const parts: string[] = [header];
   for (const ch of picked) {
     const block = formatChapterBlock(ch);
-    if (used + block.length + 2 > budget) {
-      const room = budget - used - 2;
-      if (room > 400) {
-        parts.push(`${block.slice(0, room)}\n…`);
-      }
-      break;
+    if (block.length <= perChapter) {
+      parts.push(block);
+    } else {
+      parts.push(`${block.slice(0, perChapter - 2)}\n…`);
     }
-    parts.push(block);
-    used += block.length + 2;
   }
-  return parts.join("\n\n").slice(0, budget);
+  return parts.join(sep).slice(0, budget);
 }
 
 function altergruppeLabel(editorial: RomanEditorial): string {
@@ -594,9 +669,9 @@ export async function assessStageReifegrad(input: {
   const [craftA, craftB, craftC] = craftDimensionsForStage(input.stage);
   const previous = input.previous;
   const prevBlock = previous
-    ? `# Vorherige Messung (nicht kopieren — neu bewerten)
+    ? `# Vorherige Messung (Orientierung — neu bewerten, nicht kopieren)
 Gesamt ${previous.gesamtPct}% · Logik ${previous.regelnPct}% · ${craftA.label} ${previous.stilPct}% · ${craftB.label} ${previous.dramaturgiePct}% · ${craftC.label} ${previous.leseflussPct}%
-Wenn das Artefakt besser/schlechter wurde, MÜSSEN die Prozentwerte sich bewegen.`
+Gleiche Prozentwerte sind erlaubt, wenn die Qualität wirklich unverändert ist. Nur bei klarer Verbesserung/Verschlechterung die Werte anpassen — keinen künstlichen Δ erzwingen.`
     : "";
   const changeBlock = input.changeSummary?.trim()
     ? `# Gerade geändert\n${input.changeSummary.trim()}`
@@ -606,6 +681,8 @@ Wenn das Artefakt besser/schlechter wurde, MÜSSEN die Prozentwerte sich bewegen
     : `Hinweis: Notfall-Auszug (${formatWordCount(coverage.assessedWords)} von ${formatWordCount(coverage.sourceWords)} Wörtern) wegen Soft-Cap — trotzdem streng und repräsentativ bewerten.`;
 
   const { rolle, model } = await resolveRomanKiRolle("bewerter");
+  const specAssessPolicy =
+    input.stage === "expose" ? specStageAnalyzePolicy("assess") : "";
 
   const userText = `${compliance}
 
@@ -616,9 +693,14 @@ lesestufe: ${editorial.lesestufe?.trim() || "—"}
 # Stufe
 ${label} (${input.stage})${
   input.stage === "expose"
-    ? "\nSpec = Charaktere + Welt + Exposé zusammen bewerten."
-    : ""
+    ? "\nSpec = Charaktere + Welt + Exposé zusammen bewerten.\nRoman-Tragfähigkeit: Niedrige Scores, wenn der Spec nur eine Episode trägt oder Downstream zentrale Konflikte/Wendungen erfinden müsste."
+    : input.stage === "kapitelgeruest"
+      ? "\nArtefakt = STRUCTURED Kapitelgerüst (Skizze): centralArcs Setup/Peak/Payoff; je Kapitel kernsatz, knappe inhaltKurz, props/events, Threads, arcBeats. Tragfähigkeit bewerten — nicht wie ein fertiges Buch. Offene Threads und Skizzenkürze sind erlaubt. ALLE Kapitel zählen."
+      : input.stage === "szenenplot"
+        ? "\nArtefakt = STRUCTURED Szenenplot (Arcs, Lifecycle, Szenen mit dramaturgy/info_flow/continuity/schreibPrompt). Felder exakt bewerten. ALLE Kapitel zählen — nicht nur Kap. 1–3."
+        : ""
 }
+${specAssessPolicy}
 
 ${prevBlock}
 
@@ -634,13 +716,22 @@ Bewerte knallhart DIESES Artefakt in VIER Dimensionen (Logik + drei Craft-Achsen
 Die drei Craft-Dimensionen sind STUFENSPEZIFISCH.
 Craft muss zur Altersklasse passen.
 Keine separate Bewertung von Marktanalyse-Bedürfnissen.
-${previous ? "Vergleiche mit der vorherigen Messung: gleiche Werte nur bei wirklich unverändertem Qualitätsniveau." : ""}
+${
+  input.stage === "expose"
+    ? "Spec: Roman-Tragfähigkeit mitbewerten — Episode ohne Mehrakt-Stoff / Escalation / Endgame-Seed = deutlich unter 75."
+    : ""
+}
+${previous ? "Vergleiche mit der vorherigen Messung nur als Kalibrierung — Flat-Scores sind OK bei unverändertem Niveau." : ""}
 
 Antwort NUR als JSON-Objekt (keine Markdown-Fences, kein Text drumherum):
 {"logikPct":0,"craftAPct":0,"craftBPct":0,"craftCPct":0}
 
 Dimensionen:
-- logikPct: innere Logik, Kontinuität, Ursache/Wirkung, keine Widersprüche zu Figuren/Ort/Fakten
+- logikPct: innere Logik, Kontinuität, Ursache/Wirkung, keine Widersprüche zu Figuren/Ort/Fakten${
+  input.stage === "expose"
+    ? " — Spec: Figuren↔Welt↔Exposé müssen einen Roman ohne Erfindungslücken tragen"
+    : ""
+}
 - craftAPct (= ${craftA.key} / ${craftA.label}): ${craftA.brief.split("\n")[0]}
 - craftBPct (= ${craftB.key} / ${craftB.label}): ${craftB.brief.split("\n")[0]}
 - craftCPct (= ${craftC.key} / ${craftC.label}): ${craftC.brief.split("\n")[0]}
@@ -653,6 +744,11 @@ Zusatzauftrag Reifegrad-Messung (${label}):
 Du bist Bewerter:in. Du schreibst nichts um — nur vier Prozentwerte als JSON.
 Craft-Achsen dieser Stufe: ${craftA.label}, ${craftB.label}, ${craftC.label}.
 Altersklasse steuert die Craft-Scores streng mit.
+${
+  input.stage === "expose"
+    ? "Spec: streng bei Roman-Tragfähigkeit — zu dünner Stoff = niedrige Craft-/Logik-Scores."
+    : ""
+}
 Sei streng und konsistent. Ausgabe: genau ein JSON-Objekt, keine Prosa.`;
 
   const scoringEffort = lowestReasoningEffortForScoring(model.modelSlug);

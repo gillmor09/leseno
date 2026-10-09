@@ -1,21 +1,29 @@
 "use client";
 
 /**
- * Idee / Spec / Kapitelgerüst / Manuskript: Leser-Feedback button + dialog.
+ * Idee / Spec / Manuskript: Leser-Feedback button + dialog.
  * Opens last saved Testleser feedback; „Feedback einholen“ regenerates;
- * „Einarbeiten“ patches via Co-Autor.
- * Human-in-the-loop: entscheidungNoetig prompts require author text before apply.
+ * „Einarbeiten“: Spec/Idee → Entwicklungslektor; Manuskript → Co-Autor.
+ * Analyse picks the patch path — no author decision fields before Einarbeiten.
  */
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { MessageSquareText, RefreshCw, Wand2, X } from "lucide-react";
+import { MessageSquareText, RefreshCw, Trash2, Wand2, X } from "lucide-react";
 import {
   romanLeserFeedbackAction,
   romanLeserFeedbackApplyAction,
+  romanLeserFeedbackDiscardAction,
 } from "@/app/actions/roman-leser-feedback";
-import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import {
+  RomanSceneWaitDialog,
+  waitModelLabelForRole,
+  type WaitAgentInfo,
+} from "@/components/features/admin/roman-scene-wait-dialog";
+import { loadRomanKiRollenAction } from "@/app/actions/roman-roles-admin";
+import { ROMAN_ASSIST_MODEL_SLUG } from "@/lib/roman/assist-model";
 import type {
   LeserFeedbackStage,
   RomanAenderungsPrompt,
@@ -23,11 +31,9 @@ import type {
   RomanLeserFeedbackStatus,
 } from "@/lib/roman/editorial";
 import {
-  aenderungsPromptsNeedingDecision,
   actionableAenderungsPrompts,
   formatDialogProsa,
   leserFeedbackForStage,
-  missingAutorEntscheidungen,
   onlyNiceToHavePrompts,
 } from "@/lib/roman/editorial";
 import {
@@ -73,7 +79,6 @@ function missingArtifactMessage(stage: LeserFeedbackStage): string {
   if (stage === "expose") {
     return "Zuerst einen Spec anlegen (Figuren / Welt / Exposé).";
   }
-  if (stage === "szenenplot") return "Zuerst ein Kapitelgerüst anlegen.";
   return "Zuerst ein Manuskript anlegen.";
 }
 
@@ -94,7 +99,7 @@ function promptsForDisplay(
   }));
 }
 
-type PendingKind = "collect" | "apply" | null;
+type PendingKind = "collect" | "apply" | "discard" | null;
 
 export function RomanLeserFeedbackControl({
   romanId,
@@ -120,18 +125,64 @@ export function RomanLeserFeedbackControl({
   const label = stageDisplayLabel(stage, displayLabel);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<PendingKind>(null);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const [localFeedback, setLocalFeedback] = useState<RomanLeserFeedback | null>(
     feedback,
   );
-  const [autorEntscheidungen, setAutorEntscheidungen] = useState<
-    Record<number, string>
-  >({});
+  const [waitAgent, setWaitAgent] = useState<WaitAgentInfo | null>(null);
   const [syncedFeedback, setSyncedFeedback] = useState(feedback);
   if (feedback !== syncedFeedback) {
     setSyncedFeedback(feedback);
     setLocalFeedback(feedback);
-    setAutorEntscheidungen({});
   }
+
+  useEffect(() => {
+    if (!pending || pending === "discard") {
+      setWaitAgent(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const result = await loadRomanKiRollenAction();
+      if (cancelled || !result.success) return;
+      const byKey = new Map(result.data!.rollen.map((r) => [r.key, r]));
+      if (pending === "collect") {
+        const leser = byKey.get("testleser_fanbase");
+        setWaitAgent({
+          roleLabel: leser?.label ?? "Testleser",
+          modelLabel: waitModelLabelForRole(
+            leser?.key ?? "testleser_fanbase",
+            leser?.modelSlug ?? ROMAN_ASSIST_MODEL_SLUG,
+          ),
+        });
+        return;
+      }
+      // Apply: Manuskript = Co-Autor-Prosa; Spec/Idee/… = Entwicklungslektor.
+      if (stage === "manuskript") {
+        const co = byKey.get("co_autor");
+        setWaitAgent({
+          roleLabel: co?.label ?? "Co-Autor",
+          modelLabel: waitModelLabelForRole(
+            co?.key ?? "co_autor",
+            co?.modelSlug ?? ROMAN_ASSIST_MODEL_SLUG,
+            { allowProseModel: true },
+          ),
+        });
+        return;
+      }
+      const lektor = byKey.get("entwicklungslektor");
+      setWaitAgent({
+        roleLabel: lektor?.label ?? "Entwicklungslektor",
+        modelLabel: waitModelLabelForRole(
+          lektor?.key ?? "entwicklungslektor",
+          lektor?.modelSlug ?? ROMAN_ASSIST_MODEL_SLUG,
+        ),
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pending, stage]);
 
   async function runNewFeedback() {
     if (!ready) {
@@ -147,7 +198,6 @@ export function RomanLeserFeedbackControl({
         return;
       }
       setLocalFeedback(result.data.feedback);
-      setAutorEntscheidungen({});
       onComplete?.(result.data.roman);
       setOpen(true);
       toast.success("Leser-Feedback gespeichert.");
@@ -160,7 +210,7 @@ export function RomanLeserFeedbackControl({
     }
   }
 
-  async function runApplyFeedback(entscheidungen: Record<number, string>) {
+  async function runApplyFeedback() {
     if (!localFeedback) {
       toast.error("Kein gespeichertes Leser-Feedback.");
       return;
@@ -169,22 +219,11 @@ export function RomanLeserFeedbackControl({
       toast.error(missingArtifactMessage(stage));
       return;
     }
-    const missing = missingAutorEntscheidungen(
-      localFeedback.aenderungsPrompts,
-      entscheidungen,
-    );
-    if (missing.length > 0) {
-      toast.error(`Bitte zuerst entscheiden: ${missing.join(", ")}.`);
-      return;
-    }
     setPending("apply");
     try {
       const result = await romanLeserFeedbackApplyAction({
         romanId,
         stage,
-        autorEntscheidungen: Object.fromEntries(
-          Object.entries(entscheidungen).map(([k, v]) => [String(k), v]),
-        ),
       });
       if (!result.success || !result.data) {
         toast.error(result.error ?? "Einarbeiten fehlgeschlagen.");
@@ -196,7 +235,6 @@ export function RomanLeserFeedbackControl({
         ? leserFeedbackForStage(result.data.roman.editorial, stage)
         : null;
       if (nextFeedback) setLocalFeedback(nextFeedback);
-      setAutorEntscheidungen({});
       const summary =
         result.data.summary?.trim() || "Feedback eingearbeitet.";
       if (stage === "expose" || stage === "idee") {
@@ -234,6 +272,37 @@ export function RomanLeserFeedbackControl({
     void runNewFeedback();
   }
 
+  async function runDiscardFeedback() {
+    if (!localFeedback) {
+      toast.error("Kein gespeichertes Leser-Feedback.");
+      return;
+    }
+    setPending("discard");
+    try {
+      const result = await romanLeserFeedbackDiscardAction({
+        romanId,
+        stage,
+      });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Feedback verwerfen fehlgeschlagen.");
+        return;
+      }
+      setLocalFeedback(null);
+      setDiscardConfirmOpen(false);
+      setOpen(false);
+      onComplete?.(result.data.roman);
+      toast.success(result.data.summary);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Feedback verwerfen fehlgeschlagen.",
+      );
+    } finally {
+      setPending(null);
+    }
+  }
+
   const busy = pending != null;
   const feedbackOpen = Boolean(localFeedback && !localFeedback.appliedAt);
   const feedbackClear =
@@ -261,9 +330,11 @@ export function RomanLeserFeedbackControl({
           ? "Feedback …"
           : pending === "apply"
             ? "Einarbeiten …"
-            : feedbackOpen
-              ? "Feedback offen"
-              : "Feedback einholen"}
+            : pending === "discard"
+              ? "Verwerfen …"
+              : feedbackOpen
+                ? "Feedback offen"
+                : "Feedback einholen"}
         {feedbackOpen ? (
           <span
             className={cn(
@@ -276,10 +347,40 @@ export function RomanLeserFeedbackControl({
       </button>
 
       <RomanSceneWaitDialog
-        open={busy}
+        open={busy && pending !== "discard"}
         variant={
           pending === "apply" ? "leser-feedback-apply" : "leser-feedback"
         }
+        contextLabel={
+          pending === "apply"
+            ? `${label} · Feedback einarbeiten`
+            : `${label} · Feedback einholen`
+        }
+        title={
+          pending === "apply"
+            ? "Testleser-Feedback einarbeiten"
+            : "Testleser-Feedback einholen"
+        }
+        progressLabel={
+          pending === "apply"
+            ? stage === "manuskript"
+              ? `${label}: Co-Autor arbeitet Prosa ein …`
+              : `${label}: Entwicklungslektor arbeitet Feedback ein …`
+            : `${label}: Testleser liest und formuliert Feedback …`
+        }
+        agentInfo={waitAgent}
+      />
+
+      <ConfirmDeleteDialog
+        open={discardConfirmOpen && localFeedback != null}
+        title="Feedback verwerfen?"
+        description={`Das gespeicherte Leser-Feedback für „${label}“ wird gelöscht (Einschätzung und Änderungsaufträge). Das Buch selbst bleibt unverändert. Danach kannst du erneut Feedback einholen.`}
+        confirmLabel="Feedback verwerfen"
+        pending={pending === "discard"}
+        onCancel={() => {
+          if (pending !== "discard") setDiscardConfirmOpen(false);
+        }}
+        onConfirm={() => void runDiscardFeedback()}
       />
 
       {open && localFeedback ? (
@@ -287,15 +388,15 @@ export function RomanLeserFeedbackControl({
           feedback={localFeedback}
           stageLabel={label}
           pending={pending}
-          autorEntscheidungen={autorEntscheidungen}
-          onAutorEntscheidungChange={(index, value) =>
-            setAutorEntscheidungen((prev) => ({ ...prev, [index]: value }))
-          }
           onClose={() => {
-            if (!busy) setOpen(false);
+            if (!busy) {
+              setDiscardConfirmOpen(false);
+              setOpen(false);
+            }
           }}
           onNewFeedback={() => void runNewFeedback()}
-          onApplyFeedback={() => void runApplyFeedback(autorEntscheidungen)}
+          onApplyFeedback={() => void runApplyFeedback()}
+          onDiscardRequest={() => setDiscardConfirmOpen(true)}
         />
       ) : null}
     </>
@@ -306,43 +407,30 @@ function LeserFeedbackDialog({
   feedback,
   stageLabel,
   pending,
-  autorEntscheidungen,
-  onAutorEntscheidungChange,
   onClose,
   onNewFeedback,
   onApplyFeedback,
+  onDiscardRequest,
 }: {
   feedback: RomanLeserFeedback;
   stageLabel: string;
   pending: PendingKind;
-  autorEntscheidungen: Record<number, string>;
-  onAutorEntscheidungChange: (index: number, value: string) => void;
   onClose: () => void;
   onNewFeedback: () => void;
   onApplyFeedback: () => void;
+  onDiscardRequest: () => void;
 }) {
   const busy = pending != null;
   const displayPrompts = promptsForDisplay(feedback);
   const onlyNice = onlyNiceToHavePrompts(
     feedback.aenderungsPrompts.length > 0 ? feedback.aenderungsPrompts : [],
   );
-  const decisionRows = aenderungsPromptsNeedingDecision(
-    feedback.aenderungsPrompts,
-  );
-  const needsDecisionAt = new Set(decisionRows.map((r) => r.index));
-  const decisionsMissing =
-    missingAutorEntscheidungen(
-      feedback.aenderungsPrompts,
-      autorEntscheidungen,
-    ).length > 0;
-  const canApply = !onlyNice && !decisionsMissing && !feedback.appliedAt;
+  const canApply = !onlyNice && !feedback.appliedAt;
   const applyLabel = feedback.appliedAt
     ? "Bereits eingearbeitet"
-    : decisionsMissing
-      ? "Entscheidung fehlt"
-      : onlyNice
-        ? "Nur Nice-to-have"
-        : "Einarbeiten";
+    : onlyNice
+      ? "Nur Nice-to-have"
+      : "Einarbeiten";
 
   useEffect(() => {
     return lockBodyScroll();
@@ -493,11 +581,6 @@ function LeserFeedbackDialog({
                               ? `Kap. ${p.kapitel.join(", ")}`
                               : "lokal"}
                         </span>
-                        {needsDecisionAt.has(i) ? (
-                          <span className="rounded-full bg-violet-50 px-2.5 py-0.5 text-[10px] font-bold text-violet-950 ring-1 ring-violet-200">
-                            Entscheidung
-                          </span>
-                        ) : null}
                       </div>
                       <p className="mt-1.5 whitespace-pre-wrap text-sm font-semibold text-zinc-800">
                         {p.anweisung}
@@ -508,39 +591,6 @@ function LeserFeedbackDialog({
               </>
             )}
           </section>
-
-          {decisionRows.length > 0 && !feedback.appliedAt ? (
-            <section className="space-y-3 rounded-2xl bg-violet-50/80 px-4 py-3 ring-1 ring-violet-200">
-              <h3 className="text-xs font-extrabold tracking-wide text-violet-900 uppercase">
-                Deine Entscheidung
-              </h3>
-              <p className="text-xs font-semibold text-violet-900/80">
-                Für diese Punkte braucht der Co-Autor eine verbindliche Vorgabe —
-                dann wird nur deine Variante eingearbeitet.
-              </p>
-              {decisionRows.map(({ index, prompt }) => (
-                <label key={index} className="block">
-                  <span className="mb-1.5 block text-sm font-extrabold text-zinc-950">
-                    {prompt.titel}
-                  </span>
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    {prompt.entscheidungFrage?.trim() ||
-                      "Welche Variante soll gelten?"}
-                  </span>
-                  <textarea
-                    value={autorEntscheidungen[index] ?? ""}
-                    onChange={(e) =>
-                      onAutorEntscheidungChange(index, e.target.value)
-                    }
-                    disabled={busy}
-                    rows={3}
-                    className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:ring-2 focus:ring-orange-700 disabled:opacity-50"
-                    placeholder="z. B. Variante A gilt — konkrete Vorgabe für den Co-Autor …"
-                  />
-                </label>
-              ))}
-            </section>
-          ) : null}
 
           {feedback.genreVergleich.trim() ? (
             <section>
@@ -554,31 +604,42 @@ function LeserFeedbackDialog({
           ) : null}
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <button
             type="button"
             disabled={busy}
-            onClick={onNewFeedback}
-            className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-zinc-950 ring-1 ring-zinc-950/15 hover:bg-zinc-50 disabled:opacity-50"
+            onClick={onDiscardRequest}
+            className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-bold text-rose-800 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-50"
           >
-            <RefreshCw
-              className={cn("size-4", pending === "collect" && "animate-spin")}
-              aria-hidden
-            />
-            {pending === "collect" ? "Einholen …" : "Feedback einholen"}
+            <Trash2 className="size-4" aria-hidden />
+            Feedback verwerfen
           </button>
-          <button
-            type="button"
-            disabled={busy || !canApply}
-            onClick={onApplyFeedback}
-            className="inline-flex items-center gap-2 rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
-          >
-            <Wand2
-              className={cn("size-4", pending === "apply" && "animate-spin")}
-              aria-hidden
-            />
-            {pending === "apply" ? "Einarbeiten …" : applyLabel}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onNewFeedback}
+              className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-zinc-950 ring-1 ring-zinc-950/15 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              <RefreshCw
+                className={cn("size-4", pending === "collect" && "animate-spin")}
+                aria-hidden
+              />
+              {pending === "collect" ? "Einholen …" : "Feedback einholen"}
+            </button>
+            <button
+              type="button"
+              disabled={busy || !canApply}
+              onClick={onApplyFeedback}
+              className="inline-flex items-center gap-2 rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+            >
+              <Wand2
+                className={cn("size-4", pending === "apply" && "animate-spin")}
+                aria-hidden
+              />
+              {pending === "apply" ? "Einarbeiten …" : applyLabel}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

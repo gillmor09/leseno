@@ -1,11 +1,11 @@
 /**
  * Apply router patch briefs to pipeline artifacts (auto, no author comment gate).
- * New text is always written by Co-Autor (same as Erzeugen / draft).
- * Chapter docs are patched body-only and reassembled with structure-guard.
- * Manuskript patches use Continuity Buffer + update `editorial.storyState`.
- *
- * Bedürfnis-Findings: sample evenly across the book (cap `MANUSKRIPT_NEEDS_PASS_MAX_CHAPTERS`)
- * so market needs show up without rewriting every chapter (runtime + overshoot).
+ * Manuskript chapter patches (Dim/Verbessern/Leser-Feedback): Co-Autor prose with
+ * slim canon + Gemini chapter packet — not the full Spec/Recherche bible.
+ * Kapitelgerüst + Szenenplot Verbessern: structured-first JSON patch
+ * (`structured-stage-patch.ts`) then markdown remirror — not freeform bodies.
+ * Continuity + Wissensgraph updated after. Manuskript craft also light-syncs
+ * Szenenplot beats + graph retract (`manuskript-patch-sync.ts`).
  */
 
 import { AI_LONG_PROSE_TIMEOUT_MS } from "@/lib/ai/fetch-timeout";
@@ -22,10 +22,27 @@ import {
 } from "@/lib/roman/editorial";
 import { formatAutorBiasFromCharaktere } from "@/lib/roman/autor-bias";
 import {
-  assembleManuskriptChapterContext,
+  hasFrozenSchreibPrompts,
+  resolveManuskriptChapterPacket,
+} from "@/lib/roman/manuskript-chapter-packet";
+import {
   CONTINUITY_PREV_TAIL_CHARS,
+  CONTINUITY_PREV_TAIL_CHARS_FROZEN,
   extractManuskriptStoryState,
 } from "@/lib/roman/manuskript-continuity";
+import {
+  formatPatchPriorityBanner,
+  retractWissensGraphAfterPatch,
+  syncAfterManuskriptCraftPatch,
+} from "@/lib/roman/manuskript-patch-sync";
+import {
+  patchKapitelGeruestStructured,
+  patchSzenenplotStructured,
+} from "@/lib/roman/structured-stage-patch";
+import {
+  structuredKapitelGeruestToMarkdown,
+  structuredSzenenplotToMarkdown,
+} from "@/lib/roman/szenenplot-structured";
 import {
   MANUSKRIPT_NEEDS_PASS_MAX_CHAPTERS,
   MANUSKRIPT_PATCH_WORD_FLOOR_PCT,
@@ -34,18 +51,27 @@ import {
   manuskriptNeedsPromptBlock,
   manuskriptWordsPerChapter,
 } from "@/lib/roman/manuskript-contracts";
-import { buildRomanStaticBookPrefix } from "@/lib/roman/prompt-prefix";
+import { buildRomanSlimCanon } from "@/lib/roman/prompt-prefix";
 import {
   assertChapterStructure,
   patchChapterBodies,
 } from "@/lib/roman/pipeline/structure-guard";
 import type { RouteTarget } from "@/lib/roman/pipeline/critique-schema";
-import { growWissensGraphFromChapterBodies } from "@/lib/roman/wissens-graph";
+import {
+  closeWissensGraphGaps,
+  growWissensGraphFromChapterBodies,
+} from "@/lib/roman/wissens-graph";
 import {
   CLIP,
   ROMAN_EXCELLENCE_MANDATE,
+  ROMAN_PROSE_MAX_TOKENS,
 } from "@/lib/roman/pipeline/quality-brief";
-import type { PipelineStage } from "@/lib/roman/pipeline/stages";
+import { invalidateDownstreamEditorial } from "@/lib/roman/pipeline/cascade";
+import {
+  isGeruestStage,
+  isPlotStage,
+  type PipelineStage,
+} from "@/lib/roman/pipeline/stages";
 import { resolvePipelineTask } from "@/lib/roman/pipeline/tasks";
 import {
   MANUSKRIPT_CHAPTER_PROSE_RULES,
@@ -58,10 +84,11 @@ import {
 } from "@/lib/roman/plot-chapters";
 import { upsertRomanKontext } from "@/lib/roman/repository";
 import { weaveIdeeKurzFromCoAutorKritik } from "@/lib/roman/idea-qa";
-import { refineCharaktereWithFachberater } from "@/lib/roman/suggest-charaktere";
+import { refineCharaktere } from "@/lib/roman/suggest-charaktere";
 import { weaveExposeFromLektorKritik } from "@/lib/roman/suggest-expose";
-import { weaveWeltFromFachberaterKritik } from "@/lib/roman/suggest-welt";
+import { weaveWeltFromKritik } from "@/lib/roman/suggest-welt";
 import type { RomanKontext } from "@/lib/roman/types";
+import type { RomanSzenenplotStructured } from "@/lib/roman/szenenplot-structured";
 import { buildWeaveSystemAddendum } from "@/lib/roman/weave-comment";
 
 /** Max chapters patched in one apply (beat-sheet / manuskript upper bound). */
@@ -107,6 +134,28 @@ export function isManuskriptSimplifyPatch(input: {
 }
 
 /**
+ * Detect Manuskript „Verbessern“ (style elevate — content frozen, Autor/Opus).
+ */
+export function isManuskriptVerbessernPatch(input: {
+  patchBrief: string;
+  reason?: string;
+  critiqueText?: string;
+}): boolean {
+  const blob = [
+    input.reason ?? "",
+    input.critiqueText ?? "",
+    input.patchBrief,
+  ]
+    .join("\n")
+    .toLowerCase();
+  return (
+    /manuskript verbessern|stil-pass|prosa-qualität|inhalt eingefroren/.test(
+      blob,
+    ) || /auftrag — verbessern \(stil-pass\)/.test(blob)
+  );
+}
+
+/**
  * Detect Reifegrad-Dimension „Lesefluss“ einarbeiten.
  * Pacing/Klarheit often shortens chapters — must not hit the 95% floor revert.
  */
@@ -126,6 +175,51 @@ export function isLeseflussChapterPatch(input: {
     /fokussierte nacharbeit:\s*lesefluss/.test(blob) ||
     /reifegrad-dimension\s*[„"']?lesefluss/.test(blob) ||
     /arbeitsauftrag\s*[—–-]\s*reifegrad-dimension\s*[„"']lesefluss/.test(blob)
+  );
+}
+
+/**
+ * Detect Reifegrad-Dimension / Verbessern einarbeiten.
+ * Often deletes Duplikate — must not hit the 95% floor revert.
+ */
+export function isReifegradImproveChapterPatch(input: {
+  patchBrief: string;
+  reason?: string;
+  critiqueText?: string;
+}): boolean {
+  const blob = [
+    input.reason ?? "",
+    input.critiqueText ?? "",
+    input.patchBrief,
+  ]
+    .join("\n")
+    .toLowerCase();
+  return (
+    /fokussierte nacharbeit/.test(blob) ||
+    /reifegrad-dimension/.test(blob) ||
+    /arbeitsauftrag\s*[—–-]\s*reifegrad-dimension/.test(blob) ||
+    /verbessern\s*[·•]/.test(blob) ||
+    /verbessern einarbeiten/.test(blob)
+  );
+}
+
+/**
+ * Patch brief asks to delete / dedupe / trim — shortening is the success criterion.
+ */
+export function isShortenIntentPatch(input: {
+  patchBrief: string;
+  reason?: string;
+  critiqueText?: string;
+}): boolean {
+  const blob = [
+    input.reason ?? "",
+    input.critiqueText ?? "",
+    input.patchBrief,
+  ]
+    .join("\n")
+    .toLowerCase();
+  return /duplikat|doppelung|doppelt|redundan|wiederhol|streich|bereinigen|entfernen|kürz|straffen|verdichten|überlapp|nochmals\s+(dieselbe|die\s+gleiche)|zweite\s+zustellung|doppelt\s+erzähl/.test(
+    blob,
   );
 }
 
@@ -285,15 +379,25 @@ async function persistRoman(
 
 /**
  * Patch one chapter body via draft role; preserve heading from baseline.
+ * Manuskript prose (Sonnet): slim canon + chapter packet — not full Spec dump.
  */
+type ChapterDocStage =
+  | "kapitelgeruest"
+  | "grobgeruest"
+  | "feingeruest"
+  | "szenenplot"
+  | "grobplot"
+  | "feinplot"
+  | "manuskript";
+
 async function patchOneChapterBody(input: {
-  stage: "szenenplot" | "manuskript";
+  stage: ChapterDocStage;
   chapterNumber: number;
   title: string;
   body: string;
   patchBrief: string;
   context: string;
-  /** Stable book bible for prompt-caching across multi-chapter patches. */
+  /** Slim canon for prompt-caching (not full Spec/Recherche). */
   cacheablePrefix?: string;
   /** Manuskript: refuse patches shorter than this. */
   wordFloor?: number;
@@ -307,12 +411,34 @@ async function patchOneChapterBody(input: {
    */
   allowSubstantialShorten?: boolean;
   needsBlock?: string;
-  /** Compact continuity buffer (Memory light). */
+  /**
+   * Gemini chapter packet (preferred for Manuskript Sonnet patches).
+   * When set, skips dumping full context/bible into userText.
+   */
+  chapterPacket?: string;
+  /** Legacy continuity buffer if no chapterPacket. */
   continuityBuffer?: string;
+  /** Override writer role (e.g. `autor` for Manuskript Verbessern). */
+  applyRoleKey?: string;
 }): Promise<string> {
   const taskKey =
-    input.stage === "szenenplot" ? "szenenplot.draft" : "manuskript.draft";
-  const { rolle, model } = await resolvePipelineTask(taskKey);
+    input.stage === "kapitelgeruest" ||
+    input.stage === "grobgeruest" ||
+    input.stage === "feingeruest"
+      ? "feingeruest.draft"
+      : input.stage === "szenenplot" ||
+          input.stage === "grobplot" ||
+          input.stage === "feinplot"
+        ? "feinplot.draft"
+        : "manuskript.draft";
+  const { resolveRomanKiRolle } = await import("@/lib/roman/roles");
+  const resolved = input.applyRoleKey?.trim()
+    ? await resolveRomanKiRolle(input.applyRoleKey.trim(), {
+        allowProseModel: true,
+      })
+    : await resolvePipelineTask(taskKey);
+  const rolle = resolved.rolle;
+  const model = resolved.model;
   const heading =
     input.stage === "manuskript"
       ? formatManuskriptChapterHeading({
@@ -325,10 +451,25 @@ async function patchOneChapterBody(input: {
           title: input.title,
           body: "",
         });
+  const styleOnly =
+    input.stage === "manuskript" &&
+    isManuskriptVerbessernPatch({
+      patchBrief: input.patchBrief,
+    });
   const noHeadingHint =
     input.stage === "manuskript"
       ? "Gib NUR den neuen Body zurück — keine Kapitel-Überschrift („Kapitel N — …“), kein JSON."
       : "Gib NUR den neuen Body zurück — keine ## Kapitel-Zeile, kein JSON.";
+  const structureHint =
+    input.stage === "kapitelgeruest" ||
+    input.stage === "grobgeruest" ||
+    input.stage === "feingeruest"
+      ? "Kapitelgerüst-Body: Kernsatz + Inhaltsskizze (1–3 Absätze), ggf. Props/Events/Threads — KEINE Einzelszenen (### Szene …)."
+      : input.stage === "szenenplot" ||
+          input.stage === "grobplot" ||
+          input.stage === "feinplot"
+        ? "Behalte oder stelle die Szenengliederung her: ### Szene N.M — Kurztitel mit Stichpunkten darunter (Ziel, Hindernis, Wendepunkt, Schreibprompt)."
+        : "";
   const baselineWords = manuskriptChapterWordCount(input.body);
   const floor =
     input.wordFloor ??
@@ -338,19 +479,30 @@ async function patchOneChapterBody(input: {
     input.stage === "manuskript" && input.needsBlock?.trim()
       ? `\n${input.needsBlock.trim()}\n`
       : "";
-  const continuity = input.continuityBuffer?.trim()
+  const packet = input.chapterPacket?.trim() ?? "";
+  const continuity = !packet && input.continuityBuffer?.trim()
     ? `\n# Context-Buffer (Continuity + Fokus)\n${input.continuityBuffer.trim().slice(0, 4_500)}\n`
+    : "";
+  const packetBlock = packet
+    ? `\n# Kapitel-Paket (Continuity/Beats/Props — UNTER dem Patch-Brief)\n${packet.slice(0, 5_500)}\n`
     : "";
   const lengthRule =
     input.stage === "manuskript"
       ? input.preferTighten
-        ? `\nLÄNGEN-CONTRACT: Buch ist schon am/über Ziel. Inhaltlich ändern laut Patch-Brief; höchstens leicht verdichten. Nicht aufblasen — Zielband bis ca. ${ceiling ?? baselineWords} Wörter (Baseline ${baselineWords}).`
+        ? `\nLÄNGEN-CONTRACT: Buch ist schon am/über Ziel. Inhaltlich ändern laut Patch-Brief; höchstens leicht verdichten. Nicht aufblasen — Zielband bis ca. ${ceiling ?? baselineWords} Wörter (Baseline ${baselineWords}). Fertiger Body mind. ${floor} Wörter.`
         : input.allowSubstantialShorten
-          ? `\nLÄNGEN-CONTRACT: Baseline ${baselineWords} Wörter. Patch-Brief hat Vorrang — straffen, Duplikate streichen und kürzer werden für Klarheit/Lesefluss ist erwünscht. Soft-Ziel ab ca. ${floor} Wörtern, aber sichtbare Änderungen nicht rückgängig machen.`
+          ? `\nLÄNGEN-CONTRACT: Baseline ${baselineWords} Wörter. Patch-Brief hat Vorrang — Duplikate/Wiederholungen streichen ist erwünscht. Fertiger Body MUSS mind. ${floor} Wörter haben: gestrichene Doppelungen NICHT zurückholen; wo nötig woanders erweitern (Dialog, Sinneseindruck, Innenleben, klarer Beat). Soft-Untergrenze ohne Expand wäre zu kurz — ziele auf ≥${floor}.`
           : `\nLÄNGEN-CONTRACT: Zielband ${floor}–${ceiling ?? Math.round(floor * 1.25)} Wörter (Baseline ${baselineWords}). Nicht sinnlos aufblähen.`
+      : "";
+  const patchOverPacket =
+    input.stage === "manuskript" && packet
+      ? `\nPRIORITÄT: Patch-Brief > Kapitel-Paket. Was der Brief streicht/ersetzt, gilt — auch wenn Beats/Arc-/Fakten-Verträge im Paket es noch fordern. Gestrichene Motive nicht erneut einführen.`
       : "";
 
   async function generateOnce(extraHint: string): Promise<string> {
+    const contextBlock = packet
+      ? ""
+      : `\n# Kontext\n${input.context.slice(0, CLIP.sharedContext)}\n`;
     const raw = await generateText({
       model,
       systemInstruction: `${rolle.systemPrompt}
@@ -358,40 +510,67 @@ async function patchOneChapterBody(input: {
 ${ROMAN_EXCELLENCE_MANDATE}
 
 ${buildWeaveSystemAddendum({
-  kind: input.stage === "szenenplot" ? "szenenplot" : "manuskript",
+  kind:
+    input.stage === "kapitelgeruest" ||
+    input.stage === "grobgeruest" ||
+    input.stage === "feingeruest"
+      ? "kapitelgeruest"
+      : input.stage === "szenenplot" ||
+          input.stage === "grobplot" ||
+          input.stage === "feinplot"
+        ? "szenenplot"
+        : "manuskript",
   outputFormatHint:
     "Nur den Kapitel-BODY ohne Überschrift. Die Heading-Zeile setzt der Server.",
 })}
 
-Du erhältst GENAU ein Kapitel. Ändere nur den Body laut Patch-Brief.
+Du erhältst GENAU ein Kapitel. Ändere den Body laut Patch-Brief — SICHTBAR und ENTSCHIEDEN.
 ${
-  input.stage === "szenenplot"
-    ? "Behalte oder stelle die Szenengliederung her: ### Szene N.M — Kurztitel mit Stichpunkten darunter."
+  input.stage === "kapitelgeruest" ||
+  input.stage === "grobgeruest" ||
+  input.stage === "feingeruest" ||
+  input.stage === "szenenplot" ||
+  input.stage === "grobplot" ||
+  input.stage === "feinplot"
+    ? `${structureHint}
+Analytisch präzise (Entwicklungslektor): Dramaturgie/Logik laut Brief schärfen — keine Manuskript-Prosa schreiben.`
     : `${MANUSKRIPT_CHAPTER_PROSE_RULES}
 Buchdruck: Überschriften setzt das System (ohne Rauten). Erzähle Kapitel ${input.chapterNumber} („${input.title}“) als echte Prosa — keine Streich-/Meta-Notizen.${lengthRule}
-Continuity: Ende des Vorgängers ist BEREITS geschrieben — am Kapitelanfang nicht wiederholen oder paraphrasieren, nur organisch fortsetzen. Harte Fakten einhalten.`
+Continuity: Ende des Vorgängers ist BEREITS geschrieben — am Kapitelanfang nicht wiederholen oder paraphrasieren, nur organisch fortsetzen. Harte Fakten einhalten.
+${
+  styleOnly
+    ? "Stil-Pass: gleiche Beats/Fakten/Dialogbedeutung — nur Wortwahl und Satzbau verbessern."
+    : "Wenn der Patch-Brief Duplikate/Doppelungen/Wiederholungen nennt: die überzählige Passage MUSS im fertigen Body komplett fehlen (nicht umschreiben und behalten)."
+}${patchOverPacket}`
 }
 ${noHeadingHint}`,
       cacheablePrefix: input.cacheablePrefix?.trim() || undefined,
-      userText: `# Patch-Brief (verbindlich)
+      userText: `# Patch-Brief (verbindlich — höchste Priorität, jede Anweisung umsetzen)
 ${input.patchBrief}
-${needs}${continuity}${extraHint}
-# Kontext
-${input.context.slice(0, CLIP.sharedContext)}
-
+${needs}${packetBlock}${continuity}${contextBlock}${extraHint}
 # Kapitel (Meta unveränderlich)
 ${heading}
 
 # Bisheriger Body
 ${input.body.slice(0, CLIP.chapterBody)}
 
-Schreibe den vollständigen neuen Body. Der Text MUSS sich klar vom bisherigen unterscheiden (konkrete Änderungen laut Patch-Brief) — keine reine Kosmetik.${
+Schreibe den vollständigen neuen Body.
+HARTE ERFOLGSKRITERIEN:
+${
+  styleOnly
+    ? `- Bessere Prosa (Wortwahl/Satzbau) bei IDENTISCHEM Inhalt — keine neuen Beats.
+- Der Text darf sich stilistisch klar unterscheiden; Handlung und Infos bleiben gleich.`
+    : `- Der Text MUSS sich klar vom bisherigen unterscheiden (konkrete Änderungen laut Patch-Brief) — keine reine Kosmetik, kein Umformulieren ohne Inhaltsschwenk.`
+}
+- Was der Brief streichen/bereinigen/entdoppeln will, darf im neuen Body NICHT mehr vorkommen.
+- Keine Meta-Sätze („hier wurde gestrichen“). Nur erzählende Prosa.${
         input.stage === "manuskript"
-          ? ` Nur erzählende Prosa für DIESES Kapitel; niemals behaupten, das Kapitel entfalle. Wortzahl im Band ${floor}${ceiling != null ? `–${ceiling}` : "+"}.`
+          ? ` Nur DIESES Kapitel; niemals behaupten, das Kapitel entfalle. Wortzahl mind. ${floor}${ceiling != null ? `, max. ca. ${ceiling}` : ""}${input.allowSubstantialShorten ? " (Duplikate streichen OK — Länge woanders nachziehen)." : "."}`
           : ""
       }`,
       preferJson: false,
-      maxTokens: 8_000,
+      // Full chapter rewrite — same floor as Co-Autor drafts (no mid-sentence cut).
+      maxTokens: ROMAN_PROSE_MAX_TOKENS,
       timeoutMs: AI_LONG_PROSE_TIMEOUT_MS,
       reasoningEffort: "none",
     });
@@ -405,25 +584,45 @@ Schreibe den vollständigen neuen Body. Der Text MUSS sich klar vom bisherigen u
     const changedFromBaseline =
       normalizeWhitespace(body) !== normalizeWhitespace(input.body);
 
-    // Under floor and not in tighten mode → one expand retry
-    // (skip when Leser-Feedback already shortened visibly — Duplikat-Streichungen).
-    if (
-      !input.preferTighten &&
-      words < floor &&
-      !(input.allowSubstantialShorten && changedFromBaseline)
-    ) {
+    // Weak / no-op first pass → one hard retry (especially Duplikat-Patches).
+    if (!changedFromBaseline) {
       body = await generateOnce(
-        `\n# Expand-Pflicht\nNur ${words} Wörter — erneut mit mindestens ${floor} und höchstens ${ceiling ?? floor * 2} Wörtern. Gelöschte Duplikate/Wiederholungen NICHT wieder einfügen; wo nötig woanders verdichten.\n`,
+        `\n# Nacharbeit Pflicht\nDein erster Entwurf war praktisch unverändert. Setze den Patch-Brief JETZT sichtbar um. Wenn Duplikate/Doppelungen genannt sind: eine der beiden Passagen komplett entfernen — nicht nur umformulieren.\n`,
       );
       assertRealManuskriptProse(body, input.chapterNumber, input.title);
       words = manuskriptChapterWordCount(body);
     }
 
-    // Still under floor → keep baseline, unless Leser-Feedback visibly shortened.
+    // Under floor → expand (also after Duplikat-Straffung). Never re-insert
+    // deleted doubles; grow elsewhere so chapter min holds.
+    if (!input.preferTighten && words < floor) {
+      body = await generateOnce(
+        `\n# Expand-Pflicht\nNur ${words} Wörter — erneut mit mindestens ${floor} und höchstens ${ceiling ?? floor * 2} Wörtern. Gelöschte Duplikate/Wiederholungen NICHT wieder einfügen; wo nötig woanders erweitern (andere Szene/Dialog/Innenleben), nicht die gestrichene Doppelung zurückholen.\n`,
+      );
+      assertRealManuskriptProse(body, input.chapterNumber, input.title);
+      words = manuskriptChapterWordCount(body);
+    }
+
+    // Second expand if still under chapter floor after craft shorten.
+    if (
+      !input.preferTighten &&
+      words < floor &&
+      input.allowSubstantialShorten
+    ) {
+      body = await generateOnce(
+        `\n# Expand-Pflicht 2\nImmer noch nur ${words} Wörter (Minimum ${floor}). Erweitere SICHTBAR ohne die gestrichenen Doppelungen zurückzuholen. Neue Beats/Dialoge an anderer Stelle im Kapitel.\n`,
+      );
+      assertRealManuskriptProse(body, input.chapterNumber, input.title);
+      words = manuskriptChapterWordCount(body);
+    }
+
+    // Still under floor → accept craft shorten only if ≥85% of chapterMin; else baseline.
     if (words < floor) {
+      const acceptSoft = Math.floor(floor * 0.85);
       if (
         input.allowSubstantialShorten &&
-        normalizeWhitespace(body) !== normalizeWhitespace(input.body)
+        normalizeWhitespace(body) !== normalizeWhitespace(input.body) &&
+        words >= acceptSoft
       ) {
         return body;
       }
@@ -432,7 +631,17 @@ Schreibe den vollständigen neuen Body. Der Text MUSS sich klar vom bisherigen u
 
     // Over hard ceiling → keep shorter of new vs baseline (allow trim when over).
     if (ceiling != null && words > ceiling) {
-      if (baselineWords <= ceiling) return input.body;
+      if (baselineWords <= ceiling) {
+        // Prefer changed shorter/equal body over silent revert when craft asked to cut.
+        if (
+          input.allowSubstantialShorten &&
+          normalizeWhitespace(body) !== normalizeWhitespace(input.body) &&
+          words <= baselineWords
+        ) {
+          return body;
+        }
+        return input.body;
+      }
       return words < baselineWords ? body : input.body;
     }
     // Tighten: reject only strong growth (small inserts for craft/Bedürfnis OK).
@@ -448,11 +657,11 @@ Schreibe den vollständigen neuen Body. Der Text MUSS sich klar vom bisherigen u
 }
 
 async function applyChapterDoc(input: {
-  stage: "szenenplot" | "manuskript";
+  stage: ChapterDocStage;
   baseline: string;
   target: RouteTarget;
   context: string;
-  /** Stable book bible for prompt-caching across chapter patches. */
+  /** Slim canon for Sonnet/Flash prompt-caching. */
   cacheablePrefix?: string;
   critiqueText?: string;
   /** Book target for chapter min floor on manuskript patches. */
@@ -463,16 +672,25 @@ async function applyChapterDoc(input: {
   storyState?: RomanStoryState | null;
   /** Durable knowledge graph — carried into patches and updated after. */
   wissensGraph?: RomanWissensGraph | null;
+  /** Structured Gerüst for chapter packets (Manuskript). */
+  szenenplotStructured?: RomanSzenenplotStructured | null;
+  /** Character bias block for chapter packets. */
+  autorBias?: string;
   /** Optional per-chapter patch brief (Leser-Feedback: local + book-wide split). */
   patchBriefForChapter?: (chapterNumber: number) => string;
+  /** Override writer role (Autor for style Verbessern). */
+  applyRoleKey?: string;
 }): Promise<{
   text: string;
   summary: string;
   patchedChapters: number[];
   storyState?: RomanStoryState | null;
   wissensGraph?: RomanWissensGraph | null;
+  /** Updated Gerüst after Manuskript craft sync (null = unchanged / cleared). */
+  szenenplotStructured?: RomanSzenenplotStructured | null;
 }> {
   const chapters = parsePlotChapters(input.baseline);
+  let liveStructured = input.szenenplotStructured ?? null;
   if (chapters.length < 1) {
     throw new Error(
       `${input.stage}: keine Kapitelstruktur — bitte zuerst erzeugen.`,
@@ -499,6 +717,16 @@ async function applyChapterDoc(input: {
     reason: input.target.reason,
     critiqueText: input.critiqueText,
   });
+  const reifegradImprovePatch = isReifegradImproveChapterPatch({
+    patchBrief: input.target.patchBrief,
+    reason: input.target.reason,
+    critiqueText: input.critiqueText,
+  });
+  const shortenIntentPatch = isShortenIntentPatch({
+    patchBrief: input.target.patchBrief,
+    reason: input.target.reason,
+    critiqueText: input.critiqueText,
+  });
   const canonLogicPatch = isCanonLogicChapterPatch({
     patchBrief: input.target.patchBrief,
     reason: input.target.reason,
@@ -508,9 +736,17 @@ async function applyChapterDoc(input: {
     leserFeedbackPatch ||
     simplifyPatch ||
     leseflussPatch ||
+    reifegradImprovePatch ||
     canonLogicPatch;
+  // Dim/Verbessern may delete Duplikate — first pass may shrink, but wordFloor
+  // stays at chapterMin so expand restores length elsewhere (not the doubles).
   const allowSubstantialShorten =
-    leserFeedbackPatch || simplifyPatch || leseflussPatch;
+    leserFeedbackPatch ||
+    simplifyPatch ||
+    leseflussPatch ||
+    reifegradImprovePatch ||
+    shortenIntentPatch ||
+    canonLogicPatch;
   const toPatch = resolveChapterPatchNumbers({
     chapterNumbers: chapters.map((c) => c.number),
     requested: input.target.chapterNumbers,
@@ -548,21 +784,17 @@ async function applyChapterDoc(input: {
   for (const num of toPatch) {
     const ch = chapters.find((c) => c.number === num)!;
     const baselineWords = manuskriptChapterWordCount(ch.body);
-    // Leser-Feedback / Vereinfachen / Lesefluss must be allowed to cut (often >5% of a chapter).
-    // The default 95% floor silently reverted such patches.
+    // Always hold chapterMin after patches (incl. Duplikat-Straffung). Soft
+    // baseline floor still applies when not craft-shortening.
     const wordFloor =
       input.stage === "manuskript"
-        ? allowSubstantialShorten
+        ? preferTighten && !allowSubstantialShorten
           ? Math.max(
-              120,
-              Math.floor(baselineWords * 0.55),
-              Math.floor(chapterMin * 0.45),
+              chapterMin,
+              Math.floor(baselineWords * MANUSKRIPT_PATCH_WORD_FLOOR_PCT),
             )
-          : preferTighten
-            ? Math.max(
-                1,
-                Math.floor(baselineWords * MANUSKRIPT_PATCH_WORD_FLOOR_PCT),
-              )
+          : allowSubstantialShorten
+            ? chapterMin
             : Math.max(
                 chapterMin,
                 Math.floor(baselineWords * MANUSKRIPT_PATCH_WORD_FLOOR_PCT),
@@ -586,6 +818,7 @@ async function applyChapterDoc(input: {
             : Math.max(chapterMax, baselineWords)
         : undefined;
 
+    let chapterPacket: string | undefined;
     let continuityBuffer: string | undefined;
     const patchBrief =
       input.patchBriefForChapter?.(num) ?? input.target.patchBrief;
@@ -595,17 +828,25 @@ async function applyChapterDoc(input: {
     });
     if (input.stage === "manuskript") {
       const prev = chapters.find((c) => c.number === num - 1);
-      const previousTail = prev?.body.trim().slice(-CONTINUITY_PREV_TAIL_CHARS) ?? "";
-      const assembled = await assembleManuskriptChapterContext({
+      const frozen = hasFrozenSchreibPrompts(liveStructured);
+      const prevTailChars = frozen
+        ? CONTINUITY_PREV_TAIL_CHARS_FROZEN
+        : CONTINUITY_PREV_TAIL_CHARS;
+      const previousTail = prev?.body.trim().slice(-prevTailChars) ?? "";
+      const { packet } = await resolveManuskriptChapterPacket({
         storyState: liveStoryState ?? null,
         chapter: ch,
+        allChapters: chapters,
         previousTail,
-        sharedContextSnippet: input.context,
-        lektorBriefSnippet: patchBrief,
+        lektorBrief: patchBrief,
         wissensGraph: liveGraph,
+        szenenplotStructured: liveStructured,
+        autorBias: frozen ? undefined : input.autorBias,
+        slimCanonSnippet: input.cacheablePrefix,
       });
-      continuityBuffer = [
-        assembled.buffer,
+      chapterPacket = [
+        formatPatchPriorityBanner(patchBrief),
+        packet,
         "## Patch-Übergang (verbindlich)",
         "Das Ende des Vorgänger-Kapitels ist BEREITS im Buch.",
         "Am Anfang DIESES Kapitels: nichts davon erneut erzählen, paraphrasieren oder als Dialog wiederholen — organisch danach ansetzen.",
@@ -631,7 +872,9 @@ async function applyChapterDoc(input: {
       preferTighten,
       allowSubstantialShorten,
       needsBlock: input.needsBlock,
+      chapterPacket,
       continuityBuffer,
+      applyRoleKey: input.applyRoleKey,
     });
     if (
       input.stage === "manuskript" &&
@@ -670,7 +913,9 @@ async function applyChapterDoc(input: {
     throw new Error(
       rejectedShort > 0
         ? `${input.stage}: Patch verkürzte Kapitel unter die Mindestlänge und wurde verworfen. Bitte Verbessern erneut.`
-        : `${input.stage}: Co-Autor hat Kapitel ${toPatch.join(", ")} nicht verändert. Bitte Verbessern erneut oder Gegenlese konkretisieren.`,
+        : `${input.stage}: ${
+            input.stage === "manuskript" ? "Co-Autor" : "Entwicklungslektor"
+          } hat Kapitel ${toPatch.join(", ")} nicht verändert. Bitte Verbessern erneut oder Gegenlese konkretisieren.`,
     );
   }
 
@@ -714,34 +959,80 @@ async function applyChapterDoc(input: {
     }
   }
 
-  // Persist knowledge-graph updates from patched chapters (Gerüst + Manuskript).
-  if (liveGraph && changed.length > 0) {
-    const afterChapters = parsePlotChapters(check.text);
-    const changedBodies = changed
-      .map((p) => afterChapters.find((c) => c.number === p.chapterNumber))
-      .filter((c): c is NonNullable<typeof c> => Boolean(c))
-      .map((c) => ({ number: c.number, title: c.title, body: c.body }));
-    try {
-      liveGraph = await growWissensGraphFromChapterBodies({
-        previous: liveGraph,
-        stage: input.stage,
-        chapters: changedBodies,
-        patchBrief: input.target.patchBrief,
-      });
-    } catch {
-      // Fail-soft: keep previous graph.
+  // Persist knowledge-graph updates from patched chapters (all stages).
+  const afterChapters = parsePlotChapters(check.text);
+  const changedBodies = changed
+    .map((p) => afterChapters.find((c) => c.number === p.chapterNumber))
+    .filter((c): c is NonNullable<typeof c> => Boolean(c))
+    .map((c) => ({ number: c.number, title: c.title, body: c.body }));
+
+  const syncNotes: string[] = [];
+  if (liveGraph && changedBodies.length > 0) {
+    let grew = false;
+    for (let attempt = 0; attempt < 2 && !grew; attempt += 1) {
+      try {
+        liveGraph = await growWissensGraphFromChapterBodies({
+          previous: liveGraph,
+          // Grow API: gerüst patches count as structure (szenenplot source tag).
+          stage: input.stage === "manuskript" ? "manuskript" : "szenenplot",
+          chapters: changedBodies,
+          patchBrief: input.target.patchBrief,
+        });
+        grew = true;
+      } catch {
+        if (attempt === 1) {
+          syncNotes.push("Graph-Grow fehlgeschlagen");
+        }
+      }
     }
+  }
+
+  // Light Sync: structured beats + graph retract (MS + Szenenplot structured).
+  let syncedStructured = false;
+  if (
+    (input.stage === "manuskript" || input.stage === "szenenplot") &&
+    changedBodies.length > 0 &&
+    liveStructured
+  ) {
+    const synced = await syncAfterManuskriptCraftPatch({
+      structured: liveStructured,
+      graph: liveGraph,
+      patchBrief: input.target.patchBrief,
+      changedChapters: changedBodies,
+    });
+    if (synced.structured) {
+      liveStructured = synced.structured;
+      syncedStructured = true;
+    }
+    liveGraph = synced.graph;
+    syncNotes.push(...synced.warnings);
+  } else if (input.stage === "manuskript" && changedBodies.length > 0) {
+    // No structured — still retract graph themes from the patch brief.
+    const synced = await syncAfterManuskriptCraftPatch({
+      structured: null,
+      graph: liveGraph,
+      patchBrief: input.target.patchBrief,
+      changedChapters: changedBodies,
+    });
+    liveGraph = synced.graph;
+    syncNotes.push(...synced.warnings);
   }
 
   const scope = needsFocused
     ? `Bedürfnis-Stichprobe: ${changed.length} Kapitel (${changed.map((c) => c.chapterNumber).join(", ")})`
     : `Kapitel ${changed.map((c) => c.chapterNumber).join(", ")}`;
+  const notesSuffix = syncNotes.length
+    ? ` · Hinweis: ${syncNotes.slice(0, 2).join("; ")}`
+    : "";
+  const actor =
+    input.stage === "manuskript" ? "Co-Autor" : "Entwicklungslektor";
   return {
     text: check.text,
-    summary: `${scope} gepatcht (${input.stage})${preferTighten ? " · Straffen-Modus" : ""}${input.stage === "manuskript" ? " · Continuity" : ""}${liveGraph ? " · Wissensgraph" : ""}${rejectedShort > 0 ? ` · ${rejectedShort} Kürzung(en) verworfen` : ""}.`,
+    summary: `${scope} gepatcht (${input.stage} · ${actor})${preferTighten ? " · Straffen-Modus" : ""}${input.stage === "manuskript" ? " · Slim-Paket" : " · Flash"}${liveGraph ? " · Wissensgraph" : ""}${syncedStructured ? " · Structured-Sync" : ""}${rejectedShort > 0 ? ` · ${rejectedShort} Kürzung(en) verworfen` : ""}${notesSuffix}.`,
     patchedChapters: changed.map((c) => c.chapterNumber),
     storyState: liveStoryState,
     wissensGraph: liveGraph,
+    szenenplotStructured: liveStructured,
   };
 }
 
@@ -758,6 +1049,8 @@ export async function applyRouteTarget(input: {
   critiqueText: string;
   /** Optional per-chapter brief override (e.g. Leser-Feedback). */
   patchBriefForChapter?: (chapterNumber: number) => string;
+  /** Override writer role (e.g. `autor` for Manuskript Verbessern). */
+  applyRoleKey?: string;
 }): Promise<{
   roman: RomanKontext;
   summary: string;
@@ -767,7 +1060,8 @@ export async function applyRouteTarget(input: {
   const editorial = roman.editorial ?? emptyRomanEditorial();
   const buchTyp = (editorial.buchTyp ?? "unbekannt") as RomanBuchTyp;
   const ideeKurz = editorial.ideeKurz ?? "";
-  const cacheablePrefix = buildRomanStaticBookPrefix({
+  /** Slim canon for chapter patches — full Spec/Recherche stays out of Sonnet. */
+  const cacheablePrefix = buildRomanSlimCanon({
     buchTyp,
     title: roman.title,
     genre: roman.genre,
@@ -779,14 +1073,15 @@ export async function applyRouteTarget(input: {
     charaktere: roman.charaktere,
     weltSchauplaetze: roman.weltSchauplaetze,
     weltRegeln: roman.weltRegeln,
+    wissensGraph: editorial.wissensGraph,
   });
-  // Live deltas only — book bible is in cacheablePrefix.
+  // Live deltas only — chapter packet carries Gerüst/Graph per chapter.
+  const autorBias = formatAutorBiasFromCharaktere(roman.charaktere);
   const context = [
-    formatAutorBiasFromCharaktere(roman.charaktere),
+    autorBias,
     formatWissensGraphForPrompt(editorial.wissensGraph, {
-      maxChars: CLIP.sharedContext,
+      maxChars: 2_800,
     }),
-    `Szenenplot:\n${(roman.manuskriptRaw ?? "").slice(0, CLIP.szenenplot)}`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -809,7 +1104,7 @@ export async function applyRouteTarget(input: {
   }
 
   if (stage === "charaktere") {
-    const refined = await refineCharaktereWithFachberater({
+    const refined = await refineCharaktere({
       buchTyp,
       ideeKurz,
       grobRegeln: `${editorial.grobRegeln ?? ""}\n\nPatch-Brief:\n${input.target.patchBrief}`,
@@ -825,7 +1120,7 @@ export async function applyRouteTarget(input: {
   }
 
   if (stage === "welt") {
-    const woven = await weaveWeltFromFachberaterKritik({
+    const woven = await weaveWeltFromKritik({
       buchTyp,
       ideeKurz,
       welt: {
@@ -854,58 +1149,272 @@ export async function applyRouteTarget(input: {
       critique: input.critiqueText,
       authorComment: input.target.patchBrief,
     });
-    const nextEd = withExposeText(editorial, woven.expose);
-    const saved = await persistRoman(roman, { editorial: nextEd });
+    const nextEd = withExposeText(
+      invalidateDownstreamEditorial(editorial, "expose"),
+      woven.expose,
+    );
+    const saved = await persistRoman(roman, {
+      manuskriptRaw: "",
+      editorial: nextEd,
+    });
     return {
       roman: saved,
-      summary: `Exposé angepasst (${woven.modelLabel}).`,
+      summary: `Exposé angepasst (${woven.modelLabel}). Downstream veraltet.`,
     };
   }
 
-  if (stage === "szenenplot") {
-    const { text, summary, patchedChapters, wissensGraph } =
-      await applyChapterDoc({
-        stage: "szenenplot",
-        baseline: roman.manuskriptRaw ?? "",
-        target: input.target,
-        context,
-        cacheablePrefix,
+  if (isGeruestStage(stage)) {
+    const structured = editorial.kapitelGeruestStructured;
+    if (!structured?.chapters.length) {
+      throw new Error(
+        "Kapitelgerüst-JSON fehlt — bitte Gerüst neu erzeugen (Structured erforderlich für Verbessern).",
+      );
+    }
+    const requested = input.target.chapterNumbers;
+    const available = structured.chapters.map((c) => c.number);
+    const chapterNumbers =
+      requested?.length && requested.length > 0
+        ? [...new Set(requested)]
+            .filter((n) => available.includes(n))
+            .sort((a, b) => a - b)
+        : available;
+    if (!chapterNumbers.length) {
+      throw new Error(
+        requested?.length
+          ? `Kapitelgerüst: angeforderte Kapitel (${requested.join(", ")}) nicht gefunden.`
+          : "Kapitelgerüst: keine Kapitel zum Patchen.",
+      );
+    }
+
+    // One chapter per model call so patchBriefForChapter cannot leak across Kap.
+    let live = structured;
+    let remirror = "";
+    const allChanged: number[] = [];
+    for (const num of chapterNumbers) {
+      const brief =
+        input.patchBriefForChapter?.(num) ?? input.target.patchBrief;
+      const patched = await patchKapitelGeruestStructured({
+        structured: live,
+        chapterNumbers: [num],
+        patchBrief: brief,
         critiqueText: input.critiqueText,
-        wissensGraph: editorial.wissensGraph ?? null,
       });
-    // Markdown patch may diverge from dramaturgy JSON — clear structured so
-    // Manuskript falls back to updated markdown until next Erzeugen.
-    // Keep / update durable knowledge graph.
+      live = patched.structured;
+      remirror = patched.markdown;
+      allChanged.push(...patched.changedChapters);
+    }
+    if (!remirror) {
+      remirror = structuredKapitelGeruestToMarkdown(live);
+    }
+
+    let nextGraph = editorial.wissensGraph ?? null;
+    const changedBodies = [...new Set(allChanged)].map((n) => {
+      const ch = live.chapters.find((c) => c.number === n)!;
+      return {
+        number: ch.number,
+        title: ch.title,
+        body: `${ch.kernsatz}\n\n${ch.inhaltKurz}`,
+      };
+    });
+    if (nextGraph && changedBodies.length) {
+      try {
+        const retracted = await retractWissensGraphAfterPatch({
+          graph: nextGraph,
+          patchBrief: input.target.patchBrief,
+          changedChapters: changedBodies,
+        });
+        nextGraph = retracted.graph;
+      } catch {
+        /* keep graph */
+      }
+      try {
+        nextGraph = await growWissensGraphFromChapterBodies({
+          previous: nextGraph,
+          stage: "szenenplot",
+          chapters: changedBodies,
+          patchBrief: input.target.patchBrief,
+        });
+      } catch {
+        /* keep retract */
+      }
+    }
+    if (
+      nextGraph &&
+      changedBodies.length >= 2 &&
+      editorial.szenenplotStructured?.chapters.length
+    ) {
+      try {
+        nextGraph = await closeWissensGraphGaps({
+          graph: nextGraph,
+          structured: editorial.szenenplotStructured,
+          ideeKurz,
+          rechercheDossier: editorial.rechercheDossier ?? "",
+          tonalitaet: roman.tonalitaet ?? "",
+        });
+      } catch {
+        /* keep */
+      }
+    }
+    const cleared = invalidateDownstreamEditorial(
+      editorial,
+      isGeruestStage(stage) ? (stage as PipelineStage) : "feingeruest",
+    );
     const nextEd = {
-      ...(roman.editorial ?? emptyRomanEditorial()),
-      szenenplotStructured: null,
-      wissensGraph: wissensGraph ?? editorial.wissensGraph ?? null,
+      ...cleared,
+      kapitelGeruestRaw: remirror,
+      kapitelGeruestStructured: live,
+      wissensGraph: nextGraph,
     };
     const saved = await persistRoman(roman, {
-      manuskriptRaw: text,
+      manuskriptRaw: "",
       editorial: nextEd,
     });
-    return { roman: saved, summary, patchedChapters };
+    const changed = [...new Set(allChanged)].sort((a, b) => a - b);
+    return {
+      roman: saved,
+      summary: `Kapitelgerüst structured gepatcht (Kap. ${changed.join(", ")}) · Szenenplot/Manuskript veraltet.`,
+      patchedChapters: changed,
+    };
+  }
+
+  if (isPlotStage(stage)) {
+    const structured = editorial.szenenplotStructured;
+    if (!structured?.chapters.length) {
+      throw new Error(
+        "Szenenplot-JSON fehlt — bitte Plot neu erzeugen (Structured erforderlich für Verbessern).",
+      );
+    }
+    const requested = input.target.chapterNumbers;
+    const available = structured.chapters.map((c) => c.number);
+    const chapterNumbers =
+      requested?.length && requested.length > 0
+        ? [...new Set(requested)]
+            .filter((n) => available.includes(n))
+            .sort((a, b) => a - b)
+        : available;
+    if (!chapterNumbers.length) {
+      throw new Error(
+        requested?.length
+          ? `Szenenplot: angeforderte Kapitel (${requested.join(", ")}) nicht gefunden.`
+          : "Szenenplot: keine Kapitel zum Patchen.",
+      );
+    }
+
+    let live = structured;
+    let remirror = "";
+    const allChanged: number[] = [];
+    for (const num of chapterNumbers) {
+      const brief =
+        input.patchBriefForChapter?.(num) ?? input.target.patchBrief;
+      const patched = await patchSzenenplotStructured({
+        structured: live,
+        chapterNumbers: [num],
+        patchBrief: brief,
+        critiqueText: input.critiqueText,
+      });
+      live = patched.structured;
+      remirror = patched.markdown;
+      allChanged.push(...patched.changedChapters);
+    }
+    if (!remirror) {
+      remirror = structuredSzenenplotToMarkdown(live);
+    }
+
+    let nextGraph = editorial.wissensGraph ?? null;
+    const changedBodies = [...new Set(allChanged)].map((n) => {
+      const ch = live.chapters.find((c) => c.number === n)!;
+      const sceneBits = ch.scenes
+        .map((s) => `${s.heading}: ${s.summary}`)
+        .join("\n");
+      return {
+        number: ch.number,
+        title: ch.title,
+        body: `${ch.kernsatz}\n\n${sceneBits}`,
+      };
+    });
+    if (nextGraph && changedBodies.length) {
+      try {
+        const retracted = await retractWissensGraphAfterPatch({
+          graph: nextGraph,
+          patchBrief: input.target.patchBrief,
+          changedChapters: changedBodies,
+        });
+        nextGraph = retracted.graph;
+      } catch {
+        /* keep */
+      }
+      try {
+        nextGraph = await growWissensGraphFromChapterBodies({
+          previous: nextGraph,
+          stage: "szenenplot",
+          chapters: changedBodies,
+          patchBrief: input.target.patchBrief,
+        });
+      } catch {
+        /* keep */
+      }
+    }
+    if (nextGraph && changedBodies.length >= 2) {
+      try {
+        nextGraph = await closeWissensGraphGaps({
+          graph: nextGraph,
+          structured: live,
+          ideeKurz,
+          rechercheDossier: editorial.rechercheDossier ?? "",
+          tonalitaet: roman.tonalitaet ?? "",
+        });
+      } catch {
+        /* keep */
+      }
+    }
+    const cleared = invalidateDownstreamEditorial(
+      editorial,
+      isPlotStage(stage) ? (stage as PipelineStage) : "feinplot",
+    );
+    const nextEd = {
+      ...cleared,
+      szenenplotStructured: live,
+      wissensGraph: nextGraph,
+    };
+    const saved = await persistRoman(roman, {
+      manuskriptRaw: remirror,
+      editorial: nextEd,
+    });
+    const changed = [...new Set(allChanged)].sort((a, b) => a - b);
+    return {
+      roman: saved,
+      summary: `Szenenplot structured gepatcht (Kap. ${changed.join(", ")}).`,
+      patchedChapters: changed,
+    };
   }
 
   if (stage === "manuskript") {
     const baseline = editorial.manuskriptText ?? "";
     const plot = roman.manuskriptRaw ?? "";
-    const { text, summary, patchedChapters, storyState, wissensGraph } =
-      await applyChapterDoc({
-        stage: "manuskript",
-        baseline,
-        target: input.target,
-        context,
-        cacheablePrefix,
-        critiqueText: input.critiqueText,
-        zielWortzahlRoman: editorial.zielWortzahlRoman,
-        zielWortzahlSzeneMax: editorial.zielWortzahlSzeneMax,
-        needsBlock: manuskriptNeedsPromptBlock(),
-        storyState: editorial.storyState ?? null,
-        wissensGraph: editorial.wissensGraph ?? null,
-        patchBriefForChapter: input.patchBriefForChapter,
-      });
+    const {
+      text,
+      summary,
+      patchedChapters,
+      storyState,
+      wissensGraph,
+      szenenplotStructured,
+    } = await applyChapterDoc({
+      stage: "manuskript",
+      baseline,
+      target: input.target,
+      context,
+      cacheablePrefix,
+      critiqueText: input.critiqueText,
+      zielWortzahlRoman: editorial.zielWortzahlRoman,
+      zielWortzahlSzeneMax: editorial.zielWortzahlSzeneMax,
+      needsBlock: manuskriptNeedsPromptBlock(),
+      storyState: editorial.storyState ?? null,
+      wissensGraph: editorial.wissensGraph ?? null,
+      szenenplotStructured: editorial.szenenplotStructured,
+      autorBias,
+      patchBriefForChapter: input.patchBriefForChapter,
+      applyRoleKey: input.applyRoleKey,
+    });
     const sealed = normalizeManuskriptDocument(text, {
       requiredFromPlot: plot,
     });
@@ -920,6 +1429,10 @@ export async function applyRouteTarget(input: {
       manuskriptText: sealed,
       storyState: storyState ?? editorial.storyState ?? null,
       wissensGraph: wissensGraph ?? editorial.wissensGraph ?? null,
+      szenenplotStructured:
+        szenenplotStructured !== undefined
+          ? szenenplotStructured
+          : editorial.szenenplotStructured,
     };
     const saved = await persistRoman(roman, { editorial: nextEd });
     return { roman: saved, summary, patchedChapters };

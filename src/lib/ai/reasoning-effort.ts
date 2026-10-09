@@ -42,6 +42,24 @@ export function isClaudeSonnet55Slug(modelSlug: string): boolean {
 }
 
 /**
+ * Claude Opus 5.5: adaptive thinking + `output_config.effort`
+ * (see Anthropic Opus 5.5 migration guide).
+ */
+export function isClaudeOpus55Slug(modelSlug: string): boolean {
+  const slug = modelSlug.trim().toLowerCase();
+  return (
+    slug === "claude-opus-5-5" ||
+    slug.startsWith("claude-opus-5-5-") ||
+    slug.includes("opus-5-5")
+  );
+}
+
+/** Sonnet 5.5 or Opus 5.5 — both take `output_config.effort`. */
+export function isClaude55EffortSlug(modelSlug: string): boolean {
+  return isClaudeSonnet55Slug(modelSlug) || isClaudeOpus55Slug(modelSlug);
+}
+
+/**
  * Gemini 3.8 / 3.7 Flash: low|medium|high only (minimal → API error).
  * Flash-Lite / 3.5 / 3.6: also minimal.
  */
@@ -91,7 +109,7 @@ export function reasoningEffortOptionsForModel(
     return geminiThinkingOptions(slug);
   }
 
-  if (isClaudeSonnet55Slug(slug)) {
+  if (isClaude55EffortSlug(slug)) {
     return claudeSonnet55EffortOptions();
   }
 

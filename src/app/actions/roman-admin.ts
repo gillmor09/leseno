@@ -172,6 +172,9 @@ export async function generateRomanCoverAction(
             : `bis ${ed.zielAlterMax} Jahre`
         : "";
 
+    const vorsatzUntertitel =
+      roman.vorsatz?.titelseite?.untertitel?.trim() ?? "";
+    const einzeiler = (ed?.einzeiler ?? "").trim();
     const coverInput = {
       title: roman.title,
       genre: roman.genre,
@@ -184,6 +187,9 @@ export async function generateRomanCoverAction(
       ideeKurz: ed?.ideeKurz ?? "",
       alterLabel,
       extraInstruction: parsed.data.extraInstruction,
+      autorName: (roman.autorName ?? "").trim(),
+      // Prefer marketing Einzeiler; fall back to Vorsatz-Untertitel.
+      untertitel: einzeiler || vorsatzUntertitel,
     };
 
     const result =

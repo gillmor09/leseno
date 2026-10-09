@@ -14,6 +14,7 @@ import {
   CLIP,
   ROMAN_CRITIQUE_MANDATE,
   ROMAN_CRITIQUE_MAX_TOKENS,
+  ROMAN_PROSE_MAX_TOKENS,
 } from "@/lib/roman/pipeline/quality-brief";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import type { RomanIdeaChatMessage } from "@/lib/roman/types";
@@ -396,7 +397,7 @@ Für diesen Auftrag: kein Q&A-Dialog, sondern eine abgeschlossene Kritik mit kna
 }
 
 /**
- * Weave pipeline critique + patch brief into a full ideeKurz (Co-Autor).
+ * Weave pipeline critique + patch brief into a full ideeKurz (Entwicklungslektor).
  */
 export async function weaveIdeeKurzFromCoAutorKritik(input: {
   buchTyp: RomanBuchTyp;
@@ -413,7 +414,7 @@ export async function weaveIdeeKurzFromCoAutorKritik(input: {
     throw new Error("Kritik fehlt.");
   }
 
-  const { rolle, model } = await resolveRomanKiRolle("co_autor");
+  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
   const typLabel =
     input.buchTyp === "unbekannt"
       ? "noch offen"

@@ -130,10 +130,25 @@ export function enrichCleverExportChapters(
 }
 
 /** Manuskript chapters, with Clever extras when `buchTyp === clever_erzaehlt`. */
+/** Which prose document to export (Belletristik). Clever always uses Manuskript. */
+export type RomanExportProseSource = "manuskript" | "roman";
+
 export function collectExportChaptersFromEditorial(
-  editorial: Pick<RomanEditorial, "buchTyp" | "manuskriptText" | "cleverUnterthemen">,
+  editorial: Pick<
+    RomanEditorial,
+    "buchTyp" | "manuskriptText" | "romanText" | "cleverUnterthemen"
+  >,
+  options?: { source?: RomanExportProseSource },
 ): RomanExportChapter[] {
-  const base = collectManuskriptExportChapters(editorial.manuskriptText ?? "");
+  const source: RomanExportProseSource =
+    editorial.buchTyp === "clever_erzaehlt"
+      ? "manuskript"
+      : (options?.source ?? "manuskript");
+  const prose =
+    source === "roman"
+      ? (editorial.romanText ?? "")
+      : (editorial.manuskriptText ?? "");
+  const base = collectManuskriptExportChapters(prose);
   if (editorial.buchTyp !== "clever_erzaehlt") return base;
   return enrichCleverExportChapters(base, editorial.cleverUnterthemen);
 }
@@ -202,6 +217,12 @@ function factPlainText(line: string): string {
   return line.replace(/^\d+\.\s*/, "").trim();
 }
 
+export type RomanExportTypographyHints = {
+  zielAlterMin?: number | null;
+  zielAlterMax?: number | null;
+  buchTyp?: string | null;
+};
+
 export type RomanExportInput = {
   title: string;
   /** Manuskript chapters (preferred). */
@@ -214,34 +235,57 @@ export type RomanExportInput = {
   coverImageDataUrl?: string;
   /** Minimal eBook front matter after cover, before chapter 1. */
   vorsatz?: RomanVorsatz;
+  /**
+   * Age / book-type hints for print typography.
+   * Adult + YA: normal glyph spacing; children / Clever: wider (~1.1×).
+   */
+  typography?: RomanExportTypographyHints;
 };
 
-/** Body 14 pt / chapter 16 pt bold; line-height 1.5; char advance ×1.1. */
+/**
+ * Wider letter-spacing for children's / early-reader print.
+ * Adult (`min ≥ 18`) and YA (`min ≥ 14`) keep normal advance — trade look.
+ */
+export function romanExportUsesWideCharSpacing(
+  hints?: RomanExportTypographyHints | null,
+): boolean {
+  if (!hints) return false;
+  if (hints.buchTyp === "clever_erzaehlt") return true;
+  const min = hints.zielAlterMin ?? null;
+  const max = hints.zielAlterMax ?? null;
+  if (min != null && min >= 18) return false;
+  if (max != null && max < 18) return true;
+  if (min != null && min >= 14) return false;
+  return false;
+}
+
+/** Body 14 pt / chapter 16 pt bold; line-height 1.5; kids char advance ×1.1. */
 const PDF_BODY_PT = 14;
 const PDF_HEADING_PT = 16;
 const PDF_LINE_HEIGHT = 1.5;
-/** Extra inter-glyph space so advances read as ~1.1× normal. */
-const PDF_CHAR_SCALE = 1.1;
+/** Extra inter-glyph space for children's books only (~1.1× normal). */
+const PDF_CHAR_SCALE_WIDE = 1.1;
 const PT_TO_MM = 25.4 / 72;
 
 function pdfLineHeightMm(sizePt: number): number {
   return sizePt * PDF_LINE_HEIGHT * PT_TO_MM;
 }
 
-/** Wrap width shrunk so setCharSpace(×1.1) lines still fit the content column. */
-function pdfWrapWidthMm(contentWidthMm: number): number {
-  return contentWidthMm / PDF_CHAR_SCALE;
+/** Wrap width shrunk when wide char-spacing is active so lines still fit. */
+function pdfWrapWidthMm(contentWidthMm: number, charScale: number): number {
+  return contentWidthMm / charScale;
 }
 
 /**
- * Sets jsPDF Tc so average glyph advance is about `PDF_CHAR_SCALE` times default.
+ * Sets jsPDF Tc so average glyph advance matches `charScale` (1 = normal).
  * Call after `setNunito` (font size must already be active).
  */
-function applyPdfCharSpacing(pdf: jsPDF): void {
+function applyPdfCharSpacing(pdf: jsPDF, charScale: number): void {
   pdf.setCharSpace(0);
+  if (charScale <= 1) return;
   const sample = "abcdefghijklmnopqrstuvwxyzäöüß";
   const avgMm = pdf.getTextWidth(sample) / sample.length;
-  pdf.setCharSpace(avgMm * (PDF_CHAR_SCALE - 1));
+  pdf.setCharSpace(avgMm * (charScale - 1));
 }
 
 function clearPdfCharSpacing(pdf: jsPDF): void {
@@ -269,7 +313,9 @@ const SVG_BULB = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
 
 const SVG_CHECK_CIRCLE = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>`;
 
-const ROMAN_EXPORT_CSS = `
+function romanExportCss(wideCharSpacing: boolean): string {
+  const letterSpacing = wideCharSpacing ? "0.1em" : "normal";
+  return `
   * { box-sizing: border-box; }
   ${nunitoExportFontCss()}
   @page {
@@ -284,7 +330,7 @@ const ROMAN_EXPORT_CSS = `
     font-family: ${NUNITO_FONT_FAMILY};
     font-size: 14pt;
     line-height: 1.5;
-    letter-spacing: 0.1em;
+    letter-spacing: ${letterSpacing};
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -356,7 +402,7 @@ const ROMAN_EXPORT_CSS = `
     font-size: 16pt;
     font-weight: 700;
     line-height: 1.5;
-    letter-spacing: 0.1em;
+    letter-spacing: ${letterSpacing};
     color: #09090b;
   }
   .scene { margin: 0 0 1.75rem; }
@@ -365,7 +411,7 @@ const ROMAN_EXPORT_CSS = `
     font-size: 14pt;
     font-weight: 400;
     line-height: 1.5;
-    letter-spacing: 0.1em;
+    letter-spacing: ${letterSpacing};
     text-align: left;
     hyphens: auto;
     color: #18181b;
@@ -474,6 +520,7 @@ const ROMAN_EXPORT_CSS = `
     .toc { break-after: page; }
   }
 `;
+}
 
 function frontMatterHtml(vorsatz: RomanVorsatz): string {
   if (!hasUsableVorsatz(vorsatz)) return "";
@@ -574,6 +621,7 @@ export function buildRomanExportDocument(input: RomanExportInput): string {
   const title = input.title.trim() || "Unbenannter Roman";
   const vorsatz = input.vorsatz ?? emptyVorsatz();
   const cover = (input.coverImageDataUrl ?? "").trim();
+  const wideCharSpacing = romanExportUsesWideCharSpacing(input.typography);
 
   const chaptersHtml = chapters
     .map((chapter) => {
@@ -625,7 +673,7 @@ ${chapters
   ${nunitoGoogleFontsLinkTag()}
   <style>
     body { margin: 0; background: #fff; }
-    ${ROMAN_EXPORT_CSS}
+    ${romanExportCss(wideCharSpacing)}
   </style>
 </head>
 <body>
@@ -1189,7 +1237,10 @@ export async function buildRomanPdfBlob(
   /** Leave room for bottom-right page numbers on story pages. */
   const marginBottom = 18;
   const contentWidth = pageWidth - marginX * 2;
-  const wrapW = pdfWrapWidthMm(contentWidth);
+  const charScale = romanExportUsesWideCharSpacing(input.typography)
+    ? PDF_CHAR_SCALE_WIDE
+    : 1;
+  const wrapW = pdfWrapWidthMm(contentWidth, charScale);
 
   const ctx: WriteCtx = {
     pdf,
@@ -1247,7 +1298,7 @@ export async function buildRomanPdfBlob(
     chapterStartPage.set(chapter.number, pdf.getNumberOfPages());
 
     setNunito(pdf, "bold", PDF_HEADING_PT);
-    applyPdfCharSpacing(pdf);
+    applyPdfCharSpacing(pdf, charScale);
     pdf.setTextColor(9, 9, 11);
     const headingLines = pdf.splitTextToSize(
       chapterHeadingLabel(chapter),
@@ -1259,7 +1310,7 @@ export async function buildRomanPdfBlob(
     pageUsed = true;
 
     setNunito(pdf, "normal", PDF_BODY_PT);
-    applyPdfCharSpacing(pdf);
+    applyPdfCharSpacing(pdf, charScale);
     pdf.setTextColor(24, 24, 27);
 
     for (const para of paras) {

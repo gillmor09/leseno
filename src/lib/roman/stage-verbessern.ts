@@ -1,16 +1,18 @@
 /**
  * Stage-wide Verbessern: Entwicklungslektor analyze (max 3 + HITL) → dialog →
- * Co-Autor apply → Reifegrad. Same two-step pattern as Dimension / Leser-Feedback.
+ * apply (Gerüst/Plot: structured JSON patch; Manuskript: Co-Autor) → Reifegrad.
  * Spec (`expose`) weaves Charaktere + Welt + Exposé.
  */
 
 import { generateText } from "@/lib/ai/provider";
-import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
+import { parseModelJsonObjectWithRepair } from "@/lib/ai/repair-model-json";
 import { runWithAiUsageCollector } from "@/lib/ai/usage-collector";
 import { resolveReasoningEffort } from "@/lib/ai/reasoning-effort";
+import type { AiModelConfig } from "@/lib/prompts/catalog";
 import {
   ROMAN_ALTER_PRESETS,
   STAGE_VERBESSERN_DIMENSION,
+  STAGE_VERBESSERN_FOCUS_LABELS,
   buildCritiqueRulesAndNeedsBlock,
   emptyRomanEditorial,
   findAlterPresetId,
@@ -18,13 +20,18 @@ import {
   onlyNiceToHavePrompts,
   actionableAenderungsPrompts,
   missingAutorEntscheidungen,
+  narrowAenderungsPromptsWithKritikChapters,
   parseAenderungsPrompts,
   parseRomanReifegradImprovePlan,
   resolveReifegradImproveChapters,
   stageImproveForStage,
   withStageImprove,
   type RomanReifegradImprovePlan,
+  type StageVerbessernFocus,
 } from "@/lib/roman/editorial";
+
+export type { StageVerbessernFocus };
+export { STAGE_VERBESSERN_FOCUS_LABELS };
 import { resolveRomanSchreibModel } from "@/lib/roman/model";
 import { applyRouteTarget } from "@/lib/roman/pipeline/apply";
 import {
@@ -35,9 +42,23 @@ import {
 } from "@/lib/roman/pipeline/history";
 import {
   PIPELINE_STAGE_LABELS,
+  romanApplyRoleKey,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
-import { ROMAN_CRITIQUE_FOCUS_MANDATE } from "@/lib/roman/pipeline/quality-brief";
+import { filterAenderungsPromptsByGrounding } from "@/lib/roman/critique-grounding";
+import {
+  ROMAN_CRITIQUE_FOCUS_MANDATE,
+  ROMAN_CRITIQUE_QUOTE_GROUNDING,
+  ROMAN_CRITIQUE_SCOPE_MANDATE,
+  highBandLastGapsMandate,
+  REIFEGRAD_HIGH_BAND_PP,
+  specStageAnalyzePolicy,
+  structureStageAnalyzePolicy,
+} from "@/lib/roman/pipeline/quality-brief";
+import {
+  formatReifegradRegressionSummary,
+  reifegradGesamtRegressed,
+} from "@/lib/roman/improve-apply-guard";
 import {
   formatCraftScoresLine,
   REIFEGRAD_DIMENSION_ANALYZE_MODEL_SLUG,
@@ -50,14 +71,108 @@ import {
 } from "@/lib/roman/reifegrad";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import { upsertRomanKontext } from "@/lib/roman/repository";
+import {
+  structuredKapitelGeruestToMarkdown,
+  structuredSzenenplotToMarkdown,
+} from "@/lib/roman/szenenplot-structured";
 import type { RomanKontext } from "@/lib/roman/types";
 import type { AiModelConfig } from "@/lib/prompts/catalog";
+
+/** Chapter list for Verbessern scope — prefer structured remirror. */
+function improveChapterDoc(
+  roman: RomanKontext,
+  stage: PipelineStage,
+): string {
+  const ed = roman.editorial ?? emptyRomanEditorial();
+  if (stage === "manuskript") return ed.manuskriptText ?? "";
+  if (stage === "kapitelgeruest") {
+    if (ed.kapitelGeruestStructured?.chapters.length) {
+      return structuredKapitelGeruestToMarkdown(ed.kapitelGeruestStructured);
+    }
+    return ed.kapitelGeruestRaw ?? "";
+  }
+  if (stage === "szenenplot") {
+    if (ed.szenenplotStructured?.chapters.length) {
+      return structuredSzenenplotToMarkdown(ed.szenenplotStructured);
+    }
+    return roman.manuskriptRaw ?? "";
+  }
+  return "";
+}
 
 /** Max chapters per applyRouteTarget call. */
 const FEEDBACK_APPLY_BATCH = 24;
 
 /** Spec Verbessern patches all three Spec surfaces. */
 const SPEC_APPLY_STAGES: PipelineStage[] = ["charaktere", "welt", "expose"];
+
+function focusAnalyzeAddendum(
+  focus: StageVerbessernFocus,
+  stage?: PipelineStage,
+): string {
+  // Spec: early gate — must carry a full novel before Gerüst/Plot invent gaps.
+  if (stage === "expose") {
+    const specPolicy = specStageAnalyzePolicy(focus);
+    if (focus === "logik") {
+      return `FOKUS DIESES LAUFS: NUR Spec-Logik (Figuren ↔ Welt ↔ Exposé).
+Prüfe Widersprüche, unglaubwürdige Motivation, Canon-Löcher und Plot-Rettungen ohne Spec-Basis.
+Ignoriere reine Spannungs-/Stilpolitur — außer sie erzeugen Logikbrüche.
+aenderungsPrompts: Logik/Canon reparieren (streichen/ersetzen/verbieten), WO klar (Figuren/Welt/Exposé).${specPolicy}`;
+    }
+    if (focus === "craft") {
+      return `FOKUS DIESES LAUFS: NUR Spec-Craft (Figurenkraft, Weltnutzen, Handlungsbogen).
+Prüfe Mehrakt-Stoff, Escalation, Midpoint/Endgame-Seed, konfliktfähige Welt, greifbare Antriebe — reicht das für einen ganzen Roman?
+Keine neuen Logistik-Motive. Logik-Löcher nur, wenn der Bogen kollabiert — sonst weglassen (separater Logik-Lauf).
+aenderungsPrompts: Spec-Stoff und Bogen nachschärfen, nicht Prosa schreiben.${specPolicy}`;
+    }
+    return `FOKUS: Spec Gesamt — Logik und Craft gemischt (max. 3, Härteste zuerst).
+Vorrang: Lücken, die einen ganzen Roman nicht tragen (zu dünner Stoff, fehlende Escalation, widersprüchlicher Canon).${specPolicy}`;
+  }
+
+  // Structured Szenenplot: Logik/Craft map onto contracts, not prose.
+  if (stage === "szenenplot") {
+    const plotPolicy = structureStageAnalyzePolicy("szenenplot");
+    if (focus === "logik") {
+      return `FOKUS DIESES LAUFS: NUR Logik der Szenenverträge.
+Prüfe: Ursache→Wirkung zwischen Szenen; continuity.character_states_after (Ort/Etage) und prop_placements_after; next_scene_hook-Bewegung muss zum Endzustand passen; information_flow (Publikum/Figuren/Geheim) ohne Widerspruch; Props/Events/introduces/resolves über Kapitel; doppelte oder gestrichene Motive; Timeline und Besitz.
+Ignoriere reine Spannungs-/Tempo-Feinschliffe und Formulierungsstil des schreibPrompt — außer sie erzeugen Logikbrüche.
+aenderungsPrompts: Continuity/Info-Fluss/Lifecycle reparieren (streichen/ersetzen/verbieten), keine Beat-Politur.${plotPolicy}`;
+    }
+    if (focus === "craft") {
+      return `FOKUS DIESES LAUFS: NUR Craft der Szenenverträge.
+Prüfe: Konkretheit (scene_goal, obstacle_conflict, turning_point, outcome_value_change greifbar, keine Platzhalter); Spannung/Tempo der Szenenfolge; Arc-Beats und centralArcs in Szenen sichtbar; schreibPrompt als klarer Prosa-Vertrag (MUSS/DARF-NICHT, Handlungsschritte) — Inhalt der Szene schärfen, nicht Manuskript-Prosa schreiben.
+Keine neuen Logistik-Motive erfinden. Logik-Löcher nur melden, wenn die Szene dramaturgisch kollabiert — sonst weglassen (separater Logik-Lauf).
+aenderungsPrompts: Dramaturgie/Beats/Abdeckung/schreibPrompt schärfen.${plotPolicy}`;
+    }
+    return `FOKUS: Gesamt-Szenenplot — Logik und Craft gemischt (max. 3 Aufträge, Härteste zuerst).
+Härteste Logikbrüche (Continuity/Info-Fluss) vor Craft (Konkretheit/Spannung/schreibPrompt). Beide nur an Structured-Feldern.${plotPolicy}`;
+  }
+
+  const stagePolicy =
+    stage === "kapitelgeruest"
+      ? structureStageAnalyzePolicy("kapitelgeruest")
+      : stage === "manuskript"
+        ? `\nSTUFEN-POLITIK: Primär Stil/Lesefluss. Plot-Löcher nur soft melden — echte Plot-Fixes gehören in den Szenenplot.`
+        : "";
+
+  if (focus === "logik") {
+    return `FOKUS DIESES LAUFS: NUR Logik / Kontinuität / Canon / Props / Widersprüche / Motiv-Verbote.
+Ignoriere Stil, Lesefluss und reine Spannungs-Feinschliffe — außer sie sind direkte Logikfolgen.
+Kritisch: Fakten, Doppelungen, gestrichene Motive die zurückkommen, Timeline, Besitz/Kennzeichen.
+aenderungsPrompts müssen Logik reparieren (streichen/ersetzen/verbieten), keine Stilpolitur.${stagePolicy}`;
+  }
+  if (focus === "craft") {
+    const craftActions =
+      stage === "kapitelgeruest"
+        ? "aenderungsPrompts: Kapitel-Funktion, Arc Peak/Payoff, Lifecycle schärfen — Skizze bleiben lassen, kein Mini-Buch, keine Dialog-/Prosa-Politur."
+        : "aenderungsPrompts: Beats schärfen, Tempo, Dialog-Druck — ohne Canon neu zu erfinden.";
+    return `FOKUS DIESES LAUFS: NUR Dramaturgie / Spannung / Szenenwenden / Lesefluss / Straffen.
+Keine neuen Logistik-Motive (Auto, ICE, Stellplatz, Hotel als Plot) einführen.
+Logik-Widersprüche nur erwähnen, wenn sie die Szene zerstören — sonst weglassen (separater Logik-Lauf).
+${craftActions}${stagePolicy}`;
+  }
+  return `FOKUS: Gesamtstufe — Logik und Craft gemischt (max. 3 Aufträge, Härteste zuerst).${stagePolicy}`;
+}
 
 function altergruppeLabel(
   editorial: ReturnType<typeof emptyRomanEditorial>,
@@ -98,14 +213,41 @@ async function persistEditorial(
   return { ...saved, ideenChat: roman.ideenChat };
 }
 
-function parseStageVerbessernRaw(
+const STAGE_VERBESSERN_SCHEMA_HINT = `{
+  "kritik": "2–4 Absätze Prosa (oder kurz, wenn wenig fehlt)",
+  "aenderungsPrompts": [
+    {
+      "titel": "kurzer Name",
+      "wichtigkeit": "kritisch" | "wichtig" | "nice_to_have",
+      "scope": "lokal" | "buchweit",
+      "kapitel": [],
+      "anweisung": "Imperativ: was genau ändern",
+      "entscheidungNoetig": false,
+      "entscheidungFrage": ""
+    }
+  ]
+}
+Maximal 3 aenderungsPrompts. Leeres Array [] ist erlaubt.
+Nummerierte Prosa-Listen → in kritik + aenderungsPrompts überführen.`;
+
+async function parseStageVerbessernRaw(
   raw: string,
+  model: AiModelConfig,
   meta: {
     stage: PipelineStage;
     modelLabel: string;
+    focus: StageVerbessernFocus;
   },
-): RomanReifegradImprovePlan {
-  const obj = parseModelJsonObject(raw, "Verbessern-Analyse");
+): Promise<RomanReifegradImprovePlan> {
+  const obj = await parseModelJsonObjectWithRepair({
+    raw,
+    model,
+    schemaHint: STAGE_VERBESSERN_SCHEMA_HINT,
+    errorLabel: "Verbessern-Analyse",
+    maxTokens: 4_000,
+    timeoutMs: 60_000,
+  });
+  const dimensionLabel = STAGE_VERBESSERN_FOCUS_LABELS[meta.focus];
 
   let kritik = String(
     obj.kritik ?? obj.critique ?? obj.leserFeedback ?? "",
@@ -151,7 +293,7 @@ function parseStageVerbessernRaw(
       aenderungsPrompts: prompts,
       stage: meta.stage,
       dimension: STAGE_VERBESSERN_DIMENSION,
-      dimensionLabel: "Gesamt",
+      dimensionLabel,
       modelLabel: meta.modelLabel,
       createdAt: new Date().toISOString(),
     },
@@ -162,14 +304,14 @@ function parseStageVerbessernRaw(
       createdAt: new Date().toISOString(),
       stage: meta.stage,
       dimension: STAGE_VERBESSERN_DIMENSION,
-      dimensionLabel: "Gesamt",
+      dimensionLabel,
       modelLabel: meta.modelLabel,
       kritik,
       aenderungsPrompts: prompts,
       appliedAt: null,
     };
   }
-  return plan;
+  return { ...plan, dimensionLabel };
 }
 
 /**
@@ -178,12 +320,16 @@ function parseStageVerbessernRaw(
 export async function analyzeStageVerbessern(input: {
   romanId: string;
   stage: PipelineStage;
+  /** Default gesamt; logik/craft for 1–2 focused improve runs. */
+  focus?: StageVerbessernFocus;
 }): Promise<{
   roman: RomanKontext;
   plan: RomanReifegradImprovePlan;
   summary: string;
   runId: string;
 }> {
+  const focus: StageVerbessernFocus = input.focus ?? "gesamt";
+  const focusLabel = STAGE_VERBESSERN_FOCUS_LABELS[focus];
   const stageLabel =
     input.stage === "expose" ? "Spec" : PIPELINE_STAGE_LABELS[input.stage];
   const events: PipelineHistoryEvent[] = [];
@@ -194,14 +340,14 @@ export async function analyzeStageVerbessern(input: {
     firstEvent: historyEvent({
       type: "info",
       stage: input.stage,
-      summary: `Verbessern-Analyse · ${stageLabel}`,
+      summary: `Verbessern-Analyse · ${stageLabel} · ${focusLabel}`,
     }),
   });
   events.push(
     historyEvent({
       type: "info",
       stage: input.stage,
-      summary: `Verbessern-Analyse · ${stageLabel}`,
+      summary: `Verbessern-Analyse · ${stageLabel} · ${focusLabel}`,
     }),
   );
 
@@ -218,7 +364,16 @@ export async function analyzeStageVerbessern(input: {
     }
     const alter = altergruppeLabel(editorial);
     const chapterStages =
-      input.stage === "szenenplot" || input.stage === "manuskript";
+      input.stage === "kapitelgeruest" ||
+      input.stage === "szenenplot" ||
+      input.stage === "manuskript";
+    const previousScore = editorial.reifegrade?.[input.stage] ?? null;
+    const highBand = highBandLastGapsMandate({
+      gesamtPct: previousScore?.gesamtPct,
+    });
+    const inHighBand =
+      previousScore != null &&
+      previousScore.gesamtPct >= REIFEGRAD_HIGH_BAND_PP;
 
     const { rolle } = await resolveRomanKiRolle("entwicklungslektor");
     const analyzeBase = await resolveRomanSchreibModel(
@@ -241,18 +396,33 @@ lesestufe: ${editorial.lesestufe?.trim() || "—"}
 # Stufe
 ${stageLabel} (${input.stage})${
   input.stage === "expose"
-    ? "\nSpec = Charaktere + Welt + Exposé als ein Brief (Artefakt unten)."
-    : ""
+    ? "\nSpec = Charaktere + Welt + Exposé als ein Brief (Artefakt unten).\nPrüfe ausdrücklich, ob dieses Spec einen ganzen Roman tragen kann — Lücken hier später teuer."
+    : input.stage === "kapitelgeruest"
+      ? "\nArtefakt = STRUCTURED Kapitelgerüst (Spiegel aus JSON: centralArcs + Kapitel mit Lifecycle/arcBeats). Bewerte genau diese Felder."
+      : input.stage === "szenenplot"
+        ? "\nArtefakt = STRUCTURED Szenenplot (Spiegel aus JSON: Arcs, Lifecycle, Szenenverträge inkl. schreibPrompt)."
+        : ""
 }
+
+# Aktueller Reifegrad
+${
+  previousScore
+    ? `Gesamt ${previousScore.gesamtPct}% · Logik ${previousScore.regelnPct}% · ${formatCraftScoresLine(input.stage, previousScore)}`
+    : "(noch nicht gemessen)"
+}
+
+${highBand}
 
 # Artefakt
 ${artifact}
 
+${focusAnalyzeAddendum(focus, input.stage)}
+
 Auftrag:
-Analysiere knallhart DIESE Stufe als Ganzes. Liefere ZWEI Schichten:
+Analysiere knallhart DIESE Stufe (${focusLabel}). Liefere ZWEI Schichten:
 1) kritik — Prosa zum Lesen (die 1–3 kritischsten Schwächen mit Belegen). Darf kurz sein, wenn wenig fehlt.
-2) aenderungsPrompts — maximal 3 ausführbare Co-Autor-Aufträge (WO + WAS), Wichtigkeit zuerst.
-   Leer [] ist OK, wenn nichts kritisch/wichtig fehlt. Nur nice_to_have, wenn wirklich nur Feinschliff übrig ist.
+2) aenderungsPrompts — maximal ${inHighBand ? "2" : "3"} ausführbare Änderungsaufträge (WO + WAS), Wichtigkeit zuerst.
+   ${inHighBand ? `Hochband: lieber 1–2 tragfähige Pflichtpunkte als leere Liste aus Bequemlichkeit. Leer [] nur mit Begründung in kritik.` : `Leer [] ist OK, wenn nichts kritisch/wichtig fehlt. Nur nice_to_have, wenn wirklich nur Feinschliff übrig ist.`}
 
 Antwort NUR als JSON:
 {
@@ -275,8 +445,10 @@ Regeln:
 - aenderungsPrompts: max. 3; titel, wichtigkeit, scope, anweisung Pflicht. Leeres Array erlaubt.
 - wichtigkeit: kritisch (bricht Logik/Versprechen), wichtig (spürbarer Mangel), nice_to_have nur wenn nichts Härteres übrig.
 - Kein Nice-to-have / Feinschliff, solange kritisch oder wichtig existiert.
-- Wenn der Autor zwischen Varianten wählen MUSS (Entweder/Oder, offene Canon-Frage): setze entscheidungNoetig=true und entscheidungFrage als kurze Frage. In anweisung die Alternativen — KEINE Variante selbst wählen.
-- Bei Szenenplot/Manuskript: scope „lokal“ mit kapitel, oder „buchweit“.
+- KEINE Autor-Entscheidung: entscheidungNoetig immer false, entscheidungFrage leer. Bei Entweder/Oder selbst die tragfähigste Variante wählen und nur diese in anweisung festschreiben (Begründung kurz in kritik).
+- Bei Kapitelgerüst/Szenenplot/Manuskript: ${ROMAN_CRITIQUE_SCOPE_MANDATE}
+- Kapitelgerüst: anweisung muss Felder nennen (z. B. centralArcs.peakChapter, Kap.3 arcBeats, props streichen).
+- Szenenplot: anweisung muss scene_id oder Dramaturgie-/Continuity-Feld nennen.
 - Bei anderen Stufen: meist scope „buchweit“, kapitel [].
 - Spec (expose): Aufträge dürfen Figuren, Welt oder Exposé betreffen — klar benennen WO.
 - Nur diese Stufe. Kein Umschreiben hier. Nur valides JSON.`;
@@ -285,13 +457,16 @@ Regeln:
 
 ${ROMAN_CRITIQUE_FOCUS_MANDATE}
 
-Zusatzauftrag Verbessern-Analyse (${stageLabel}):
-Du bist Entwicklungslektor:in. Fokus auf die gesamte Stufe.
-Zwei Schichten: kritik (Prosa) + aenderungsPrompts (0–3, mit wichtigkeit).
-Offene Autor-Entscheidungen als entscheidungNoetig markieren — nicht selbst entscheiden.
-Wenn die Stufe schon trägt: kurze Bestätigung + leere aenderungsPrompts. Nur JSON.`;
+Zusatzauftrag Verbessern-Analyse (${stageLabel} · ${focusLabel}):
+Du bist Entwicklungslektor:in. ${focusAnalyzeAddendum(focus, input.stage)}
+Zwei Schichten: kritik (Prosa) + aenderungsPrompts (0–${inHighBand ? "2" : "3"}, mit wichtigkeit).
+${ROMAN_CRITIQUE_QUOTE_GROUNDING}
+Keine Autor-Entscheidungen: bei Alternativen selbst die beste Variante wählen und in anweisung festschreiben.
+${inHighBand ? `Hochband (≥${REIFEGRAD_HIGH_BAND_PP}%): letzte tragfähige Lücken suchen — kein automatisches „trägt schon → leer“.` : `Unter Hochband: leere aenderungsPrompts nur wenn wirklich nichts Pflichtiges fehlt.`}
+${highBand}
+Antworte AUSSCHLIESSLICH als JSON-Objekt mit Keys kritik und aenderungsPrompts — keine nummerierte Prosa außerhalb von JSON.`;
 
-    const { result: plan, usage } = await runWithAiUsageCollector(async () => {
+    const { result: planRaw, usage } = await runWithAiUsageCollector(async () => {
       const raw = await generateText({
         model,
         systemInstruction: system,
@@ -300,11 +475,24 @@ Wenn die Stufe schon trägt: kurze Bestätigung + leere aenderungsPrompts. Nur J
         maxTokens: 4_000,
         timeoutMs: 90_000,
       });
-      return parseStageVerbessernRaw(raw, {
+      return parseStageVerbessernRaw(raw, model, {
         stage: input.stage,
         modelLabel: model.label,
+        focus,
       });
     });
+    const { kept } = filterAenderungsPromptsByGrounding(
+      planRaw.aenderungsPrompts,
+      artifact,
+      { stage: input.stage },
+    );
+    const plan = {
+      ...planRaw,
+      aenderungsPrompts: narrowAenderungsPromptsWithKritikChapters(
+        kept,
+        planRaw.kritik,
+      ),
+    };
 
     events.push(
       historyEvent({
@@ -312,7 +500,7 @@ Wenn die Stufe schon trägt: kurze Bestätigung + leere aenderungsPrompts. Nur J
         stage: input.stage,
         roleKey: "entwicklungslektor",
         modelLabel: plan.modelLabel,
-        summary: `Verbessern · ${plan.aenderungsPrompts.length} Aufträge`,
+        summary: `Verbessern (${focusLabel}) · ${plan.aenderungsPrompts.length} Aufträge`,
         detail: `${plan.kritik.slice(0, 3_000)}\n\n---\n${plan.aenderungsPrompts
           .map((p) => `[${p.scope}] ${p.titel}: ${p.anweisung}`)
           .join("\n")
@@ -329,10 +517,10 @@ Wenn die Stufe schon trägt: kurze Bestätigung + leere aenderungsPrompts. Nur J
     const actionable = actionableAenderungsPrompts(plan.aenderungsPrompts);
     const summary =
       actionable.length > 0
-        ? `${stageLabel} analysiert · ${actionable.length} Pflichtauftrag/aufträge — Einarbeiten im Dialog.`
+        ? `${stageLabel} · ${focusLabel}: ${actionable.length} Pflichtauftrag/aufträge — Einarbeiten im Dialog.`
         : onlyNiceToHavePrompts(plan.aenderungsPrompts)
-          ? `${stageLabel} analysiert · nur Nice-to-have — so belassen.`
-          : `${stageLabel} analysiert · keine Pflichtpunkte — so belassen.`;
+          ? `${stageLabel} · ${focusLabel}: nur Nice-to-have — so belassen.`
+          : `${stageLabel} · ${focusLabel}: keine Pflichtpunkte — so belassen.`;
 
     return { roman, plan, summary, runId };
   } catch (error) {
@@ -353,7 +541,7 @@ Wenn die Stufe schon trägt: kurze Bestätigung + leere aenderungsPrompts. Nur J
 }
 
 /**
- * Apply stored stage Verbessern plan (Co-Autor → re-score).
+ * Apply stored stage Verbessern plan (Gerüst/Plot: Lektor-Struktur-Patch; Manuskript: Co-Autor → re-score).
  */
 export async function applyStageVerbessern(input: {
   romanId: string;
@@ -424,17 +612,26 @@ export async function applyStageVerbessern(input: {
     }),
   );
 
+  const snapshotEditorial = structuredClone(
+    loaded.editorial ?? emptyRomanEditorial(),
+  );
+  const snapshotRoots = {
+    manuskriptRaw: loaded.manuskriptRaw,
+    charaktere: loaded.charaktere,
+    weltSchauplaetze: loaded.weltSchauplaetze,
+    weltRegeln: loaded.weltRegeln,
+  };
+
   try {
     let roman = loaded;
     const allPatched: number[] = [];
-    const chapterDoc =
-      input.stage === "manuskript"
-        ? (editorial.manuskriptText ?? "")
-        : input.stage === "szenenplot"
-          ? (roman.manuskriptRaw ?? "")
-          : "";
+    const chapterDoc = improveChapterDoc(roman, input.stage);
 
-    if (input.stage === "manuskript" || input.stage === "szenenplot") {
+    if (
+      input.stage === "manuskript" ||
+      input.stage === "szenenplot" ||
+      input.stage === "kapitelgeruest"
+    ) {
       const chapterPlan = resolveReifegradImproveChapters(chapterDoc, plan);
       if (chapterPlan.chapterNumbers.length === 0) {
         throw new Error(
@@ -475,7 +672,7 @@ export async function applyStageVerbessern(input: {
           historyEvent({
             type: "apply",
             stage: input.stage,
-            roleKey: "co_autor",
+            roleKey: romanApplyRoleKey(input.stage),
             summary: applied.summary,
             usage,
           }),
@@ -501,7 +698,7 @@ export async function applyStageVerbessern(input: {
           historyEvent({
             type: "apply",
             stage: applyStage,
-            roleKey: "co_autor",
+            roleKey: romanApplyRoleKey(applyStage),
             summary: applied.summary,
             usage,
           }),
@@ -511,28 +708,61 @@ export async function applyStageVerbessern(input: {
 
     const uniquePatched = [...new Set(allPatched)].sort((a, b) => a - b);
     const ed = roman.editorial ?? emptyRomanEditorial();
-    const markedPlan: RomanReifegradImprovePlan = {
-      ...plan,
-      appliedAt: new Date().toISOString(),
-    };
-    let nextEd = withStageImprove(ed, input.stage, markedPlan);
+    const previous = snapshotEditorial.reifegrade?.[input.stage] ?? null;
+    let nextEd = ed;
 
-    const previous = nextEd.reifegrade?.[input.stage] ?? null;
     try {
       const { result: assessed, usage: reifeUsage } =
         await runWithAiUsageCollector(() =>
           assessStageReifegrad({
             roman: { ...roman, editorial: nextEd },
             stage: input.stage,
-            focusChapterNumbers: uniquePatched,
+            // Full artifact (no focus sample) so Gesamt is not skewed by local patch.
             previous,
             changeSummary: `Verbessern · ${stageLabel} eingearbeitet`,
           }),
         );
-      nextEd = editorialWithReifegrad(nextEd, input.stage, assessed.score);
-      roman = await persistEditorial(roman, nextEd);
       const score = assessed.score;
       const coverageLabel = formatAssessCoverageLabel(assessed.coverage);
+
+      if (reifegradGesamtRegressed(previous, score)) {
+        roman = await persistEditorial(
+          { ...roman, ...snapshotRoots },
+          snapshotEditorial,
+        );
+        const regression = formatReifegradRegressionSummary({
+          label: stageLabel,
+          previousPct: previous!.gesamtPct,
+          nextPct: score.gesamtPct,
+        });
+        events.push(
+          historyEvent({
+            type: "info",
+            stage: input.stage,
+            modelLabel: score.modelLabel,
+            summary: regression,
+            usage: reifeUsage,
+          }),
+        );
+        await updatePipelineHistoryRun({ runId, status: "ok", events });
+        return {
+          roman,
+          summary: regression,
+          runId,
+          patchedChapters: [],
+        };
+      }
+
+      const markedPlan: RomanReifegradImprovePlan = {
+        ...plan,
+        appliedAt: new Date().toISOString(),
+      };
+      nextEd = editorialWithReifegrad(
+        withStageImprove(ed, input.stage, markedPlan),
+        input.stage,
+        score,
+      );
+      roman = await persistEditorial(roman, nextEd);
       const delta =
         previous != null ? score.gesamtPct - previous.gesamtPct : null;
       const deltaLabel =
@@ -558,6 +788,12 @@ export async function applyStageVerbessern(input: {
         patchedChapters: uniquePatched,
       };
     } catch (assessError) {
+      // Keep patched content if assess fails — no score proof of regression.
+      const markedPlan: RomanReifegradImprovePlan = {
+        ...plan,
+        appliedAt: new Date().toISOString(),
+      };
+      nextEd = withStageImprove(ed, input.stage, markedPlan);
       roman = await persistEditorial(roman, nextEd);
       events.push(
         historyEvent({

@@ -4,6 +4,10 @@
  * Vertical pipeline runs + task/history admin for Buch.
  * Prefer step actions (start → draft → assess → finish for Erzeugen;
  * start → critique → cascade → finish for Verbessern) for live progress.
+ *
+ * Long wall-clock: `maxDuration` lives on the admin page segment
+ * (`src/app/admin/roman/[id]/page.tsx`) — not here (`"use server"` files
+ * may only export async actions).
  */
 
 import { revalidateRomanAdmin, revalidateRomanAdminRollen } from "@/lib/roman/revalidate-admin";
@@ -80,6 +84,41 @@ function asEvents(value: unknown[]): PipelineHistoryEvent[] {
 
 function revalidateBook(romanId: string) {
   revalidateRomanAdmin(romanId);
+}
+
+/** Reload roman after a background generate job finishes (for onComplete). */
+export async function romanPipelineReloadRomanAction(
+  input: unknown,
+): Promise<ActionResult<{ roman: NonNullable<Awaited<ReturnType<typeof getRomanKontext>>> }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = z
+    .object({
+      romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
+    })
+    .safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstIssue(parsed.error) };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId, {
+      omitCover: true,
+    });
+    if (!roman) {
+      return { success: false, error: "Buch nicht gefunden." };
+    }
+    return { success: true, data: { roman } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Buch laden fehlgeschlagen.",
+    };
+  }
 }
 
 const CLEVER_MANUSKRIPT_REIFEGRAD_BLOCKED =
@@ -726,6 +765,7 @@ export async function romanPipelineStageVerbessernAnalyzeAction(
     .object({
       romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
       stage: stageSchema,
+      focus: z.enum(["gesamt", "logik", "craft"]).optional(),
     })
     .safeParse(input);
   if (!parsed.success) {

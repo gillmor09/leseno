@@ -22,6 +22,7 @@ export type PipelineHistoryTrigger =
   | "leser_feedback"
   | "leser_feedback_apply"
   | "manuskript_vereinfachen"
+  | "manuskript_verbessern"
   | "manuskript_original_restore"
   | "stage_verbessern_analyze"
   | "stage_verbessern_apply"
@@ -111,7 +112,9 @@ export async function getPipelineHistoryRun(
   romanId: string,
   runId: string,
 ): Promise<PipelineHistoryRun | null> {
-  const runs = await listPipelineHistory(romanId, 20);
+  // Wider window so long-running generate jobs still resolve after many
+  // intervening history rows (progress polls + finish).
+  const runs = await listPipelineHistory(romanId, 50);
   return runs.find((r) => r.id === runId) ?? null;
 }
 
@@ -123,6 +126,36 @@ export function latestLiveProgressLabel(
   for (let i = run.events.length - 1; i >= 0; i -= 1) {
     const ev = run.events[i]!;
     if (ev.detail === "live-progress" && ev.summary.trim()) {
+      return ev.summary.trim();
+    }
+  }
+  return null;
+}
+
+/** Best label for the wait dialog (live progress, else last useful event). */
+export function latestProgressLabelForPoll(
+  run: PipelineHistoryRun | null | undefined,
+): string | null {
+  const live = latestLiveProgressLabel(run);
+  if (live) return live;
+  if (!run) return null;
+  for (let i = run.events.length - 1; i >= 0; i -= 1) {
+    const ev = run.events[i]!;
+    if (ev.detail === "live-progress") continue;
+    const s = ev.summary.trim();
+    if (s) return s;
+  }
+  return null;
+}
+
+/** Latest error event summary, if any. */
+export function latestRunErrorSummary(
+  run: PipelineHistoryRun | null | undefined,
+): string | null {
+  if (!run) return null;
+  for (let i = run.events.length - 1; i >= 0; i -= 1) {
+    const ev = run.events[i]!;
+    if (ev.type === "error" && ev.summary.trim()) {
       return ev.summary.trim();
     }
   }

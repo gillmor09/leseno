@@ -110,6 +110,12 @@ export function closeTruncatedJsonObject(raw: string): string | null {
     }
   }
   if (inString) {
+    // Mid-string cut: drop back to the last complete object/array end.
+    const cut = Math.max(slice.lastIndexOf("}"), slice.lastIndexOf("]"));
+    if (cut > 0) {
+      slice = slice.slice(0, cut + 1).replace(/,\s*$/g, "");
+      return closeTruncatedJsonObject(slice);
+    }
     slice += '"';
   }
   slice = slice.replace(/,\s*$/g, "");
@@ -120,12 +126,119 @@ export function closeTruncatedJsonObject(raw: string): string | null {
 }
 
 /**
+ * Rebuild a Szenenplot patch envelope from whatever complete scene objects
+ * survived in a truncated model reply. Returns null if none are salvageable.
+ */
+export function salvageSzenenplotPatchJson(
+  raw: string,
+  chapterNumber: number,
+): Record<string, unknown> | null {
+  const start = raw.indexOf("{");
+  if (start < 0) return null;
+  const body = raw.slice(start);
+  const scenes: unknown[] = [];
+  const re = /"scene_id"\s*:\s*"([^"]+)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    const idStart = m.index;
+    // Walk left to the scene object's opening brace.
+    let brace = -1;
+    for (let i = idStart; i >= 0; i -= 1) {
+      if (body[i] === "{") {
+        brace = i;
+        break;
+      }
+    }
+    if (brace < 0) continue;
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    let end = -1;
+    for (let i = brace; i < body.length; i += 1) {
+      const c = body[i]!;
+      if (inStr) {
+        if (esc) {
+          esc = false;
+          continue;
+        }
+        if (c === "\\") {
+          esc = true;
+          continue;
+        }
+        if (c === '"') inStr = false;
+        continue;
+      }
+      if (c === '"') {
+        inStr = true;
+        continue;
+      }
+      if (c === "{") depth += 1;
+      else if (c === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+    if (end < 0) continue;
+    try {
+      const obj = JSON.parse(
+        escapeRawControlsInJsonStrings(lightJsonRepair(body.slice(brace, end + 1))),
+      ) as unknown;
+      if (obj && typeof obj === "object") scenes.push(obj);
+    } catch {
+      /* skip incomplete */
+    }
+  }
+  if (!scenes.length) return null;
+  return {
+    chapters: [{ number: chapterNumber, scenes }],
+  };
+}
+
+/**
+ * Coerce a JSON.parse result into a plain object.
+ * Unwraps a JSON-encoded string once (models sometimes return `"…markdown…"`).
+ */
+function coerceParsedObject(
+  parsed: unknown,
+  depth: number,
+): Record<string, unknown> | null {
+  if (typeof parsed === "string") {
+    const inner = parsed.trim();
+    if (inner.length >= 2 && depth < 2) {
+      return tryParseModelJsonObject(inner, depth + 1);
+    }
+    return null;
+  }
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    return parsed as Record<string, unknown>;
+  }
+  if (Array.isArray(parsed) && parsed[0] && typeof parsed[0] === "object") {
+    return parsed[0] as Record<string, unknown>;
+  }
+  return null;
+}
+
+/**
  * Parse the first JSON object from model text. Returns null if unrecoverable.
  */
 export function tryParseModelJsonObject(
   raw: string,
+  depth = 0,
 ): Record<string, unknown> | null {
   const cleaned = stripFence(raw);
+  if (!cleaned) return null;
+
+  // Whole payload first — catches objects, arrays, and JSON-encoded strings.
+  try {
+    const whole = coerceParsedObject(JSON.parse(cleaned) as unknown, depth);
+    if (whole) return whole;
+  } catch {
+    /* try slices */
+  }
+
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
   const slices: string[] = [];
@@ -149,13 +262,11 @@ export function tryParseModelJsonObject(
 
   for (const candidate of candidates) {
     try {
-      const parsed = JSON.parse(candidate) as unknown;
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-      if (Array.isArray(parsed) && parsed[0] && typeof parsed[0] === "object") {
-        return parsed[0] as Record<string, unknown>;
-      }
+      const coerced = coerceParsedObject(
+        JSON.parse(candidate) as unknown,
+        depth,
+      );
+      if (coerced) return coerced;
     } catch {
       /* try next */
     }

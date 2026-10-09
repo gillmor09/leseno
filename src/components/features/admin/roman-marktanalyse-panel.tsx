@@ -354,7 +354,13 @@ export function RomanMarktanalysePanel({
         </p>
       )}
 
-      <RomanSceneWaitDialog open={pending} variant="marktanalyse" />
+      <RomanSceneWaitDialog
+        open={pending}
+        variant="marktanalyse"
+        contextLabel="Basics · Marktanalyse"
+        title="Marktanalyse erzeugen"
+        progressLabel="Konkurrenz-Titel und Rezensionen werden ausgewertet …"
+      />
     </div>
   );
 }

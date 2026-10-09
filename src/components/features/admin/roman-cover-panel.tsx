@@ -14,7 +14,7 @@ import {
 } from "@/app/actions/roman-admin";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
-import { ROMAN_COVER_SIZE } from "@/lib/roman/cover-size";
+import { romanCoverSizeLabel } from "@/lib/roman/cover-size";
 
 export function RomanCoverPanel({
   romanId,
@@ -139,8 +139,9 @@ export function RomanCoverPanel({
     <div className="space-y-5">
       <RomanSceneWaitDialog
         open={pending === "generate"}
-        variant="pipeline-generate"
-        title="Cover wird erzeugt"
+        variant="cover"
+        contextLabel="Export · Cover"
+        title="Cover erzeugen"
         progressLabel={
           isCleverErzaehlt
             ? "Cover-Art-Director → Bild → Logos → Cover-Typograf → Titel …"
@@ -166,14 +167,14 @@ export function RomanCoverPanel({
             Ablauf: Cover-Art-Director (KI-Rolle) → Bild → Serien-Badge oben
             mittig + leseno-Logo unten rechts → Cover-Typograf (KI-Rolle) →
             Buchtitel mittig. Rollen unter KI-Rollen anpassbar. Format{" "}
-            {ROMAN_COVER_SIZE.width}×{ROMAN_COVER_SIZE.height} px.
+            {romanCoverSizeLabel()} (Druck).
           </>
         ) : (
           <>
-            Motiv ohne Text (Profi-Grafik). Titel wird danach nach
-            Designer-/Verleger-Vorgabe gesetzt: Zone, Ausrichtung, Größe, Ton,
-            Scrim — als sauberes Overlay. Format{" "}
-            {ROMAN_COVER_SIZE.width}×{ROMAN_COVER_SIZE.height} px.
+            Motiv und Schrift frei nach Genre-Bestsellern (Marketing-Blickfang —
+            kein festes Nunito). Overlay: Autor oben mittig, Titel + Untertitel
+            (Einzeiler), leseno-Logo unten rechts. Format{" "}
+            {romanCoverSizeLabel()} (Druck).
           </>
         )}
       </p>
@@ -220,8 +221,7 @@ export function RomanCoverPanel({
         </div>
       ) : (
         <p className="rounded-2xl bg-zinc-50 px-4 py-8 text-center text-sm font-semibold text-zinc-500 ring-1 ring-zinc-950/8">
-          Noch kein Cover — {ROMAN_COVER_SIZE.width}×{ROMAN_COVER_SIZE.height}{" "}
-          für eBook.
+          Noch kein Cover — {romanCoverSizeLabel()} für Druck/eBook.
         </p>
       )}
 

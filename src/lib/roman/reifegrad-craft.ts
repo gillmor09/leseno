@@ -159,51 +159,187 @@ Ignoriere Motivations- und Regel-Checklisten.`,
       key: "figurenkraft",
       label: "Figurenkraft",
       slot: "a",
-      hint: "Greifbare Wollen/Brauchen/Fürchten und Reibung — Steckbriefe und ihre Rolle im Exposé.",
-      brief: `NUR Figurenkraft im Spec: Greifbare Wollen/Brauchen/Fürchten und Reibung untereinander — altersgerecht.
-Steckbriefe und ihre Rolle im Exposé zusammen betrachten. Ignoriere reine Weltkataloge und Prosa-Stil.`,
+      hint: "Antriebe und Reibung, die mehrere Akte speisen — nicht nur einen Einstieg.",
+      brief: `NUR Figurenkraft im Spec: Greifbare Wollen/Brauchen/Fürchten und Reibung — altersgerecht und romanfähig.
+Steckbriefe + Rolle im Exposé: Antriebe müssen MEHRERE Akte speisen (Verschärfung möglich), nicht nur den Anfang einer Episode.
+Zu dünn = kritisch: Figuren ohne nachhaltigen Konfliktstoff für einen ganzen Roman.
+Ignoriere reine Weltkataloge und Prosa-Stil.`,
     },
     {
       key: "weltnutzen",
       label: "Weltnutzen",
       slot: "b",
-      hint: "Schauplätze und Regeln ermöglichen oder erschweren Konflikte — Welt und Handlung müssen passen.",
+      hint: "Schauplätze/Regeln erzeugen laufend Konflikte — genug Stoff für ein ganzes Buch.",
       brief: `NUR Weltnutzen im Spec: Schauplätze/Regeln ermöglichen oder erschweren Konflikte — keine Deko-Kataloge.
-Welt und Handlung müssen zusammenpassen. Ignoriere Charakterpsychologie und Feinschliff.`,
+Welt muss den Handlungsbogen über die Buchlänge mit Druck versorgen (wiederkehrende Reibung, Eskalationsraum), nicht nur eine Szenerie liefern.
+Zu dünn = kritisch: Downstream müsste zentrale Welt-Konflikte erfinden.
+Ignoriere Charakterpsychologie und Feinschliff.`,
     },
     {
       key: "handlungsbogen",
       label: "Handlungsbogen",
       slot: "c",
-      hint: "Aufbau, Wendungen und Ziel im Spec/Exposé — klar und altersgerecht einlösbar.",
-      brief: `NUR Handlungsbogen im Spec/Exposé: Aufbau, Wendungen, Ziel — klar und altersgerecht einlösbar.
+      hint: "Anfang → Druck/Wende → Ziel: trägt der Bogen einen ganzen Roman, altersgerecht einlösbar?",
+      brief: `NUR Handlungsbogen im Spec/Exposé: Aufbau, Druck/Wende, Ziel/Payoff-Versprechen — klar, altersgerecht und romanfähig.
+Prüfe Escalation und Midpoint/Endgame-Seed: Reicht der Bogen für einen ganzen Roman, oder nur für eine Kurzgeschichte/Episode?
+Fehlende Steigerung oder unklarer Schluss = kritisch (sonst erfindet Gerüst/Plot später den Kern).
 Ignoriere reine Steckbrief-Details und Atmosphäre-Lyrik.`,
     },
   ],
-  szenenplot: [
+  grobgeruest: [
+    {
+      key: "funktion",
+      label: "Funktion",
+      slot: "a",
+      hint: "Jedes Kapitel hat eine klare Story-Aufgabe (Kernsatz) — keine Füllkapitel.",
+      brief: `NUR Kapitel-Nutzen im Grobgerüst: Jedes Kapitel braucht einen greifbaren Kernsatz / eine Story-Aufgabe (kein Füllkapitel).
+Nur Outline-Ebene — keine Szenen, kein Mini-Manuskript.`,
+    },
+    {
+      key: "spannungsbogen",
+      label: "Spannungsbogen",
+      slot: "b",
+      hint: "Zentrale Arcs mit Setup/Peak/Payoff-Kapiteln sind angelegt.",
+      brief: `NUR zentrale Spannungsbögen (centralArcs): Setup/Peak/Payoff-Kapitel plausibel, Parteien klar.
+Ignoriere Einzelszenen und detaillierte Lifecycle-Felder.`,
+    },
+    {
+      key: "abdeckung",
+      label: "Abdeckung",
+      slot: "c",
+      hint: "Outline deckt das Spec-Versprechen auf Kapitelebene ab.",
+      brief: `NUR Abdeckung der Spec-Versprechen durch Kapitel-Kernsätze/Arcs — Anker reichen.
+Ignoriere Feingerüst-Details und Plot.`,
+    },
+  ],
+  feingeruest: [
     {
       key: "funktion",
       label: "Funktion",
       slot: "a",
       hint: "Jedes Kapitel bringt den Plot voran oder erfüllt eine klare Story-Aufgabe — keine Füllkapitel.",
-      brief: `NUR Kapitel-Nutzen/Funktion: Jedes Kapitel muss den Plot voranbringen oder eine klare Story-Aufgabe erfüllen (kein Füllkapitel, kein dekoratives Gerüst).
-Ignoriere Prosa-Stil und Feinschliff — nur die Funktion im Gerüst.`,
+      brief: `NUR Kapitel-Nutzen/Funktion: Jedes Kapitel muss den Plot voranbringen oder eine klare Story-Aufgabe erfüllen (kein Füllkapitel).
+Skizzenhafte Kürze und offene Fäden sind OK — kein Mini-Manuskript verlangen.
+Ignoriere Einzelszenen, Prosa-Stil und Feinschliff — nur die Funktion im Feingerüst.`,
     },
     {
       key: "dramaturgie",
       label: "Dramaturgie",
       slot: "b",
-      hint: "Reihenfolge, Motivation, Wendungen und Spannungsbogen im Kapitelgerüst.",
-      brief: `NUR Dramaturgie des Kapitelgerüsts: Reihenfolge, Motivation, Wendungen, Spannungsbogen — altersgerecht.
-Ignoriere reine Formulierungsfragen und Prosa.`,
+      hint: "Reihenfolge, Tempo, Wendungen und Spannungsbögen auf Kapitelebene (Setup/Peak/Payoff).",
+      brief: `NUR Dramaturgie des Feingerüsts: Reihenfolge, Tempo, Wendungen, Spannungsbogen — altersgerecht.
+Prüfe zentrale Arcs (Setup/Peak/Payoff) und knappe Arc-Beats — fehlen Peak/Payoff oder driftet der Bogen?
+Nicht bestrafen: knappe mustShow, offene Threads, Raum für den Plot.
+Ignoriere Einzelszenen-Handlungen und Prosa.`,
     },
     {
       key: "abdeckung",
       label: "Abdeckung",
       slot: "c",
       hint: "Deckt das Gerüst die zentralen Bögen, Wendungen und Versprechen aus Spec und Upstream ab?",
-      brief: `NUR Abdeckung: Deckt das Kapitelgerüst die zentralen Bögen/Wendungen/Versprechen aus Exposé und Upstream (Idee, Figuren, Welt)? Fehlende oder verwaiste Stränge benennen.
+      brief: `NUR Abdeckung: Deckt das Feingerüst die zentralen Bögen/Wendungen/Versprechen aus Exposé und Upstream? Fehlende oder verwaiste Stränge (ohne Kapitel-Anker / ohne Arc) benennen.
+Nicht verlangen, dass jedes Motiv schon szenisch ausgearbeitet ist — Anker reichen.
 Ignoriere Stil und Detailprosa.`,
+    },
+  ],
+  grobplot: [
+    {
+      key: "konkretheit",
+      label: "Konkretheit",
+      slot: "a",
+      hint: "Pro Kapitel gibt es greifbare Szenen-Köpfe (Heading + kurze Summary).",
+      brief: `NUR Grobplot: Jedes Kapitel hat 2–5 Szenen mit scene_id, Heading und knapper Summary — keine leeren Platzhalter.
+Volle Verträge/schreibPrompt gehören in den Feinplot — hier nicht verlangen.`,
+    },
+    {
+      key: "uebergaenge",
+      label: "Übergänge",
+      slot: "b",
+      hint: "Szenenfolge pro Kapitel ergibt Ursache→Wirkung auf Outline-Ebene.",
+      brief: `NUR grobe Übergänge: Szenenreihenfolge plausibel; Summaries lassen Ursache→Wirkung erahnen.
+Fein-Continuity (Etage/Props) ist Feinplot.`,
+    },
+    {
+      key: "abdeckung",
+      label: "Abdeckung",
+      slot: "c",
+      hint: "Jedes Feingerüst-Kapitel hat Szenen; Arc-Anker sind sichtbar.",
+      brief: `NUR Abdeckung: Jedes Feingerüst-Kapitel hat Szenen; zentrale Arc-Beats haben mindestens eine Szene als Anker.
+schreibPrompt/Full-Contracts nicht verlangen.`,
+    },
+  ],
+  feinplot: [
+    {
+      key: "konkretheit",
+      label: "Konkretheit",
+      slot: "a",
+      hint: "Jede Szene hat greifbare Handlungen, Ziel/Hindernis/Wende — keine abstrakten Platzhalter.",
+      brief: `NUR Konkretheit der Szenen: greifbare Handlungen, Ziel/Hindernis/Wende/Wertewechsel, Info-Fluss.
+Keine abstrakten Platzhalter. Ignoriere Prosa-Stil — nur den Szenenplot-Vertrag.`,
+    },
+    {
+      key: "uebergaenge",
+      label: "Übergänge",
+      slot: "b",
+      hint: "Ursache→Wirkung zwischen Szenen; Continuity und Hooks ohne Logiklücken.",
+      brief: `NUR Übergänge/Continuity im Feinplot: Ursache→Wirkung, next_scene_hook, character_states_after (Ort/Etage), prop_placements_after, Intro/Resolve.
+Keine Handlungslöcher. Ignoriere Formulierungsstil.`,
+    },
+    {
+      key: "abdeckung",
+      label: "Abdeckung",
+      slot: "c",
+      hint: "Jeder Arc-Beat und jedes Gerüst-Kapitel ist in Szenen abgedeckt; schreibPrompt vorhanden.",
+      brief: `NUR Abdeckung: Jeder centralArc-Beat und jedes Gerüst-Kapitel muss in Szenen landen; schreibPrompt pro Szene vorhanden.
+Fehlende Arc→Szene-Zuordnung benennen. Ignoriere Prosa.`,
+    },
+  ],
+  /** @deprecated Alias → Feingerüst craft axes */
+  kapitelgeruest: [
+    {
+      key: "funktion",
+      label: "Funktion",
+      slot: "a",
+      hint: "Jedes Kapitel bringt den Plot voran oder erfüllt eine klare Story-Aufgabe — keine Füllkapitel.",
+      brief: `NUR Kapitel-Nutzen/Funktion im Gerüst.`,
+    },
+    {
+      key: "dramaturgie",
+      label: "Dramaturgie",
+      slot: "b",
+      hint: "Reihenfolge, Tempo, Wendungen und Spannungsbögen auf Kapitelebene.",
+      brief: `NUR Dramaturgie des Gerüsts.`,
+    },
+    {
+      key: "abdeckung",
+      label: "Abdeckung",
+      slot: "c",
+      hint: "Deckt das Gerüst Spec-Versprechen ab?",
+      brief: `NUR Abdeckung des Gerüsts.`,
+    },
+  ],
+  /** @deprecated Alias → Feinplot craft axes */
+  szenenplot: [
+    {
+      key: "konkretheit",
+      label: "Konkretheit",
+      slot: "a",
+      hint: "Jede Szene hat greifbare Handlungen.",
+      brief: `NUR Konkretheit der Szenen.`,
+    },
+    {
+      key: "uebergaenge",
+      label: "Übergänge",
+      slot: "b",
+      hint: "Ursache→Wirkung zwischen Szenen.",
+      brief: `NUR Übergänge/Continuity.`,
+    },
+    {
+      key: "abdeckung",
+      label: "Abdeckung",
+      slot: "c",
+      hint: "Arc-Beats in Szenen abgedeckt.",
+      brief: `NUR Abdeckung im Szenenplot.`,
     },
   ],
   manuskript: [

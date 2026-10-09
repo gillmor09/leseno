@@ -2,10 +2,9 @@
 
 /**
  * Per-chapter Manuskript controls: Erzeugen / Verbessern / Gegenlesen.
- * Roman: Continuity via Gerüst + Vorgänger (server-side); one-shot Verbessern.
- * Clever: independent Kurzgeschichten — Verbessern läuft automatisch
- * (Analyse → bei kritisch/wichtig einarbeiten → erneut, bis nur Nice-to-have
- * oder leer, dann Fertig). Dieselben Server-Actions und der Durchlauf-Zähler.
+ * Roman: Prosa aus eingefrorenem Szenenvertrag + Continuity vom Vorgänger;
+ * one-shot Verbessern. Clever: unabhängige Kurzgeschichten — Verbessern
+ * läuft automatisch bis Nice-to-have/leer, dann Fertig.
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -82,7 +81,7 @@ export function RomanManuskriptChapterControl({
   cleverGeschichteOk = null,
 }: {
   romanId: string;
-  /** Kapitelgerüst / Unterthemen — source of chapter numbers/titles. */
+  /** Szenenplot / Unterthemen — source of chapter numbers/titles. */
   plotMarkdown: string;
   /** Current manuskript prose (may be empty slots). */
   manuskriptMarkdown: string;
@@ -612,20 +611,62 @@ export function RomanManuskriptChapterControl({
           pending === "apply"
         }
         variant={waitVariant}
-        title={waitTitle}
+        contextLabel={
+          isClever
+            ? pending === "generate"
+              ? `Geschichte ${chapterNumber} · Erzeugen`
+              : pending === "apply"
+                ? `Geschichte ${chapterNumber} · Einarbeiten`
+                : pending === "analyze"
+                  ? `Geschichte ${chapterNumber} · Analysieren`
+                  : `Geschichte ${chapterNumber}`
+            : pending === "generate"
+              ? `Kapitel ${chapterNumber} · Erzeugen`
+              : pending === "improve"
+                ? `Kapitel ${chapterNumber} · Verbessern`
+                : pending === "critique"
+                  ? `Kapitel ${chapterNumber} · Gegenlesen`
+                  : `Kapitel ${chapterNumber}`
+        }
+        title={
+          waitTitle ??
+          (pending === "generate"
+            ? `${unitLabel} erzeugen`
+            : pending === "improve"
+              ? `${unitLabel} verbessern`
+              : pending === "critique"
+                ? `${unitLabel} gegenlesen`
+                : pending === "analyze"
+                  ? `${unitLabel} analysieren`
+                  : pending === "apply"
+                    ? `${unitLabel} einarbeiten`
+                    : null)
+        }
         footer={
           isClever
-            ? "Eigenständige Kurzgeschichte — kein Fortsetzungsfaden. Tab offen lassen."
-            : null
+            ? "Nur diese Kurzgeschichte — kein Fortsetzungsfaden. Tab offen lassen."
+            : pending === "generate"
+              ? "Nur dieses Kapitel aus dem Szenenvertrag. Tab offen lassen."
+              : pending === "improve"
+                ? "Nur dieses Kapitel verbessern. Tab offen lassen."
+                : pending === "critique"
+                  ? "Nur Gegenlese — Prosa bleibt unverändert. Tab offen lassen."
+                  : null
         }
         progressLabel={
           isClever && pending === "generate"
-            ? "Eigenständige Geschichte aus Unterthema + Fakten …"
-              : isClever && pending === "analyze"
-              ? `Durchlauf ${autoPass || 1}: Leser prüft Kritik und Änderungsaufträge …`
+            ? `Geschichte ${chapterNumber}${selected?.title ? ` — „${selected.title}“` : ""}: Erzähler schreibt aus Unterthema + Fakten …`
+            : isClever && pending === "analyze"
+              ? `Geschichte ${chapterNumber}: Durchlauf ${autoPass || 1} — Leser prüft Kritik und Aufträge …`
               : isClever && pending === "apply"
-                ? `Durchlauf ${autoPass || 1}: Erzähler arbeitet wichtige Punkte ein …`
-                : null
+                ? `Geschichte ${chapterNumber}: Durchlauf ${autoPass || 1} — Erzähler arbeitet ein …`
+                : !isClever && pending === "generate"
+                  ? `Kapitel ${chapterNumber}${selected?.title ? ` — „${selected.title}“` : ""}: Co-Autor schreibt Prosa …`
+                  : !isClever && pending === "improve"
+                    ? `Kapitel ${chapterNumber}${selected?.title ? ` — „${selected.title}“` : ""}: Analyse gegen Verträge, dann Einarbeiten …`
+                    : !isClever && pending === "critique"
+                      ? `Kapitel ${chapterNumber}${selected?.title ? ` — „${selected.title}“` : ""}: Entwicklungslektor gegenliest …`
+                      : null
         }
       />
 
@@ -846,7 +887,7 @@ export function RomanManuskriptChapterControl({
       <p className="text-xs font-semibold text-zinc-500">
         {isClever
           ? "Verbessern läuft automatisch: Kritik, dann Einarbeiten, bis nur noch Nice-to-have oder nichts übrig ist — dann Fertig. Darunter: Infografik, dann Abenteuer-Wissen — gleiche Reihenfolge wie im Export. Im Feld nur die ausgewählte Geschichte."
-          : "Nutzt Kapitelgerüst-Beats und das Ende des Vorgängers, damit Einzelkapitel wie aus einem Guss wirken. Spätere Kapitel ggf. danach neu erzeugen."}
+          : "Nutzt eingefrorenen Szenenvertrag (schreibPrompt) und Continuity vom Vorgänger. Im Feld nur das gewählte Kapitel; Buch-Wortzahl bleibt sichtbar. Spätere Kapitel ggf. danach neu erzeugen."}
       </p>
     </div>
   );
@@ -904,7 +945,8 @@ function ChapterCritiqueDialog({
           </button>
         </div>
         <p className="mt-2 text-xs font-semibold text-zinc-500">
-          Nur Gegenlese — Speichern/Übernehmen läuft über Verbessern.
+          Nur Gegenlese gegen Szenenvertrag + Continuity — Prosa unverändert.
+          Einarbeiten läuft über „Verbessern“.
         </p>
         <pre className="mt-4 flex-1 overflow-auto whitespace-pre-wrap rounded-2xl bg-zinc-50 p-4 text-sm font-semibold text-zinc-800 ring-1 ring-zinc-950/8">
           {body}

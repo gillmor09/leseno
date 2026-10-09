@@ -92,6 +92,7 @@ export default async function CleverErzaehltRollenPage() {
               initialAufgaben={aufgaben}
               rollen={rollen}
               canSave={canSave}
+              showCritiqueRoles
             />
             <RomanRolesPanel
               initialRollen={rollen}

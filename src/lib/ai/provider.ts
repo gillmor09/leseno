@@ -74,6 +74,19 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
   );
 
   if (provider === "gemini") {
+    const effortRaw = (
+      input.reasoningEffort ??
+      input.model.reasoningEffort ??
+      ""
+    )
+      .trim()
+      .toLowerCase();
+    // Structured JSON patches: "none" must mean NO thinkingConfig — mapping to
+    // Gemini "minimal" still burns output budget and truncates JSON mid-object.
+    const thinkingLevel =
+      effortRaw === "none"
+        ? null
+        : resolveReasoningEffort(input.model.modelSlug, effortRaw || null);
     const result = await generateWithGemini({
       modelSlug: input.model.modelSlug,
       systemInstruction: prompt.systemInstruction,
@@ -83,11 +96,7 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
       maxTokens: input.maxTokens,
       timeoutMs: input.timeoutMs,
       googleSearch: input.googleSearch,
-      // Map OpenAI-only values (e.g. "none") to Gemini thinking levels.
-      thinkingLevel: resolveReasoningEffort(
-        input.model.modelSlug,
-        input.reasoningEffort ?? input.model.reasoningEffort ?? null,
-      ),
+      thinkingLevel,
     });
     return result.text;
   }

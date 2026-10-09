@@ -1,7 +1,5 @@
 /**
- * World/setup: Entwicklungslektor sketches; Ideen-Redakteur writes marked sections
- * (Co-Autor/Claude hung for minutes on large existing worlds).
- * Fachberater critique with commented apply via Ideen-Redakteur.
+ * World/setup: Co-Autor (Flash) drafts; Entwicklungslektor critiques + weave.
  */
 
 import { generateText } from "@/lib/ai/provider";
@@ -18,6 +16,7 @@ import {
   ROMAN_CRITIQUE_MAX_TOKENS,
   ROMAN_DRAFT_MAX_TOKENS,
   ROMAN_EXCELLENCE_MANDATE,
+  ROMAN_PROSE_MAX_TOKENS,
 } from "@/lib/roman/pipeline/quality-brief";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import type { RomanCharakter } from "@/lib/roman/types";
@@ -255,7 +254,9 @@ export async function suggestWeltFromLektorUndCoAutor(input: {
   const chars = formatCharaktere(input.charaktere) || "(noch keine Steckbriefe)";
   const existingFormatted = formatWelt(input.existing);
 
-  const writer = await resolveRomanKiRolle("co_autor");
+  const writer = await resolveRomanKiRolle("co_autor", {
+    allowProseModel: false,
+  });
   const weaveBlock = weave
     ? `Bestehende Welt VERWEBEN und AUFWERTEN — nicht blind ersetzen. Idee und Basis-Regeln haben Vorrang bei Widersprüchen; brauchbare Alt-Infos behalten.`
     : `Welt neu anlegen nach Idee, Basis-Regeln und Figuren.`;
@@ -330,17 +331,15 @@ Nur ${MARK_SCHAU} … ${MARK_ENDE}.`,
 }
 
 /**
- * Critical read of the world — full upstream, suggestions only.
- * Pipeline uses Entwicklungslektor; manual panel may still pass Fachberater.
+ * Critical read of the world — Entwicklungslektor, suggestions only.
  */
-export async function critiqueWeltMitFachberater(input: {
+export async function critiqueWeltMitEntwicklungslektor(input: {
   buchTyp: RomanBuchTyp;
   ideeKurz: string;
   grobRegeln: string;
   charaktere: RomanCharakter[];
   welt: RomanWelt;
   editorial?: RomanEditorial | null;
-  roleKey?: "fachberater" | "entwicklungslektor";
 }): Promise<WeltCritiqueResult> {
   if (!hasFilledWelt(input.welt)) {
     throw new Error(
@@ -348,10 +347,7 @@ export async function critiqueWeltMitFachberater(input: {
     );
   }
 
-  const roleKey = input.roleKey ?? "fachberater";
-  const criticLabel =
-    roleKey === "entwicklungslektor" ? "Entwicklungslektor" : "Fachberater";
-  const { rolle, model } = await resolveRomanKiRolle(roleKey);
+  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
   const compliance = buildCritiqueRulesAndNeedsBlock(input.editorial);
   const userText = `# Buchtyp
 ${BUCHTYP_LABELS[input.buchTyp]}
@@ -370,7 +366,7 @@ ${(formatCharaktere(input.charaktere) || "—").slice(0, CLIP.charaktere)}
 # Aktuelle Welt
 ${formatWelt(input.welt).slice(0, CLIP.weltCombined)}
 
-Auftrag — ${criticLabel}-Gegenlese:
+Auftrag — Entwicklungslektor-Gegenlese:
 Prüfe die Welt gegen Idee, Regeln und Figuren — und knallhart gegen Regeln + innere Logik/Kontinuität — auf Plausibilität, Stereotypen, Respekt, innere Logik, dramaturgische Nutzbarkeit und Eigenständigkeit (kein Genre-Mittelmaß).
 1. Regel- & Logik-Check (Regeln / Logik — je erfüllt/teilweise/fehlt)
 2. Kurze kritische Einschätzung
@@ -392,15 +388,15 @@ Du prüfst Schauplätze und Weltregeln im vollen Kontext. Nur Kritik und Vorschl
   ).trim();
 
   if (!critique || critique.length < 40) {
-    throw new Error(`${criticLabel} lieferte keine brauchbare Kritik.`);
+    throw new Error("Entwicklungslektor lieferte keine brauchbare Kritik.");
   }
   return { critique: critique.slice(0, CLIP.critique), modelLabel: model.label };
 }
 
 /**
- * Weave critique + author/patch comment into world fields (Co-Autor).
+ * Weave critique + author/patch comment into world fields (Entwicklungslektor).
  */
-export async function weaveWeltFromFachberaterKritik(input: {
+export async function weaveWeltFromKritik(input: {
   buchTyp: RomanBuchTyp;
   ideeKurz: string;
   welt: RomanWelt;
@@ -415,7 +411,7 @@ export async function weaveWeltFromFachberaterKritik(input: {
     throw new Error("Kritik fehlt.");
   }
 
-  const { rolle, model } = await resolveRomanKiRolle("co_autor");
+  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
   const { comment, hasExplicitComment } = resolveAuthorWeaveComment(
     input.authorComment,
   );
@@ -472,6 +468,6 @@ ${buildWeaveSystemAddendum({
     return { ...fromSections, modelLabel: model.label };
   }
   // Rare fallback if the model ignored markers but returned JSON anyway.
-  const welt = parseWeltJson(raw, "Co-Autor");
+  const welt = parseWeltJson(raw, "Entwicklungslektor");
   return { ...welt, modelLabel: model.label };
 }

@@ -1,5 +1,5 @@
 /**
- * Testleser / Fanbase Leser-Feedback for Idee, Spec, Kapitelgerüst, Manuskript.
+ * Testleser / Fanbase Leser-Feedback for Idee, Spec, Manuskript.
  */
 
 import { generateText } from "@/lib/ai/provider";
@@ -7,21 +7,25 @@ import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
 import {
   BUCHTYP_LABELS,
   buildCritiqueRulesAndNeedsBlock,
+  formatRecentlyAppliedImproveHints,
+  narrowAenderungsPromptsWithKritikChapters,
   parseRomanLeserFeedback,
   type RomanBuchTyp,
   type RomanLeserFeedback,
   type LeserFeedbackStage,
 } from "@/lib/roman/editorial";
 import { resolveFanPersona } from "@/lib/roman/fundament";
+import { filterAenderungsPromptsByGrounding } from "@/lib/roman/critique-grounding";
 import {
   CLIP,
   ROMAN_CRITIQUE_MAX_TOKENS,
+  ROMAN_CRITIQUE_QUOTE_GROUNDING,
+  ROMAN_CRITIQUE_SCOPE_MANDATE,
   ROMAN_LESERS_FEEDBACK_MANDATE,
 } from "@/lib/roman/pipeline/quality-brief";
 import { PIPELINE_STAGE_LABELS } from "@/lib/roman/pipeline/stages";
 import { getStageArtifactText } from "@/lib/roman/reifegrad";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
-import { hasFilledSzenenplot } from "@/lib/roman/suggest-szenenplot";
 import type { RomanKontext } from "@/lib/roman/types";
 
 function stageLabelOf(stage: LeserFeedbackStage): string {
@@ -47,13 +51,6 @@ function assertStageHasArtifact(
     }
     return text;
   }
-  if (stage === "szenenplot") {
-    const plot = roman.manuskriptRaw ?? "";
-    if (!hasFilledSzenenplot(plot)) {
-      throw new Error("Zuerst ein Kapitelgerüst anlegen.");
-    }
-    return plot.trim();
-  }
   const artifact = getStageArtifactText(roman, "expose");
   if (artifact.trim().length < 80 || artifact.trim() === "(leer)") {
     throw new Error("Zuerst einen Spec anlegen (Figuren / Welt / Exposé).");
@@ -62,7 +59,7 @@ function assertStageHasArtifact(
 }
 
 /**
- * Structured Testleser feedback for Idee / Spec / Kapitelgerüst / Manuskript.
+ * Structured Testleser feedback for Idee / Spec / Manuskript.
  */
 export async function collectStageLeserFeedback(input: {
   roman: RomanKontext;
@@ -84,15 +81,13 @@ export async function collectStageLeserFeedback(input: {
   });
   const compliance = buildCritiqueRulesAndNeedsBlock(editorial);
 
-  const chapterStages = stage === "manuskript" || stage === "szenenplot";
+  const chapterStages = stage === "manuskript";
   const clip =
     stage === "manuskript"
       ? CLIP.manuskript
-      : stage === "szenenplot"
-        ? CLIP.szenenplot
-        : stage === "idee"
-          ? CLIP.idee
-          : CLIP.expose;
+      : stage === "idee"
+        ? CLIP.idee
+        : CLIP.expose;
 
   const stageHint =
     stage === "expose"
@@ -102,7 +97,7 @@ export async function collectStageLeserFeedback(input: {
         : "";
 
   const scopeRules = chapterStages
-    ? `- scope „lokal“: kapitel-Array mit 1+ Nummern; scope „buchweit“: kapitel [] und Anweisung für alle Kapitel.`
+    ? `- ${ROMAN_CRITIQUE_SCOPE_MANDATE}`
     : stage === "idee"
       ? `- Idee: meist scope „buchweit“, kapitel []. Anweisungen auf Konzept-Ebene (Prämisse, Figurenkerne, Konflikt, Ton) — keine Kapitel-/Szenenpläne.`
       : `- Spec: meist scope „buchweit“, kapitel []. In anweisung klar sagen, ob Figuren, Welt oder Exposé betroffen sind.`;
@@ -157,9 +152,11 @@ Regeln:
 - leserFeedback: nur Lesetext, keine Patch-Anweisungen. 2–4 kurze Absätze; Zeilenumbrüche im JSON als \\\\n escapen. Auch sagen, was funktioniert.
 - aenderungsPrompts: 0–2; leer lassen, wenn nichts wirklich stört. Kein Zwang, „etwas zu finden“.
 - wichtigkeit: kritisch / wichtig / nice_to_have — Nice-to-have nur wenn nichts Härteres übrig; kein Feinschliff-Geschmack.
-- Wenn der Autor zwischen Varianten wählen MUSS (Entweder/Oder, offene Canon-Frage): setze entscheidungNoetig=true und entscheidungFrage als kurze Frage. In anweisung die Alternativen und Folgeschritte — KEINE Variante selbst wählen.
+- KEINE Autor-Entscheidung: entscheidungNoetig immer false, entscheidungFrage leer. Bei Entweder/Oder selbst die für den Leser tragfähigste Variante wählen und nur diese in anweisung festschreiben.
+- Gerade eingearbeitete Punkte (siehe Block oben, falls vorhanden): nicht 1:1 wiederholen, außer der Fehler steht noch klar im Text.
 ${scopeRules}
-- anweisung: Imperativ, konkret — das ist der Prompt fürs Einarbeiten.
+- anweisung: Imperativ, konkret — das ist der Prompt fürs Einarbeiten. Zitate nur wörtlich aus dem Artefakt oben.
+- ${ROMAN_CRITIQUE_QUOTE_GROUNDING}
 - Die beiden BeduerfnisStatus-Felder auf "teilweise" setzen (werden derzeit nicht ausgewertet).
 - Auf Deutsch, klar, fair. Du schreibst das Artefakt NICHT um.`;
 
@@ -167,9 +164,11 @@ ${scopeRules}
 
 ${ROMAN_LESERS_FEEDBACK_MANDATE}
 
+${ROMAN_CRITIQUE_QUOTE_GROUNDING}
+
 Zusatzauftrag ${stageLabel}-Leser-Feedback:
 Zwei Schichten: (1) ehrliche Prosa in leserFeedback (Stärken + echte Störstellen), (2) 0–2 aenderungsPrompts — nur bei spürbarem Leseschaden.
-Offene Autor-Entscheidungen als entscheidungNoetig markieren — nicht selbst entscheiden.
+Keine Autor-Entscheidungen: bei Alternativen selbst die beste Variante wählen und in anweisung festschreiben.
 Keine Schmeichelei, aber auch keine Pflicht-Kritik. Antwort ausschließlich als valides JSON.`;
 
   const raw = (
@@ -199,5 +198,18 @@ Keine Schmeichelei, aber auch keine Pflicht-Kritik. Antwort ausschließlich als 
   if (!parsed) {
     throw new Error("Testleser lieferte keine brauchbare Kritik.");
   }
-  return parsed;
+
+  // Drop prompts that invent quotes / truncated sentences not in the artifact.
+  const { kept } = filterAenderungsPromptsByGrounding(
+    parsed.aenderungsPrompts,
+    artifact,
+    { stage: stage === "expose" ? "expose" : stage },
+  );
+  return {
+    ...parsed,
+    aenderungsPrompts: narrowAenderungsPromptsWithKritikChapters(
+      kept,
+      parsed.gesamt,
+    ),
+  };
 }

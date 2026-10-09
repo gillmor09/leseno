@@ -381,6 +381,12 @@ export async function pipelineStepDraft(input: {
   events: PipelineHistoryEvent[];
   /** Optional live callback (tests / local hooks); history DB is the poll source. */
   onLiveProgress?: (label: string) => void;
+  /**
+   * After a successful draft, measure Reifegrad in the same step so long
+   * Gerüst/Manuskript jobs do not drop the score when the post-draft assess
+   * never starts (timeout / after()-gap).
+   */
+  assessAfter?: boolean;
 }): Promise<PipelineStepResult> {
   const events = [...input.events];
   const LIVE_PROGRESS = "live-progress";
@@ -409,6 +415,10 @@ export async function pipelineStepDraft(input: {
       /Schreibbrief fertig/i.test(label) ||
       /^Kapitel\s+\d+/i.test(label.trim()) ||
       /^Geschichte\s+\d+/i.test(label.trim()) ||
+      /Kapitelgerüst/i.test(label) ||
+      /Outline/i.test(label) ||
+      /Spannungsbogen/i.test(label) ||
+      /Wissensgraph/i.test(label) ||
       /Co-Autor schreibt/i.test(label) ||
       /Recherche\/Dialog einweben/i.test(label) ||
       /Continuity vorbereiten/i.test(label) ||
@@ -424,11 +434,23 @@ export async function pipelineStepDraft(input: {
     let roman = await reload(input.romanId);
     if (input.stage === "manuskript") {
       await reportProgress("Alles erzeugen: Arbeitsbrief vorbereiten …", true);
+    } else if (input.stage === "kapitelgeruest") {
+      await reportProgress(
+        "Kapitelgerüst: Outline & Spannungsbögen vorbereiten …",
+        true,
+      );
+    } else if (input.stage === "szenenplot") {
+      await reportProgress(
+        "Szenenplot: Szenenverträge aus Gerüst vorbereiten …",
+        true,
+      );
     }
     const { result, usage } = await runWithAiUsageCollector(() =>
       draftStage(roman, input.stage, {
         onProgress:
-          input.stage === "manuskript"
+          input.stage === "manuskript" ||
+          input.stage === "kapitelgeruest" ||
+          input.stage === "szenenplot"
             ? (label) => reportProgress(label)
             : undefined,
       }),
@@ -449,6 +471,21 @@ export async function pipelineStepDraft(input: {
     );
 
     await appendEvents({ runId: input.runId, events });
+
+    if (input.assessAfter) {
+      await reportProgress(
+        `Reifegrad: ${PIPELINE_STAGE_LABELS[input.stage]} wird gemessen …`,
+        true,
+      );
+      return pipelineStepAssessReifegrad({
+        romanId: input.romanId,
+        stage: input.stage,
+        runId: input.runId,
+        events,
+        changeSummary: `Frischer Entwurf von ${input.stage}.`,
+      });
+    }
+
     return {
       roman,
       runId: input.runId,
@@ -500,7 +537,24 @@ export async function pipelineStepAssessReifegrad(input: {
   changeSummary?: string;
 }): Promise<PipelineStepResult> {
   const events = [...input.events];
+  const LIVE_PROGRESS = "live-progress";
   try {
+    // Visible in the wait dialog before the Bewerter call starts.
+    {
+      const next = events.filter((e) => e.detail !== LIVE_PROGRESS);
+      next.push(
+        historyEvent({
+          type: "info",
+          stage: input.stage,
+          summary: `Reifegrad: ${PIPELINE_STAGE_LABELS[input.stage]} wird gemessen …`,
+          detail: LIVE_PROGRESS,
+        }),
+      );
+      events.length = 0;
+      events.push(...next);
+      await appendEvents({ runId: input.runId, events });
+    }
+
     let roman = await reload(input.romanId);
     const editorial = roman.editorial ?? emptyRomanEditorial();
     if (cleverManuskriptSkipsReifegrad(editorial.buchTyp, input.stage)) {
@@ -536,14 +590,19 @@ export async function pipelineStepAssessReifegrad(input: {
         editorial: nextEd,
       });
       roman = { ...saved, ideenChat: roman.ideenChat };
-      events.push(
-        historyEvent({
-          type: "info",
-          stage: input.stage,
-          summary:
-            "Reifegrad übersprungen (Clever erzählt: unabhängige Kurzgeschichten).",
-        }),
-      );
+      {
+        const cleaned = events.filter((e) => e.detail !== LIVE_PROGRESS);
+        cleaned.push(
+          historyEvent({
+            type: "info",
+            stage: input.stage,
+            summary:
+              "Reifegrad übersprungen (Clever erzählt: unabhängige Kurzgeschichten).",
+          }),
+        );
+        events.length = 0;
+        events.push(...cleaned);
+      }
       await appendEvents({ runId: input.runId, events });
       return {
         roman,
@@ -608,16 +667,21 @@ export async function pipelineStepAssessReifegrad(input: {
         : delta === 0
           ? " · Δ 0"
           : ` · Δ ${delta > 0 ? "+" : ""}${delta}`;
-    events.push(
-      historyEvent({
-        type: "info",
-        stage: input.stage,
-        roleKey: "bewerter",
-        modelLabel: score.modelLabel,
-        summary: `Reifegrad: ${score.gesamtPct}%${deltaLabel} · ${coverageLabel} · Logik ${score.regelnPct}% · ${formatCraftScoresLine(input.stage, score)}`,
-        usage: reifeUsage,
-      }),
-    );
+    {
+      const cleaned = events.filter((e) => e.detail !== LIVE_PROGRESS);
+      cleaned.push(
+        historyEvent({
+          type: "info",
+          stage: input.stage,
+          roleKey: "bewerter",
+          modelLabel: score.modelLabel,
+          summary: `Reifegrad: ${score.gesamtPct}%${deltaLabel} · ${coverageLabel} · Logik ${score.regelnPct}% · ${formatCraftScoresLine(input.stage, score)}`,
+          usage: reifeUsage,
+        }),
+      );
+      events.length = 0;
+      events.push(...cleaned);
+    }
     await appendEvents({ runId: input.runId, events });
     return {
       roman,
@@ -631,13 +695,18 @@ export async function pipelineStepAssessReifegrad(input: {
       error instanceof Error
         ? `Reifegrad-Bewertung fehlgeschlagen: ${error.message}`
         : "Reifegrad-Bewertung fehlgeschlagen.";
-    events.push(
-      historyEvent({
-        type: "error",
-        stage: input.stage,
-        summary: message,
-      }),
-    );
+    {
+      const cleaned = events.filter((e) => e.detail !== LIVE_PROGRESS);
+      cleaned.push(
+        historyEvent({
+          type: "error",
+          stage: input.stage,
+          summary: message,
+        }),
+      );
+      events.length = 0;
+      events.push(...cleaned);
+    }
     await appendEvents({ runId: input.runId, events });
     let roman: RomanKontext;
     try {

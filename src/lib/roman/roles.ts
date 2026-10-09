@@ -16,6 +16,7 @@ import {
   type WiredAiEndpoint,
 } from "@/lib/ai/wired-models";
 import type { RomanAdminModuleId } from "@/lib/roman/admin-module";
+import { ROMAN_PROSE_ROLE_KEY } from "@/lib/roman/assist-model";
 import { createServiceClient } from "@/lib/supabase/service";
 
 export type RomanKiRolle = {
@@ -323,7 +324,7 @@ Regeln:
 - Du schreibst NICHT die Ideendokumentation — das macht der Ideen-Redakteur. Deine Antwort ist Dialog.`,
     userPromptHint:
       "Buchtyp + bisherige Idee (Kurz) + Chat-Verlauf + neue Autor:innen-Nachricht.",
-    modelSlug: "gpt-5.6-luna",
+    modelSlug: "gemini-3.8-flash",
     reasoningEffort: "low",
     sortOrder: 10,
     updatedAt: null,
@@ -355,7 +356,7 @@ Regeln:
 - Länge: kompakt und spez-fähig (typisch 6–25 Sätze oder klar gegliederte Absätze — nicht romanlang).`,
     userPromptHint:
       "Aktuelle Idee + letzter User-Turn + Coach-Antwort + Buchtyp → ===IDEE=== … ===ENDE===.",
-    modelSlug: "gpt-5.6-luna",
+    modelSlug: "gemini-3.8-flash",
     reasoningEffort: "low",
     sortOrder: 15,
     updatedAt: null,
@@ -411,27 +412,6 @@ Regeln:
     updatedAt: null,
   },
   {
-    key: "pipeline_router",
-    label: "Pipeline-Router",
-    purpose:
-      "Analysiert Gegenlese-Feedback und wählt die früheste sinnvolle Pipeline-Stufe für Patches.",
-    systemPrompt: `Du bist Pipeline-Router für die Buch-Erstellung (deutscher Markt).
-Du erhältst strukturierte Kritik/Vorschläge zu einem Artefakt.
-Aufgabe: Entscheide, WO in der Pipeline die Änderung am sinnvollsten beginnt — möglichst früh (Ursache).
-
-Stufen (früh → spät): idee, charaktere, welt, expose, szenenplot, manuskript.
-
-Regeln:
-- Antworte NUR als JSON.
-- Wähle maximal 2 targets mit stage, reason, patchBrief, optional chapterNumbers.
-- Figur-/Welt-/Prämissenfehler → idee/charaktere/welt, nicht zuerst Manuskript.`,
-    userPromptHint: "Kritik-JSON + aktueller Stage + Kurzkontext.",
-    modelSlug: "gpt-5.6-luna",
-    reasoningEffort: "low",
-    sortOrder: 5,
-    updatedAt: null,
-  },
-  {
     key: "entwicklungslektor",
     label: "Entwicklungslektor",
     purpose:
@@ -445,7 +425,7 @@ Regeln:
 - Maximal 5 Nacharbeitspunkte; keine Quizfragen ohne Ort.`,
     userPromptHint:
       "Kontext: Prämisse, Figuren, Outline/Szene + Frage der Autor:in.",
-    modelSlug: "gpt-5.6-luna",
+    modelSlug: "gemini-3.8-flash",
     reasoningEffort: "low",
     sortOrder: 20,
     updatedAt: null,
@@ -468,7 +448,7 @@ Regeln:
 - Vorherige Messwerte nicht kopieren; nur bei wirklich gleichem Qualitätsniveau ähnliche Werte.`,
     userPromptHint:
       "Stufe + Artefakt + Regeln/Bedürfnisse + Craft-Achsen → sechs Prozentwerte als JSON.",
-    modelSlug: "openai/gpt-oss-120b",
+    modelSlug: "gemini-3.8-flash",
     reasoningEffort: "",
     sortOrder: 22,
     updatedAt: null,
@@ -477,38 +457,41 @@ Regeln:
     key: "co_autor",
     label: "Co-Autor",
     purpose:
-      "Schreibt Entwürfe; hält Autor-Bias aus Steckbriefen und Pfad-B-Beats bei Schlüsselkapiteln.",
+      "Schreibt Manuskript-Erstentwürfe aus Feinplot-Verträgen (Gemini Flash).",
     systemPrompt: `Du bist Co-Autor:in für Buchprojekte (deutscher Markt).
 Du lieferst editierbare Entwürfe in der Stimme und den Vorgaben des Projekts.
 Regeln:
 - Antworte auf Deutsch. Keine Meta-Kommentare im Fließtext.
+- Sprachkorrektheit ist Pflicht: korrekte Rektion, Kasus, Kongruenz — keine Pseudoliteratur mit falschen Verbanschlüssen (z. B. „sich an etwas erinnern“, nicht „etwas erinnern“).
 - Halte Perspektive, Zeitform, Tonalität und Figurenstimmen ein, wenn im Kontext.
 - Autor-Bias / Subtext aus Steckbriefen ist verbindlich: Figuren reagieren unter Druck über ihre Schwäche/Wesenszüge, nicht genre-glatt.
 - Bei Konflikt gewinnen harte Vorgaben / MUSS-Blöcke aus dem Kontext.
 - Länge und Form an die Aufgabe anpassen (Beat, Szene, Dialogpassage).`,
     userPromptHint:
       "Aufgabe + Fundament/Stil-Kontext + optional Autor-Bias / Pfad B + Entwurf zum Weiterbauen.",
-    modelSlug: "gpt-5.6-luna",
+    modelSlug: "gemini-3.8-flash",
     reasoningEffort: "low",
     sortOrder: 30,
     updatedAt: null,
   },
   {
-    key: "fachberater",
-    label: "Fachberater (Sensitive Reader)",
+    key: "autor",
+    label: "Autor",
     purpose:
-      "Prüft sensible Darstellungen, Stereotypen und Fach-/Lebensrealität.",
-    systemPrompt: `Du bist Fachberater:in / Sensitive Reader für Buchtexte (deutscher Markt).
-Du prüfst Darstellung von Identität, Trauma, Behinderung, Kultur, Beruf und Fachwissen auf Respekt, Plausibilität und unnötige Klischees.
+      "Manuskript Verbessern: Kapitelweise Prosa-Qualität erhöhen — Stoff und Beats bleiben eingefroren (Claude Opus).",
+    systemPrompt: `Du bist Autor:in für den deutschen Buchmarkt — Feinschliff, nicht Neuschreiben.
+Du verbesserst Wortwahl, Satzbau, Rhythmus und Bildhaftigkeit. Handlung, Dialogbedeutung, Reihenfolge und Fakten bleiben exakt erhalten.
 Regeln:
-- Antworte auf Deutsch, klar und ohne Moralpredigt.
-- Trenne: (1) problematische Stellen, (2) warum, (3) konkrete Alternativen.
-- Erfinde keine „Verbote“ ohne Begründung; unterscheide Härtegrad (kritisch / optional).
-- Bleib im Text — keine Politik-Essays.`,
-    userPromptHint: "Textauszug + betroffene Themen / Fachfragen.",
-    modelSlug: "gpt-5.6-luna",
-    reasoningEffort: "low",
-    sortOrder: 40,
+- Antworte auf Deutsch. Keine Meta-Kommentare im Fließtext.
+- NUR Stil: präzisere Verben, klarere Sätze, lebendigere Wahrnehmung — ohne neue Beats.
+- STRENG VERBOTEN: neue Handlung, neue Infos, gestrichene Props/Events, umgeschriebene Entscheidungen, Geheimnis-Leaks, umgeordnete Szenen.
+- Halte Perspektive, Zeitform, Tonalität und Figurenstimmen.
+- Sprachkorrektheit ist Pflicht (Rektion, Kasus, Kongruenz).`,
+    userPromptHint:
+      "Kapitel-Body + Stil-/Ton-Kontext + Verbessern-Brief (Inhalt eingefroren).",
+    modelSlug: "claude-opus-5-5",
+    reasoningEffort: "medium",
+    sortOrder: 31,
     updatedAt: null,
   },
   {
@@ -524,7 +507,7 @@ Regeln:
 - Sei ehrlich und konkret, aber selektiv — kein Zwang, alles zu verbessern.
 - Du bist keine Lektor:in — dich interessiert, ob du weiterliest und empfiehlst.`,
     userPromptHint: "Szene/Kapitel + Genre/Ton-Hinweis.",
-    modelSlug: "gpt-5.6-luna",
+    modelSlug: "gemini-3.8-flash",
     reasoningEffort: "low",
     sortOrder: 50,
     updatedAt: null,
@@ -659,8 +642,16 @@ export async function saveRomanKiRolle(
  * Loads one role (fallback-aware) and resolves models.
  * `model` is always a text LLM (safe for `generateText`). If the role stores
  * FLUX.2, that becomes `imageModel` and text falls back to the default Schreibmodell.
+ *
+ * Belletristik (non-`clever_*`): only {@link ROMAN_PROSE_ROLE_KEY} may keep an
+ * expensive DB model (Sonnet) — and only when `allowProseModel` is not false
+ * (Manuskript prose apply/draft). All other roles (inkl. Entwicklungslektor
+ * Spec/Idee/Gerüst/Plot apply) resolve to Gemini 3.8 Flash + role Thinking.
  */
-export async function resolveRomanKiRolle(key: string): Promise<{
+export async function resolveRomanKiRolle(
+  key: string,
+  options?: { allowProseModel?: boolean },
+): Promise<{
   rolle: RomanKiRolle;
   model: AiModelConfig;
   imageModel: AiModelConfig | null;
@@ -693,6 +684,26 @@ export async function resolveRomanKiRolle(key: string): Promise<{
       rolle,
       model: textModel,
       imageModel: wiredImageEndpointToConfig(wired),
+    };
+  }
+
+  const isClever = rolle.key.startsWith("clever_");
+  const { isRomanProseRoleKey } = await import("@/lib/roman/assist-model");
+  const wantsProseModel =
+    isRomanProseRoleKey(rolle.key) && options?.allowProseModel !== false;
+
+  if (!isClever && !wantsProseModel) {
+    const { resolveRomanAssistModel, ROMAN_ASSIST_MODEL_SLUG } =
+      await import("@/lib/roman/assist-model");
+    const assist = await resolveRomanAssistModel();
+    const effort = resolveReasoningEffort(
+      ROMAN_ASSIST_MODEL_SLUG,
+      rolle.reasoningEffort,
+    );
+    return {
+      rolle,
+      model: { ...assist, reasoningEffort: effort },
+      imageModel: null,
     };
   }
 

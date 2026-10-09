@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Book admin tab shell: Basics → Idee → Recherche → Spec → Kapitelgerüst → Manuskript → Export.
+ * Book admin tab shell: Basics → Idee → Recherche → Spec → Grob/Fein Gerüst/Plot →
+ * Manuskript → Roman → Export. Clever: Basics → Unterthemen → Geschichten.
  * KI-Rollen live at `{basePath}/rollen` (Roman / Clever).
  */
 
@@ -10,6 +11,7 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, Circle } from "lucide-react";
 import { toast } from "sonner";
 import { saveRomanKontextAction } from "@/app/actions/roman-admin";
+import { enrichSzenenplotSpatialAction } from "@/app/actions/roman-szenenplot-spatial";
 import { CleverUnterthemenPanel } from "@/components/features/admin/clever-unterthemen-panel";
 import { RomanCharakterePanel } from "@/components/features/admin/roman-charaktere-panel";
 import { RomanCoverPanel } from "@/components/features/admin/roman-cover-panel";
@@ -23,13 +25,23 @@ import {
 import { RomanIdeeQaPanel } from "@/components/features/admin/roman-idee-qa-panel";
 import { RomanRechercheQaPanel } from "@/components/features/admin/roman-recherche-qa-panel";
 import { RomanManuskriptPanel } from "@/components/features/admin/roman-manuskript-panel";
-import { RomanManuskriptVereinfachenControl } from "@/components/features/admin/roman-manuskript-vereinfachen-control";
 import { RomanManuskriptChapterControl } from "@/components/features/admin/roman-manuskript-chapter-control";
+import { RomanManuskriptVerbessernControl } from "@/components/features/admin/roman-manuskript-verbessern-control";
+import { RomanContinuityTrigger } from "@/components/features/admin/roman-continuity-overlay";
 import { RomanMarktanalysePanel } from "@/components/features/admin/roman-marktanalyse-panel";
 import { RomanPipelineHistoryPanel } from "@/components/features/admin/roman-pipeline-history-panel";
 import { RomanPipelineStageActions } from "@/components/features/admin/roman-pipeline-stage-actions";
 import { RomanReifegradCard } from "@/components/features/admin/roman-reifegrad-card";
+import { RomanKapitelGeruestPanel } from "@/components/features/admin/roman-kapitelgeruest-panel";
 import { RomanSzenenplotPanel } from "@/components/features/admin/roman-szenenplot-panel";
+import { RomanWissensgraphTrigger } from "@/components/features/admin/roman-wissensgraph-overlay";
+import {
+  clearManuskriptAndExportEditorial,
+  downstreamStaleBanner,
+  generateCascadeConfirm,
+  invalidateDownstreamEditorial,
+} from "@/lib/roman/pipeline/cascade";
+import { hasFilledKapitelGeruest } from "@/lib/roman/suggest-kapitelgeruest";
 import {
   RomanWeltPanel,
   type WeltBasics,
@@ -59,6 +71,7 @@ import {
   normalizePlotDocument,
   parsePlotChapters,
   replaceManuskriptChapterBody,
+  sanitizeChapterTitle,
   serializeManuskriptChapters,
 } from "@/lib/roman/plot-chapters";
 import { stripErzaehlerWrappers } from "@/lib/roman/clever-geschichte";
@@ -84,8 +97,14 @@ const PIPELINE_TABS = [
   { id: "idee", label: "Idee" },
   { id: "recherche", label: "Recherche" },
   { id: "spec", label: "Spec" },
-  { id: "outline", label: "Kapitelgerüst" },
+  /** Clever: Unterthemen. Belletristik uses grob/fein tabs instead. */
+  { id: "outline", label: "Unterthemen" },
+  { id: "grobgeruest", label: "Grobgerüst" },
+  { id: "feingeruest", label: "Feingerüst" },
+  { id: "grobplot", label: "Grobplot" },
+  { id: "feinplot", label: "Feinplot" },
   { id: "schreiben", label: "Manuskript" },
+  { id: "roman", label: "Roman" },
   { id: "export", label: "Export" },
 ] as const;
 
@@ -95,8 +114,13 @@ type TabId = (typeof PIPELINE_TABS)[number]["id"];
 const TAB_PIPELINE_STAGE: Partial<Record<TabId, string>> = {
   idee: "idee",
   spec: "expose",
-  outline: "szenenplot",
+  outline: "feingeruest",
+  grobgeruest: "grobgeruest",
+  feingeruest: "feingeruest",
+  grobplot: "grobplot",
+  feinplot: "feinplot",
   schreiben: "manuskript",
+  roman: "manuskript",
 };
 
 function romanToSavePayload(
@@ -202,6 +226,10 @@ export function RomanAdminWorkspace({
       initialRoman.editorial ?? emptyRomanEditorial(),
     ),
   );
+  const [kapitelGeruest, setKapitelGeruest] = useState(
+    () =>
+      (initialRoman.editorial ?? emptyRomanEditorial()).kapitelGeruestRaw ?? "",
+  );
   const [szenenplot, setSzenenplot] = useState(
     () => normalizePlotDocument(initialRoman.manuskriptRaw ?? ""),
   );
@@ -220,42 +248,79 @@ export function RomanAdminWorkspace({
   });
   const [tab, setTab] = useState<TabId>("typ");
   const [savePending, setSavePending] = useState(false);
+  const [enrichSpatialPending, setEnrichSpatialPending] = useState(false);
+  const [enrichSpatialMode, setEnrichSpatialMode] = useState<
+    "manual" | "fertig"
+  >("manual");
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const [pipelineBusy, setPipelineBusy] = useState(false);
   /** Clever: which Kurzgeschichte is shown in the editor. */
   const [cleverStoryNumber, setCleverStoryNumber] = useState(1);
+  /** Roman: which Manuskript chapter is shown in the editor. */
+  const [manuskriptChapterNumber, setManuskriptChapterNumber] = useState(1);
+  /** Polished Roman tab: which chapter card is focused. */
+  const [romanChapterNumber, setRomanChapterNumber] = useState(1);
+  const [romanBook, setRomanBook] = useState(() => {
+    const ed = initialRoman.editorial ?? emptyRomanEditorial();
+    return normalizeManuskriptDocument(ed.romanText ?? "", {
+      requiredFromPlot: initialRoman.manuskriptRaw ?? "",
+    });
+  });
 
   const visibleTabs = useMemo(() => {
-    const base = isCleverErzaehlt
-      ? PIPELINE_TABS.filter(
-          (t) => t.id !== "idee" && t.id !== "recherche" && t.id !== "spec",
-        )
-      : PIPELINE_TABS;
-    if (!isCleverErzaehlt) return base;
-    return base.map((t) => {
-      if (t.id === "outline") return { ...t, label: "Unterthemen" };
-      if (t.id === "schreiben") return { ...t, label: "Geschichten" };
-      return t;
-    });
+    if (isCleverErzaehlt) {
+      return PIPELINE_TABS.filter(
+        (t) =>
+          t.id !== "idee" &&
+          t.id !== "recherche" &&
+          t.id !== "spec" &&
+          t.id !== "grobgeruest" &&
+          t.id !== "feingeruest" &&
+          t.id !== "grobplot" &&
+          t.id !== "feinplot" &&
+          t.id !== "roman",
+      ).map((t) =>
+        t.id === "schreiben" ? { ...t, label: "Geschichten" } : t,
+      );
+    }
+    return PIPELINE_TABS.filter((t) => t.id !== "outline");
   }, [isCleverErzaehlt]);
 
   if (
     isCleverErzaehlt &&
-    (tab === "idee" || tab === "recherche" || tab === "spec")
+    (tab === "idee" ||
+      tab === "recherche" ||
+      tab === "spec" ||
+      tab === "grobgeruest" ||
+      tab === "feingeruest" ||
+      tab === "grobplot" ||
+      tab === "feinplot" ||
+      tab === "roman")
   ) {
     setTab("typ");
+  }
+  if (
+    !isCleverErzaehlt &&
+    (tab === "outline" || tab === ("szenenplot" as TabId))
+  ) {
+    setTab("grobgeruest");
   }
 
   const hasExposeDoc =
     expose.trim().length >= 80 ||
     (hasFilledCharaktere(charaktere) && hasFilledWelt(welt));
+  const hasGeruestDoc = hasFilledKapitelGeruest(kapitelGeruest);
   const hasSzenenplotDoc = isCleverErzaehlt
     ? hasFilledCleverUnterthemen(editorial.cleverUnterthemen, editorial) ||
       szenenplot.trim().length >= 40
-    : szenenplot.trim().length >= 80;
+    : hasFilledSzenenplot(szenenplot);
 
   const cleverPlotChapters = useMemo(
     () => (isCleverErzaehlt ? parsePlotChapters(szenenplot) : []),
+    [isCleverErzaehlt, szenenplot],
+  );
+  const romanPlotChapters = useMemo(
+    () => (!isCleverErzaehlt ? parsePlotChapters(szenenplot) : []),
     [isCleverErzaehlt, szenenplot],
   );
 
@@ -265,6 +330,26 @@ export function RomanAdminWorkspace({
     !cleverPlotChapters.some((c) => c.number === cleverStoryNumber)
   ) {
     setCleverStoryNumber(cleverPlotChapters[0]!.number);
+  }
+  if (
+    !isCleverErzaehlt &&
+    romanPlotChapters.length > 0 &&
+    !romanPlotChapters.some((c) => c.number === manuskriptChapterNumber)
+  ) {
+    setManuskriptChapterNumber(romanPlotChapters[0]!.number);
+  }
+  const romanBookChapters = useMemo(
+    () => (!isCleverErzaehlt ? parsePlotChapters(romanBook) : []),
+    [isCleverErzaehlt, romanBook],
+  );
+  const romanNavChapters =
+    romanBookChapters.length > 0 ? romanBookChapters : romanPlotChapters;
+  if (
+    !isCleverErzaehlt &&
+    romanNavChapters.length > 0 &&
+    !romanNavChapters.some((c) => c.number === romanChapterNumber)
+  ) {
+    setRomanChapterNumber(romanNavChapters[0]!.number);
   }
 
   function reifegradFor(stage: PipelineStage) {
@@ -286,8 +371,13 @@ export function RomanAdminWorkspace({
         hasFilledExpose(expose),
       outline: isCleverErzaehlt
         ? hasFilledCleverUnterthemen(editorial.cleverUnterthemen, editorial)
-        : hasFilledSzenenplot(szenenplot),
+        : hasGeruestDoc,
+      grobgeruest: hasGeruestDoc,
+      feingeruest: hasGeruestDoc,
+      grobplot: hasSzenenplotDoc,
+      feinplot: hasSzenenplotDoc,
       schreiben: hasFilledManuskript(manuskript),
+      roman: hasFilledManuskript(romanBook),
       export:
         Boolean(roman.coverImageDataUrl?.trim()) ||
         ((editorial.klappentext ?? "").trim().length >= 40 &&
@@ -302,8 +392,10 @@ export function RomanAdminWorkspace({
     charaktere,
     welt,
     expose,
-    szenenplot,
+    hasGeruestDoc,
+    hasSzenenplotDoc,
     manuskript,
+    romanBook,
     roman.coverImageDataUrl,
   ]);
 
@@ -338,6 +430,7 @@ export function RomanAdminWorkspace({
       weltRegeln: saved.weltRegeln ?? "",
     });
     setExpose(exposeTextFromEditorial(nextEd));
+    setKapitelGeruest(nextEd.kapitelGeruestRaw ?? "");
     setSzenenplot(normalizePlotDocument(saved.manuskriptRaw ?? ""));
     {
       const titlesFromPlot = nextEd.buchTyp === "clever_erzaehlt";
@@ -353,6 +446,11 @@ export function RomanAdminWorkspace({
       }
       setManuskript(text);
     }
+    setRomanBook(
+      normalizeManuskriptDocument(nextEd.romanText ?? "", {
+        requiredFromPlot: saved.manuskriptRaw ?? "",
+      }),
+    );
     setHistoryRefreshKey((k) => k + 1);
     setPipelineBusy(false);
   }
@@ -542,7 +640,7 @@ export function RomanAdminWorkspace({
     setRomanKeepCover(saved);
     setEditorial(saved.editorial ?? nextEditorial);
     setSzenenplot(normalizePlotDocument(saved.manuskriptRaw));
-    toast.success("Kapitelgerüst gespeichert.");
+    toast.success("Szenenplot gespeichert.");
   }
 
   async function saveManuskript() {
@@ -588,6 +686,172 @@ export function RomanAdminWorkspace({
     toast.success(
       isCleverErzaehlt ? "Geschichte gespeichert." : "Manuskript gespeichert.",
     );
+  }
+
+  async function saveRomanBook() {
+    if (!canSave || savePending || isCleverErzaehlt) return;
+    const cleaned = normalizeManuskriptDocument(romanBook, {
+      requiredFromPlot: szenenplot,
+    });
+    if (cleaned !== romanBook) setRomanBook(cleaned);
+    const nextEditorial = {
+      ...editorial,
+      romanText: cleaned,
+    };
+    setEditorial(nextEditorial);
+    setSavePending(true);
+    const result = await saveRomanKontextAction(
+      romanToSavePayload(roman, nextEditorial, fixedBuchTyp),
+    );
+    setSavePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Speichern fehlgeschlagen.");
+      return;
+    }
+    const saved = result.data!.roman;
+    setRomanKeepCover(saved);
+    const savedEd = saved.editorial ?? nextEditorial;
+    setEditorial(savedEd);
+    setRomanBook(savedEd.romanText ?? "");
+    toast.success("Roman gespeichert.");
+  }
+
+  async function clearRomanBook() {
+    if (!canSave || savePending || isCleverErzaehlt) return;
+    const nextEditorial = { ...editorial, romanText: "" };
+    setEditorial(nextEditorial);
+    setRomanBook("");
+    setSavePending(true);
+    const result = await saveRomanKontextAction(
+      romanToSavePayload(roman, nextEditorial, fixedBuchTyp),
+    );
+    setSavePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Leeren fehlgeschlagen.");
+      return;
+    }
+    const saved = result.data!.roman;
+    setRomanKeepCover(saved);
+    setEditorial(saved.editorial ?? nextEditorial);
+    setRomanBook(saved.editorial?.romanText ?? "");
+    toast.success("Roman geleert.");
+  }
+
+  async function clearKapitelGeruest() {
+    if (!canSave || savePending) return;
+    const improveMap = { ...(editorial.reifegradImprove ?? {}) };
+    delete improveMap.kapitelgeruest;
+    delete improveMap.grobgeruest;
+    delete improveMap.feingeruest;
+    delete improveMap.szenenplot;
+    delete improveMap.grobplot;
+    delete improveMap.feinplot;
+    delete improveMap.manuskript;
+    const reifegrade = { ...(editorial.reifegrade ?? {}) } as Record<
+      string,
+      unknown
+    >;
+    delete reifegrade.kapitelgeruest;
+    delete reifegrade.grobgeruest;
+    delete reifegrade.feingeruest;
+    delete reifegrade.szenenplot;
+    delete reifegrade.grobplot;
+    delete reifegrade.feinplot;
+    delete reifegrade.manuskript;
+    let nextEditorial = withLeserFeedbackForStage(
+      {
+        ...editorial,
+        kapitelGeruestRaw: "",
+        kapitelGeruestStructured: null,
+        // Graph was seeded/grown for this Gerüst — reset with the structure.
+        wissensGraph: null,
+        reifegradImprove: improveMap,
+        reifegrade: reifegrade as typeof editorial.reifegrade,
+      },
+      "feingeruest",
+      null,
+    );
+    nextEditorial = withStageImprove(nextEditorial, "feingeruest", null);
+    nextEditorial = invalidateDownstreamEditorial(
+      nextEditorial,
+      "grobgeruest",
+    );
+    // Cascade clears szenenplotStructured + manuskript; also wipe plot markdown.
+    setEditorial(nextEditorial);
+    setKapitelGeruest("");
+    setSzenenplot("");
+    setManuskript("");
+    setSavePending(true);
+    const result = await saveRomanKontextAction(
+      romanToSavePayload(roman, nextEditorial, fixedBuchTyp, {
+        manuskriptRaw: "",
+      }),
+    );
+    setSavePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Kapitelgerüst leeren fehlgeschlagen.");
+      return;
+    }
+    const saved = result.data!.roman;
+    setRomanKeepCover(saved);
+    const savedEd = saved.editorial ?? nextEditorial;
+    setEditorial(savedEd);
+    setKapitelGeruest(savedEd.kapitelGeruestRaw ?? "");
+    setSzenenplot(normalizePlotDocument(saved.manuskriptRaw ?? ""));
+    setManuskript(savedEd.manuskriptText ?? "");
+    toast.success(
+      "Kapitelgerüst geleert (Szenenplot, Manuskript & Export-Texte mit).",
+    );
+  }
+
+  async function clearSzenenplot() {
+    if (!canSave || savePending) return;
+    const improveMap = { ...(editorial.reifegradImprove ?? {}) };
+    delete improveMap.szenenplot;
+    delete improveMap.grobplot;
+    delete improveMap.feinplot;
+    delete improveMap.manuskript;
+    const reifegrade = { ...(editorial.reifegrade ?? {}) } as Record<
+      string,
+      unknown
+    >;
+    delete reifegrade.szenenplot;
+    delete reifegrade.grobplot;
+    delete reifegrade.feinplot;
+    delete reifegrade.manuskript;
+    let nextEditorial = withLeserFeedbackForStage(
+      {
+        ...editorial,
+        szenenplotStructured: null,
+        reifegradImprove: improveMap,
+        reifegrade: reifegrade as typeof editorial.reifegrade,
+      },
+      "feinplot",
+      null,
+    );
+    nextEditorial = withStageImprove(nextEditorial, "feinplot", null);
+    nextEditorial = invalidateDownstreamEditorial(nextEditorial, "feinplot");
+    setEditorial(nextEditorial);
+    setSzenenplot("");
+    setManuskript("");
+    setSavePending(true);
+    const result = await saveRomanKontextAction(
+      romanToSavePayload(roman, nextEditorial, fixedBuchTyp, {
+        manuskriptRaw: "",
+      }),
+    );
+    setSavePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Szenenplot leeren fehlgeschlagen.");
+      return;
+    }
+    const saved = result.data!.roman;
+    setRomanKeepCover(saved);
+    const savedEd = saved.editorial ?? nextEditorial;
+    setEditorial(savedEd);
+    setSzenenplot(normalizePlotDocument(saved.manuskriptRaw ?? ""));
+    setManuskript(savedEd.manuskriptText ?? "");
+    toast.success("Szenenplot geleert (Manuskript & Export-Texte mit).");
   }
 
   async function clearManuskript() {
@@ -646,12 +910,7 @@ export function RomanAdminWorkspace({
     delete reifegrade.manuskript;
     let nextEditorial = withLeserFeedbackForStage(
       {
-        ...editorial,
-        manuskriptText: "",
-        manuskriptOriginalText: "",
-        manuskriptOriginalSavedAt: null,
-        storyState: null,
-        canon: null,
+        ...clearManuskriptAndExportEditorial(editorial),
         reifegradImprove: improveMap,
         reifegrade,
       },
@@ -675,7 +934,7 @@ export function RomanAdminWorkspace({
     const savedEd = saved.editorial ?? nextEditorial;
     setEditorial(savedEd);
     setManuskript(savedEd.manuskriptText ?? "");
-    toast.success("Manuskript geleert.");
+    toast.success("Manuskript geleert (Export-Texte mit).");
   }
 
   async function savePipelineFertig(
@@ -684,7 +943,57 @@ export function RomanAdminWorkspace({
   ) {
     if (!canSave || savePending) return;
     const prevEditorial = editorial;
-    const nextEditorial = withPipelineTabFertig(prevEditorial, tabId, fertig);
+    // Szenenplot Fertig: Raum-Continuity nachschärfen + schreibPrompts einfrieren.
+    if (
+      tabId === "szenenplot" &&
+      fertig &&
+      prevEditorial.szenenplotStructured?.chapters.length
+    ) {
+      setSavePending(true);
+      setEnrichSpatialMode("fertig");
+      setEnrichSpatialPending(true);
+      try {
+        const enrich = await enrichSzenenplotSpatialAction({
+          romanId: roman.id,
+          freeze: true,
+        });
+        if (!enrich.success) {
+          toast.error(enrich.error ?? "Szenenplot Fertig fehlgeschlagen.");
+          return;
+        }
+        const saved = enrich.data!.roman;
+        setRomanKeepCover(saved);
+        let nextEditorial = withPipelineTabFertig(
+          saved.editorial ?? prevEditorial,
+          tabId,
+          true,
+        );
+        const fertigSave = await saveRomanKontextAction(
+          romanToSavePayload(saved, nextEditorial, fixedBuchTyp),
+        );
+        if (!fertigSave.success) {
+          toast.error(
+            fertigSave.error ?? "Fertig-Status speichern fehlgeschlagen.",
+          );
+          setEditorial(prevEditorial);
+          return;
+        }
+        const savedEd = fertigSave.data!.roman.editorial ?? nextEditorial;
+        setEditorial(savedEd);
+        toast.success(
+          enrich.data!.enriched
+            ? "Szenenplot fertig · Raum-Continuity nachgeschärft · Verträge eingefroren."
+            : "Szenenplot fertig · Verträge eingefroren.",
+        );
+      } finally {
+        setEnrichSpatialPending(false);
+        setEnrichSpatialMode("manual");
+        setSavePending(false);
+      }
+      return;
+    }
+
+    let nextEditorial = withPipelineTabFertig(prevEditorial, tabId, fertig);
     setEditorial(nextEditorial);
     setSavePending(true);
     try {
@@ -1094,72 +1403,71 @@ export function RomanAdminWorkspace({
           </div>
         ) : tab === "outline" ? (
           <div className="space-y-4">
-            {isCleverErzaehlt ? (
-              <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h2 className="text-lg font-extrabold text-zinc-950">
-                    Unterthemen
-                  </h2>
-                  <RomanStepFertigToggle
-                    checked={isPipelineTabFertig(editorial, "outline")}
-                    disabled={!canSave}
-                    pending={savePending}
-                    onCheckedChange={(v) =>
-                      void savePipelineFertig("outline", v)
-                    }
-                  />
-                </div>
-                <CleverUnterthemenPanel
-                  romanId={roman.id}
-                  thema={fundament.genre || roman.genre}
-                  editorial={editorial}
-                  value={editorial.cleverUnterthemen}
-                  canSave={canSave}
-                  disabled={savePending || pipelineBusy}
-                  onComplete={({ roman: saved, unterthemen }) => {
-                    setRomanKeepCover(saved);
-                    const nextEd = {
-                      ...saved.editorial,
-                      cleverUnterthemen: unterthemen,
-                    };
-                    setEditorial((prev) => ({
-                      ...prev,
-                      ...nextEd,
-                    }));
-                    if (saved.manuskriptRaw) {
-                      setSzenenplot(
-                        normalizePlotDocument(saved.manuskriptRaw),
-                      );
-                    }
-                    // Fakten neu → Geschichten geleert (Server); UI state sync.
-                    setManuskript(nextEd.manuskriptText ?? "");
-                  }}
+            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-extrabold text-zinc-950">
+                  Unterthemen
+                </h2>
+                <RomanStepFertigToggle
+                  checked={isPipelineTabFertig(editorial, "outline")}
+                  disabled={!canSave}
+                  pending={savePending}
+                  onCheckedChange={(v) =>
+                    void savePipelineFertig("outline", v)
+                  }
                 />
-              </section>
-            ) : (
-              <>
-            {typSet ? (
-              <RomanReifegradCard
-                value={reifegradFor("szenenplot")}
+              </div>
+              <CleverUnterthemenPanel
                 romanId={roman.id}
-                stage="szenenplot"
+                thema={fundament.genre || roman.genre}
+                editorial={editorial}
+                value={editorial.cleverUnterthemen}
                 canSave={canSave}
                 disabled={savePending || pipelineBusy}
-                improvePlans={editorial.reifegradImprove?.szenenplot}
-                stageImprovePlan={editorial.stageImprove?.szenenplot ?? null}
+                onComplete={({ roman: saved, unterthemen }) => {
+                  setRomanKeepCover(saved);
+                  const nextEd = {
+                    ...saved.editorial,
+                    cleverUnterthemen: unterthemen,
+                  };
+                  setEditorial((prev) => ({
+                    ...prev,
+                    ...nextEd,
+                  }));
+                  if (saved.manuskriptRaw) {
+                    setSzenenplot(
+                      normalizePlotDocument(saved.manuskriptRaw),
+                    );
+                  }
+                  setManuskript(nextEd.manuskriptText ?? "");
+                }}
+              />
+            </section>
+          </div>
+        ) : tab === "grobgeruest" || tab === "feingeruest" ? (
+          <div className="space-y-4">
+            {typSet ? (
+              <RomanReifegradCard
+                value={reifegradFor(tab)}
+                romanId={roman.id}
+                stage={tab}
+                canSave={canSave}
+                disabled={savePending || pipelineBusy}
+                improvePlans={editorial.reifegradImprove?.[tab]}
+                stageImprovePlan={editorial.stageImprove?.[tab] ?? null}
                 onComplete={syncFromPipelineRoman}
               />
             ) : null}
             <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-lg font-extrabold text-zinc-950">
-                  Kapitelgerüst
+                  {tab === "grobgeruest" ? "Grobgerüst" : "Feingerüst"}
                 </h2>
                 <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, "outline")}
+                  checked={isPipelineTabFertig(editorial, tab)}
                   disabled={!canSave}
                   pending={savePending}
-                  onCheckedChange={(v) => void savePipelineFertig("outline", v)}
+                  onCheckedChange={(v) => void savePipelineFertig(tab, v)}
                 />
               </div>
               {!typSet ? (
@@ -1168,50 +1476,141 @@ export function RomanAdminWorkspace({
                 </p>
               ) : (
                 <div className="space-y-5">
+                  <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
+                    {tab === "grobgeruest"
+                      ? "Outline: Kapitel + Kernsatz + zentrale Spannungsbögen. Keine Einzelszenen."
+                      : "Kapitel detaillieren: inhaltKurz, Props/Events, Arc-Beats. Szenen folgen im Grob-/Feinplot."}
+                  </p>
                   <RomanPipelineStageActions
                     romanId={roman.id}
-                    stage="szenenplot"
+                    stage={tab}
                     canSave={canSave}
                     disabled={savePending || pipelineBusy}
                     onComplete={syncFromPipelineRoman}
                     reifegrade={editorial.reifegrade}
-                    leserFeedback={leserFeedbackForStage(editorial, "szenenplot")}
-                    hasLeserArtifact={hasSzenenplotDoc}
                     showAssess
-                    displayLabel="Kapitelgerüst"
+                    displayLabel={
+                      tab === "grobgeruest" ? "Grobgerüst" : "Feingerüst"
+                    }
                     rolesHref={rolesHref}
+                    generateCascadeConfirm={generateCascadeConfirm(
+                      editorial,
+                      tab,
+                    )}
                   />
-                  {editorial.wissensGraph?.nodes?.length ? (
-                    <p className="rounded-2xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-700 ring-1 ring-zinc-950/8">
-                      Wissensgraph: {editorial.wissensGraph.nodes.length} Knoten ·{" "}
-                      {editorial.wissensGraph.edges.length} Relationen ·{" "}
-                      {editorial.wissensGraph.hardInvariants.length} Invarianten
-                      {editorial.wissensGraph.seededFrom?.length
-                        ? ` · Seed: ${editorial.wissensGraph.seededFrom.join(", ")}`
-                        : ""}
-                    </p>
-                  ) : (
-                    <p className="text-sm font-semibold text-zinc-600">
-                      Beim Erzeugen entsteht der Wissensgraph aus Idee,
-                      Recherche, Spec und Tonalität — und wächst mit jedem
-                      Kapitel-Batch.
-                    </p>
-                  )}
-                  <RomanSzenenplotPanel
+                  <RomanWissensgraphTrigger graph={editorial.wissensGraph} />
+                  <RomanKapitelGeruestPanel
                     hasExpose={hasExposeDoc}
-                    value={szenenplot}
-                    onChange={setSzenenplot}
-                    structured={editorial.szenenplotStructured}
-                    canSave={canSave}
+                    value={kapitelGeruest}
+                    structured={editorial.kapitelGeruestStructured}
                     disabled={savePending || pipelineBusy}
-                    savePending={savePending}
-                    onSave={() => void saveSzenenplot()}
+                    onClear={() => clearKapitelGeruest()}
+                    clearPending={savePending}
+                    staleBanner={downstreamStaleBanner(editorial, tab)}
                   />
                 </div>
               )}
             </section>
-              </>
-            )}
+          </div>
+        ) : tab === "grobplot" || tab === "feinplot" ? (
+          <div className="space-y-4">
+            {typSet ? (
+              <RomanReifegradCard
+                value={reifegradFor(tab)}
+                romanId={roman.id}
+                stage={tab}
+                canSave={canSave}
+                disabled={savePending || pipelineBusy}
+                improvePlans={editorial.reifegradImprove?.[tab]}
+                stageImprovePlan={editorial.stageImprove?.[tab] ?? null}
+                onComplete={syncFromPipelineRoman}
+              />
+            ) : null}
+            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-extrabold text-zinc-950">
+                  {tab === "grobplot" ? "Grobplot" : "Feinplot"}
+                </h2>
+                <RomanStepFertigToggle
+                  checked={isPipelineTabFertig(editorial, tab)}
+                  disabled={!canSave}
+                  pending={savePending}
+                  onCheckedChange={(v) => void savePipelineFertig(tab, v)}
+                />
+              </div>
+              {!typSet ? (
+                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+                  Zuerst Buchtyp wählen.
+                </p>
+              ) : (
+                <div className="space-y-5">
+                  <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
+                    {tab === "grobplot"
+                      ? "Szenen-Köpfe je Kapitel (Heading + Summary). Volle Verträge folgen im Feinplot."
+                      : "Volle Szenenverträge + Schreibprompt. „Fertig“ friert die Prompts ein — Manuskript schreibt nur noch Prosa."}
+                  </p>
+                  <RomanPipelineStageActions
+                    romanId={roman.id}
+                    stage={tab}
+                    canSave={canSave}
+                    disabled={savePending || pipelineBusy}
+                    onComplete={syncFromPipelineRoman}
+                    reifegrade={editorial.reifegrade}
+                    showAssess
+                    displayLabel={tab === "grobplot" ? "Grobplot" : "Feinplot"}
+                    rolesHref={rolesHref}
+                    generateCascadeConfirm={generateCascadeConfirm(
+                      editorial,
+                      tab,
+                    )}
+                  />
+                  <RomanWissensgraphTrigger graph={editorial.wissensGraph} />
+                  <RomanSzenenplotPanel
+                    hasGeruest={hasGeruestDoc}
+                    value={szenenplot}
+                    onChange={setSzenenplot}
+                    structured={editorial.szenenplotStructured}
+                    canSave={canSave}
+                    disabled={savePending || pipelineBusy || enrichSpatialPending}
+                    savePending={savePending}
+                    onSave={() => void saveSzenenplot()}
+                    onClear={() => clearSzenenplot()}
+                    clearPending={savePending}
+                    enrichSpatialPending={enrichSpatialPending}
+                    enrichSpatialMode={enrichSpatialMode}
+                    onEnrichSpatial={async () => {
+                      if (!canSave || enrichSpatialPending) return;
+                      setEnrichSpatialMode("manual");
+                      setEnrichSpatialPending(true);
+                      try {
+                        const result = await enrichSzenenplotSpatialAction({
+                          romanId: roman.id,
+                          force: true,
+                        });
+                        if (!result.success) {
+                          toast.error(
+                            result.error ??
+                              "Raum-Continuity nachschärfen fehlgeschlagen.",
+                          );
+                          return;
+                        }
+                        setRomanKeepCover(result.data!.roman);
+                        setEditorial(
+                          result.data!.roman.editorial ?? editorial,
+                        );
+                        toast.success(
+                          "Raum-Continuity (Ort/Etage/Props) nachgeschärft.",
+                        );
+                      } finally {
+                        setEnrichSpatialPending(false);
+                        setEnrichSpatialMode("manual");
+                      }
+                    }}
+                    staleBanner={downstreamStaleBanner(editorial, tab)}
+                  />
+                </div>
+              )}
+            </section>
           </div>
         ) : tab === "schreiben" ? (
           <div className="space-y-4">
@@ -1255,6 +1654,15 @@ export function RomanAdminWorkspace({
                 </p>
               ) : (
                 <div className="space-y-5">
+                  {!isCleverErzaehlt ? (
+                    <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
+                      Vor „Erzeugen“: Szenenplot fertig (Schreibprompts
+                      eingefroren) oder Logik/Dramaturgie ≥75%. Co-Autor schreibt
+                      kapitelweise Prosa (Stil, Ton, Emotion — Show, don’t
+                      tell). Oben Kapitel wählen — im Feld nur dieses Kapitel;
+                      Buch-Wortzahl bleibt sichtbar.
+                    </p>
+                  ) : null}
                   <RomanPipelineStageActions
                     romanId={roman.id}
                     stage="manuskript"
@@ -1273,31 +1681,14 @@ export function RomanAdminWorkspace({
                     cleverStories={isCleverErzaehlt}
                   />
                   {!isCleverErzaehlt ? (
-                    editorial.wissensGraph?.nodes?.length ? (
-                      <p className="rounded-2xl bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-700 ring-1 ring-zinc-950/8">
-                        Wissensgraph: {editorial.wissensGraph.nodes.length}{" "}
-                        Knoten · {editorial.wissensGraph.edges.length} Relationen
-                        · {editorial.wissensGraph.hardInvariants.length}{" "}
-                        Invarianten
-                        {editorial.wissensGraph.seededFrom?.length
-                          ? ` · Seed: ${editorial.wissensGraph.seededFrom.join(", ")}`
-                          : ""}
-                      </p>
-                    ) : (
-                      <p className="text-sm font-semibold text-zinc-600">
-                        Wissensgraph kommt aus dem Kapitelgerüst und wächst beim
-                        Manuskript-Schreiben / Verbessern mit.
-                      </p>
-                    )
-                  ) : null}
-                  {!isCleverErzaehlt ? (
-                    <RomanManuskriptVereinfachenControl
-                      romanId={roman.id}
-                      editorial={editorial}
-                      canSave={canSave}
-                      disabled={savePending || pipelineBusy}
-                      onComplete={syncFromPipelineRoman}
-                    />
+                    <>
+                      <RomanWissensgraphTrigger
+                        graph={editorial.wissensGraph}
+                      />
+                      <RomanContinuityTrigger
+                        storyState={editorial.storyState}
+                      />
+                    </>
                   ) : null}
                   <RomanManuskriptChapterControl
                     romanId={roman.id}
@@ -1308,10 +1699,14 @@ export function RomanAdminWorkspace({
                     onComplete={syncFromPipelineRoman}
                     mode={isCleverErzaehlt ? "clever" : "roman"}
                     chapterNumber={
-                      isCleverErzaehlt ? cleverStoryNumber : undefined
+                      isCleverErzaehlt
+                        ? cleverStoryNumber
+                        : manuskriptChapterNumber
                     }
                     onChapterNumberChange={
-                      isCleverErzaehlt ? setCleverStoryNumber : undefined
+                      isCleverErzaehlt
+                        ? setCleverStoryNumber
+                        : setManuskriptChapterNumber
                     }
                     cleverUnterthemen={
                       isCleverErzaehlt
@@ -1337,25 +1732,28 @@ export function RomanAdminWorkspace({
                   <RomanManuskriptPanel
                     hasSzenenplot={hasSzenenplotDoc}
                     value={
-                      isCleverErzaehlt
-                        ? (parsePlotChapters(manuskript).find(
-                            (c) => c.number === cleverStoryNumber,
-                          )?.body ?? "")
-                        : manuskript
+                      parsePlotChapters(manuskript).find(
+                        (c) =>
+                          c.number ===
+                          (isCleverErzaehlt
+                            ? cleverStoryNumber
+                            : manuskriptChapterNumber),
+                      )?.body ?? ""
                     }
                     onChange={(next) => {
-                      if (isCleverErzaehlt) {
-                        setManuskript(
-                          replaceManuskriptChapterBody(
-                            manuskript,
-                            szenenplot,
-                            cleverStoryNumber,
-                            stripErzaehlerWrappers(next),
-                          ),
-                        );
-                        return;
-                      }
-                      setManuskript(next);
+                      const n = isCleverErzaehlt
+                        ? cleverStoryNumber
+                        : manuskriptChapterNumber;
+                      setManuskript(
+                        replaceManuskriptChapterBody(
+                          manuskript,
+                          szenenplot,
+                          n,
+                          isCleverErzaehlt
+                            ? stripErzaehlerWrappers(next)
+                            : next,
+                        ),
+                      );
                     }}
                     canSave={canSave}
                     disabled={savePending || pipelineBusy}
@@ -1369,6 +1767,7 @@ export function RomanAdminWorkspace({
                         : editorial.zielWortzahlRoman
                     }
                     mode={isCleverErzaehlt ? "clever" : "roman"}
+                    bookMarkdown={isCleverErzaehlt ? null : manuskript}
                     focusChapter={
                       isCleverErzaehlt
                         ? {
@@ -1385,7 +1784,21 @@ export function RomanAdminWorkspace({
                               )?.title ||
                               "",
                           }
-                        : null
+                        : {
+                            number: manuskriptChapterNumber,
+                            title:
+                              sanitizeChapterTitle(
+                                romanPlotChapters.find(
+                                  (c) => c.number === manuskriptChapterNumber,
+                                )?.title ??
+                                  parsePlotChapters(manuskript).find(
+                                    (c) =>
+                                      c.number === manuskriptChapterNumber,
+                                  )?.title ??
+                                  "",
+                                manuskriptChapterNumber,
+                              ) || `Kapitel ${manuskriptChapterNumber}`,
+                          }
                     }
                     abenteuerWissenFakten={
                       isCleverErzaehlt
@@ -1419,6 +1832,123 @@ export function RomanAdminWorkspace({
                         ...saved.editorial,
                         cleverUnterthemen: unterthemen,
                       }));
+                    }}
+                  />
+                </div>
+              )}
+            </section>
+          </div>
+        ) : tab === "roman" ? (
+          <div className="space-y-4">
+            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-extrabold text-zinc-950">Roman</h2>
+                <RomanStepFertigToggle
+                  checked={isPipelineTabFertig(editorial, "roman")}
+                  disabled={!canSave}
+                  pending={savePending}
+                  onCheckedChange={(v) => void savePipelineFertig("roman", v)}
+                />
+              </div>
+              {!typSet ? (
+                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+                  Zuerst Buchtyp wählen.
+                </p>
+              ) : (
+                <div className="space-y-5">
+                  <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
+                    Feinschliff aus dem Manuskript: Verbessern (Autor / Opus,
+                    Claude Batch) füllt Kapitel hier — das Manuskript bleibt als
+                    Entwurf und Vergleich erhalten.
+                  </p>
+                  <RomanManuskriptVerbessernControl
+                    romanId={roman.id}
+                    editorial={editorial}
+                    canSave={canSave}
+                    disabled={savePending || pipelineBusy}
+                    onComplete={syncFromPipelineRoman}
+                  />
+                  {romanNavChapters.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {romanNavChapters.map((ch) => {
+                        const filled = Boolean(
+                          parsePlotChapters(romanBook).find(
+                            (c) => c.number === ch.number,
+                          )?.body.trim(),
+                        );
+                        const selected = ch.number === romanChapterNumber;
+                        return (
+                          <button
+                            key={ch.number}
+                            type="button"
+                            disabled={savePending || pipelineBusy}
+                            onClick={() => setRomanChapterNumber(ch.number)}
+                            className={cn(
+                              "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition",
+                              selected
+                                ? "bg-amber-800 text-white ring-amber-800"
+                                : filled
+                                  ? "bg-emerald-50 text-emerald-900 ring-emerald-200 hover:bg-emerald-100/80"
+                                  : "bg-white text-zinc-600 ring-zinc-950/10 hover:bg-zinc-50",
+                            )}
+                          >
+                            Kap. {ch.number}
+                            {filled ? "" : " · leer"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+                      Zuerst ein Manuskript erzeugen — danach erscheint hier die
+                      Kapitelstruktur.
+                    </p>
+                  )}
+                  <RomanManuskriptPanel
+                    hasSzenenplot={hasSzenenplotDoc}
+                    value={
+                      parsePlotChapters(romanBook).find(
+                        (c) => c.number === romanChapterNumber,
+                      )?.body ?? ""
+                    }
+                    onChange={(next) => {
+                      setRomanBook(
+                        replaceManuskriptChapterBody(
+                          romanBook,
+                          szenenplot || manuskript,
+                          romanChapterNumber,
+                          next,
+                        ),
+                      );
+                    }}
+                    canSave={canSave}
+                    disabled={savePending || pipelineBusy}
+                    savePending={savePending}
+                    onSave={() => void saveRomanBook()}
+                    onClear={() => void clearRomanBook()}
+                    clearPending={savePending}
+                    zielWortzahl={editorial.zielWortzahlRoman}
+                    mode="roman"
+                    bookMarkdown={romanBook}
+                    focusChapter={{
+                      number: romanChapterNumber,
+                      title:
+                        sanitizeChapterTitle(
+                          romanNavChapters.find(
+                            (c) => c.number === romanChapterNumber,
+                          )?.title ??
+                            parsePlotChapters(romanBook).find(
+                              (c) => c.number === romanChapterNumber,
+                            )?.title ??
+                            "",
+                          romanChapterNumber,
+                        ) || `Kapitel ${romanChapterNumber}`,
+                    }}
+                    clearDialog={{
+                      title: "Roman leeren?",
+                      description:
+                        "Nur der Feinschliff (Roman-Tab) wird gelöscht. Das Manuskript, der Szenenplot und Export-Texte bleiben erhalten.",
+                      confirmLabel: "Roman leeren",
                     }}
                   />
                 </div>
@@ -1483,6 +2013,9 @@ export function RomanAdminWorkspace({
                     }));
                     setRoman((prev) => ({
                       ...prev,
+                      autorName:
+                        patch.autorName?.trim() || prev.autorName,
+                      vorsatz: patch.vorsatz ?? prev.vorsatz,
                       editorial: {
                         ...(prev.editorial ?? emptyRomanEditorial()),
                         klappentext: patch.klappentext,

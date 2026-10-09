@@ -1,11 +1,13 @@
 /**
  * LLM ops for the durable book knowledge graph.
  * Types/parse/format live in `editorial.ts` (`RomanWissensGraph`).
- * Seeded before Kapitelgerüst; grown per scene batch; gap-closed at the end.
+ * Seeded before Kapitelgerüst; grown from Pass-1 skeleton + scene batches;
+ * gap-closed at the end; grown again during Manuskript chapter writes.
  */
 
 import { generateText } from "@/lib/ai/provider";
 import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
+import { resolveRomanAssistModel } from "@/lib/roman/assist-model";
 import {
   BUCHTYP_LABELS,
   exposeTextFromEditorial,
@@ -16,7 +18,7 @@ import {
   type RomanWissensGraphSeedSource,
 } from "@/lib/roman/editorial";
 import { formatCharaktere } from "@/lib/roman/fundament";
-import { CLIP } from "@/lib/roman/pipeline/quality-brief";
+import { CLIP, ROMAN_PROSE_MAX_TOKENS } from "@/lib/roman/pipeline/quality-brief";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import type { RomanSzenenplotStructured } from "@/lib/roman/szenenplot-structured";
 import type { RomanCharakter } from "@/lib/roman/types";
@@ -34,9 +36,9 @@ export {
   parseRomanWissensGraph,
 } from "@/lib/roman/editorial";
 
-const MAX_INVARIANTS = 32;
-const MAX_NODES = 100;
-const MAX_EDGES = 160;
+const MAX_INVARIANTS = 40;
+const MAX_NODES = 120;
+const MAX_EDGES = 180;
 
 /** Merge two graphs (incoming wins on same id). */
 export function mergeWissensGraphs(
@@ -67,14 +69,37 @@ export function mergeWissensGraphs(
   };
 }
 
+/** Concrete identity attrs the graph must pin by Plot stage (canon for Manuskript). */
+export const WISSENS_CONCRETE_ATTR_HINT = `KONKRETE KANON-DETAILS (spätestens ab Szenenplot — Pflicht, nicht optional):
+Für person/place/prop/event/fact passende attrs setzen — wenn Quelle nichts sagt: kanonisch ERFINDEN und festhalten (einmal, dann FROZEN):
+- Fahrzeuge/Geräte: kennzeichen|nummernschild, farbe, modell|marke, besitzer
+- Orte/Gebäude: adresse|strasse, hausnummer, plz, ort|stadt, etage|zimmer (wenn relevant)
+- Zeiten/Termine: datum, uhrzeit|zeit, wochentag (wenn die Story Zeit braucht)
+- Personen: name|vorname|nachname, alter (wenn relevant), telefon|handy (nur wenn dramaturgisch genutzt)
+- Sonstige Props: farbe, standort, besitzer, zustand
+Jedes zentrale Prop/Ort/Fahrzeug OHNE solche Details = Lücke. hardInvariant für jedes feste Detail („Kennzeichen X gilt“, „Hausnr. Y“, „Termin Do 14:30“).`;
+
 const GRAPH_JSON_HINT = `{
   "nodes": [
     {
-      "id": "person_prota",
+      "id": "prop_auto",
       "kind": "person|place|prop|fact|secret|thread|rule|tone|motif|event|concept",
       "label": "Kurzname",
       "summary": "1 Satz",
-      "attrs": {},
+      "attrs": {
+        "status": "planned|active|resolved",
+        "introducedChapter": "0",
+        "resolvedChapter": "",
+        "kennzeichen": "AB-CD 123",
+        "besitzer": "Name",
+        "farbe": "silber",
+        "modell": "Golf",
+        "hausnummer": "14",
+        "strasse": "Birkenweg",
+        "uhrzeit": "14:30",
+        "datum": "2024-03-12",
+        "name": "Vollständiger Name"
+      },
       "sinceChapter": 0,
       "sceneId": ""
     }
@@ -83,8 +108,8 @@ const GRAPH_JSON_HINT = `{
     {
       "id": "e1",
       "from": "person_prota",
-      "to": "place_x",
-      "rel": "an|kennt|besitzt|verursacht|enthüllt|widerspricht|erfordert|motiviert",
+      "to": "prop_auto",
+      "rel": "an|kennt|besitzt|verursacht|enthüllt|widerspricht|erfordert|motiviert|fuehrt_ein|schliesst",
       "note": "optional",
       "chapter": 0,
       "sceneId": ""
@@ -96,13 +121,17 @@ const GRAPH_JSON_HINT = `{
 PFLICHT:
 - edges.from / edges.to MÜSSEN exakt eine nodes.id sein (nicht Label).
 - Mindestens so viele edges wie sinnvolle Beziehungen (Figuren↔Orte, Fakten↔Personen).
-- hardInvariants: 6–16 kurze Muss-Sätze (Strings).`;
+- Props/Events: kind=prop|event mit attrs.status + introducedChapter; resolvedChapter wenn abgeschlossen.
+- Identifizierende Attrs FEST halten (kennzeichen, farbe, modell, hausnummer, adresse, uhrzeit, datum, name, besitzer, standort) — stilles Ändern verboten; Wechsel nur mit sichtbarem Beat + attrs-Update.
+${WISSENS_CONCRETE_ATTR_HINT}
+- hardInvariants: 8–24 kurze Muss-Sätze — inkl. „X wird nur einmal eingeführt“, „Kennzeichen Y gilt“, „Hausnr./Uhrzeit/Name Z gilt“, „Y ab Kap. N erledigt — nicht neu erfinden“.`;
 
 async function runGraphJsonCall(input: {
   system: string;
   userText: string;
 }): Promise<RomanWissensGraph> {
-  const { rolle, model } = await resolveRomanKiRolle("bewerter");
+  const { rolle } = await resolveRomanKiRolle("bewerter");
+  const model = await resolveRomanAssistModel();
   const raw = await generateText({
     model,
     systemInstruction: `${rolle.systemPrompt}
@@ -113,7 +142,7 @@ Antworte NUR als JSON (kein Markdown), Schema:
 ${GRAPH_JSON_HINT}`,
     userText: input.userText,
     preferJson: true,
-    maxTokens: 6_000,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
     timeoutMs: 120_000,
   });
   const obj = parseModelJsonObject(raw, "Wissensgraph");
@@ -160,7 +189,10 @@ export async function seedWissensGraphFromSources(input: {
     system: `Du baust den Wissensgraphen für ein Buchprojekt VOR dem Kapitelgerüst.
 Ziel: keine Wissenslücken — alle Figuren, Orte, Fakten aus Idee/Recherche/Spec/Tonalität als Knoten + Relationen.
 sinceChapter=0 für alles aus dem Seed. Keine Kapitelplanung, keine Szenen.
-hardInvariants: 6–16 verbindliche Muss-Sätze (Stil/Tonalität, Recherche-Fakten, Spec-Logik).`,
+Zentrale Gegenstände/Verträge/Beweise als kind=prop|event mit attrs.status=planned.
+${WISSENS_CONCRETE_ATTR_HINT}
+Schon im Seed konkrete attrs setzen, soweit aus Quellen ableitbar oder kanonisch erfunden.
+hardInvariants: 8–16 verbindliche Muss-Sätze (Stil/Tonalität, Recherche-Fakten, Spec-Logik, einmalige Einführungen, stabile Kennzeichen/Farben/Adressen/Zeiten).`,
     userText: `# Buch
 Titel: ${input.title.trim() || "(ohne)"}
 Typ: ${BUCHTYP_LABELS[input.buchTyp]}
@@ -198,6 +230,79 @@ Relationen müssen Spec/Idee/Recherche verbinden. Lücken schließen, Widersprü
   };
 }
 
+type SkeletonGrowChapter = {
+  number: number;
+  title: string;
+  kernsatz: string;
+  props: string[];
+  events: string[];
+  openThreads: string[];
+  mustNotRepeat: string[];
+  introduces: string[];
+  resolves: string[];
+};
+
+/**
+ * Grow graph after Pass-1 skeleton (before scenes) so batches see lifecycle.
+ */
+export async function growWissensGraphFromSkeleton(input: {
+  previous: RomanWissensGraph;
+  skeleton: SkeletonGrowChapter[];
+}): Promise<RomanWissensGraph> {
+  const outline = input.skeleton
+    .map((c) => {
+      const bits = [
+        `Kern: ${c.kernsatz}`,
+        c.props.length ? `Props: ${c.props.join(", ")}` : "",
+        c.events.length ? `Events: ${c.events.join(", ")}` : "",
+        c.introduces.length ? `Führt ein: ${c.introduces.join(", ")}` : "",
+        c.resolves.length ? `Schließt: ${c.resolves.join(", ")}` : "",
+        c.openThreads.length ? `Offen: ${c.openThreads.join(", ")}` : "",
+        c.mustNotRepeat.length
+          ? `Nicht wiederholen: ${c.mustNotRepeat.join(", ")}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      return `Kap. ${c.number} — ${c.title}: ${bits}`;
+    })
+    .join("\n")
+    .slice(0, 14_000);
+
+  const grown = await runGraphJsonCall({
+    system: `Du aktualisierst den Wissensgraphen nach dem Kapitelgerüst-Pass-1 (ohne Szenen).
+Lege für jedes Prop/Event/Thread Knoten an (kind=prop|event|thread).
+attrs.status: planned→active bei Einführung; resolved bei Abschluss.
+attrs.introducedChapter / resolvedChapter setzen (Zahlen als Strings).
+${WISSENS_CONCRETE_ATTR_HINT}
+Identifizierende Attrs beibehalten oder bei Wechsel explizit updaten + hardInvariant.
+sinceChapter = Kapitel der ersten Einführung.
+hardInvariants: jedes introduces genau einmal; resolved Items „nicht neu erfinden“;
+Doppel-Beats zwischen Kapiteln markieren; Kennzeichen/Farbe/Adresse/Uhrzeit nicht still ändern.`,
+    userText: `# Bisheriger Graph
+${JSON.stringify({
+  nodes: input.previous.nodes,
+  edges: input.previous.edges,
+  hardInvariants: input.previous.hardInvariants,
+}).slice(0, 22_000)}
+
+# Pass-1 Gerüst (Props/Events/Lebenszyklus)
+${outline}
+
+Liefere den VOLLSTÄNDIG aktualisierten Graphen.`,
+  });
+
+  return mergeWissensGraphs(
+    {
+      ...input.previous,
+      seededFrom: Array.from(
+        new Set([...input.previous.seededFrom, "szenenplot" as const]),
+      ) as RomanWissensGraphSeedSource[],
+    },
+    grown,
+  )!;
+}
+
 /**
  * Grow graph with a new Szenenplot batch (chapters just filled).
  */
@@ -211,6 +316,12 @@ export async function growWissensGraphFromSzenenBatch(input: {
       number: c.number,
       title: c.title,
       kernsatz: c.kernsatz,
+      props: c.props,
+      events: c.events,
+      openThreads: c.openThreads,
+      mustNotRepeat: c.mustNotRepeat,
+      introduces: c.introduces,
+      resolves: c.resolves,
       scenes: c.scenes.map((s) => ({
         scene_id: s.scene_id,
         heading: s.heading,
@@ -226,8 +337,11 @@ export async function growWissensGraphFromSzenenBatch(input: {
   const grown = await runGraphJsonCall({
     system: `Du aktualisierst den Wissensgraphen nach neuen Szenenplot-Kapiteln.
 Bewahre brauchbare Alt-Knoten/Kanten; ergänze Events, States, Enthüllungen, Hooks.
+Prop/Event-Lebenszyklus fortschreiben (status, introducedChapter, resolvedChapter).
+${WISSENS_CONCRETE_ATTR_HINT}
+Aus Szenen-Summaries/Dramaturgie konkrete Details übernehmen oder kanonisch ergänzen (Farbe, Kennzeichen, Hausnr., Uhrzeit, Datum, Namen).
 sinceChapter / chapter / sceneId setzen. Keine Löschung wichtiger Seed-Fakten.
-hardInvariants aktualisieren (Widersprüche zwischen Seed und Szenen markieren).`,
+hardInvariants aktualisieren (Doppel-Einführungen, Widersprüche Seed↔Szenen, feste Detail-Werte).`,
     userText: `# Bisheriger Graph
 ${JSON.stringify({
   nodes: input.previous.nodes,
@@ -266,11 +380,13 @@ export async function closeWissensGraphGaps(input: {
   tonalitaet: string;
 }): Promise<RomanWissensGraph> {
   const closed = await runGraphJsonCall({
-    system: `Du schließt Lücken im Wissensgraphen nach dem fertigen Kapitelgerüst.
+    system: `Du schließt Lücken im Wissensgraphen nach dem fertigen Szenenplot.
 Prüfe: jede zentrale Figur/Ort aus Spec kommt vor; Recherche-Fakten als fact/concept;
 Tonalität als tone-Knoten mit Relationen; jede Szene hat Continuity-Anschluss im Graphen;
+jedes introduces hat genau einen Knoten mit introducedChapter; jedes resolves setzt status=resolved;
 keine offenen Threads ohne Knoten; hardInvariants vollständig und widerspruchsfrei.
-Markiere doppelte Kapitel-/Beat-Funktionen als hardInvariant („Kap. X und Y nicht denselben Beat“).`,
+${WISSENS_CONCRETE_ATTR_HINT}
+Markiere doppelte Kapitel-/Beat-Funktionen und Doppel-Einführungen als hardInvariant.`,
     userText: `# Graph
 ${JSON.stringify({
   nodes: input.graph.nodes,
@@ -287,17 +403,148 @@ ${input.rechercheDossier.trim().slice(0, 4_000)}
 # Tonalität
 ${input.tonalitaet.trim().slice(0, 1_500)}
 
-# Kapitel (nur Nummern/Titel/Kern)
+# Kapitel (Kern + Lebenszyklus)
 ${input.structured.chapters
-  .map((c) => `Kap. ${c.number} ${c.title}: ${c.kernsatz}`)
+  .map((c) => {
+    const bits = [
+      c.kernsatz,
+      c.introduces.length ? `neu=${c.introduces.join(",")}` : "",
+      c.resolves.length ? `zu=${c.resolves.join(",")}` : "",
+      c.props.length ? `props=${c.props.join(",")}` : "",
+    ]
+      .filter(Boolean)
+      .join(" | ");
+    return `Kap. ${c.number} ${c.title}: ${bits}`;
+  })
   .join("\n")
-  .slice(0, 4_000)}
+  .slice(0, 6_000)}
 
 Liefere den vollständigen, lückenfreien Graphen.`,
   });
 
-  return mergeWissensGraphs(input.graph, {
+  const merged = mergeWissensGraphs(input.graph, {
     ...closed,
+    seededFrom: ["szenenplot"],
+  })!;
+  // Second pass: force concrete identity attrs before Manuskript.
+  try {
+    return await enrichWissensGraphConcreteDetails({
+      graph: merged,
+      structured: input.structured,
+    });
+  } catch {
+    return merged;
+  }
+}
+
+/** Attr keys that count as "concrete" for thin-node detection. */
+const CONCRETE_ATTR_KEYS = [
+  "kennzeichen",
+  "nummernschild",
+  "farbe",
+  "color",
+  "modell",
+  "marke",
+  "hausnummer",
+  "strasse",
+  "adresse",
+  "plz",
+  "ort",
+  "stadt",
+  "uhrzeit",
+  "zeit",
+  "datum",
+  "name",
+  "vorname",
+  "nachname",
+  "telefon",
+  "handy",
+  "besitzer",
+  "standort",
+] as const;
+
+/**
+ * Nodes (prop/place/person/event/fact) that still lack identifying details.
+ */
+export function listThinConcreteNodes(
+  graph: RomanWissensGraph,
+): Array<{ id: string; kind: string; label: string }> {
+  const out: Array<{ id: string; kind: string; label: string }> = [];
+  for (const n of graph.nodes) {
+    if (
+      n.kind !== "prop" &&
+      n.kind !== "place" &&
+      n.kind !== "person" &&
+      n.kind !== "event" &&
+      n.kind !== "fact"
+    ) {
+      continue;
+    }
+    const hasConcrete = CONCRETE_ATTR_KEYS.some((k) =>
+      Boolean(n.attrs[k]?.trim()),
+    );
+    if (!hasConcrete) {
+      out.push({ id: n.id, kind: n.kind, label: n.label });
+    }
+  }
+  return out.slice(0, 40);
+}
+
+/**
+ * Dedicated pass after Plot: invent & freeze concrete canon details
+ * (colors, plates, house numbers, times, dates, names) so Manuskript
+ * cannot reinvent them chapter by chapter.
+ */
+export async function enrichWissensGraphConcreteDetails(input: {
+  graph: RomanWissensGraph;
+  structured: RomanSzenenplotStructured;
+}): Promise<RomanWissensGraph> {
+  const thin = listThinConcreteNodes(input.graph);
+  const chapterBits = input.structured.chapters
+    .map((c) => {
+      const props = c.props?.length ? `props=${c.props.join(", ")}` : "";
+      const events = c.events?.length ? `events=${c.events.join(", ")}` : "";
+      const scenes = c.scenes
+        .slice(0, 4)
+        .map(
+          (s) =>
+            `${s.scene_id}:${s.heading} — ${s.summary.slice(0, 120)}`,
+        )
+        .join("; ");
+      return `Kap. ${c.number} ${c.title}: ${[props, events, scenes].filter(Boolean).join(" | ")}`;
+    })
+    .join("\n")
+    .slice(0, 8_000);
+
+  const enriched = await runGraphJsonCall({
+    system: `Du reichst den Wissensgraphen mit KONKRETEN Kanon-Details an — letzter Pflicht-Schritt vor dem Manuskript.
+${WISSENS_CONCRETE_ATTR_HINT}
+Bestehende konkrete attrs NIEMALS still ändern. Fehlende Details: aus Plot ableiten oder einmalig erfinden und als hardInvariant fixieren.
+Jeder prop/place/person/event/fact-Knoten, der in der Dünn-Liste steht, MUSS passende attrs bekommen.
+Fahrzeuge ohne Kennzeichen+Farbe, Orte ohne Adresse/Hausnr., Termine ohne Datum/Uhrzeit, Figuren ohne klaren Namens-Attr = unzulässig.
+Liefere den VOLLSTÄNDIGEN Graphen.`,
+    userText: `# Graph (Ist)
+${JSON.stringify({
+  nodes: input.graph.nodes,
+  edges: input.graph.edges,
+  hardInvariants: input.graph.hardInvariants,
+}).slice(0, 28_000)}
+
+# Noch dünne Knoten (ohne konkrete attrs)
+${
+  thin.length
+    ? thin.map((t) => `- ${t.id} (${t.kind}): ${t.label}`).join("\n")
+    : "(keine — trotzdem prüfen und nachschärfen)"
+}
+
+# Plot-Kontext (Props/Events/Szenen)
+${chapterBits}
+
+Liefere den vollständigen Graphen mit ausgefüllten konkreten attrs.`,
+  });
+
+  return mergeWissensGraphs(input.graph, {
+    ...enriched,
     seededFrom: ["szenenplot"],
   })!;
 }
@@ -325,8 +572,10 @@ export async function growWissensGraphFromChapterBodies(input: {
 
   const grown = await runGraphJsonCall({
     system: `Du aktualisierst den Wissensgraphen nach eingearbeiteten Kapitel-Patches (${input.stage}).
-Bewahre Seed-Fakten; aktualisiere States, Enthüllungen, Threads, Relationen für die genannten Kapitel.
-sinceChapter/chapter setzen. hardInvariants bei neuen Widersprüchen oder Doppel-Beats ergänzen.
+Bewahre Seed-Fakten; aktualisiere States, Enthüllungen, Threads, Props/Events (status/introduced/resolved) für die genannten Kapitel.
+${WISSENS_CONCRETE_ATTR_HINT}
+Identifizierende Attrs beibehalten — stilles Ändern verboten; bei sichtbarem Wechsel attrs updaten + hardInvariant.
+sinceChapter/chapter setzen. hardInvariants bei neuen Widersprüchen, Doppel-Beats oder Neu-Erfindung bereits gelöster Props ergänzen.
 Keine Löschung zentraler Personen/Orte.`,
     userText: `# Bisheriger Graph
 ${JSON.stringify({

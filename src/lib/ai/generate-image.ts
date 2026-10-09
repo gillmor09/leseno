@@ -58,8 +58,9 @@ function ionosSizeForAspect(
     case "2:3":
       return large ? "1024x1536" : "512x768";
     case "5:8":
-      // eBook cover 1200×1920 (=5:8). Both sides multiples of 16 (IONOS FLUX).
-      return large ? "1200x1920" : "640x1024";
+      // Print cover target is 1600×2560; IONOS FLUX max edge 2048 → 1280×2048
+      // (=5:8, multiples of 16). Pipeline upscales to ROMAN_COVER_SIZE after.
+      return large ? "1280x2048" : "640x1024";
     case "3:2":
       return large ? "1536x1024" : "768x512";
     case "4:5":

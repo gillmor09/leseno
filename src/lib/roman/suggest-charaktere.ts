@@ -1,5 +1,5 @@
 /**
- * Co-Autor drafts/weaves character sheets; Fachberater refines names + details.
+ * Co-Autor drafts character sheets; Entwicklungslektor refines on Verbessern/apply.
  * Existing sheets are woven — not blindly overwritten.
  */
 
@@ -16,6 +16,7 @@ import {
 import {
   CLIP,
   ROMAN_EXCELLENCE_MANDATE,
+  ROMAN_PROSE_MAX_TOKENS,
 } from "@/lib/roman/pipeline/quality-brief";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import type { RomanCharakter } from "@/lib/roman/types";
@@ -24,8 +25,8 @@ export type CharaktereSuggestResult = {
   charaktere: RomanCharakter[];
   woven: boolean;
   modelLabel: string;
-  /** Which KI role produced this pass. */
-  pass: "co_autor" | "fachberater";
+  /** Which draft pass produced this result. */
+  pass: "co_autor" | "refine";
 };
 
 function stripFence(raw: string): string {
@@ -178,7 +179,9 @@ export async function suggestCharaktereFromIdee(input: {
   const recherche = (input.rechercheDossier ?? "").trim();
   const ton = (input.tonalitaet ?? "").trim();
 
-  const { rolle, model } = await resolveRomanKiRolle("co_autor");
+  const { rolle, model } = await resolveRomanKiRolle("co_autor", {
+    allowProseModel: false,
+  });
 
   const weaveBlock = weave
     ? `Bestehende Steckbriefe VERWEBEN und AUFWERTEN — nicht blind ersetzen:
@@ -215,7 +218,7 @@ ${JSON_SHAPE}
 Feldregeln:
 - Alle acht Keys pro Figur setzen (Strings; leer nur wenn wirklich unbekannt).
 - bogen ≠ motivation ≠ schwaeche.
-- Keine Eigennamen erfinden, wenn Idee/Grob-Regeln keine nennen — rolle füllen, name darf leer bleiben (Fachberater-Lauf folgt).
+- Keine Eigennamen erfinden, wenn Idee/Grob-Regeln keine nennen — rolle füllen, name darf leer bleiben (Verfeinern-Lauf folgt).
 - Belletristik: dramaturgisch tragfähige Besetzung. Sachbuch: ggf. Stimmen/Perspektiven statt Handlungsfiguren.
 - Jede Figur braucht erkennbare Eigenwilligkeit — kein austauschbares Genre-Mittelmaß.
 - Recherche nutzen für glaubwürdige Berufe/Hintergründe — nicht als Figurenliste missverstehen.`;
@@ -235,7 +238,7 @@ Antwort NUR als JSON mit Key "charaktere" (Array). Keine Markdown-Codeblöcke.`;
     systemInstruction: system,
     userText,
     preferJson: true,
-    maxTokens: 12_288,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
   });
 
   const charaktere = parseCharakterePayload(raw, "Co-Autor");
@@ -249,10 +252,10 @@ Antwort NUR als JSON mit Key "charaktere" (Array). Keine Markdown-Codeblöcke.`;
 }
 
 /**
- * Refine / weave character sheets (Co-Autor) — keeps cast, improves sheets.
- * Used by pipeline Verbessern and the optional second-pass button.
+ * Refine / weave character sheets (Entwicklungslektor) — keeps cast, improves sheets.
+ * Used by Spec Verbessern / Feedback apply (not Manuskript prose).
  */
-export async function refineCharaktereWithFachberater(input: {
+export async function refineCharaktere(input: {
   buchTyp: RomanBuchTyp;
   ideeKurz: string;
   grobRegeln: string;
@@ -273,7 +276,7 @@ export async function refineCharaktereWithFachberater(input: {
   }
 
   const grob = input.grobRegeln.trim();
-  const { rolle, model } = await resolveRomanKiRolle("co_autor");
+  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
 
   const userText = `# Buchtyp
 ${BUCHTYP_LABELS[input.buchTyp]}
@@ -287,7 +290,7 @@ ${grob.slice(0, CLIP.grob) || "(leer — aus Idee und Steckbriefen ableiten)"}
 # Aktuelle Charakter-Steckbriefe (zu prüfen und zu verfeinern)
 ${formatCharaktere(existing).slice(0, CLIP.charaktere)}
 
-Auftrag — Co-Autor Nacharbeit / Verfeinern:
+Auftrag — Entwicklungslektor Nacharbeit / Verfeinern:
 1. Passende Namen: Wenn name leer ist ODER unpassend wirkt (Platzhalter, generisch, kulturell/altersmäßig unstimmig, Stereotypen-Falle, widerspricht Idee/Grob-Regeln) → schlage einen glaubwürdigen, alters- und kontextpassenden Namen vor.
 2. Passende Namen behalten, wenn sie schon stimmig sind.
 3. Steckbrief-Felder bei Bedarf schärfen/verfeinern (Wesenszüge, Motiv, Schwäche, Bogen, Sprache) — brauchbare Infos behalten und aufwerten, nicht blind ersetzen.
@@ -318,15 +321,15 @@ Antwort NUR als JSON mit Key "charaktere" (Array). Keine Markdown-Codeblöcke.`;
     systemInstruction: system,
     userText,
     preferJson: true,
-    maxTokens: 12_288,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
   });
 
-  const charaktere = parseCharakterePayload(raw, "Co-Autor");
+  const charaktere = parseCharakterePayload(raw, "Entwicklungslektor");
 
   return {
     charaktere,
     woven: true,
     modelLabel: model.label,
-    pass: "fachberater",
+    pass: "refine",
   };
 }

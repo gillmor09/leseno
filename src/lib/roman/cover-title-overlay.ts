@@ -1,6 +1,6 @@
 /**
  * Trade / marketing cover title overlay.
- * Brand UI font Nunito — ExtraBold primary, Bold for secondary/eyebrow (never lighter).
+ * Display font is chosen per genre bestsellers (not product UI Nunito).
  * Series titles (`Clever erzählt: …`) keep the prefix quiet; the topic after `:` is the hero.
  * Spelling locked to the book title; thin dark-gray halo + soft drop shadow.
  */
@@ -9,19 +9,17 @@ import { createCanvas, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
 import { parse, type Font as OtFont } from "opentype.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { drawLesenoMarkBottomRight } from "@/lib/roman/clever-cover-logos";
+import {
+  COVER_FONT_FAMILIES,
+  type CoverFontFamilyId,
+} from "@/lib/roman/cover-fonts";
 
 const FONTS_DIR = path.join(process.cwd(), "src", "assets", "fonts");
 
-/** Vendored Nunito statics (latin + latin-ext — DE umlauts). Min weight: Bold. */
-const FONT_FILES = {
-  primary: "Nunito-ExtraBold.ttf",
-  secondary: "Nunito-Bold.ttf",
-  eyebrow: "Nunito-Bold.ttf",
-} as const;
+type FontRole = "primary" | "secondary" | "eyebrow";
 
-type FontRole = keyof typeof FONT_FILES;
-
-const fontCache: Partial<Record<FontRole, OtFont>> = {};
+const fontCache = new Map<string, OtFont>();
 
 export type CoverTitleZone = "top" | "upper" | "center" | "lower" | "bottom";
 export type CoverTitleAlign = "left" | "center" | "right";
@@ -43,6 +41,8 @@ export type CoverTitleDesign = {
   size: CoverTitleSize;
   tone: CoverTitleTone;
   scrim: CoverTitleScrim;
+  /** Bestseller-oriented display family (independent of UI Nunito). */
+  fontFamily: CoverFontFamilyId;
   publisherNote?: string;
 };
 
@@ -54,19 +54,24 @@ function readFontArrayBuffer(fontPath: string): ArrayBuffer {
   );
 }
 
-function getFont(role: FontRole): OtFont {
-  const cached = fontCache[role];
+function getFontFile(family: CoverFontFamilyId, role: FontRole): OtFont {
+  const fileName = COVER_FONT_FAMILIES[family].files[role];
+  const cacheKey = `${family}:${role}:${fileName}`;
+  const cached = fontCache.get(cacheKey);
   if (cached) return cached;
-  const file = path.join(FONTS_DIR, FONT_FILES[role]);
+  const file = path.join(FONTS_DIR, fileName);
   const parsed = parse(readFontArrayBuffer(file));
-  fontCache[role] = parsed;
+  fontCache.set(cacheKey, parsed);
   return parsed;
 }
 
-function fontForRole(role: CoverTitleRole): OtFont {
-  if (role === "eyebrow") return getFont("eyebrow");
-  if (role === "secondary") return getFont("secondary");
-  return getFont("primary");
+function fontForRole(
+  family: CoverFontFamilyId,
+  role: CoverTitleRole,
+): OtFont {
+  if (role === "eyebrow") return getFontFile(family, "eyebrow");
+  if (role === "secondary") return getFontFile(family, "secondary");
+  return getFontFile(family, "primary");
 }
 
 function parseDataUrl(dataUrl: string): { buffer: Buffer } {
@@ -137,7 +142,7 @@ function meanBandLuminance(
 }
 
 function baseSizePx(size: CoverTitleSize, width: number): number {
-  // Thumbnail-readable on 1200×1920: ExtraBold primary needs real shelf presence.
+  // Thumbnail-readable on 1600×2560: ExtraBold primary needs real shelf presence.
   const ratio =
     size === "compact" ? 0.12 : size === "hero" ? 0.2 : 0.155;
   return Math.min(248, Math.max(108, Math.round(width * ratio)));
@@ -157,6 +162,7 @@ function boostBaseForShortPrimary(
   specs: Array<{ text: string; role: CoverTitleRole }>,
   width: number,
   maxTextWidth: number,
+  family: CoverFontFamilyId,
 ): number {
   const primaryText = specs
     .filter((s) => s.role === "primary")
@@ -170,13 +176,13 @@ function boostBaseForShortPrimary(
   // Only boost compact titles — long lines wrap/shrink instead.
   if (words > 5 && chars > 28) return base;
 
-  const font = getFont("primary");
+  const font = fontForRole(family, "primary");
   const maxBoost = Math.min(Math.round(width * 0.3), 300);
   let boosted = base;
   const target = maxTextWidth * (words <= 2 || chars <= 12 ? 0.96 : 0.9);
 
   while (boosted < maxBoost) {
-    const m = roleMetrics("primary", boosted + 4);
+    const m = roleMetrics("primary", boosted + 4, family);
     const w = measureLineWidth(
       font,
       primaryText,
@@ -189,30 +195,35 @@ function boostBaseForShortPrimary(
   return Math.max(base, boosted);
 }
 
-function roleMetrics(role: CoverTitleRole, base: number) {
+function roleMetrics(
+  role: CoverTitleRole,
+  base: number,
+  family: CoverFontFamilyId,
+) {
+  // Condensed impact faces need slightly more tracking; serifs a touch less.
+  const impact = family === "impact";
+  const literary = family === "literary";
   if (role === "eyebrow") {
-    // Quiet series / lead-in — Bold, but never competes with ExtraBold primary.
     return {
       fontSize: Math.max(32, Math.round(base * 0.28)),
-      trackingFactor: 0.12,
+      trackingFactor: impact ? 0.18 : literary ? 0.06 : 0.12,
       lineHeightFactor: 1.2,
       gapAfter: 0.55,
     };
   }
   if (role === "secondary") {
-    // Paired topic lines stay close in weight (Wald / & Bäume), not a footnote.
     return {
       fontSize: Math.max(72, Math.round(base * 0.9)),
-      trackingFactor: -0.02,
+      trackingFactor: impact ? 0.02 : literary ? -0.01 : -0.02,
       lineHeightFactor: 0.95,
       gapAfter: 0.06,
     };
   }
-  // primary — Nunito ExtraBold shelf punch
+  // primary — shelf-punch display
   return {
     fontSize: base,
-    trackingFactor: -0.025,
-    lineHeightFactor: 0.9,
+    trackingFactor: impact ? 0.01 : literary ? -0.015 : -0.025,
+    lineHeightFactor: literary ? 0.95 : 0.9,
     gapAfter: 0.08,
   };
 }
@@ -659,7 +670,10 @@ export function normalizeCoverTitleLines(
   return enforceCoverTitleSemantics(title, lines);
 }
 
-export function defaultCoverTitleDesign(title: string): CoverTitleDesign {
+export function defaultCoverTitleDesign(
+  title: string,
+  fontFamily: CoverFontFamilyId = "commercial",
+): CoverTitleDesign {
   const clean = title.trim().replace(/\s+/g, " ");
   const { series, topic } = splitSeriesTitle(clean);
   let lines: CoverTitleLine[] = [];
@@ -718,17 +732,27 @@ export function defaultCoverTitleDesign(title: string): CoverTitleDesign {
     size: "hero",
     tone: "auto",
     scrim: "none",
-    publisherNote: "Fallback modern hierarchy; Nunito ExtraBold + Bold",
+    fontFamily,
+    publisherNote: `Fallback bestseller hierarchy; ${COVER_FONT_FAMILIES[fontFamily].label}`,
   };
 }
 
 /**
  * Composite exact title with marketing hierarchy and enforced contrast.
+ * Trade covers: optional author (top-center), subtitle under title, leseno mark.
  */
 export async function overlayCoverTitleByDesign(input: {
   imageDataUrl: string;
   design: CoverTitleDesign;
+  /** Author line, fixed top-center (trade covers). */
+  author?: string;
+  /** Marketing subtitle under the title block (exact spelling). */
+  subtitle?: string;
+  /** Paste leseno PNG bottom-right. */
+  lesenoMark?: boolean;
 }): Promise<string> {
+  const author = (input.author ?? "").trim();
+  const subtitle = (input.subtitle ?? "").trim();
   const lines = input.design.lines
     .map((l) => ({
       text: String(l.text ?? "").trim(),
@@ -736,7 +760,9 @@ export async function overlayCoverTitleByDesign(input: {
     }))
     .filter((l) => l.text.length > 0)
     .slice(0, 4);
-  if (lines.length === 0) return input.imageDataUrl;
+  if (lines.length === 0 && !author && !subtitle && !input.lesenoMark) {
+    return input.imageDataUrl;
+  }
 
   const { buffer } = parseDataUrl(input.imageDataUrl);
   const image = await loadImage(buffer);
@@ -746,164 +772,280 @@ export async function overlayCoverTitleByDesign(input: {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(image, 0, 0, width, height);
 
-  const { y0, bandH, anchor } = zoneBand(input.design.zone, height);
+  // Author occupies the top band — keep title out of top/upper.
+  let designZone = input.design.zone;
+  if (author && (designZone === "top" || designZone === "upper")) {
+    designZone = "lower";
+  }
+
+  const { y0, bandH, anchor } = zoneBand(designZone, height);
   const luma = meanBandLuminance(ctx, width, y0, bandH);
   const design = enforceCoverReadSize(
-    enforceCoverContrast(input.design, luma),
+    enforceCoverContrast({ ...input.design, zone: designZone }, luma),
   );
+  const family = design.fontFamily ?? "commercial";
   const colors = resolveColors(design.tone);
 
-  drawScrim(ctx, width, y0, bandH, design.scrim, anchor, colors.lightType);
-
-  const padX = Math.round(width * 0.055);
-  const maxTextWidth = width - padX * 2;
-  const floor = minPrimaryPx(width);
-  let specs = lines.map((l) => ({ text: l.text, role: l.role }));
-  let base = boostBaseForShortPrimary(
-    baseSizePx(design.size, width),
-    specs,
-    width,
-    maxTextWidth,
-  );
-
-  const buildResolved = (specs: { text: string; role: CoverTitleRole }[]) =>
-    specs.map((l) => {
-      const m = roleMetrics(l.role, base);
-      const font = fontForRole(l.role);
-      return {
-        text: l.text,
-        role: l.role,
+  // Author: top-center, quieter weight than the display title.
+  if (author) {
+    const topLuma = meanBandLuminance(
+      ctx,
+      width,
+      0,
+      Math.round(height * 0.14),
+    );
+    const authorTone: CoverTitleTone =
+      topLuma < 140 ? "light" : topLuma > 185 ? "dark" : "light";
+    const authorColors = resolveColors(authorTone);
+    const font = fontForRole(family, "eyebrow");
+    const fontSize = Math.max(36, Math.min(64, Math.round(width * 0.042)));
+    const tracking = fontSize * (family === "impact" ? 0.14 : 0.08);
+    // Match publisher-mark side inset (~6.5% of cover width).
+    const padX = Math.max(40, Math.round(width * 0.065));
+    const maxW = width - padX * 2;
+    const wrapped = wrapLines(font, author, fontSize, maxW, tracking);
+    let baseline =
+      Math.max(28, Math.round(height * 0.04)) + fontSize * 0.9;
+    for (const line of wrapped.slice(0, 2)) {
+      fillLine(
+        ctx,
         font,
-        fontSize: m.fontSize,
-        tracking: m.fontSize * m.trackingFactor,
-        lineHeight: Math.round(m.fontSize * m.lineHeightFactor),
-        gapAfter: Math.round(m.fontSize * m.gapAfter),
-      };
-    });
+        line,
+        fontSize,
+        tracking,
+        "center",
+        padX,
+        width,
+        baseline,
+        authorColors.fill,
+        authorColors.halo,
+        authorColors.shadow,
+        false,
+      );
+      baseline += Math.round(fontSize * 1.2);
+    }
+  }
 
-  let resolved = buildResolved(specs);
+  // Same side breathing room as the leseno mark (right inset ~6.5%).
+  const padX = Math.max(40, Math.round(width * 0.065));
+  const maxTextWidth = width - padX * 2;
+  /** Keep title/subtitle clear of the leseno mark in the lower-right. */
+  const logoReserveY = input.lesenoMark
+    ? height - Math.round(height * 0.15)
+    : height - Math.round(height * 0.05);
+  let cursorAfterTitle = 0;
 
-  // Prefer wrapping long lines over shrinking — keeps thumbnail-readable scale.
-  for (let guard = 0; guard < 8 && specs.length < 4; guard++) {
-    const wideIdx = resolved.findIndex(
-      (l) =>
-        measureLineWidth(l.font, l.text, l.fontSize, l.tracking) >
-        maxTextWidth,
-    );
-    if (wideIdx < 0) break;
-    const wide = resolved[wideIdx]!;
-    const wrapped = wrapLines(
-      wide.font,
-      wide.text,
-      wide.fontSize,
+  if (lines.length > 0) {
+    drawScrim(ctx, width, y0, bandH, design.scrim, anchor, colors.lightType);
+
+    const floor = minPrimaryPx(width);
+    let specs = lines.map((l) => ({ text: l.text, role: l.role }));
+    let base = boostBaseForShortPrimary(
+      baseSizePx(design.size, width),
+      specs,
+      width,
       maxTextWidth,
-      wide.tracking,
+      family,
     );
-    if (wrapped.length <= 1) break;
 
-    const before = specs.slice(0, wideIdx);
-    const after = specs.slice(wideIdx + 1);
-    const pieces: { text: string; role: CoverTitleRole }[] = wrapped.map(
-      (text, i) => {
-        if (wide.role === "primary") {
-          // Longest chunk keeps the punch; others become secondary.
-          const longest = wrapped.reduce(
-            (best, t, idx) => (t.length > wrapped[best]!.length ? idx : best),
-            0,
-          );
-          if (i === longest) return { text, role: "primary" as const };
-          if (i === 0 && longest !== 0 && text.split(/\s+/).length <= 2) {
-            return { text, role: "eyebrow" as const };
+    const buildResolved = (specs: { text: string; role: CoverTitleRole }[]) =>
+      specs.map((l) => {
+        const m = roleMetrics(l.role, base, family);
+        const font = fontForRole(family, l.role);
+        return {
+          text: l.text,
+          role: l.role,
+          font,
+          fontSize: m.fontSize,
+          tracking: m.fontSize * m.trackingFactor,
+          lineHeight: Math.round(m.fontSize * m.lineHeightFactor),
+          gapAfter: Math.round(m.fontSize * m.gapAfter),
+        };
+      });
+
+    let resolved = buildResolved(specs);
+
+    // Prefer wrapping long lines over shrinking — keeps thumbnail-readable scale.
+    for (let guard = 0; guard < 8 && specs.length < 4; guard++) {
+      const wideIdx = resolved.findIndex(
+        (l) =>
+          measureLineWidth(l.font, l.text, l.fontSize, l.tracking) >
+          maxTextWidth,
+      );
+      if (wideIdx < 0) break;
+      const wide = resolved[wideIdx]!;
+      const wrapped = wrapLines(
+        wide.font,
+        wide.text,
+        wide.fontSize,
+        maxTextWidth,
+        wide.tracking,
+      );
+      if (wrapped.length <= 1) break;
+
+      const before = specs.slice(0, wideIdx);
+      const after = specs.slice(wideIdx + 1);
+      const pieces: { text: string; role: CoverTitleRole }[] = wrapped.map(
+        (text, i) => {
+          if (wide.role === "primary") {
+            // Longest chunk keeps the punch; others become secondary.
+            const longest = wrapped.reduce(
+              (best, t, idx) =>
+                t.length > wrapped[best]!.length ? idx : best,
+              0,
+            );
+            if (i === longest) return { text, role: "primary" as const };
+            if (i === 0 && longest !== 0 && text.split(/\s+/).length <= 2) {
+              return { text, role: "eyebrow" as const };
+            }
+            return { text, role: "secondary" as const };
           }
-          return { text, role: "secondary" as const };
-        }
-        return { text, role: wide.role };
-      },
-    );
-    specs = [...before, ...pieces, ...after].slice(0, 4);
-    // Ensure exactly one primary when we split a primary line.
-    if (wide.role === "primary") {
-      const priCount = specs.filter((s) => s.role === "primary").length;
-      if (priCount !== 1) {
-        let bestI = 0;
-        let bestLen = -1;
-        for (let i = 0; i < specs.length; i++) {
-          if (specs[i]!.text.length > bestLen) {
-            bestLen = specs[i]!.text.length;
-            bestI = i;
+          return { text, role: wide.role };
+        },
+      );
+      specs = [...before, ...pieces, ...after].slice(0, 4);
+      // Ensure exactly one primary when we split a primary line.
+      if (wide.role === "primary") {
+        const priCount = specs.filter((s) => s.role === "primary").length;
+        if (priCount !== 1) {
+          let bestI = 0;
+          let bestLen = -1;
+          for (let i = 0; i < specs.length; i++) {
+            if (specs[i]!.text.length > bestLen) {
+              bestLen = specs[i]!.text.length;
+              bestI = i;
+            }
           }
+          specs = specs.map((s, i) => ({
+            ...s,
+            role:
+              i === bestI
+                ? ("primary" as const)
+                : s.role === "primary"
+                  ? ("secondary" as const)
+                  : s.role,
+          }));
         }
-        specs = specs.map((s, i) => ({
-          ...s,
-          role:
-            i === bestI
-              ? ("primary" as const)
-              : s.role === "primary"
-                ? ("secondary" as const)
-                : s.role,
-        }));
+      }
+      resolved = buildResolved(specs);
+    }
+
+    // Shrink only if a single token still overflows — never below readable floor.
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const tooWide = resolved.some(
+        (l) =>
+          measureLineWidth(l.font, l.text, l.fontSize, l.tracking) >
+          maxTextWidth,
+      );
+      if (!tooWide) break;
+      if (base <= floor) break;
+      base = Math.max(floor, base - 4);
+      resolved = buildResolved(specs);
+    }
+
+    // Extra air before a much larger next line (eyebrow → Black display).
+    for (let i = 0; i < resolved.length - 1; i++) {
+      const cur = resolved[i]!;
+      const next = resolved[i + 1]!;
+      if (next.fontSize <= cur.fontSize * 1.15) continue;
+      const minBaselineGap =
+        next.fontSize * 0.84 + cur.fontSize * 0.22;
+      const currentGap = cur.lineHeight + cur.gapAfter;
+      if (currentGap < minBaselineGap) {
+        cur.gapAfter += Math.ceil(minBaselineGap - currentGap);
       }
     }
-    resolved = buildResolved(specs);
+
+    const stepHeights = resolved.map((l) => l.lineHeight + l.gapAfter);
+    const blockHeight = stepHeights.reduce((s, h) => s + h, 0);
+    const edge = Math.max(36, Math.round(height * 0.055));
+    let cursor: number;
+    if (anchor === "top") {
+      cursor = y0 + edge + resolved[0]!.fontSize * 0.88;
+    } else if (anchor === "center") {
+      cursor =
+        y0 + bandH / 2 - blockHeight / 2 + resolved[0]!.fontSize * 0.82;
+    } else {
+      cursor =
+        y0 + bandH - edge - blockHeight + resolved[0]!.fontSize * 0.86;
+    }
+    // Leave room for subtitle + logo under the title block.
+    const subtitleBudget = subtitle
+      ? Math.round(Math.max(48, width * 0.055) * 2.4)
+      : 0;
+    const maxCursorStart = logoReserveY - blockHeight - subtitleBudget;
+    if (cursor > maxCursorStart) {
+      cursor = Math.max(y0 + edge + resolved[0]!.fontSize * 0.7, maxCursorStart);
+    }
+
+    for (const line of resolved) {
+      fillLine(
+        ctx,
+        line.font,
+        line.text,
+        line.fontSize,
+        line.tracking,
+        design.align,
+        padX,
+        width,
+        cursor,
+        colors.fill,
+        colors.halo,
+        colors.shadow,
+        line.role === "primary",
+      );
+      cursor += line.lineHeight + line.gapAfter;
+    }
+    cursorAfterTitle = cursor;
   }
 
-  // Shrink only if a single token still overflows — never below readable floor.
-  for (let attempt = 0; attempt < 24; attempt++) {
-    const tooWide = resolved.some(
-      (l) =>
-        measureLineWidth(l.font, l.text, l.fontSize, l.tracking) >
-        maxTextWidth,
+  // Subtitle under title — exact marketing line, smaller Bold.
+  if (subtitle) {
+    const subFont = fontForRole(family, "secondary");
+    const subSize = Math.max(28, Math.min(52, Math.round(width * 0.034)));
+    const subTracking = subSize * (family === "impact" ? 0.06 : 0.02);
+    const subPad = Math.max(40, Math.round(width * 0.065));
+    const subMaxW = width - subPad * 2;
+    const subLines = wrapLines(subFont, subtitle, subSize, subMaxW, subTracking);
+    let subY =
+      cursorAfterTitle > 0
+        ? cursorAfterTitle + Math.round(subSize * 0.55)
+        : Math.round(height * 0.72);
+    if (subY + subLines.length * subSize * 1.25 > logoReserveY) {
+      subY = Math.max(
+        Math.round(height * 0.55),
+        logoReserveY - Math.round(subLines.length * subSize * 1.25),
+      );
+    }
+    const subLuma = meanBandLuminance(
+      ctx,
+      width,
+      Math.max(0, Math.floor(subY - subSize)),
+      Math.round(subSize * 2.5),
     );
-    if (!tooWide) break;
-    if (base <= floor) break;
-    base = Math.max(floor, base - 4);
-    resolved = buildResolved(specs);
-  }
-
-  // Extra air before a much larger next line (eyebrow → Black display).
-  for (let i = 0; i < resolved.length - 1; i++) {
-    const cur = resolved[i]!;
-    const next = resolved[i + 1]!;
-    if (next.fontSize <= cur.fontSize * 1.15) continue;
-    const minBaselineGap =
-      next.fontSize * 0.84 + cur.fontSize * 0.22;
-    const currentGap = cur.lineHeight + cur.gapAfter;
-    if (currentGap < minBaselineGap) {
-      cur.gapAfter += Math.ceil(minBaselineGap - currentGap);
+    const subColors = resolveColors(subLuma < 150 ? "light" : "dark");
+    for (const line of subLines.slice(0, 3)) {
+      fillLine(
+        ctx,
+        subFont,
+        line,
+        subSize,
+        subTracking,
+        "center",
+        subPad,
+        width,
+        subY,
+        subColors.fill,
+        subColors.halo,
+        subColors.shadow,
+        false,
+      );
+      subY += Math.round(subSize * 1.25);
     }
   }
 
-  const stepHeights = resolved.map((l) => l.lineHeight + l.gapAfter);
-  const blockHeight = stepHeights.reduce((s, h) => s + h, 0);
-  const edge = Math.round(height * 0.045);
-  let cursor: number;
-  if (anchor === "top") {
-    cursor = y0 + edge + resolved[0]!.fontSize * 0.88;
-  } else if (anchor === "center") {
-    cursor =
-      y0 + bandH / 2 - blockHeight / 2 + resolved[0]!.fontSize * 0.82;
-  } else {
-    cursor =
-      y0 + bandH - edge - blockHeight + resolved[0]!.fontSize * 0.86;
-  }
-
-  for (const line of resolved) {
-    fillLine(
-      ctx,
-      line.font,
-      line.text,
-      line.fontSize,
-      line.tracking,
-      design.align,
-      padX,
-      width,
-      cursor,
-      colors.fill,
-      colors.halo,
-      colors.shadow,
-      line.role === "primary",
-    );
-    cursor += line.lineHeight + line.gapAfter;
+  if (input.lesenoMark) {
+    await drawLesenoMarkBottomRight(ctx, width, height);
   }
 
   const out = canvas.toBuffer("image/jpeg", 82);

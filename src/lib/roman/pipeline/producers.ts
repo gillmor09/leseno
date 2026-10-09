@@ -7,6 +7,7 @@ import {
   buildCritiqueRulesAndNeedsBlock,
   emptyRomanEditorial,
   exposeTextFromEditorial,
+  ROMAN_MANUSKRIPT_TEXT_MAX_CHARS,
   withExposeText,
   withLeserFeedbackForStage,
   withStageImprove,
@@ -26,29 +27,46 @@ import type { PipelineStage } from "@/lib/roman/pipeline/stages";
 import { resolvePipelineTask } from "@/lib/roman/pipeline/tasks";
 import { assertChapterStructure } from "@/lib/roman/pipeline/structure-guard";
 import { normalizeManuskriptDocument, missingManuskriptChapterNumbers, parsePlotChapters } from "@/lib/roman/plot-chapters";
-import { upsertRomanKontext } from "@/lib/roman/repository";
+import { getRomanKontext, upsertRomanKontext } from "@/lib/roman/repository";
 import { critiqueIdeeMitEntwicklungslektor } from "@/lib/roman/idea-qa";
 import {
-  refineCharaktereWithFachberater,
+  refineCharaktere,
   suggestCharaktereFromIdee,
 } from "@/lib/roman/suggest-charaktere";
 import {
   critiqueExposeMitEntwicklungslektor,
   suggestExposeFromCoAutor,
 } from "@/lib/roman/suggest-expose";
+import { hasFrozenSchreibPrompts } from "@/lib/roman/manuskript-chapter-packet";
 import {
   critiqueManuskriptMitEntwicklungslektor,
   formatManuskriptWordMetrics,
   suggestManuskriptFromLektorUndCoAutor,
 } from "@/lib/roman/suggest-manuskript";
+import { invalidateDownstreamEditorial } from "@/lib/roman/pipeline/cascade";
 import {
-  critiqueSzenenplotMitEntwicklungslektor,
-  suggestSzenenplotFromCoAutor,
-} from "@/lib/roman/suggest-szenenplot";
+  assertGeruestReadyForManuskript,
+  assertGeruestReadyForSzenenplot,
+  auditSzenenplotStructured,
+} from "@/lib/roman/szenenplot-preflight";
 import {
-  critiqueWeltMitFachberater,
+  critiqueKapitelGeruestMitEntwicklungslektor,
+  suggestKapitelGeruestFromCoAutor,
+  type KapitelGeruestPartialPayload,
+} from "@/lib/roman/suggest-kapitelgeruest";
+import {
+  critiqueSzenenplotDetailMitEntwicklungslektor,
+  freezeSzenenplotSchreibPrompts,
+  suggestSzenenplotDetailFromCoAutor,
+} from "@/lib/roman/suggest-szenenplot-detail";
+import {
+  critiqueWeltMitEntwicklungslektor,
   suggestWeltFromLektorUndCoAutor,
 } from "@/lib/roman/suggest-welt";
+import {
+  structuredKapitelGeruestToMarkdown,
+  structuredSzenenplotToMarkdown,
+} from "@/lib/roman/szenenplot-structured";
 import type { RomanKontext } from "@/lib/roman/types";
 
 async function persist(
@@ -169,20 +187,73 @@ export async function draftStage(
       existingExpose: exposeTextFromEditorial(editorial),
     });
     const nextEd = withStageImprove(
-      withExposeText(editorial, data.expose),
+      withExposeText(
+        invalidateDownstreamEditorial(editorial, "expose"),
+        data.expose,
+      ),
       "expose",
       null,
     );
-    const saved = await persist(roman, { editorial: nextEd });
+    const saved = await persist(roman, {
+      manuskriptRaw: "",
+      editorial: nextEd,
+    });
     return {
       roman: saved,
-      summary: `Exposé entworfen (${data.modelLabel}).`,
+      summary: `Exposé entworfen (${data.modelLabel}). Downstream (Gerüst/Szenenplot/Manuskript) veraltet.`,
       modelLabel: data.modelLabel,
     };
   }
 
-  if (stage === "szenenplot") {
-    const data = await suggestSzenenplotFromCoAutor({
+  if (
+    stage === "kapitelgeruest" ||
+    stage === "grobgeruest" ||
+    stage === "feingeruest"
+  ) {
+    const geruestStage =
+      stage === "grobgeruest" ? "grobgeruest" : "feingeruest";
+    const outlineOnly = stage === "grobgeruest";
+    let liveRoman = roman;
+    let downstreamCleared = false;
+
+    const persistGeruestPartial = async (
+      payload: Pick<
+        KapitelGeruestPartialPayload,
+        "structured" | "kapitelGeruestRaw" | "wissensGraph"
+      >,
+    ) => {
+      const prevEd = liveRoman.editorial ?? emptyRomanEditorial();
+      let nextEd = prevEd;
+      if (!downstreamCleared) {
+        nextEd = invalidateDownstreamEditorial(prevEd, geruestStage);
+        // Keep own-stage Reifegrad until assessAfter overwrites it. Clearing
+        // here left a permanent gap when scoring timed out after a long draft.
+        downstreamCleared = true;
+      }
+      const improveMap = { ...(nextEd.reifegradImprove ?? {}) };
+      delete improveMap.kapitelgeruest;
+      delete improveMap.grobgeruest;
+      delete improveMap.feingeruest;
+      nextEd = withStageImprove(
+        {
+          ...nextEd,
+          kapitelGeruestStructured: payload.structured,
+          kapitelGeruestRaw: payload.kapitelGeruestRaw,
+          wissensGraph: payload.wissensGraph,
+          reifegradImprove: improveMap,
+        },
+        geruestStage,
+        null,
+      );
+      nextEd = withLeserFeedbackForStage(nextEd, geruestStage, null);
+      liveRoman = await persist(liveRoman, {
+        // Downstream Szenenplot markdown cleared with invalidate.
+        manuskriptRaw: "",
+        editorial: nextEd,
+      });
+    };
+
+    const data = await suggestKapitelGeruestFromCoAutor({
       buchTyp,
       title: roman.title,
       genre: roman.genre,
@@ -192,41 +263,137 @@ export async function draftStage(
       charaktere: roman.charaktere,
       weltSchauplaetze: roman.weltSchauplaetze,
       weltRegeln: roman.weltRegeln,
-      existingPlot: roman.manuskriptRaw ?? "",
+      existingGeruest: editorial.kapitelGeruestRaw ?? "",
       tonalitaet,
-    });
-    const guard = assertChapterStructure(
-      roman.manuskriptRaw ?? "",
-      data.szenenplot,
-      { minChapters: 2, allowTitleChange: true },
-    );
-    // First-time create: baseline may be empty — accept if candidate has chapters
-    let text = data.szenenplot;
-    if ((roman.manuskriptRaw ?? "").trim().length >= 80 && !guard.ok) {
-      throw new Error(guard.error);
-    }
-    if (guard.ok) text = guard.text;
-    const nextEd = withStageImprove(
-      {
-        ...editorial,
-        szenenplotStructured: data.structured,
-        wissensGraph: data.wissensGraph,
+      mode: outlineOnly ? "outline" : "full",
+      onProgress: options?.onProgress,
+      onPartial: async (partial) => {
+        await persistGeruestPartial(partial);
       },
-      "szenenplot",
-      null,
-    );
-    const saved = await persist(roman, {
-      manuskriptRaw: text,
-      editorial: nextEd,
     });
+
+    // Final persist (covers callers without onPartial; refreshes final graph).
+    await persistGeruestPartial({
+      structured: data.structured,
+      kapitelGeruestRaw: data.kapitelGeruestRaw,
+      wissensGraph: data.wissensGraph,
+    });
+
+    const graphNodes = data.wissensGraph?.nodes.length ?? 0;
+    const resumeNote = data.resumedOutline
+      ? ` · fortgesetzt (${data.resumedChapters.length} Kap. behalten)`
+      : "";
+    const label = outlineOnly ? "Grobgerüst" : "Feingerüst";
+    return {
+      roman: liveRoman,
+      summary: `${label} entworfen (${data.modelLabel}) · ${data.structured.chapters.length} Kap.${resumeNote} · Wissensgraph ${graphNodes} Knoten.`,
+      modelLabel: data.modelLabel,
+    };
+  }
+
+  if (
+    stage === "szenenplot" ||
+    stage === "grobplot" ||
+    stage === "feinplot"
+  ) {
+    assertGeruestReadyForSzenenplot({ editorial });
+    const geruest = editorial.kapitelGeruestStructured;
+    if (!geruest?.chapters.length) {
+      throw new Error("Feingerüst fehlt — zuerst Tab „Feingerüst“ erzeugen.");
+    }
+    const plotStage = stage === "grobplot" ? "grobplot" : "feinplot";
+    const skeletonOnly = stage === "grobplot";
+
+    let liveRoman = roman;
+    let downstreamCleared = false;
+    const baselinePlot = roman.manuskriptRaw ?? "";
+
+    const persistPlotPartial = async (payload: {
+      structured: NonNullable<
+        NonNullable<RomanKontext["editorial"]>["szenenplotStructured"]
+      >;
+      szenenplot: string;
+      wissensGraph: NonNullable<
+        NonNullable<RomanKontext["editorial"]>["wissensGraph"]
+      > | null;
+    }) => {
+      const prevEd = liveRoman.editorial ?? emptyRomanEditorial();
+      let nextEd = prevEd;
+      if (!downstreamCleared) {
+        nextEd = invalidateDownstreamEditorial(prevEd, plotStage);
+        downstreamCleared = true;
+      }
+      const improveMap = { ...(nextEd.reifegradImprove ?? {}) };
+      delete improveMap.szenenplot;
+      delete improveMap.grobplot;
+      delete improveMap.feinplot;
+      nextEd = withStageImprove(
+        {
+          ...nextEd,
+          szenenplotStructured: payload.structured,
+          wissensGraph: payload.wissensGraph,
+          reifegradImprove: improveMap,
+        },
+        plotStage,
+        null,
+      );
+      nextEd = withLeserFeedbackForStage(nextEd, plotStage, null);
+      const guard = assertChapterStructure(baselinePlot, payload.szenenplot, {
+        minChapters: 2,
+        allowTitleChange: true,
+      });
+      let text = payload.szenenplot;
+      if (baselinePlot.trim().length >= 80 && !guard.ok) {
+        // Keep previous markdown mirror if structure guard fails mid-run;
+        // structured JSON is still persisted for resume.
+        text = liveRoman.manuskriptRaw ?? payload.szenenplot;
+      } else if (guard.ok) {
+        text = guard.text;
+      }
+      liveRoman = await persist(liveRoman, {
+        manuskriptRaw: text,
+        editorial: nextEd,
+      });
+    };
+
+    const data = await suggestSzenenplotDetailFromCoAutor({
+      buchTyp,
+      title: roman.title,
+      genre: roman.genre,
+      ideeKurz,
+      grobRegeln,
+      editorial: liveRoman.editorial ?? editorial,
+      charaktere: roman.charaktere,
+      weltSchauplaetze: roman.weltSchauplaetze,
+      weltRegeln: roman.weltRegeln,
+      geruest,
+      existingPlot: baselinePlot,
+      tonalitaet,
+      mode: skeletonOnly ? "skeleton" : "full",
+      onProgress: options?.onProgress,
+      onPartial: async (partial) => {
+        await persistPlotPartial(partial);
+      },
+    });
+
+    await persistPlotPartial({
+      structured: data.structured,
+      szenenplot: data.szenenplot,
+      wissensGraph: data.wissensGraph,
+    });
+
     const sceneCount = data.structured.chapters.reduce(
       (n, c) => n + c.scenes.length,
       0,
     );
     const graphNodes = data.wissensGraph?.nodes.length ?? 0;
+    const resumeNote = data.resumedChapters.length
+      ? ` · ${data.resumedChapters.length} Kap. fortgesetzt`
+      : "";
+    const plotLabel = skeletonOnly ? "Grobplot" : "Feinplot";
     return {
-      roman: saved,
-      summary: `Kapitelgerüst entworfen (${data.modelLabel}) · ${data.structured.chapters.length} Kap. / ${sceneCount} Szenen · Wissensgraph ${graphNodes} Knoten.`,
+      roman: liveRoman,
+      summary: `${plotLabel} entworfen (${data.modelLabel}) · ${data.structured.chapters.length} Kap. / ${sceneCount} Szenen · Wissensgraph ${graphNodes} Knoten${resumeNote}.`,
       modelLabel: data.modelLabel,
     };
   }
@@ -353,13 +520,42 @@ export async function draftStage(
 
     let liveRoman = roman;
     const plot = roman.manuskriptRaw ?? "";
+    // Hard gate: broken arcs/lifecycle or weak Logik/Dramaturgie (override: outline fertig).
+    assertGeruestReadyForManuskript({ editorial });
+    const preflight = auditSzenenplotStructured(editorial.szenenplotStructured);
+    if (preflight.warnings.length) {
+      await options?.onProgress?.(
+        `Gerüst-Preflight: ${preflight.warnings.length} Hinweis(e) — ${preflight.warnings[0]?.message.slice(0, 120) ?? ""}…`,
+      );
+    }
+    // Freeze schreibPrompts before the first wave so mid-run aborts keep the stamp.
+    let editorialForMs = editorial;
+    if (
+      editorial.szenenplotStructured &&
+      editorial.szenenplotStructured.chapters.length > 0 &&
+      !hasFrozenSchreibPrompts(editorial.szenenplotStructured)
+    ) {
+      const frozen = freezeSzenenplotSchreibPrompts(
+        editorial.szenenplotStructured,
+      );
+      await options?.onProgress?.(
+        "Szenenverträge eingefroren — slim packets, Kapitel strikt nacheinander …",
+      );
+      const frozenEd = {
+        ...editorial,
+        szenenplotStructured: frozen,
+      };
+      liveRoman = await persist(liveRoman, { editorial: frozenEd });
+      editorialForMs = liveRoman.editorial ?? frozenEd;
+    }
     const data = await suggestManuskriptFromLektorUndCoAutor({
       buchTyp,
       title: roman.title,
       genre: roman.genre,
       ideeKurz,
       grobRegeln,
-      editorial,
+      tonalitaet,
+      editorial: editorialForMs,
       charaktere: roman.charaktere,
       weltSchauplaetze: roman.weltSchauplaetze,
       weltRegeln: roman.weltRegeln,
@@ -380,6 +576,7 @@ export async function draftStage(
               ...prevEd,
               manuskriptText: sealedPartial,
               storyState: meta?.storyState ?? null,
+              wissensGraph: meta?.wissensGraph ?? prevEd.wissensGraph ?? null,
               canon: null,
               reifegradImprove: improveMap,
             },
@@ -393,6 +590,7 @@ export async function draftStage(
         liveRoman = await persist(liveRoman, { editorial: nextEd });
       },
       onProgress: options?.onProgress,
+      // Continuity on: storyState + full graph grow. Lean only skips Path-B / book length pass / 2nd expand.
       leanFullBook: true,
     });
     const text = normalizeManuskriptDocument(data.manuskriptText, {
@@ -420,15 +618,29 @@ export async function draftStage(
     sealed = normalizeManuskriptDocument(guard.text, {
       requiredFromPlot: plot,
     });
+    if (sealed.length > ROMAN_MANUSKRIPT_TEXT_MAX_CHARS) {
+      throw new Error(
+        `Manuskript zu groß zum Speichern (${sealed.length.toLocaleString("de-DE")} Zeichen, max. ${ROMAN_MANUSKRIPT_TEXT_MAX_CHARS.toLocaleString("de-DE")}). Bitte Zielwortzahl senken oder Kapitel kürzen.`,
+      );
+    }
+    const prevEdFinal = liveRoman.editorial ?? emptyRomanEditorial();
     const nextEd = withStageImprove(
       withLeserFeedbackForStage(
         {
-          ...(liveRoman.editorial ?? emptyRomanEditorial()),
+          ...prevEdFinal,
           manuskriptText: sealed,
           manuskriptOriginalText: "",
           manuskriptOriginalSavedAt: null,
           canon: null,
           storyState: data.storyState ?? null,
+          wissensGraph:
+            data.wissensGraph ??
+            prevEdFinal.wissensGraph ??
+            null,
+          // Persist freeze stamp from MS start so later runs stay on slim packets.
+          ...(data.szenenplotStructured
+            ? { szenenplotStructured: data.szenenplotStructured }
+            : {}),
         },
         "manuskript",
         null,
@@ -437,6 +649,20 @@ export async function draftStage(
       null,
     );
     const saved = await persist(liveRoman, { editorial: nextEd });
+    // Guard against silent truncation on read/re-save (old 500k cap wiped Kap. 19–22).
+    const verified = await getRomanKontext(saved.id, { omitCover: true });
+    const verifiedText = verified?.editorial?.manuskriptText ?? "";
+    const missingAfterSave = missingManuskriptChapterNumbers(plot, verifiedText);
+    if (missingAfterSave.length > 0) {
+      throw new Error(
+        `Manuskript nach Speichern unvollständig (Kap. ${missingAfterSave.join(", ")} fehlen/abgeschnitten). Bitte Erzeugen erneut — fertige Kapitel werden fortgesetzt.`,
+      );
+    }
+    if (verifiedText.length < sealed.length * 0.95) {
+      throw new Error(
+        `Manuskript wurde beim Speichern gekürzt (${verifiedText.length.toLocaleString("de-DE")} von ${sealed.length.toLocaleString("de-DE")} Zeichen). Bitte Support/Limit prüfen und Erzeugen erneut.`,
+      );
+    }
     const metrics = formatManuskriptWordMetrics(data.wordMetrics);
     return {
       roman: saved,
@@ -508,7 +734,7 @@ Maximal 8 Findings; Regel-/Logik-Verstöße und kritische Logikfehler zuerst.`,
     });
     modelLabel = model.label;
   } else if (stage === "welt") {
-    const r = await critiqueWeltMitFachberater({
+    const r = await critiqueWeltMitEntwicklungslektor({
       buchTyp,
       ideeKurz,
       grobRegeln,
@@ -518,7 +744,6 @@ Maximal 8 Findings; Regel-/Logik-Verstöße und kritische Logikfehler zuerst.`,
         weltRegeln: roman.weltRegeln,
       },
       editorial,
-      roleKey: "entwicklungslektor",
     });
     raw = r.critique;
     modelLabel = r.modelLabel;
@@ -535,20 +760,49 @@ Maximal 8 Findings; Regel-/Logik-Verstöße und kritische Logikfehler zuerst.`,
     });
     raw = r.critique;
     modelLabel = r.modelLabel;
-  } else if (stage === "szenenplot") {
-    const r = await critiqueSzenenplotMitEntwicklungslektor({
+  } else if (
+    stage === "kapitelgeruest" ||
+    stage === "grobgeruest" ||
+    stage === "feingeruest"
+  ) {
+    const geruestStructured = editorial.kapitelGeruestStructured;
+    const r = await critiqueKapitelGeruestMitEntwicklungslektor({
       buchTyp,
+      title: roman.title,
+      genre: roman.genre,
       ideeKurz,
       grobRegeln,
-      expose: exposeTextFromEditorial(editorial),
+      editorial,
       charaktere: roman.charaktere,
       weltSchauplaetze: roman.weltSchauplaetze,
       weltRegeln: roman.weltRegeln,
-      szenenplot: roman.manuskriptRaw ?? "",
-      editorial,
+      kapitelGeruest: geruestStructured?.chapters.length
+        ? structuredKapitelGeruestToMarkdown(geruestStructured)
+        : (editorial.kapitelGeruestRaw ?? ""),
+      structured: geruestStructured,
+    });
+    raw = r.critique;
+    modelLabel = r.modelLabel;
+  } else if (
+    stage === "szenenplot" ||
+    stage === "grobplot" ||
+    stage === "feinplot"
+  ) {
+    const plotStructured = editorial.szenenplotStructured;
+    const r = await critiqueSzenenplotDetailMitEntwicklungslektor({
+      buchTyp,
       title: roman.title,
       genre: roman.genre,
-      tonalitaet: roman.tonalitaet ?? "",
+      ideeKurz,
+      grobRegeln,
+      editorial,
+      charaktere: roman.charaktere,
+      weltSchauplaetze: roman.weltSchauplaetze,
+      weltRegeln: roman.weltRegeln,
+      szenenplot: plotStructured?.chapters.length
+        ? structuredSzenenplotToMarkdown(plotStructured)
+        : (roman.manuskriptRaw ?? ""),
+      structured: plotStructured,
     });
     raw = r.critique;
     modelLabel = r.modelLabel;
@@ -587,7 +841,7 @@ export async function refineCharaktereStage(
   roman: RomanKontext,
 ): Promise<RomanKontext> {
   const editorial = roman.editorial ?? emptyRomanEditorial();
-  const data = await refineCharaktereWithFachberater({
+  const data = await refineCharaktere({
     buchTyp: buchTypOf(roman),
     ideeKurz: editorial.ideeKurz ?? "",
     grobRegeln: editorial.grobRegeln ?? "",

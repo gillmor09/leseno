@@ -180,11 +180,15 @@ export function CleverUnterthemenPanel({
   async function handleFillFakten(kapitelNummer: number) {
     if (!canSave || busy) return;
     setPendingFill(true);
+    setCheckProgress(
+      `Kapitel ${kapitelNummer}: Titel und Fakten werden erzeugt …`,
+    );
     const result = await cleverUnterthemenKapitelFaktenFillAction({
       romanId,
       kapitelNummer,
     });
     setPendingFill(false);
+    setCheckProgress(null);
     if (!result.success) {
       toast.error(result.error ?? "Fakten erzeugen fehlgeschlagen.");
       return;
@@ -461,15 +465,31 @@ export function CleverUnterthemenPanel({
       <RomanSceneWaitDialog
         open={pendingGenerate}
         variant="clever-unterthemen"
+        contextLabel="Clever · Unterthemen"
+        title="Unterthemen erzeugen"
+        progressLabel="Wissenssammler recherchiert und sortiert Kapitel-Unterthemen …"
       />
       <RomanSceneWaitDialog
         open={pendingFill}
         variant="clever-unterthemen"
+        contextLabel="Clever · Fakten füllen"
+        title="Kapitel-Fakten erzeugen"
+        progressLabel={checkProgress}
       />
       <RomanSceneWaitDialog
         open={pendingCheck || pendingReplace}
         variant={
           pendingReplace ? "clever-fakten-ersetzen" : "clever-faktencheck"
+        }
+        contextLabel={
+          pendingReplace
+            ? "Clever · Fakten ersetzen"
+            : "Clever · Faktencheck"
+        }
+        title={
+          pendingReplace
+            ? "Kritische Fakten ersetzen"
+            : "Fakten prüfen"
         }
         progressLabel={checkProgress}
       />

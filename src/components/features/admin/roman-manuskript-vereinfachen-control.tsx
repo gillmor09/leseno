@@ -71,9 +71,10 @@ export function RomanManuskriptVereinfachenControl({
 
       <RomanSceneWaitDialog
         open={pending}
-        variant="pipeline-generate"
-        title="Manuskript wird vereinfacht"
-        progressLabel="Sprachniveau senken — Inhalt unverändert …"
+        variant="manuskript-vereinfachen"
+        contextLabel="Manuskript · Vereinfachen"
+        title="Sprachniveau senken"
+        progressLabel="Co-Autor vereinfacht Wörter und Sätze — Inhalt unverändert …"
       />
     </>
   );

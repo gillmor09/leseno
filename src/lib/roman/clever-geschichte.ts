@@ -9,6 +9,7 @@ import { formatCleverThemaStanceBrief } from "@/lib/roman/clever-thema-stance";
 import type { CleverUnterthemaKapitel } from "@/lib/roman/editorial";
 import type { RomanEditorial } from "@/lib/roman/editorial";
 import { countWords, emptyRomanEditorial } from "@/lib/roman/editorial";
+import { ROMAN_PROSE_MAX_TOKENS } from "@/lib/roman/pipeline/quality-brief";
 import { scrubManuskriptChapterBody } from "@/lib/roman/plot-chapters";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 
@@ -189,7 +190,7 @@ NUR die fertige Abenteuer-Kurzgeschichte als Fließtext (Prosa) — sonst nichts
     systemInstruction: rolle.systemPrompt,
     userText,
     preferJson: false,
-    maxTokens: 6_000,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
     timeoutMs: 180_000,
   });
 

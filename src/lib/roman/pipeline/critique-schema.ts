@@ -22,19 +22,22 @@ export const critiquePayloadSchema = z.object({
 export type CritiqueFinding = z.infer<typeof critiqueFindingSchema>;
 export type CritiquePayload = z.infer<typeof critiquePayloadSchema>;
 
+/** Canonical + legacy stage ids accepted on patch targets. */
+const ROUTE_TARGET_STAGES = [
+  ...PIPELINE_STAGES,
+  "kapitelgeruest",
+  "szenenplot",
+] as const;
+
+/** Patch target for Verbessern / Feedback / Dimension apply (not a KI role). */
 export const routeTargetSchema = z.object({
-  stage: z.enum(PIPELINE_STAGES),
+  stage: z.enum(ROUTE_TARGET_STAGES),
   reason: z.string().min(3).max(800),
   patchBrief: z.string().min(3).max(6000),
   chapterNumbers: z.array(z.number().int().positive()).max(40).optional(),
 });
 
-export const routePayloadSchema = z.object({
-  targets: z.array(routeTargetSchema).min(1).max(2),
-});
-
 export type RouteTarget = z.infer<typeof routeTargetSchema>;
-export type RoutePayload = z.infer<typeof routePayloadSchema>;
 
 const SEVERITY_RANK: Record<CritiqueFinding["severity"], number> = {
   kritisch: 0,
@@ -147,30 +150,6 @@ export function parseCritiquePayload(
     ],
     strengths: "",
   });
-}
-
-/** Soft-parse router JSON. */
-export function parseRoutePayload(raw: string): RoutePayload {
-  const cleaned = raw
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  const slice =
-    start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
-  let obj: unknown;
-  try {
-    obj = JSON.parse(slice);
-  } catch {
-    throw new Error("Pipeline-Router lieferte ungültiges JSON.");
-  }
-  const parsed = routePayloadSchema.safeParse(obj);
-  if (!parsed.success) {
-    throw new Error("Pipeline-Router lieferte ungültige Ziele.");
-  }
-  return parsed.data;
 }
 
 export function formatCritiqueForPrompt(payload: CritiquePayload): string {

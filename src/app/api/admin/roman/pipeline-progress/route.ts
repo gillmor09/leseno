@@ -1,14 +1,14 @@
 /**
- * Poll live Manuskript „Alles erzeugen“ progress while the draft Server Action runs.
- * Reads pipeline history (DB) — not an in-memory Map (Turbopack/dev isolates
- * do not share Maps between Server Actions and Route Handlers).
+ * Poll live Erzeugen progress while a background generate job runs.
+ * Reads pipeline history (DB) — shared across Action / `after` job / Route.
  */
 
 import { NextResponse } from "next/server";
 import { isCurrentUserAdmin } from "@/lib/auth/session";
 import {
   getPipelineHistoryRun,
-  latestLiveProgressLabel,
+  latestProgressLabelForPoll,
+  latestRunErrorSummary,
 } from "@/lib/roman/pipeline/history";
 
 export const runtime = "nodejs";
@@ -36,9 +36,24 @@ export async function GET(request: Request) {
 
   try {
     const run = await getPipelineHistoryRun(romanId, runId);
+    const status = run?.status ?? null;
     return NextResponse.json({
-      progressLabel: latestLiveProgressLabel(run),
-      status: run?.status ?? null,
+      progressLabel: latestProgressLabelForPoll(run),
+      status,
+      error: status === "error" ? latestRunErrorSummary(run) : null,
+      draftSummary:
+        [...(run?.events ?? [])]
+          .reverse()
+          .find((e) => e.type === "draft" && e.summary.trim())?.summary ?? null,
+      reifeSummary:
+        [...(run?.events ?? [])]
+          .reverse()
+          .find(
+            (e) =>
+              e.type === "info" &&
+              e.roleKey === "bewerter" &&
+              e.summary.startsWith("Reifegrad:"),
+          )?.summary ?? null,
     });
   } catch (error) {
     return NextResponse.json(

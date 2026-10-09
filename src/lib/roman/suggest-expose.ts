@@ -20,6 +20,7 @@ import {
   ROMAN_CRITIQUE_MAX_TOKENS,
   ROMAN_DRAFT_MAX_TOKENS,
   ROMAN_EXCELLENCE_MANDATE,
+  ROMAN_PROSE_MAX_TOKENS,
 } from "@/lib/roman/pipeline/quality-brief";
 import {
   buildCommentedWeaveRules,
@@ -108,7 +109,9 @@ export async function suggestExposeFromCoAutor(input: {
   }
 
   const weave = hasFilledExpose(input.existingExpose);
-  const { rolle, model } = await resolveRomanKiRolle("co_autor");
+  const { rolle, model } = await resolveRomanKiRolle("co_autor", {
+    allowProseModel: false,
+  });
   const chars = formatCharaktere(input.charaktere) || "(noch keine Steckbriefe)";
   const recherche = (input.rechercheDossier ?? "").trim();
   const ton = (input.tonalitaet ?? "").trim();
@@ -267,7 +270,7 @@ Du änderst das Exposé nicht selbst.`;
 }
 
 /**
- * Weave Lektor critique + author comment into Exposé (Co-Autor).
+ * Weave critique + author comment into Exposé (Entwicklungslektor — Spec apply).
  */
 export async function weaveExposeFromLektorKritik(input: {
   buchTyp: RomanBuchTyp;
@@ -284,7 +287,7 @@ export async function weaveExposeFromLektorKritik(input: {
     throw new Error("Lektor-Kritik fehlt.");
   }
 
-  const { rolle, model } = await resolveRomanKiRolle("co_autor");
+  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
   const { comment, hasExplicitComment } = resolveAuthorWeaveComment(
     input.authorComment,
   );
@@ -328,11 +331,11 @@ ${buildWeaveSystemAddendum({
     systemInstruction: system,
     userText,
     preferJson: false,
-    maxTokens: 3500,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
   });
 
   return {
-    expose: parseExposeText(raw, "Co-Autor"),
+    expose: parseExposeText(raw, "Entwicklungslektor"),
     modelLabel: model.label,
   };
 }

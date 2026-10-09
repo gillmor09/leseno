@@ -9,7 +9,7 @@ import {
   type RomanBuchTyp,
   type RomanRechercheSource,
 } from "@/lib/roman/editorial";
-import { CLIP } from "@/lib/roman/pipeline/quality-brief";
+import { CLIP, ROMAN_PROSE_MAX_TOKENS } from "@/lib/roman/pipeline/quality-brief";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import type { RomanIdeaChatMessage } from "@/lib/roman/types";
 
@@ -209,7 +209,7 @@ ${OUTPUT_HINT}`,
     userText,
     googleSearch: true,
     thinkingLevel: model.reasoningEffort ?? "low",
-    maxTokens: 8_000,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
     timeoutMs: 180_000,
   });
 

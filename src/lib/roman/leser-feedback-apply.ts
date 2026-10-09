@@ -1,7 +1,7 @@
 /**
- * Apply stored Testleser feedback into Idee / Spec / Kapitelgerüst / Manuskript.
+ * Apply stored Testleser feedback into Idee / Spec / Manuskript.
  *
- * Manuskript + Kapitelgerüst: chapter batches from `aenderungsPrompts`.
+ * Manuskript: chapter batches from `aenderungsPrompts`.
  * Spec: same brief onto Charaktere, Welt und Exposé.
  * Idee: Co-Autor weaves into ideeKurz.
  * After weave: Reifegrad neu bewerten (wie Dimensions-Einarbeiten).
@@ -27,8 +27,11 @@ import {
   updatePipelineHistoryRun,
   type PipelineHistoryEvent,
 } from "@/lib/roman/pipeline/history";
-import { PIPELINE_STAGE_LABELS } from "@/lib/roman/pipeline/stages";
-import type { PipelineStage } from "@/lib/roman/pipeline/stages";
+import {
+  PIPELINE_STAGE_LABELS,
+  romanApplyRoleKey,
+  type PipelineStage,
+} from "@/lib/roman/pipeline/stages";
 import {
   assessStageReifegrad,
   editorialWithReifegrad,
@@ -107,21 +110,6 @@ export async function applyLeserFeedbackToStage(input: {
     });
   }
 
-  if (stage === "szenenplot") {
-    const plot = input.roman.manuskriptRaw ?? "";
-    if (!plot.trim()) {
-      throw new Error("Zuerst ein Kapitelgerüst anlegen.");
-    }
-    return applyChapterStage({
-      roman: input.roman,
-      stage: "szenenplot",
-      stageLabel,
-      feedback,
-      chapterDoc: plot,
-      briefOpts,
-    });
-  }
-
   if (stage === "idee") {
     return applyIdeeStage({
       roman: input.roman,
@@ -158,7 +146,7 @@ export async function applyLeserFeedbackToManuskript(input: {
 
 async function applyChapterStage(input: {
   roman: RomanKontext;
-  stage: "manuskript" | "szenenplot";
+  stage: "manuskript";
   stageLabel: string;
   feedback: RomanLeserFeedback;
   chapterDoc: string;
@@ -259,7 +247,7 @@ async function applyChapterStage(input: {
         historyEvent({
           type: "apply",
           stage,
-          roleKey: "co_autor",
+          roleKey: romanApplyRoleKey(stage),
           summary: applied.summary,
           detail: `Batch Kap. ${chapterNumbers.join(", ")}`,
           usage,
@@ -269,8 +257,9 @@ async function applyChapterStage(input: {
 
     const uniquePatched = [...new Set(allPatched)].sort((a, b) => a - b);
     if (uniquePatched.length === 0) {
+      const actor = "Co-Autor";
       const message =
-        "Co-Autor hat keine Kapitel geändert — Feedback wurde nicht eingearbeitet. Bitte erneut versuchen.";
+        `${actor} hat keine Kapitel geändert — Feedback wurde nicht eingearbeitet. Bitte erneut versuchen.`;
       events.push(
         historyEvent({
           type: "error",
@@ -384,7 +373,7 @@ async function applyIdeeStage(input: {
       historyEvent({
         type: "apply",
         stage: "idee",
-        roleKey: "co_autor",
+        roleKey: romanApplyRoleKey("idee"),
         summary: applied.summary,
         usage,
       }),
@@ -499,7 +488,7 @@ async function applySpecStage(input: {
         historyEvent({
           type: "apply",
           stage: applyStage,
-          roleKey: "co_autor",
+          roleKey: romanApplyRoleKey(applyStage),
           summary: applied.summary,
           usage,
         }),

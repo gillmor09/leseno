@@ -33,8 +33,16 @@ import { growWissensGraphFromChapterBodies } from "@/lib/roman/wissens-graph";
 import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
 import { formatCharaktere } from "@/lib/roman/fundament";
 import {
-  assembleManuskriptChapterContext,
+  enrichSzenenplotSpatialContinuity,
+  szenenplotNeedsSpatialEnrichment,
+} from "@/lib/roman/enrich-szenenplot-spatial";
+import {
+  hasFrozenSchreibPrompts,
+  resolveManuskriptChapterPacket,
+} from "@/lib/roman/manuskript-chapter-packet";
+import {
   CONTINUITY_PREV_TAIL_CHARS,
+  CONTINUITY_PREV_TAIL_CHARS_FROZEN,
   extractManuskriptStoryState,
 } from "@/lib/roman/manuskript-continuity";
 import { manuskriptNeedsPromptBlock } from "@/lib/roman/manuskript-contracts";
@@ -50,6 +58,7 @@ import {
   ROMAN_CRITIQUE_FOCUS_MANDATE,
   ROMAN_CRITIQUE_MANDATE,
   ROMAN_CRITIQUE_MAX_TOKENS,
+  ROMAN_PROSE_MAX_TOKENS,
 } from "@/lib/roman/pipeline/quality-brief";
 import { patchChapterBodies } from "@/lib/roman/pipeline/structure-guard";
 import {
@@ -139,6 +148,7 @@ function cleverTitleSyncOpts(editorial: RomanEditorial) {
 function previousChapterMarkdown(
   manuskript: string,
   chapterNumber: number,
+  tailChars: number = CONTINUITY_PREV_TAIL_CHARS,
 ): { markdown: string; tail: string; prev: PlotChapter | null } {
   const chapters = parsePlotChapters(manuskript);
   const prev = chapters.find((c) => c.number === chapterNumber - 1) ?? null;
@@ -146,7 +156,7 @@ function previousChapterMarkdown(
     return { markdown: "", tail: "", prev: null };
   }
   const markdown = `${formatManuskriptChapterHeading(prev)}\n\n${prev.body.trim()}`;
-  const tail = prev.body.trim().slice(-CONTINUITY_PREV_TAIL_CHARS);
+  const tail = prev.body.trim().slice(-tailChars);
   return { markdown, tail, prev };
 }
 
@@ -494,9 +504,16 @@ export async function generateManuskriptChapter(input: {
       };
     }
 
+    const contractsFrozen = hasFrozenSchreibPrompts(
+      editorial.szenenplotStructured,
+    );
+    const prevTailChars = contractsFrozen
+      ? CONTINUITY_PREV_TAIL_CHARS_FROZEN
+      : CONTINUITY_PREV_TAIL_CHARS;
     const { markdown: prevMd, tail: prevTail } = previousChapterMarkdown(
       baseline,
       input.chapterNumber,
+      prevTailChars,
     );
     const storyStateBefore = await resolveStoryStateBeforeChapter({
       existing: editorial.storyState ?? null,
@@ -510,6 +527,7 @@ export async function generateManuskriptChapter(input: {
       genre: roman.genre,
       ideeKurz: editorial.ideeKurz ?? "",
       grobRegeln: editorial.grobRegeln ?? "",
+      tonalitaet: roman.tonalitaet ?? "",
       editorial,
       charaktere: roman.charaktere,
       weltSchauplaetze: roman.weltSchauplaetze,
@@ -522,13 +540,26 @@ export async function generateManuskriptChapter(input: {
       brief.chapters.find((c) => c.number === input.chapterNumber) ??
       plotChapter;
 
-    const { buffer: continuityBuffer } = await assembleManuskriptChapterContext({
+    let liveStructured = editorial.szenenplotStructured ?? null;
+    let spatialEnriched = false;
+    if (liveStructured && szenenplotNeedsSpatialEnrichment(liveStructured)) {
+      liveStructured = await enrichSzenenplotSpatialContinuity(liveStructured);
+      spatialEnriched = true;
+    }
+
+    const autorBias = contractsFrozen
+      ? undefined
+      : formatAutorBiasFromCharaktere(roman.charaktere);
+    const { packet: chapterPacket } = await resolveManuskriptChapterPacket({
       storyState: storyStateBefore,
       chapter: plotChapterFresh,
+      allChapters: chapters,
       previousTail: prevTail,
-      sharedContextSnippet: brief.sharedContext,
-      lektorBriefSnippet: `${brief.lektorBrief}\n\n${SEAM_MANDATE}`,
+      lektorBrief: `${brief.lektorBrief}\n\n${SEAM_MANDATE}`,
       wissensGraph: editorial.wissensGraph,
+      szenenplotStructured: liveStructured,
+      autorBias,
+      slimCanonSnippet: brief.cacheablePrefix,
     });
 
     const { result: written, usage } = await runWithAiUsageCollector(() =>
@@ -545,11 +576,17 @@ export async function generateManuskriptChapter(input: {
         zielWortzahl: brief.zielWortzahl,
         zielWortzahlSzeneMax: brief.zielWortzahlSzeneMax,
         needsBlock: manuskriptNeedsPromptBlock(),
-        autorBias: formatAutorBiasFromCharaktere(roman.charaktere),
-        continuityBuffer: `${continuityBuffer}\n\n${SEAM_MANDATE}`,
-        szenenplotStructured: editorial.szenenplotStructured,
+        autorBias,
+        chapterPacket,
+        previousTailChars: prevTailChars,
+        szenenplotStructured: liveStructured,
+        wissensGraph: editorial.wissensGraph,
+        storyState: storyStateBefore,
         expandMaterial: buildManuskriptExpandMaterial({
-          editorial,
+          editorial: {
+            ...editorial,
+            szenenplotStructured: liveStructured,
+          },
           chapterNumber: input.chapterNumber,
         }),
         maxExpands: 2,
@@ -608,6 +645,9 @@ export async function generateManuskriptChapter(input: {
 
     const saved = await persistManuskript(roman, sealed, storyState, {
       wissensGraph,
+      ...(spatialEnriched && liveStructured
+        ? { szenenplotStructured: liveStructured }
+        : {}),
     });
     events.push(
       historyEvent({
@@ -1253,7 +1293,7 @@ ${baselineBody.slice(0, CLIP.chapterBody)}
 
 Schreibe jetzt die verbesserte Geschichte (nur Prosa, ohne Marker).`,
         preferJson: false,
-        maxTokens: 6_000,
+        maxTokens: ROMAN_PROSE_MAX_TOKENS,
         timeoutMs: 180_000,
       }),
     );

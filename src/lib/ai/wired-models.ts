@@ -54,6 +54,12 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     usage: "Text: Manuskript / Co-Autor (Anthropic, aktuelles Sonnet)",
   },
   {
+    modelSlug: "claude-opus-5-5",
+    provider: "claude",
+    label: "Claude Opus 5.5",
+    usage: "Text: Manuskript Verbessern / Autor (Stil-Pass, Anthropic)",
+  },
+  {
     modelSlug: "gpt-6-astra",
     provider: "openai",
     label: "GPT-6 Astra (OpenAI)",

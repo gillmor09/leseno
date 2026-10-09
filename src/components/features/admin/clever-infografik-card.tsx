@@ -156,7 +156,9 @@ export function CleverInfografikCard({
       <RomanSceneWaitDialog
         open={pending}
         variant="clever-infografik"
-        progressLabel="Prompt → Infografik …"
+        contextLabel={`Geschichte ${kapitelNummer} · Infografik`}
+        title="Infografik erzeugen"
+        progressLabel={`Geschichte ${kapitelNummer}: Prompt → Bildmodell malt Infografik …`}
       />
       <ConfirmDeleteDialog
         open={clearOpen}

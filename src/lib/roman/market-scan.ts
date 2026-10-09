@@ -14,6 +14,7 @@ import {
   type RomanMarktanalyse,
   type RomanMarktanalyseBuch,
 } from "@/lib/roman/editorial";
+import { ROMAN_PROSE_MAX_TOKENS } from "@/lib/roman/pipeline/quality-brief";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 
 const JSON_SHAPE = `{
@@ -201,7 +202,7 @@ Regeln:
     userText,
     googleSearch: true,
     thinkingLevel: model.reasoningEffort ?? "high",
-    maxTokens: 12_000,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
     timeoutMs: 240_000,
   });
 

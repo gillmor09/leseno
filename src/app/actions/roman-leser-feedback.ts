@@ -118,6 +118,83 @@ export async function romanLeserFeedbackAction(
 }
 
 /**
+ * Discard stored Leser-Feedback for a stage (no apply — clears open feedback).
+ */
+export async function romanLeserFeedbackDiscardAction(
+  input: unknown,
+): Promise<ActionResult<{ roman: RomanKontext; summary: string }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = schema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Eingabe ungültig.",
+    };
+  }
+
+  const stage = parsed.data.stage as LeserFeedbackStage;
+  if (!isLeserFeedbackStage(stage)) {
+    return { success: false, error: "Ungültige Stufe." };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) {
+      return { success: false, error: "Buch nicht gefunden." };
+    }
+
+    const editorial = roman.editorial ?? emptyRomanEditorial();
+    if (!leserFeedbackForStage(editorial, stage)) {
+      return { success: false, error: "Kein gespeichertes Leser-Feedback." };
+    }
+
+    const nextEditorial = withLeserFeedbackForStage(editorial, stage, null);
+    const saved = await upsertRomanKontext({
+      id: roman.id,
+      title: roman.title,
+      manuskriptRaw: roman.manuskriptRaw,
+      stilbibel: roman.stilbibel,
+      genre: roman.genre,
+      praemisse: roman.praemisse,
+      perspektive: roman.perspektive,
+      zeitform: roman.zeitform,
+      tonalitaet: roman.tonalitaet,
+      charaktere: roman.charaktere,
+      weltSchauplaetze: roman.weltSchauplaetze,
+      weltRegeln: roman.weltRegeln,
+      szenenRaster: roman.szenenRaster,
+      kiRegelwerk: roman.kiRegelwerk,
+      fanPersonaName: roman.fanPersonaName,
+      fanPersonaProfil: roman.fanPersonaProfil,
+      editorial: nextEditorial,
+    });
+
+    revalidateRomanAdmin(roman.id);
+
+    const stageLabel =
+      stage === "expose" ? "Spec" : stage === "idee" ? "Idee" : "Manuskript";
+
+    return {
+      success: true,
+      data: {
+        roman: { ...saved, ideenChat: roman.ideenChat },
+        summary: `Leser-Feedback (${stageLabel}) verworfen.`,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Feedback verwerfen fehlgeschlagen.",
+    };
+  }
+}
+
+/**
  * Applies stored Leser-Feedback for a stage (Idee / Spec / Kapitelgerüst / Manuskript).
  */
 export async function romanLeserFeedbackApplyAction(

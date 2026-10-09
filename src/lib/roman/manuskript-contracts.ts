@@ -111,6 +111,7 @@ export function formatManuskriptWordMetrics(input: {
   words: number;
   zielWortzahl: number | null;
   chaptersUnderMin?: number[];
+  resumedChapters?: number[];
 }): string {
   const ziel =
     input.zielWortzahl != null && input.zielWortzahl > 0
@@ -120,7 +121,14 @@ export function formatManuskriptWordMetrics(input: {
     ziel != null
       ? `Wörter ${input.words.toLocaleString("de-DE")} / Ziel ${ziel.toLocaleString("de-DE")} (${Math.round((input.words / ziel) * 100)}%)`
       : `Wörter ${input.words.toLocaleString("de-DE")}`;
+  const parts = [base];
+  const resumed = input.resumedChapters ?? [];
+  if (resumed.length > 0) {
+    parts.push(`${resumed.length} Kap. fortgesetzt`);
+  }
   const under = input.chaptersUnderMin ?? [];
-  if (under.length === 0) return base;
-  return `${base} · unter Min: Kap. ${under.join(", ")}`;
+  if (under.length > 0) {
+    parts.push(`unter Min: Kap. ${under.join(", ")}`);
+  }
+  return parts.join(" · ");
 }

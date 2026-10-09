@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Manuskript panel: prose editor + Speichern / Leeren (with confirm).
- * Clever mode: prose → Infografik → Abenteuer-Wissen (same order as export).
+ * Manuskript panel: one chapter at a time (selection above) + Speichern / Leeren.
+ * Book-wide word count stays visible. Clever: Infografik + Abenteuer-Wissen.
  */
 
 import { useMemo, useState } from "react";
@@ -35,32 +35,32 @@ export function RomanManuskriptPanel({
   zielWortzahl = null,
   mode = "roman",
   focusChapter = null,
+  /** Full book markdown — totals / Kap.-Min when editing one chapter. */
+  bookMarkdown = null,
   abenteuerWissenFakten = null,
   romanId = null,
   infografik = null,
   onInfografikComplete,
+  /** Override clear-confirm copy (e.g. Roman tab vs Manuskript draft). */
+  clearDialog = null,
 }: {
   hasSzenenplot: boolean;
+  /** Body of the focused chapter only (no heading). */
   value: string;
   onChange: (next: string) => void;
   canSave: boolean;
   disabled?: boolean;
   savePending?: boolean;
   onSave: () => void;
-  /** Persist empty Manuskript (+ related continuity/feedback), or clear focus chapter. */
+  /** Clever: clear focus chapter. Roman: clear whole Manuskript (+ export). */
   onClear?: () => void | Promise<void>;
   clearPending?: boolean;
-  /** Book target from Basics — shown next to live count. */
   zielWortzahl?: number | null;
   mode?: "roman" | "clever";
-  /** Clever: only this chapter is shown/edited in the textarea. */
+  /** Required for editing — only this chapter is shown. */
   focusChapter?: { number: number; title: string } | null;
-  /**
-   * Clever: Unterthemen facts for the focus chapter — Abenteuer-Wissen card
-   * (not part of prose; combined at export).
-   */
+  bookMarkdown?: string | null;
   abenteuerWissenFakten?: string[] | null;
-  /** Clever: for Infografik generate/clear. */
   romanId?: string | null;
   infografik?: {
     dataUrl: string | null;
@@ -72,28 +72,35 @@ export function RomanManuskriptPanel({
     roman: import("@/lib/roman/types").RomanKontext;
     unterthemen: import("@/lib/roman/clever-unterthemen").CleverUnterthemen;
   }) => void;
+  clearDialog?: {
+    title: string;
+    description: string;
+    confirmLabel: string;
+  } | null;
 }) {
   const isClever = mode === "clever";
   const [confirmOpen, setConfirmOpen] = useState(false);
   const busy = Boolean(disabled || savePending || clearPending);
   const proseValue = isClever ? stripErzaehlerWrappers(value) : value;
   const hasText = proseValue.trim().length > 0;
-  const words = countWords(proseValue);
+  const chapterWords = countWords(proseValue);
+  const bookText = (bookMarkdown ?? "").trim();
+  const totalWords = bookText ? countWords(bookText) : chapterWords;
   const ziel =
     zielWortzahl != null && zielWortzahl > 0 ? zielWortzahl : null;
   const chapterCount = useMemo(
-    () => Math.max(parsePlotChapters(value).length, 1),
-    [value],
+    () => Math.max(parsePlotChapters(bookText || value).length, 1),
+    [bookText, value],
   );
   const { min: chapterMin } = manuskriptWordsPerChapter(ziel, chapterCount);
   const underMin = useMemo(
     () =>
-      !isClever && value.trim()
-        ? manuskriptChaptersUnderMin(value, chapterMin)
+      !isClever && bookText
+        ? manuskriptChaptersUnderMin(bookText, chapterMin)
         : [],
-    [value, chapterMin, isClever],
+    [bookText, chapterMin, isClever],
   );
-  const delta = !isClever && ziel != null ? words - ziel : null;
+  const delta = !isClever && ziel != null ? totalWords - ziel : null;
   const deltaLabel =
     delta == null
       ? null
@@ -104,7 +111,7 @@ export function RomanManuskriptPanel({
           : `${formatWordCount(delta)} über Ziel`;
   const pctOfZiel =
     !isClever && ziel != null && ziel > 0
-      ? Math.round((words / ziel) * 100)
+      ? Math.round((totalWords / ziel) * 100)
       : null;
   const wissenItems = useMemo(
     () =>
@@ -121,9 +128,13 @@ export function RomanManuskriptPanel({
   }
 
   const focusLabel = focusChapter
-    ? `Geschichte ${focusChapter.number}${
-        focusChapter.title ? ` — ${focusChapter.title}` : ""
-      }`
+    ? isClever
+      ? `Geschichte ${focusChapter.number}${
+          focusChapter.title ? ` — ${focusChapter.title}` : ""
+        }`
+      : `Kapitel ${focusChapter.number}${
+          focusChapter.title ? ` — ${focusChapter.title}` : ""
+        }`
     : null;
 
   return (
@@ -131,18 +142,23 @@ export function RomanManuskriptPanel({
       <ConfirmDeleteDialog
         open={confirmOpen}
         title={
-          isClever
+          clearDialog?.title ??
+          (isClever
             ? focusLabel
               ? `„${focusLabel}“ leeren?`
               : "Geschichte leeren?"
-            : "Manuskript leeren?"
+            : "Manuskript leeren?")
         }
         description={
-          isClever
+          clearDialog?.description ??
+          (isClever
             ? "Nur der Text dieser Kurzgeschichte wird gelöscht. Andere Geschichten bleiben erhalten. Unterthemen und Fakten (Abenteuer-Wissen) bleiben."
-            : "Die gesamte Prosa wird gelöscht. Continuity-Speicher, offenes Manuskript-Feedback und offene Manuskript-Analysen werden mitgelöscht. Das Kapitelgerüst bleibt erhalten."
+            : "Die gesamte Prosa wird gelöscht. Continuity-Speicher, Manuskript-Feedback/-Analysen sowie Export-Texte (Klappentext, Einzeiler, Keywords) werden mitgelöscht. Kapitelgerüst und Szenenplot bleiben erhalten.")
         }
-        confirmLabel={isClever ? "Geschichte leeren" : "Manuskript leeren"}
+        confirmLabel={
+          clearDialog?.confirmLabel ??
+          (isClever ? "Geschichte leeren" : "Manuskript leeren")
+        }
         pending={Boolean(clearPending)}
         onCancel={() => {
           if (!clearPending) setConfirmOpen(false);
@@ -154,7 +170,13 @@ export function RomanManuskriptPanel({
         <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
           {isClever
             ? "Zuerst Unterthemen erzeugen (Tab „Unterthemen“) — jede Kurzgeschichte braucht ein Unterthema."
-            : "Für das Manuskript brauchst du zuerst ein Kapitelgerüst mit Kapiteln („## Kapitel N — Titel“ unter „Kapitelgerüst“)."}
+            : "Für das Manuskript brauchst du zuerst einen Szenenplot (Tab „Szenenplot“) mit Kapitelköpfen."}
+        </p>
+      ) : null}
+
+      {!focusChapter ? (
+        <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+          Oben ein Kapitel wählen — im Feld erscheint nur dieses Kapitel.
         </p>
       ) : null}
 
@@ -164,7 +186,9 @@ export function RomanManuskriptPanel({
             ? focusLabel
               ? `Prosa · ${focusLabel}`
               : "Prosa · Kurzgeschichte"
-            : "Manuskript · Prosa"}
+            : focusLabel
+              ? `Prosa · ${focusLabel}`
+              : "Prosa · Kapitel"}
         </span>
         <textarea
           value={proseValue}
@@ -173,17 +197,29 @@ export function RomanManuskriptPanel({
               isClever ? stripErzaehlerWrappers(e.target.value) : e.target.value,
             )
           }
-          disabled={!canSave || busy || (isClever && !focusChapter)}
+          disabled={!canSave || busy || !focusChapter}
           rows={22}
           className={textareaClass}
           placeholder={
             isClever
               ? "Hier steht nur die Abenteuer-Prosa …\n\nSpannendes Abenteuer mit erlebten Fakten — ohne Faktliste im Text."
-              : "Kapitel 1 — Kurztitel\n\nHier entsteht die Kapitelprosa …\n\n\n\nKapitel 2 — Kurztitel\n\n…"
+              : "Nur dieses Kapitel — Fließtext ohne „Kapitel N — …“-Überschrift …"
           }
         />
         <p className="mt-1.5 text-xs font-semibold text-zinc-500">
-          {formatWordCount(words)} Wörter
+          {focusChapter ? (
+            <>
+              Kapitel {formatWordCount(chapterWords)} Wörter
+              {!isClever ? (
+                <>
+                  {" "}
+                  · Buch gesamt {formatWordCount(totalWords)}
+                </>
+              ) : null}
+            </>
+          ) : (
+            <>{formatWordCount(chapterWords)} Wörter</>
+          )}
           {isClever ? (
             <span className="text-zinc-400"> · nur Prosa im Feld</span>
           ) : null}
@@ -261,7 +297,7 @@ export function RomanManuskriptPanel({
       <div className="flex flex-wrap items-center gap-3 border-t border-zinc-100 pt-4">
         <button
           type="button"
-          disabled={!canSave || busy}
+          disabled={!canSave || busy || !focusChapter}
           onClick={onSave}
           className={cn(
             "rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50",
@@ -271,12 +307,16 @@ export function RomanManuskriptPanel({
             ? "Speichern …"
             : isClever
               ? "Geschichte speichern"
-              : "Manuskript speichern"}
+              : "Kapitel speichern"}
         </button>
         {onClear ? (
           <button
             type="button"
-            disabled={!canSave || busy || !hasText}
+            disabled={
+              !canSave ||
+              busy ||
+              (isClever ? !hasText : !bookText && !hasText)
+            }
             onClick={() => setConfirmOpen(true)}
             className="inline-flex size-10 items-center justify-center rounded-full text-rose-800 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-50"
             title={isClever ? "Geschichte leeren" : "Manuskript leeren"}

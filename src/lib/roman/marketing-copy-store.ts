@@ -8,8 +8,17 @@ import {
   type RomanEditorial,
 } from "@/lib/roman/editorial";
 import {
+  emptyBuchruecken,
+  emptyVorsatz,
+  parseBuchrueckenJson,
+  parseVorsatzJson,
+  type RomanBuchruecken,
+  type RomanVorsatz,
+} from "@/lib/roman/front-matter";
+import {
   getRomanKontext,
   setRomanEditorial,
+  setRomanFrontMatter,
 } from "@/lib/roman/repository";
 import type { RomanCharakter } from "@/lib/roman/types";
 
@@ -19,9 +28,12 @@ export type RomanMarketingSourceRow = {
   genre: string;
   praemisse: string;
   tonalitaet: string;
+  autorName: string;
   charaktere: RomanCharakter[];
   manuskriptRaw: string;
   editorial: RomanEditorial;
+  buchruecken: RomanBuchruecken;
+  vorsatz: RomanVorsatz;
 };
 
 /**
@@ -38,9 +50,16 @@ export async function getRomanMarketingSource(
     genre: roman.genre,
     praemisse: roman.praemisse,
     tonalitaet: roman.tonalitaet,
+    autorName: roman.autorName ?? "",
     charaktere: roman.charaktere,
     manuskriptRaw: roman.manuskriptRaw,
     editorial: roman.editorial ?? emptyRomanEditorial(),
+    buchruecken: roman.buchruecken
+      ? parseBuchrueckenJson(roman.buchruecken)
+      : emptyBuchruecken(),
+    vorsatz: roman.vorsatz
+      ? parseVorsatzJson(roman.vorsatz)
+      : emptyVorsatz(),
   };
 }
 
@@ -66,4 +85,21 @@ export async function patchRomanMarketingCopy(input: {
       .slice(0, 7),
   };
   await setRomanEditorial(roman.id, editorial);
+}
+
+/**
+ * Persist Titelseite / Copyright / Motto (and spine) for export.
+ */
+export async function patchRomanVorsatzCopy(input: {
+  id: string;
+  autorName: string;
+  buchruecken: RomanBuchruecken;
+  vorsatz: RomanVorsatz;
+}): Promise<void> {
+  await setRomanFrontMatter({
+    id: input.id,
+    autorName: input.autorName.slice(0, 200),
+    buchruecken: input.buchruecken,
+    vorsatz: input.vorsatz,
+  });
 }

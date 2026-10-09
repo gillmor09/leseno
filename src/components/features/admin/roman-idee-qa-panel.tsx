@@ -146,7 +146,13 @@ export function RomanIdeeQaPanel({
 
   return (
     <div className="space-y-5">
-      <RomanSceneWaitDialog open={pending} variant="idee" />
+      <RomanSceneWaitDialog
+        open={pending}
+        variant="idee"
+        contextLabel="Idee · Dialogrunde"
+        title="Idee weiterentwickeln"
+        progressLabel="Schreib-Coach und Ideen-Redakteur arbeiten an dieser Runde …"
+      />
 
       <p className="text-sm font-semibold text-zinc-600">
         Offene Frage vom Schreib-Coach beantworten — tippen oder per Mikrofon

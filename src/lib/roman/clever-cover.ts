@@ -133,8 +133,9 @@ function defaultCleverTitleDesign(topicTitle: string): CoverTitleDesign {
     size: "hero",
     tone: "auto",
     scrim: "none",
+    fontFamily: "friendly",
     publisherNote:
-      "Clever fallback: Nunito title upper-third center; series via badge PNG",
+      "Clever fallback: friendly display title upper-third; series via badge PNG",
   };
 }
 
@@ -191,6 +192,7 @@ Propose the upper-third centered title hierarchy now.`,
       size: "hero",
       tone: asTone(parsed.tone),
       scrim: asScrim(parsed.scrim),
+      fontFamily: "friendly",
       publisherNote: String(parsed.publisherNote ?? "")
         .trim()
         .slice(0, 240),
@@ -221,7 +223,7 @@ function buildCleverFluxPrompt(
       "ABSOLUTELY NO logos, badges, emblems, shields, banners, stickers, seals, crests, brand marks, publisher marks, or fake UI chrome anywhere.",
       "Do NOT paint yellow ribbons, blue-outlined badges, bird/phoenix logos, or any graphic that looks like a brand sticker.",
       "CRITICAL: do NOT paint any header bar, title band, dark strip, gradient slab, panel, frame, or reserved empty rectangle in the upper third — continuous scene only (title/logos are composited later in code).",
-      "Portrait full-bleed eBook cover 1200×1920 (5:8), single cinematic still, no collage.",
+      "Portrait full-bleed cover 1600×2560 (5:8, print @ 300 ppi), single cinematic still, no collage.",
       FLUX_NO_TEXT_BLOCK,
     ],
   });

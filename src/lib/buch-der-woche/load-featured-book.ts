@@ -91,6 +91,11 @@ async function bookFromEntry(
       title: roman.title,
       chapters,
       vorsatz: roman.vorsatz,
+      typography: {
+        zielAlterMin: roman.editorial.zielAlterMin,
+        zielAlterMax: roman.editorial.zielAlterMax,
+        buchTyp: roman.editorial.buchTyp,
+      },
     }),
   );
 
