@@ -12,6 +12,7 @@ import {
   mapAiFetchError,
 } from "@/lib/ai/fetch-timeout";
 import {
+  isClaudeHaiku55Slug,
   isClaudeOpus55Slug,
   isClaudeSonnet55Slug,
 } from "@/lib/ai/reasoning-effort";
@@ -46,7 +47,7 @@ export type ClaudeGenerateInput = {
   /** Optional per-call wall-clock budget (ms). */
   timeoutMs?: number;
   /**
-   * Claude Sonnet 5.5 `output_config.effort` (low|medium|high).
+   * Claude 5.5 family `output_config.effort` (low|medium|high).
    * Ignored on older Claude models that use `thinking: disabled`.
    */
   reasoningEffort?: string | null;
@@ -94,6 +95,7 @@ export function buildClaudeMessagesParams(
   const systemInstruction = input.systemInstruction?.trim() ?? "";
   const sonnet55 = isClaudeSonnet55Slug(input.modelSlug);
   const opus55 = isClaudeOpus55Slug(input.modelSlug);
+  const haiku55 = isClaudeHaiku55Slug(input.modelSlug);
 
   const maxTokens = Math.max(256, Math.round(input.maxTokens ?? 8192));
   const body: Record<string, unknown> = {
@@ -111,7 +113,8 @@ export function buildClaudeMessagesParams(
   const allowedEffort = new Set(["low", "medium", "high"]);
   const effort = allowedEffort.has(effortRaw) ? effortRaw : "medium";
 
-  if (opus55) {
+  if (opus55 || haiku55) {
+    // Opus / Haiku 5.5: adaptive thinking + effort.
     body.thinking = { type: "adaptive" };
     body.output_config = { effort };
   } else if (sonnet55) {
@@ -212,7 +215,7 @@ function networkErrorMessage(error: unknown): string {
 /**
  * Calls Anthropic `/v1/messages`.
  * Sonnet 5: `thinking: disabled`. Sonnet 5.5: `between_tools` + effort.
- * Opus 5.5: `thinking: adaptive` + `output_config.effort` (required shape).
+ * Opus / Haiku 5.5: `thinking: adaptive` + `output_config.effort`.
  */
 export async function generateWithClaude(
   input: ClaudeGenerateInput,

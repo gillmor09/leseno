@@ -1,10 +1,14 @@
 /**
  * Poll live Erzeugen progress while a background generate job runs.
  * Reads pipeline history (DB) — shared across Action / `after` job / Route.
+ *
+ * Also runs the stale-run watchdog: hanging `running` + old live-progress
+ * → auto continue hop (Manuskript resume).
  */
 
 import { NextResponse } from "next/server";
 import { isCurrentUserAdmin } from "@/lib/auth/session";
+import { maybeRecoverStaleGenerateRun } from "@/lib/roman/pipeline/generate-stale-watchdog";
 import {
   getPipelineHistoryRun,
   latestProgressLabelForPoll,
@@ -35,10 +39,28 @@ export async function GET(request: Request) {
   }
 
   try {
-    const run = await getPipelineHistoryRun(romanId, runId);
+    let run = await getPipelineHistoryRun(romanId, runId);
+    let watchdogNote: string | null = null;
+
+    if (run?.status === "running") {
+      try {
+        const recovered = await maybeRecoverStaleGenerateRun({
+          run,
+          requestUrl: request.url,
+        });
+        if (recovered.acted) {
+          watchdogNote = recovered.progressLabel ?? recovered.reason ?? null;
+          run = await getPipelineHistoryRun(romanId, runId);
+        }
+      } catch (watchErr) {
+        console.error("[pipeline-progress] stale watchdog:", watchErr);
+      }
+    }
+
     const status = run?.status ?? null;
     return NextResponse.json({
-      progressLabel: latestProgressLabelForPoll(run),
+      progressLabel:
+        watchdogNote?.trim() || latestProgressLabelForPoll(run),
       status,
       error: status === "error" ? latestRunErrorSummary(run) : null,
       draftSummary:
@@ -54,6 +76,7 @@ export async function GET(request: Request) {
               e.roleKey === "bewerter" &&
               e.summary.startsWith("Reifegrad:"),
           )?.summary ?? null,
+      watchdog: watchdogNote ? true : undefined,
     });
   } catch (error) {
     return NextResponse.json(

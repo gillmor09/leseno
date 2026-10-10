@@ -2,18 +2,24 @@
  * Kick off Erzeugen in the background (`after`) and return 202 immediately.
  * Client keeps the wait dialog open and polls `pipeline-progress` until the
  * history run is `ok` or `error`.
+ *
+ * Manuskript chunk hops: when the worker returns `continue`, this route
+ * self-kicks a new request (fresh maxDuration) via internal job header.
+ * Stale zombies are recovered from `pipeline-progress` (watchdog).
  */
 
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { isCurrentUserAdmin } from "@/lib/auth/session";
+import { isInternalJobRequest } from "@/lib/roman/pipeline/generate-budget";
+import { kickGenerateJobHttp } from "@/lib/roman/pipeline/generate-job-kick";
 import { runRomanGenerateJob } from "@/lib/roman/pipeline/generate-job";
 import { PIPELINE_STAGES } from "@/lib/roman/pipeline/stages";
 
 export const runtime = "nodejs";
 /**
- * Wall-clock for the background job (Gerüst/Manuskript drafts can run long,
- * then Reifegrad still needs headroom — keep aligned with the client wait).
+ * Wall-clock for one worker hop (Gerüst/Manuskript drafts can run long).
+ * Chunk continue self-kicks a new request before this budget is exhausted.
  */
 export const maxDuration = 3600;
 
@@ -29,7 +35,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request) {
-  if (!(await isCurrentUserAdmin())) {
+  const internal = isInternalJobRequest(request);
+  if (!internal && !(await isCurrentUserAdmin())) {
     return NextResponse.json(
       { error: "Dazu brauchst du Admin-Rechte." },
       { status: 403 },
@@ -52,19 +59,37 @@ export async function POST(request: Request) {
   }
 
   const input = parsed.data;
+  const requestUrl = request.url;
 
-  after(() =>
-    runRomanGenerateJob({
-      romanId: input.romanId,
-      runId: input.runId,
-      stage: input.stage,
-      generateMode: input.generateMode,
-      showAssess: input.showAssess,
-    }),
-  );
+  after(async () => {
+    try {
+      const result = await runRomanGenerateJob({
+        romanId: input.romanId,
+        runId: input.runId,
+        stage: input.stage,
+        generateMode: input.generateMode,
+        showAssess: input.showAssess,
+      });
+      if (result.outcome === "continue") {
+        await kickGenerateJobHttp({
+          requestUrl,
+          delayMs: 1_500,
+          body: {
+            romanId: input.romanId,
+            runId: input.runId,
+            stage: input.stage,
+            generateMode: input.generateMode,
+            showAssess: input.showAssess,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("[pipeline-generate-job] Worker crashed:", error);
+    }
+  });
 
   return NextResponse.json(
-    { accepted: true, runId: input.runId },
+    { accepted: true, runId: input.runId, continued: internal },
     { status: 202 },
   );
 }

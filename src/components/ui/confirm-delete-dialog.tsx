@@ -84,7 +84,7 @@ export function ConfirmDeleteDialog({
         </div>
         <p
           id="confirm-delete-desc"
-          className="mt-3 text-sm leading-relaxed text-zinc-600"
+          className="mt-3 max-h-[50vh] overflow-y-auto whitespace-pre-line text-sm leading-relaxed text-zinc-600"
         >
           {description}
         </p>

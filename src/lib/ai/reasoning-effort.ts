@@ -2,7 +2,8 @@
  * Reasoning depth options per wired model family.
  * OpenAI: `reasoning_effort`. Gemini 3.x: `thinking_level`.
  * Claude Sonnet 5.5: `output_config.effort` (+ `thinking: between_tools`).
- * Older Claude / IONOS: not applicable.
+ * Claude Haiku / Opus 5.5: adaptive thinking + `output_config.effort`.
+ * Older Claude / IONOS Llama: not applicable.
  */
 
 import { findWiredAiEndpoint } from "@/lib/ai/wired-models";
@@ -54,9 +55,26 @@ export function isClaudeOpus55Slug(modelSlug: string): boolean {
   );
 }
 
-/** Sonnet 5.5 or Opus 5.5 — both take `output_config.effort`. */
+/**
+ * Claude Haiku 5.5: adaptive thinking + `output_config.effort`
+ * (default medium; high-volume Flash peer).
+ */
+export function isClaudeHaiku55Slug(modelSlug: string): boolean {
+  const slug = modelSlug.trim().toLowerCase();
+  return (
+    slug === "claude-haiku-5-5" ||
+    slug.startsWith("claude-haiku-5-5-") ||
+    slug.includes("haiku-5-5")
+  );
+}
+
+/** Sonnet / Opus / Haiku 5.5 — take `output_config.effort`. */
 export function isClaude55EffortSlug(modelSlug: string): boolean {
-  return isClaudeSonnet55Slug(modelSlug) || isClaudeOpus55Slug(modelSlug);
+  return (
+    isClaudeSonnet55Slug(modelSlug) ||
+    isClaudeOpus55Slug(modelSlug) ||
+    isClaudeHaiku55Slug(modelSlug)
+  );
 }
 
 /**
@@ -85,11 +103,11 @@ function geminiThinkingOptions(slug: string): ReasoningEffortOption[] {
   return levels;
 }
 
-/** Sonnet 5.5: low|medium|high with `between_tools` (xhigh/max need adaptive). */
-function claudeSonnet55EffortOptions(): ReasoningEffortOption[] {
+/** Claude 5.5 family: low|medium|high via `output_config.effort`. */
+function claude55EffortOptions(): ReasoningEffortOption[] {
   return [
-    { value: "low", label: "low — schnell (kein Upfront-Thinking)" },
-    { value: "medium", label: "medium — ausgewogen (Default Prosa)" },
+    { value: "low", label: "low — schnell" },
+    { value: "medium", label: "medium — ausgewogen (Default)" },
     { value: "high", label: "high — gründlicher (langsamer/teurer)" },
   ];
 }
@@ -110,7 +128,7 @@ export function reasoningEffortOptionsForModel(
   }
 
   if (isClaude55EffortSlug(slug)) {
-    return claudeSonnet55EffortOptions();
+    return claude55EffortOptions();
   }
 
   if (!isOpenAiReasoningSlug(slug, provider)) {
@@ -150,8 +168,14 @@ export function reasoningEffortUiLabel(modelSlug: string): string {
   if (isGeminiTextSlug(slug, provider)) {
     return "Thinking-Level (Gemini)";
   }
+  if (isClaudeHaiku55Slug(slug)) {
+    return "Effort (Claude Haiku 5.5)";
+  }
   if (isClaudeSonnet55Slug(slug)) {
     return "Effort (Claude Sonnet 5.5)";
+  }
+  if (isClaudeOpus55Slug(slug)) {
+    return "Effort (Claude Opus 5.5)";
   }
   if (isOpenAiReasoningSlug(slug, provider)) {
     return "Reasoning-Effort (OpenAI)";
@@ -167,7 +191,7 @@ export function defaultReasoningEffortForModel(modelSlug: string): string | null
   const wired = findWiredAiEndpoint(modelSlug);
   const provider = (wired?.provider ?? "").trim().toLowerCase();
 
-  if (isClaudeSonnet55Slug(slug)) {
+  if (isClaude55EffortSlug(slug)) {
     return "medium";
   }
 

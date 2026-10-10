@@ -126,6 +126,26 @@ export type RomanEditorialChecklist = {
   readyToPublish: boolean;
 };
 
+/** One finding from Manuskript freigabe audit (Seam / Emotion). */
+export type ManuskriptFreigabeFinding = {
+  source: "seam" | "emotion";
+  kind: string;
+  chapterNumbers: number[];
+  summary: string;
+};
+
+/**
+ * Result of the cheap pre-Feinschliff audit (Assist, not Opus).
+ * `overrideAt` = user freigegeben despite findings.
+ */
+export type ManuskriptFreigabeState = {
+  checkedAt: string;
+  /** Fingerprint of manuskriptText at check time — stale if text changes. */
+  textFingerprint: string;
+  findings: ManuskriptFreigabeFinding[];
+  overrideAt: string | null;
+};
+
 /** Manual „Fertig“ flags per Buch-Pipeline-Tab (UI tab ids). */
 export type RomanPipelineFertig = Partial<
   Record<
@@ -547,6 +567,16 @@ export type RomanEditorial = {
    */
   romanText: string;
   /**
+   * Roman chapters marked fertig after Autor Verbessern accepted them
+   * (Freeze-QA ok). Keys = chapter numbers as strings. Resume skips these.
+   */
+  romanKapitelFertig: Record<string, true> | null;
+  /**
+   * Cheap Seam/Payoff + Emotion audit from Manuskript „fertig“.
+   * Roman Verbessern stays blocked until clean (or overrideAt).
+   */
+  manuskriptFreigabe: ManuskriptFreigabeState | null;
+  /**
    * Amazon / Klappentext: back-cover style product description (Export tab).
    */
   klappentext: string;
@@ -771,6 +801,8 @@ export function emptyRomanEditorial(): RomanEditorial {
     manuskriptOriginalText: "",
     manuskriptOriginalSavedAt: null,
     romanText: "",
+    romanKapitelFertig: null,
+    manuskriptFreigabe: null,
     klappentext: "",
     einzeiler: "",
     amazonKeywords: [],
@@ -1889,6 +1921,13 @@ function parseCleverGeschichteImproveCountField(
 function parseCleverGeschichteOkField(
   raw: unknown,
 ): Record<string, true> | null {
+  return parseChapterNumberTrueMap(raw);
+}
+
+/** Chapter-number → true map (Clever OK / Roman Kapitel fertig). */
+function parseChapterNumberTrueMap(
+  raw: unknown,
+): Record<string, true> | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const row = raw as Record<string, unknown>;
   const out: Record<string, true> = {};
@@ -1900,6 +1939,115 @@ function parseCleverGeschichteOkField(
     }
   }
   return Object.keys(out).length > 0 ? out : null;
+}
+
+/** True when Autor Verbessern marked this Roman chapter fertig. */
+export function isRomanKapitelFertig(
+  editorial: RomanEditorial | null | undefined,
+  chapterNumber: number,
+): boolean {
+  if (!Number.isFinite(chapterNumber) || chapterNumber < 1) return false;
+  return Boolean(editorial?.romanKapitelFertig?.[String(Math.floor(chapterNumber))]);
+}
+
+/** Mark Roman chapters fertig (merge; keeps existing flags). */
+export function withRomanKapitelFertig(
+  editorial: RomanEditorial,
+  chapterNumbers: number[],
+): RomanEditorial {
+  const next: Record<string, true> = {
+    ...(editorial.romanKapitelFertig ?? {}),
+  };
+  for (const n of chapterNumbers) {
+    if (!Number.isFinite(n) || n < 1) continue;
+    next[String(Math.floor(n))] = true;
+  }
+  return {
+    ...editorial,
+    romanKapitelFertig: Object.keys(next).length > 0 ? next : null,
+  };
+}
+
+/** Clear fertig for one Roman chapter (e.g. after restore from Manuskript). */
+export function withoutRomanKapitelFertig(
+  editorial: RomanEditorial,
+  chapterNumber: number,
+): RomanEditorial {
+  if (!Number.isFinite(chapterNumber) || chapterNumber < 1) return editorial;
+  const key = String(Math.floor(chapterNumber));
+  const prev = editorial.romanKapitelFertig;
+  if (!prev?.[key]) return editorial;
+  const next = { ...prev };
+  delete next[key];
+  return {
+    ...editorial,
+    romanKapitelFertig: Object.keys(next).length > 0 ? next : null,
+  };
+}
+
+/** Stable-ish fingerprint so freigabe invalidates when Manuskript prose changes. */
+export function manuskriptFreigabeFingerprint(text: string): string {
+  const t = text.replace(/\r\n/g, "\n").trim();
+  let h = 2166136261;
+  const step = Math.max(1, Math.floor(t.length / 400));
+  for (let i = 0; i < t.length; i += step) {
+    h ^= t.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h ^= t.length;
+  return `${t.length}:${(h >>> 0).toString(16)}`;
+}
+
+/** True when freigabe audit is fresh and clean (or user overrode findings). */
+export function isManuskriptFreigabeReadyForRoman(
+  editorial: RomanEditorial | null | undefined,
+): boolean {
+  const state = editorial?.manuskriptFreigabe;
+  if (!state?.checkedAt) return false;
+  const fp = manuskriptFreigabeFingerprint(editorial?.manuskriptText ?? "");
+  if (state.textFingerprint !== fp) return false;
+  if (state.findings.length === 0) return true;
+  return Boolean(state.overrideAt);
+}
+
+export function withManuskriptFreigabe(
+  editorial: RomanEditorial,
+  state: ManuskriptFreigabeState | null,
+): RomanEditorial {
+  return { ...editorial, manuskriptFreigabe: state };
+}
+
+function parseManuskriptFreigabe(raw: unknown): ManuskriptFreigabeState | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const checkedAt = String(r.checkedAt ?? "").trim();
+  const textFingerprint = String(r.textFingerprint ?? "").trim();
+  if (!checkedAt || !textFingerprint) return null;
+  const findingsRaw = Array.isArray(r.findings) ? r.findings : [];
+  const findings: ManuskriptFreigabeFinding[] = [];
+  for (const item of findingsRaw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const source = row.source === "emotion" ? "emotion" : "seam";
+    const kind = String(row.kind ?? "").trim() || "hinweis";
+    const summary = String(row.summary ?? "").trim();
+    const nums = Array.isArray(row.chapterNumbers)
+      ? row.chapterNumbers
+          .map((n) => Number(n))
+          .filter((n) => Number.isFinite(n) && n >= 1)
+          .map((n) => Math.floor(n))
+      : [];
+    if (!summary || nums.length < 1) continue;
+    findings.push({
+      source,
+      kind,
+      chapterNumbers: [...new Set(nums)].slice(0, 6),
+      summary: summary.slice(0, 280),
+    });
+    if (findings.length >= 12) break;
+  }
+  const overrideAt = String(r.overrideAt ?? "").trim() || null;
+  return { checkedAt, textFingerprint, findings, overrideAt };
 }
 
 function parseGateChat(raw: unknown): RomanGateChatMessage[] {
@@ -3356,6 +3504,15 @@ const FACT_CONTRACT_ATTR_KEYS = [
   "model",
   "farbe",
   "color",
+  "abstand_cm",
+  "hoehe_cm",
+  "tiefe_cm",
+  "breite_cm",
+  "laenge_cm",
+  "mass_cm",
+  "clearance_cm",
+  "mass_label",
+  "mass_kontext",
   "hausnummer",
   "strasse",
   "adresse",
@@ -3488,7 +3645,7 @@ export function formatFactContractsForChapter(
       n.sinceChapter === 0
     ) {
       frozen.push(
-        `${n.label}${summaryBit}${canonBit} — FROZEN: Kennzeichen/Besitz/Zustand nicht still wechseln`,
+        `${n.label}${summaryBit}${canonBit} — FROZEN: Kennzeichen/Besitz/Zustand/Maße nicht still wechseln`,
       );
     }
   }
@@ -3507,15 +3664,15 @@ export function formatFactContractsForChapter(
   const invHints = (graph.hardInvariants ?? [])
     .filter((h) => h.trim().length >= 12)
     .filter((h) =>
-      /kennzeichen|nummernschild|auto|fahrzeug|besitz|vertrag|prop|farbe|hausnummer|uhrzeit|datum|adresse|name|nicht\s+ändern|muss|gilt/i.test(
+      /MASS:|abstand_cm|hoehe_cm|mass_cm|zentimeter|\bcm\b|kennzeichen|nummernschild|auto|fahrzeug|besitz|vertrag|prop|farbe|hausnummer|uhrzeit|datum|adresse|name|nicht\s+ändern|muss|gilt/i.test(
         h,
       ),
     )
-    .slice(0, 8);
+    .slice(0, 12);
 
   const lines: string[] = [
     "## Fakten-Verträge (verbindlich — Canon-Attrs)",
-    "GESETZ: FROZEN unverändert lassen; Deltas nur wo „HIER“ steht; Geschlossenes nicht wiederbeleben. Keine stillen Kennzeichen-/Besitz-/Zustandswechsel.",
+    "GESETZ: FROZEN unverändert lassen; Deltas nur wo „HIER“ steht; Geschlossenes nicht wiederbeleben. Keine stillen Kennzeichen-/Besitz-/Zustands-/Maß-Wechsel (cm/mm).",
   ];
   if (deltas.length) {
     lines.push("### Dieses Kapitel (MUSS — erlaubt / Pflicht)");
@@ -3936,6 +4093,8 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
     romanText: String(row.romanText ?? "")
       .trim()
       .slice(0, ROMAN_MANUSKRIPT_TEXT_MAX_CHARS),
+    romanKapitelFertig: parseChapterNumberTrueMap(row.romanKapitelFertig),
+    manuskriptFreigabe: parseManuskriptFreigabe(row.manuskriptFreigabe),
     klappentext: String(row.klappentext ?? "").trim().slice(0, 4_000),
     einzeiler: String(row.einzeiler ?? "").trim().slice(0, 120),
     amazonKeywords: parseAmazonKeywordsField(row.amazonKeywords),

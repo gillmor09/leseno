@@ -733,7 +733,7 @@ export function RomanReifegradCard({
       {!value ? (
         <p className="mt-3 text-sm font-semibold text-zinc-600">
           {isRomanAssess
-            ? "Noch nicht bewertet — „Reifegrad messen“ oder nach Verbessern automatisch. Dann Stil/Lesefluss analysieren und content-frozen einarbeiten."
+            ? "Noch nicht bewertet — 1:1 aus Manuskript übernimmt dessen Score; nach Verbessern neu. Stil/Lesefluss content-frozen einarbeiten (Inhalt bleibt im Manuskript)."
             : stage === "kapitelgeruest"
               ? "Noch nicht bewertet — erscheint nach „Erzeugen“. Danach Gesamt oder Dimensionen: Analyse prüft Arcs/Lifecycle, Einarbeiten patcht die Gerüst-Struktur."
               : stage === "szenenplot"

@@ -19,6 +19,11 @@ import {
   type PipelineHistoryEvent,
   type PipelineHistoryTrigger,
 } from "@/lib/roman/pipeline/history";
+import {
+  GENERATE_CONTINUE_DETAIL,
+  isGenerateChunkContinueError,
+  type GenerateChunkBudget,
+} from "@/lib/roman/pipeline/generate-budget";
 import { critiqueStage, draftStage } from "@/lib/roman/pipeline/producers";
 import {
   PIPELINE_STAGE_LABELS,
@@ -59,7 +64,8 @@ export type PipelineStepResult = {
   events: PipelineHistoryEvent[];
   critique?: CritiquePayload;
   critiqueText?: string;
-  status: "running" | "ok" | "error";
+  /** `continue` = chunk budget / mid-book abort — keep run running for next hop. */
+  status: "running" | "ok" | "error" | "continue";
   error?: string;
   /** German label for the wait dialog (what just finished / next hint). */
   progressLabel: string;
@@ -387,6 +393,8 @@ export async function pipelineStepDraft(input: {
    * never starts (timeout / after()-gap).
    */
   assessAfter?: boolean;
+  /** Soft wall-clock budget for Manuskript chunk hops. */
+  chunkBudget?: GenerateChunkBudget;
 }): Promise<PipelineStepResult> {
   const events = [...input.events];
   const LIVE_PROGRESS = "live-progress";
@@ -453,6 +461,8 @@ export async function pipelineStepDraft(input: {
           input.stage === "szenenplot"
             ? (label) => reportProgress(label)
             : undefined,
+        chunkBudget:
+          input.stage === "manuskript" ? input.chunkBudget : undefined,
       }),
     );
     roman = result.roman;
@@ -494,11 +504,40 @@ export async function pipelineStepDraft(input: {
       progressLabel: `Reifegrad: ${PIPELINE_STAGE_LABELS[input.stage]} …`,
     };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Entwurf fehlgeschlagen.";
     const cleaned = events.filter((e) => e.detail !== LIVE_PROGRESS);
     events.length = 0;
     events.push(...cleaned);
+
+    if (isGenerateChunkContinueError(error)) {
+      const message =
+        error.message ||
+        "Zeitbudget erreicht — Checkpoint, automatische Fortsetzung …";
+      events.push(
+        historyEvent({
+          type: "info",
+          stage: input.stage,
+          summary: message,
+          detail: GENERATE_CONTINUE_DETAIL,
+        }),
+      );
+      await appendEvents({ runId: input.runId, events, status: "running" });
+      let roman: RomanKontext;
+      try {
+        roman = await reload(input.romanId);
+      } catch {
+        throw error instanceof Error ? error : new Error(message);
+      }
+      return {
+        roman,
+        runId: input.runId,
+        events,
+        status: "continue",
+        progressLabel: message,
+      };
+    }
+
+    const message =
+      error instanceof Error ? error.message : "Entwurf fehlgeschlagen.";
     events.push(
       historyEvent({
         type: "error",

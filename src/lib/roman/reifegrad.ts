@@ -661,10 +661,18 @@ function parseScoresFromModel(
   );
 }
 
+/** Normalize prose for 1:1 Manuskript↔Roman compare (line endings / trim). */
+function normalizeProseForCompare(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+}
+
 /**
  * Bewerter scores the stage artifact on four maturity dimensions (Logik + craft).
  * Sends the full stage document (soft-cap only as emergency). Uses the lowest
  * valid reasoning effort so structured JSON is not starved by thinking tokens.
+ *
+ * Product: Manuskript = content-fertig; Roman = Prosa-Oberfläche (Stil-Pass).
+ * Identical Manuskript→Roman copy inherits the Manuskript score (no second bar).
  */
 export async function assessStageReifegrad(input: {
   roman: RomanKontext;
@@ -687,11 +695,49 @@ export async function assessStageReifegrad(input: {
   const alter = altergruppeLabel(editorial);
   const [craftA, craftB, craftC] = craftDimensionsForAssessKey(input.stage);
   const scoreStage = pipelineStageForAssessKey(input.stage);
-  const previous = input.previous;
+
+  // 1:1 Übernahme: gleiche Prosa wie Manuskript → gleicher Reifegrad (kein Stufen-Cliff).
+  if (input.stage === "roman") {
+    const ms = normalizeProseForCompare(editorial.manuskriptText ?? "");
+    const rt = normalizeProseForCompare(editorial.romanText ?? "");
+    const msScore = editorial.reifegrade?.manuskript ?? null;
+    if (ms.length >= 80 && rt === ms && msScore) {
+      return {
+        score: buildStageReifegrad({
+          stage: "manuskript",
+          regelnPct: msScore.regelnPct,
+          erfuelltesBeduerfnisPct: 0,
+          vernachlaessigtesBeduerfnisPct: 0,
+          stilPct: msScore.stilPct,
+          dramaturgiePct: msScore.dramaturgiePct,
+          leseflussPct: msScore.leseflussPct,
+          modelLabel: `${msScore.modelLabel || "bewerter"} · 1:1 Manuskript`,
+          assessedAt: new Date().toISOString(),
+        }),
+        coverage,
+      };
+    }
+  }
+
+  // Roman: calibrate against Manuskript (content-fertig) when no prior Roman score.
+  const previous =
+    input.previous ??
+    (input.stage === "roman"
+      ? (editorial.reifegrade?.roman ?? editorial.reifegrade?.manuskript ?? null)
+      : null);
+  const previousIsManuskriptAnchor =
+    input.stage === "roman" &&
+    !input.previous &&
+    !editorial.reifegrade?.roman &&
+    Boolean(editorial.reifegrade?.manuskript);
   const prevBlock = previous
     ? `# Vorherige Messung (Orientierung — neu bewerten, nicht kopieren)
 Gesamt ${previous.gesamtPct}% · Logik ${previous.regelnPct}% · ${craftA.label} ${previous.stilPct}% · ${craftB.label} ${previous.dramaturgiePct}% · ${craftC.label} ${previous.leseflussPct}%
-Gleiche Prozentwerte sind erlaubt, wenn die Qualität wirklich unverändert ist. Nur bei klarer Verbesserung/Verschlechterung die Werte anpassen — keinen künstlichen Δ erzwingen.`
+${
+  previousIsManuskriptAnchor
+    ? "Anker = Manuskript-Reifegrad (Inhalt ist dort fertig). Logik/Dramaturgie nur ändern, wenn die Roman-Prosa Inhalt klar verschiebt; Stil/Lesefluss nur bei klar anderer Prosa-Oberfläche. Keinen künstlichen Abschlag nur weil die Stufe „Roman“ heißt."
+    : "Gleiche Prozentwerte sind erlaubt, wenn die Qualität wirklich unverändert ist. Nur bei klarer Verbesserung/Verschlechterung die Werte anpassen — keinen künstlichen Δ erzwingen."
+}`
     : "";
   const changeBlock = input.changeSummary?.trim()
     ? `# Gerade geändert\n${input.changeSummary.trim()}`
@@ -719,8 +765,10 @@ ${label} (${input.stage})${
       : input.stage === "szenenplot"
         ? "\nArtefakt = STRUCTURED Szenenplot (Arcs, Lifecycle, Szenen mit dramaturgy/info_flow/continuity/schreibPrompt). Felder exakt bewerten. ALLE Kapitel zählen — nicht nur Kap. 1–3."
         : input.stage === "roman"
-          ? "\nArtefakt = Roman-Prosa nach Stil-Pass (romanText). Bewerte Stimme, Stil, Dramaturgie und Lesefluss der polierten Fassung — nicht den Manuskript-Entwurf."
-          : ""
+          ? "\nArtefakt = Roman-Prosa (romanText). Das Manuskript ist inhaltlich fertig — Roman ist nur Prosa-Überarbeitung (Stimme, Register, Lesefluss). Logik/Dramaturgie nicht strenger bewerten als beim Manuskript, nur weil die Stufe „Roman“ heißt. Stil/Lesefluss = Prosa-Oberfläche dieser Fassung."
+          : input.stage === "manuskript"
+            ? "\nArtefakt = Manuskript-Prosa (inhaltlich die fertige Fassung). Roman danach nur noch Stil/Prosa — hier Stoff, Logik, Dramaturgie und lesbare Prosa bewerten."
+            : ""
 }
 ${specAssessPolicy}
 
@@ -741,7 +789,9 @@ Keine separate Bewertung von Marktanalyse-Bedürfnissen.
 ${
   input.stage === "expose"
     ? "Spec: Roman-Tragfähigkeit mitbewerten — Episode ohne Mehrakt-Stoff / Escalation / Endgame-Seed = deutlich unter 75."
-    : ""
+    : input.stage === "roman"
+      ? "Roman: kein Extra-Abschlag für „noch nicht poliert genug“ auf Logik/Dramaturgie — Inhalt liegt im Manuskript."
+      : ""
 }
 ${previous ? "Vergleiche mit der vorherigen Messung nur als Kalibrierung — Flat-Scores sind OK bei unverändertem Niveau." : ""}
 
@@ -769,7 +819,9 @@ Altersklasse steuert die Craft-Scores streng mit.
 ${
   input.stage === "expose"
     ? "Spec: streng bei Roman-Tragfähigkeit — zu dünner Stoff = niedrige Craft-/Logik-Scores."
-    : ""
+    : input.stage === "roman"
+      ? "Roman = Prosa-Oberfläche; Manuskript trägt den Inhalt. Keinen Stufen-Cliff erfinden."
+      : ""
 }
 Sei streng und konsistent. Ausgabe: genau ein JSON-Objekt, keine Prosa.`;
 

@@ -13,6 +13,7 @@ export type WiredAiEndpoint = {
     | "claude"
     | "openai"
     | "openai-compatible"
+    | "openai-image"
     | "ionos-image"
     | "openai-tts"
     | "fish-audio"
@@ -60,6 +61,13 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     usage: "Text: Manuskript Verbessern / Autor (Stil-Pass, Anthropic)",
   },
   {
+    modelSlug: "claude-haiku-5-5",
+    provider: "claude",
+    label: "Claude Haiku 5.5",
+    usage:
+      "Text: günstig/schnell (Assist, A/B bis Freigabe, hohe Volumen)",
+  },
+  {
     modelSlug: "gpt-6-astra",
     provider: "openai",
     label: "GPT-6 Astra (OpenAI)",
@@ -90,6 +98,12 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     usage: "Bilder: höchste Qualität",
   },
   {
+    modelSlug: "gpt-image-2.5-sunburst",
+    provider: "openai-image",
+    label: "GPT Image 2.5 Sunburst (OpenAI)",
+    usage: "Bilder: Cover / präzise Qualität (OpenAI Images API)",
+  },
+  {
     modelSlug: "veo-3.1-generate-preview",
     provider: "gemini-video",
     label: "Veo 3.1 (Gemini Video)",
@@ -106,6 +120,18 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     provider: "openai-compatible",
     label: "GPT-OSS 120B (IONOS)",
     usage: "Fakt „Warum?“ / Vertiefung · Roman-Reifegrad (Bewerter)",
+  },
+  {
+    modelSlug: "Qwen/Qwen3.5-397B-A17B",
+    provider: "openai-compatible",
+    label: "Qwen3.5 397B-A17B (IONOS)",
+    usage: "Text: starkes Reasoning / A/B bis Freigabe (IONOS MoE)",
+  },
+  {
+    modelSlug: "meta-llama/Llama-3.3-70B-Instruct",
+    provider: "openai-compatible",
+    label: "Llama 3.3 70B Instruct (IONOS)",
+    usage: "Text: A/B bis Freigabe / Dialog (IONOS)",
   },
   {
     modelSlug: "mistralai/Mistral-Small-24B-Instruct",
@@ -206,9 +232,13 @@ export function isTextLlmProvider(provider: string): boolean {
   return TEXT_LLM_PROVIDERS.has(provider.trim().toLowerCase());
 }
 
-const IMAGE_PROVIDERS = new Set(["ionos-image", "gemini-image"]);
+const IMAGE_PROVIDERS = new Set([
+  "ionos-image",
+  "gemini-image",
+  "openai-image",
+]);
 
-/** True when the provider generates pixels (FLUX / Gemini Image). */
+/** True when the provider generates pixels (FLUX / Gemini / OpenAI Image). */
 export function isImageAiProvider(provider: string): boolean {
   return IMAGE_PROVIDERS.has(provider.trim().toLowerCase());
 }

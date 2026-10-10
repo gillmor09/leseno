@@ -1,11 +1,12 @@
 /**
  * Routes pixel generation by `ai_models.provider`.
- * Supported: ionos-image (FLUX) and gemini-image (Nano Banana).
+ * Supported: ionos-image (FLUX), gemini-image (Nano Banana), openai-image (GPT Image).
  */
 
 import type { AiModelConfig } from "@/lib/prompts/catalog";
 import { generateWithGeminiImage } from "@/lib/ai/gemini-images";
 import { generateIonosImage } from "@/lib/ai/ionos-images";
+import { generateOpenAiImage } from "@/lib/ai/openai-images";
 
 export type GenerateImageInput = {
   model: AiModelConfig;
@@ -76,6 +77,37 @@ function ionosSizeForAspect(
 }
 
 /**
+ * OpenAI GPT Image sizes: listed presets + custom resolutions.
+ * Portrait covers prefer 1024×1536 (official) or 1280×2048 (5:8 custom).
+ */
+function openAiSizeForAspect(
+  aspectRatio: GenerateImageInput["aspectRatio"],
+  sizePx: number | undefined,
+): string {
+  const large = !sizePx || sizePx > 512;
+  switch (aspectRatio) {
+    case "2:3":
+      return large ? "1024x1536" : "512x768";
+    case "5:8":
+      // Same as IONOS cover path; pipeline upscales to ROMAN_COVER_SIZE.
+      return large ? "1280x2048" : "640x1024";
+    case "3:2":
+      return large ? "1536x1024" : "768x512";
+    case "4:5":
+      return large ? "1024x1280" : "512x640";
+    case "9:16":
+      return large ? "1080x1920" : "576x1024";
+    case "16:9":
+      return large ? "1920x1080" : "1024x576";
+    case "1:1":
+    default:
+      if (!sizePx || sizePx <= 512) return "512x512";
+      if (sizePx <= 1024) return "1024x1024";
+      return "2048x2048";
+  }
+}
+
+/**
  * Generates one image with the configured catalog model.
  */
 export async function generateImage(
@@ -113,7 +145,20 @@ export async function generateImage(
     return { dataUrl: result.dataUrl, modelSlug: result.modelSlug };
   }
 
+  if (provider === "openai-image") {
+    const result = await generateOpenAiImage({
+      modelSlug: input.model.modelSlug,
+      prompt: input.prompt,
+      size: openAiSizeForAspect(aspectRatio, input.sizePx),
+      quality: input.sizePx && input.sizePx >= 1024 ? "high" : "medium",
+      outputFormat:
+        input.outputFormat ??
+        (input.sizePx && input.sizePx >= 1024 ? "jpeg" : "png"),
+    });
+    return { dataUrl: result.dataUrl, modelSlug: result.modelSlug };
+  }
+
   throw new Error(
-    `Provider „${input.model.provider}“ erzeugt keine Bilder. Bitte „ionos-image“ oder „gemini-image“ wählen.`,
+    `Provider „${input.model.provider}“ erzeugt keine Bilder. Bitte „ionos-image“, „gemini-image“ oder „openai-image“ wählen.`,
   );
 }

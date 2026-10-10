@@ -124,6 +124,8 @@ ${clip(ch.body, 700)}`,
 export async function auditManuskriptSeamAndPayoff(input: {
   manuskriptText: string;
   structured: RomanSzenenplotStructured | null | undefined;
+  /** When true, model/transport failures throw instead of empty findings. */
+  strict?: boolean;
 }): Promise<SeamPayoffFinding[]> {
   const chapters = parsePlotChapters(input.manuskriptText).filter((c) =>
     c.body.trim(),
@@ -178,15 +180,32 @@ Welche klaren Schwächen? Max. 5.`,
         await new Promise((r) => setTimeout(r, 800));
       }
     }
-    if (lastErr || !raw) return [];
+    if (lastErr || !raw) {
+      if (input.strict) {
+        throw lastErr instanceof Error
+          ? lastErr
+          : new Error("Seam/Payoff-Check lieferte keine Antwort.");
+      }
+      return [];
+    }
 
     let obj: unknown = null;
     try {
       obj = parseModelJsonObject(raw, "Seam-Payoff");
-    } catch {
+    } catch (parseErr) {
+      if (input.strict) {
+        throw parseErr instanceof Error
+          ? parseErr
+          : new Error("Seam/Payoff-Antwort ungültig.");
+      }
       return [];
     }
-    if (!obj || typeof obj !== "object") return [];
+    if (!obj || typeof obj !== "object") {
+      if (input.strict) {
+        throw new Error("Seam/Payoff-Antwort ohne findings.");
+      }
+      return [];
+    }
     const list = Array.isArray((obj as { findings?: unknown }).findings)
       ? ((obj as { findings: unknown[] }).findings)
       : [];
@@ -215,7 +234,8 @@ Welche klaren Schwächen? Max. 5.`,
       if (findings.length >= 5) break;
     }
     return findings;
-  } catch {
+  } catch (error) {
+    if (input.strict) throw error;
     return [];
   }
 }

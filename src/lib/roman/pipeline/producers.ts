@@ -43,8 +43,6 @@ import {
   formatManuskriptWordMetrics,
   suggestManuskriptFromLektorUndCoAutor,
 } from "@/lib/roman/suggest-manuskript";
-import { runManuskriptEmotionalConsequencePass } from "@/lib/roman/manuskript-emotional-consequence";
-import { runManuskriptSeamPayoffPass } from "@/lib/roman/manuskript-seam-payoff";
 import { invalidateDownstreamEditorial } from "@/lib/roman/pipeline/cascade";
 import {
   assertGeruestReadyForManuskript,
@@ -112,7 +110,11 @@ function buchTypOf(roman: RomanKontext): RomanBuchTyp {
 export async function draftStage(
   roman: RomanKontext,
   stage: PipelineStage,
-  options?: { onProgress?: (label: string) => Promise<void> },
+  options?: {
+    onProgress?: (label: string) => Promise<void>;
+    /** Soft wall-clock deadline for chunked Manuskript Erzeugen. */
+    chunkBudget?: import("@/lib/roman/pipeline/generate-budget").GenerateChunkBudget;
+  },
 ): Promise<{ roman: RomanKontext; summary: string; modelLabel: string }> {
   const editorial = roman.editorial ?? emptyRomanEditorial();
   const buchTyp = buchTypOf(roman);
@@ -596,6 +598,7 @@ export async function draftStage(
       onProgress: options?.onProgress,
       // Continuity on: storyState + full graph grow. Lean only skips Path-B / book length pass / 2nd expand.
       leanFullBook: true,
+      chunkBudget: options?.chunkBudget,
     });
     const text = normalizeManuskriptDocument(data.manuskriptText, {
       requiredFromPlot: plot,
@@ -628,7 +631,7 @@ export async function draftStage(
       );
     }
     const prevEdFinal = liveRoman.editorial ?? emptyRomanEditorial();
-    let nextEd = withStageImprove(
+    const nextEd = withStageImprove(
       withLeserFeedbackForStage(
         {
           ...prevEdFinal,
@@ -652,44 +655,9 @@ export async function draftStage(
       "manuskript",
       null,
     );
-    let saved = await persist(liveRoman, { editorial: nextEd });
-
-    // Book-wide craft passes before Reifegrad / Opus freeze (fail-soft).
-    let craftNote = "";
-    try {
-      await options?.onProgress?.("Seam/Payoff · Nähte & Bögen …");
-      const seam = await runManuskriptSeamPayoffPass({
-        roman: saved,
-        onProgress: options?.onProgress,
-      });
-      saved = seam.roman;
-      nextEd = saved.editorial ?? nextEd;
-      sealed = (nextEd.manuskriptText ?? sealed).trim() || sealed;
-      if (seam.patchedChapters.length > 0) {
-        craftNote += ` Seam/Payoff Kap. ${seam.patchedChapters.join(", ")}.`;
-      } else if (!seam.skipped) {
-        craftNote += " Seam/Payoff geprüft.";
-      }
-    } catch {
-      /* fail-soft — draft remains usable */
-    }
-    try {
-      await options?.onProgress?.("Emotion · Wertwechsel & Nachwirkung …");
-      const emo = await runManuskriptEmotionalConsequencePass({
-        roman: saved,
-        onProgress: options?.onProgress,
-      });
-      saved = emo.roman;
-      nextEd = saved.editorial ?? nextEd;
-      sealed = (nextEd.manuskriptText ?? sealed).trim() || sealed;
-      if (emo.patchedChapters.length > 0) {
-        craftNote += ` Emotion Kap. ${emo.patchedChapters.join(", ")}.`;
-      } else if (!emo.skipped) {
-        craftNote += " Emotion geprüft.";
-      }
-    } catch {
-      /* fail-soft */
-    }
+    const saved = await persist(liveRoman, { editorial: nextEd });
+    // Seam/Payoff + Emotion run before Roman-Verbessern (not here) — keeps
+    // Erzeugen under the chunk budget and avoids double craft cost.
 
     // Guard against silent truncation on read/re-save (old 500k cap wiped Kap. 19–22).
     const verified = await getRomanKontext(saved.id, { omitCover: true });
@@ -708,7 +676,7 @@ export async function draftStage(
     const metrics = formatManuskriptWordMetrics(data.wordMetrics);
     return {
       roman: verified ?? saved,
-      summary: `Manuskript entworfen (${data.modelLabel}). ${metrics}.${craftNote}`,
+      summary: `Manuskript entworfen (${data.modelLabel}). ${metrics}.`,
       modelLabel: data.modelLabel,
     };
   }

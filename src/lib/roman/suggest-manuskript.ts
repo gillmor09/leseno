@@ -39,6 +39,11 @@ import {
 } from "@/lib/roman/manuskript-chapter-packet";
 import { runManuskriptPostDraftQualityGates } from "@/lib/roman/manuskript-chapter-quality-gates";
 import {
+  GenerateChunkContinueError,
+  isGenerateChunkContinueError,
+  type GenerateChunkBudget,
+} from "@/lib/roman/pipeline/generate-budget";
+import {
   CONTINUITY_PREV_TAIL_CHARS,
   CONTINUITY_PREV_TAIL_CHARS_FROZEN,
   extractManuskriptStoryState,
@@ -709,6 +714,7 @@ export async function writeManuskriptChapterWithLengthGate(input: {
       chapterPacket: input.chapterPacket,
       structuredChapter: structuredCh,
       factContractsBlock,
+      wissensGraph: input.wissensGraph,
       extractBody: extractManuskriptChapterBody,
       wordCountOf: manuskriptChapterWordCount,
       rewrite: async (patchedPacket) => {
@@ -1160,6 +1166,8 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
    * full-body Wissensgraph grow after each chapter (fail-soft).
    */
   leanFullBook?: boolean;
+  /** Soft deadline — stop before next unpaid chapter write and auto-continue. */
+  chunkBudget?: GenerateChunkBudget;
 }): Promise<ManuskriptSuggestResult> {
   const report = async (label: string) => {
     await input.onProgress?.(label);
@@ -1303,6 +1311,40 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
       continue;
     }
 
+    // Checkpoint before starting a long chapter write (resume-safe).
+    try {
+      input.chunkBudget?.assertCanStartUnit(chapterLabel);
+    } catch (budgetErr) {
+      if (isGenerateChunkContinueError(budgetErr)) {
+        if (parts.length > 0 && input.onChapterWritten) {
+          try {
+            const partial = normalizeManuskriptDocument(
+              parts.join("\n\n\n\n"),
+              { requiredFromPlot: input.szenenplot },
+            );
+            const lastDone =
+              parsePlotChapters(partial).filter((c) => c.body.trim()).at(-1)
+                ?.number ?? 0;
+            await input.onChapterWritten(partial, lastDone, {
+              storyState,
+              wissensGraph: liveGraph,
+            });
+          } catch {
+            /* best-effort */
+          }
+        }
+        throw new GenerateChunkContinueError(
+          `Checkpoint nach ${parts.length}/${total} Kapiteln — automatische Fortsetzung …`,
+          {
+            chaptersDone: parts.length,
+            chaptersTotal: total,
+            reason: "budget",
+          },
+        );
+      }
+      throw budgetErr;
+    }
+
     const previousMarkdown = parts.join("\n\n\n\n");
     const previousTail =
       previousMarkdown.trim().length > 80
@@ -1376,15 +1418,36 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
         });
 
       await report(`${chapterLabel}: Co-Autor schreibt …`);
+      /** Keep history `at` fresh so the stale-watchdog does not kill a live write. */
+      const withWriteHeartbeat = async <T>(
+        work: () => Promise<T>,
+        phase: string,
+      ): Promise<T> => {
+        let ticks = 0;
+        const timer = setInterval(() => {
+          ticks += 1;
+          void report(
+            `${chapterLabel}: ${phase} (noch aktiv · ${ticks * 3} Min.) …`,
+          );
+        }, 180_000);
+        try {
+          return await work();
+        } finally {
+          clearInterval(timer);
+        }
+      };
       let written: Awaited<ReturnType<typeof writeOnce>>;
       try {
-        written = await writeOnce();
+        written = await withWriteHeartbeat(writeOnce, "Co-Autor schreibt");
       } catch (firstError) {
         if (!isAiAbortError(firstError)) throw firstError;
         await report(
           `${chapterLabel}: Timeout/Abbruch — ein erneuter Schreibversuch …`,
         );
-        written = await writeOnce();
+        written = await withWriteHeartbeat(
+          writeOnce,
+          "Co-Autor schreibt (Retry)",
+        );
       }
       if (written.expanded) expandedChapters.push(chapter.number);
       parts.push(written.chapterMarkdown);
@@ -1440,6 +1503,7 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
         }`,
       );
     } catch (error) {
+      if (isGenerateChunkContinueError(error)) throw error;
       const detail =
         error instanceof Error ? error.message : "Unbekannter Fehler";
       if (parts.length > 0 && input.onChapterWritten) {
@@ -1456,6 +1520,22 @@ export async function suggestManuskriptFromLektorUndCoAutor(input: {
         }
       }
       const kept = parts.length;
+      // Mid-book abort/timeout → auto-continue hop instead of terminal error.
+      if (
+        kept > 0 &&
+        kept < total &&
+        (isAiAbortError(error) ||
+          /timeout|abbruch|abortexception|timed?\s*out/i.test(detail))
+      ) {
+        throw new GenerateChunkContinueError(
+          `${chapterLabel}: Timeout/Abbruch — ${kept}/${total} Kapitel gespeichert. Automatische Fortsetzung …`,
+          {
+            chaptersDone: kept,
+            chaptersTotal: total,
+            reason: "abort",
+          },
+        );
+      }
       throw new Error(
         `${chapterLabel} abgebrochen: ${detail}. ${kept} Kapitel gespeichert — „Alles erzeugen“ erneut starten setzt dort fort (fertig geschriebene Kapitel werden nicht neu bezahlt).`,
       );

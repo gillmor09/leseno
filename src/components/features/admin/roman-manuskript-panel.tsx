@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { RotateCcw, Trash2 } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { stripErzaehlerWrappers } from "@/lib/roman/clever-geschichte";
 import { CleverInfografikCard } from "@/components/features/admin/clever-infografik-card";
@@ -32,6 +32,8 @@ export function RomanManuskriptPanel({
   onSave,
   onClear,
   clearPending,
+  onRestoreChapter,
+  restorePending,
   zielWortzahl = null,
   mode = "roman",
   focusChapter = null,
@@ -43,6 +45,7 @@ export function RomanManuskriptPanel({
   onInfografikComplete,
   /** Override clear-confirm copy (e.g. Roman tab vs Manuskript draft). */
   clearDialog = null,
+  restoreDialog = null,
 }: {
   hasSzenenplot: boolean;
   /** Body of the focused chapter only (no heading). */
@@ -55,6 +58,9 @@ export function RomanManuskriptPanel({
   /** Clever: clear focus chapter. Roman: clear whole Manuskript (+ export). */
   onClear?: () => void | Promise<void>;
   clearPending?: boolean;
+  /** Roman tab: replace focus chapter body from Manuskript + clear fertig. */
+  onRestoreChapter?: () => void | Promise<void>;
+  restorePending?: boolean;
   zielWortzahl?: number | null;
   mode?: "roman" | "clever";
   /** Required for editing — only this chapter is shown. */
@@ -77,10 +83,18 @@ export function RomanManuskriptPanel({
     description: string;
     confirmLabel: string;
   } | null;
+  restoreDialog?: {
+    title: string;
+    description: string;
+    confirmLabel: string;
+  } | null;
 }) {
   const isClever = mode === "clever";
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const busy = Boolean(disabled || savePending || clearPending);
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false);
+  const busy = Boolean(
+    disabled || savePending || clearPending || restorePending,
+  );
   const proseValue = isClever ? stripErzaehlerWrappers(value) : value;
   const hasText = proseValue.trim().length > 0;
   const chapterWords = countWords(proseValue);
@@ -127,6 +141,12 @@ export function RomanManuskriptPanel({
     setConfirmOpen(false);
   }
 
+  async function confirmRestore() {
+    if (!onRestoreChapter || restorePending) return;
+    await onRestoreChapter();
+    setRestoreConfirmOpen(false);
+  }
+
   const focusLabel = focusChapter
     ? isClever
       ? `Geschichte ${focusChapter.number}${
@@ -165,6 +185,30 @@ export function RomanManuskriptPanel({
         }}
         onConfirm={() => void confirmClear()}
       />
+
+      {onRestoreChapter ? (
+        <ConfirmDeleteDialog
+          open={restoreConfirmOpen}
+          title={
+            restoreDialog?.title ??
+            (focusLabel
+              ? `„${focusLabel}“ aus Manuskript wiederherstellen?`
+              : "Kapitel aus Manuskript wiederherstellen?")
+          }
+          description={
+            restoreDialog?.description ??
+            "Der aktuelle Roman-Text dieses Kapitels wird durch den Manuskript-Text ersetzt. Das Fertig-Flag für dieses Kapitel wird gelöscht, damit Verbessern es erneut bearbeiten kann. Andere Kapitel bleiben unverändert."
+          }
+          confirmLabel={
+            restoreDialog?.confirmLabel ?? "Aus Manuskript wiederherstellen"
+          }
+          pending={Boolean(restorePending)}
+          onCancel={() => {
+            if (!restorePending) setRestoreConfirmOpen(false);
+          }}
+          onConfirm={() => void confirmRestore()}
+        />
+      ) : null}
 
       {!hasSzenenplot ? (
         <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
@@ -309,6 +353,18 @@ export function RomanManuskriptPanel({
               ? "Geschichte speichern"
               : "Kapitel speichern"}
         </button>
+        {onRestoreChapter ? (
+          <button
+            type="button"
+            disabled={!canSave || busy || !focusChapter}
+            onClick={() => setRestoreConfirmOpen(true)}
+            className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-bold text-amber-950 ring-1 ring-amber-300 hover:bg-amber-50 disabled:opacity-50"
+            title="Kapitel aus Manuskript wiederherstellen"
+          >
+            <RotateCcw className="size-4 shrink-0" aria-hidden />
+            Aus Manuskript
+          </button>
+        ) : null}
         {onClear ? (
           <button
             type="button"

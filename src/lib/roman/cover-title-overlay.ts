@@ -9,7 +9,7 @@ import { createCanvas, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
 import { parse, type Font as OtFont } from "opentype.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { drawLesenoMarkBottomRight } from "@/lib/roman/clever-cover-logos";
+import { drawLesenoMarkBottomLeft } from "@/lib/roman/clever-cover-logos";
 import {
   COVER_FONT_FAMILIES,
   type CoverFontFamilyId,
@@ -748,7 +748,7 @@ export async function overlayCoverTitleByDesign(input: {
   author?: string;
   /** Marketing subtitle under the title block (exact spelling). */
   subtitle?: string;
-  /** Paste leseno PNG bottom-right. */
+  /** Paste leseno PNG bottom-left. */
   lesenoMark?: boolean;
 }): Promise<string> {
   const author = (input.author ?? "").trim();
@@ -826,10 +826,10 @@ export async function overlayCoverTitleByDesign(input: {
     }
   }
 
-  // Same side breathing room as the leseno mark (right inset ~6.5%).
+  // Same side breathing room as the leseno mark (left inset ~6.5%).
   const padX = Math.max(40, Math.round(width * 0.065));
   const maxTextWidth = width - padX * 2;
-  /** Keep title/subtitle clear of the leseno mark in the lower-right. */
+  /** Keep title/subtitle clear of the leseno mark in the lower-left. */
   const logoReserveY = input.lesenoMark
     ? height - Math.round(height * 0.15)
     : height - Math.round(height * 0.05);
@@ -1045,7 +1045,7 @@ export async function overlayCoverTitleByDesign(input: {
   }
 
   if (input.lesenoMark) {
-    await drawLesenoMarkBottomRight(ctx, width, height);
+    await drawLesenoMarkBottomLeft(ctx, width, height);
   }
 
   const out = canvas.toBuffer("image/jpeg", 82);

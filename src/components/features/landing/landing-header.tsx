@@ -147,7 +147,7 @@ export function LandingHeader({
           className="flex min-w-0 shrink items-center gap-2.5 transition-all duration-200 ease-in-out"
         >
           <Image
-            src="/landing/vogel-hell.webp"
+            src="/leseno-vogel-neu.png"
             alt="Logo der Lese-App"
             width={40}
             height={40}

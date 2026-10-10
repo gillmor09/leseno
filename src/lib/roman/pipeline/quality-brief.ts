@@ -272,3 +272,10 @@ export const ROMAN_CRITIQUE_MAX_TOKENS = 6_000;
 export const ROMAN_PROSE_MAX_TOKENS = 30_000;
 /** Alias for stage drafts (Exposé / Welt / …) — same headroom as chapter prose. */
 export const ROMAN_DRAFT_MAX_TOKENS = ROMAN_PROSE_MAX_TOKENS;
+/**
+ * Roman Stil-Pass / Soft-Repair (Opus): chapter rewrite with content frozen.
+ * Thinking + visible prose share this cap — keep well below {@link ROMAN_PROSE_MAX_TOKENS}
+ * so adaptive thinking cannot burn ~30k Out per chapter on light reformulation.
+ * ~4–6k DE chapter tokens + modest low-effort thinking headroom.
+ */
+export const ROMAN_STIL_PASS_MAX_TOKENS = 12_000;

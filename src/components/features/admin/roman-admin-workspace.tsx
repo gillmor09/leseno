@@ -11,7 +11,14 @@ import { useMemo, useState } from "react";
 import { CheckCircle2, Circle } from "lucide-react";
 import { toast } from "sonner";
 import { saveRomanKontextAction } from "@/app/actions/roman-admin";
+import {
+  applyManuskriptFreigabeFixesAction,
+  auditManuskriptFreigabeAction,
+} from "@/app/actions/roman-manuskript-freigabe";
+import type { ManuskriptFreigabeFinding } from "@/lib/roman/editorial";
 import { enrichSzenenplotSpatialAction } from "@/app/actions/roman-szenenplot-spatial";
+import { ManuskriptFreigabeDialog } from "@/components/features/admin/manuskript-freigabe-dialog";
+import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import { CleverUnterthemenPanel } from "@/components/features/admin/clever-unterthemen-panel";
 import { RomanCharakterePanel } from "@/components/features/admin/roman-charaktere-panel";
 import { RomanCoverPanel } from "@/components/features/admin/roman-cover-panel";
@@ -28,6 +35,7 @@ import { RomanManuskriptPanel } from "@/components/features/admin/roman-manuskri
 import { RomanManuskriptChapterControl } from "@/components/features/admin/roman-manuskript-chapter-control";
 import { RomanManuskriptVerbessernControl } from "@/components/features/admin/roman-manuskript-verbessern-control";
 import { RomanContinuityTrigger } from "@/components/features/admin/roman-continuity-overlay";
+import { RomanManuskriptContinuityControl } from "@/components/features/admin/roman-manuskript-continuity-control";
 import { RomanMarktanalysePanel } from "@/components/features/admin/roman-marktanalyse-panel";
 import { RomanPipelineHistoryPanel } from "@/components/features/admin/roman-pipeline-history-panel";
 import { RomanPipelineStageActions } from "@/components/features/admin/roman-pipeline-stage-actions";
@@ -61,6 +69,7 @@ import {
   withExposeText,
   withLeserFeedbackForStage,
   withPipelineTabFertig,
+  withoutRomanKapitelFertig,
   withStageImprove,
   type RomanEditorial,
   type RomanPipelineFertig,
@@ -249,6 +258,12 @@ export function RomanAdminWorkspace({
   const [tab, setTab] = useState<TabId>("typ");
   const [savePending, setSavePending] = useState(false);
   const [enrichSpatialPending, setEnrichSpatialPending] = useState(false);
+  const [freigabeFindings, setFreigabeFindings] = useState<
+    ManuskriptFreigabeFinding[] | null
+  >(null);
+  const [freigabePendingMode, setFreigabePendingMode] = useState<
+    "nachziehen" | "freigeben" | null
+  >(null);
   const [enrichSpatialMode, setEnrichSpatialMode] = useState<
     "manual" | "fertig"
   >("manual");
@@ -720,7 +735,12 @@ export function RomanAdminWorkspace({
     if (!canSave || savePending || isCleverErzaehlt) return;
     const reifegrade = { ...(editorial.reifegrade ?? {}) };
     delete reifegrade.roman;
-    const nextEditorial = { ...editorial, romanText: "", reifegrade };
+    const nextEditorial = {
+      ...editorial,
+      romanText: "",
+      romanKapitelFertig: null,
+      reifegrade,
+    };
     setEditorial(nextEditorial);
     setRomanBook("");
     setSavePending(true);
@@ -737,6 +757,56 @@ export function RomanAdminWorkspace({
     setEditorial(saved.editorial ?? nextEditorial);
     setRomanBook(saved.editorial?.romanText ?? "");
     toast.success("Roman geleert.");
+  }
+
+  /**
+   * Replace one Roman chapter body with the Manuskript chapter and clear
+   * its fertig flag so Autor Verbessern will process it again.
+   */
+  async function restoreRomanChapterFromManuskript() {
+    if (!canSave || savePending || isCleverErzaehlt) return;
+    const msBody =
+      parsePlotChapters(manuskript).find(
+        (c) => c.number === romanChapterNumber,
+      )?.body ?? "";
+    if (!msBody.trim()) {
+      toast.error(
+        `Manuskript-Kapitel ${romanChapterNumber} ist leer — nichts zum Wiederherstellen.`,
+      );
+      return;
+    }
+    const nextBook = replaceManuskriptChapterBody(
+      romanBook,
+      szenenplot || manuskript,
+      romanChapterNumber,
+      msBody,
+    );
+    const cleaned = normalizeManuskriptDocument(nextBook, {
+      requiredFromPlot: szenenplot,
+    });
+    let nextEditorial = withoutRomanKapitelFertig(
+      { ...editorial, romanText: cleaned },
+      romanChapterNumber,
+    );
+    setRomanBook(cleaned);
+    setEditorial(nextEditorial);
+    setSavePending(true);
+    const result = await saveRomanKontextAction(
+      romanToSavePayload(roman, nextEditorial, fixedBuchTyp),
+    );
+    setSavePending(false);
+    if (!result.success) {
+      toast.error(result.error ?? "Wiederherstellen fehlgeschlagen.");
+      return;
+    }
+    const saved = result.data!.roman;
+    setRomanKeepCover(saved);
+    const savedEd = saved.editorial ?? nextEditorial;
+    setEditorial(savedEd);
+    setRomanBook(savedEd.romanText ?? cleaned);
+    toast.success(
+      `Kapitel ${romanChapterNumber} aus Manuskript wiederhergestellt.`,
+    );
   }
 
   async function clearKapitelGeruest() {
@@ -939,12 +1009,78 @@ export function RomanAdminWorkspace({
     toast.success("Manuskript geleert (Export-Texte mit).");
   }
 
+  async function persistPipelineFertig(
+    tabId: keyof RomanPipelineFertig,
+    fertig: boolean,
+    prevEditorial: RomanEditorial,
+  ) {
+    let nextEditorial = withPipelineTabFertig(prevEditorial, tabId, fertig);
+    setEditorial(nextEditorial);
+    const result = await saveRomanKontextAction(
+      romanToSavePayload(roman, nextEditorial, fixedBuchTyp),
+    );
+    if (!result.success) {
+      toast.error(result.error ?? "Fertig-Status speichern fehlgeschlagen.");
+      setEditorial(prevEditorial);
+      return false;
+    }
+    const savedEd = result.data!.roman.editorial ?? nextEditorial;
+    setRomanKeepCover(result.data!.roman);
+    setEditorial({
+      ...savedEd,
+      pipelineFertig: {
+        ...(savedEd.pipelineFertig ?? {}),
+        ...(nextEditorial.pipelineFertig ?? {}),
+      },
+    });
+    return true;
+  }
+
   async function savePipelineFertig(
     tabId: keyof RomanPipelineFertig,
     fertig: boolean,
   ) {
     if (!canSave || savePending) return;
     const prevEditorial = editorial;
+
+    // Manuskript fertig: cheap Seam/Payoff + Emotion audit before Feinschliff.
+    if (
+      tabId === "schreiben" &&
+      fertig &&
+      !isCleverErzaehlt &&
+      hasFilledManuskript(manuskript)
+    ) {
+      setSavePending(true);
+      try {
+        const audit = await auditManuskriptFreigabeAction({
+          romanId: roman.id,
+        });
+        if (!audit.success || !audit.data) {
+          toast.error(audit.error ?? "Freigabe-Check fehlgeschlagen.");
+          return;
+        }
+        setRomanKeepCover(audit.data.roman);
+        setEditorial(audit.data.roman.editorial ?? prevEditorial);
+        if (audit.data.findings.length > 0) {
+          setFreigabeFindings(audit.data.findings);
+          toast.message(audit.data.summary);
+          return;
+        }
+        const withFreigabe = audit.data.roman.editorial ?? prevEditorial;
+        const ok = await persistPipelineFertig(tabId, true, withFreigabe);
+        if (ok) toast.success(audit.data.summary);
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Freigabe-Check fehlgeschlagen.",
+        );
+      } finally {
+        setSavePending(false);
+      }
+      return;
+    }
+
     // Szenenplot Fertig: Raum-Continuity nachschärfen + schreibPrompts einfrieren.
     if (
       tabId === "szenenplot" &&
@@ -995,35 +1131,96 @@ export function RomanAdminWorkspace({
       return;
     }
 
-    let nextEditorial = withPipelineTabFertig(prevEditorial, tabId, fertig);
-    setEditorial(nextEditorial);
     setSavePending(true);
     try {
-      const result = await saveRomanKontextAction(
-        romanToSavePayload(roman, nextEditorial, fixedBuchTyp),
-      );
-      if (!result.success) {
-        toast.error(result.error ?? "Fertig-Status speichern fehlgeschlagen.");
-        setEditorial(prevEditorial);
-        return;
-      }
-      const savedEd = result.data!.roman.editorial ?? nextEditorial;
-      // Prefer merged Fertig from what we just wrote (parse may omit keys).
-      setRomanKeepCover(result.data!.roman);
-      setEditorial({
-        ...savedEd,
-        pipelineFertig: {
-          ...(savedEd.pipelineFertig ?? {}),
-          ...(nextEditorial.pipelineFertig ?? {}),
-        },
-      });
+      await persistPipelineFertig(tabId, fertig, prevEditorial);
     } finally {
       setSavePending(false);
     }
   }
 
+  async function confirmFreigabeTrotzHinweise() {
+    if (!freigabeFindings || savePending) return;
+    setSavePending(true);
+    setFreigabePendingMode("freigeben");
+    try {
+      const audit = await auditManuskriptFreigabeAction({
+        romanId: roman.id,
+        override: true,
+      });
+      if (!audit.success || !audit.data) {
+        toast.error(audit.error ?? "Freigabe fehlgeschlagen.");
+        return;
+      }
+      setRomanKeepCover(audit.data.roman);
+      const withFreigabe = audit.data.roman.editorial ?? editorial;
+      setEditorial(withFreigabe);
+      setManuskript(withFreigabe.manuskriptText ?? manuskript);
+      const ok = await persistPipelineFertig("schreiben", true, withFreigabe);
+      if (ok) {
+        setFreigabeFindings(null);
+        toast.success(
+          "Manuskript freigegeben trotz Hinweise — Stil-Pass ist freigeschaltet.",
+        );
+      }
+    } finally {
+      setSavePending(false);
+      setFreigabePendingMode(null);
+    }
+  }
+
+  async function nachziehenFreigabeHinweise() {
+    if (!freigabeFindings || savePending) return;
+    setSavePending(true);
+    setFreigabePendingMode("nachziehen");
+    try {
+      const result = await applyManuskriptFreigabeFixesAction({
+        romanId: roman.id,
+      });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Nachziehen fehlgeschlagen.");
+        return;
+      }
+      const saved = result.data.roman;
+      setRomanKeepCover(saved);
+      const savedEd = saved.editorial ?? editorial;
+      setEditorial(savedEd);
+      setManuskript(savedEd.manuskriptText ?? "");
+      if (result.data.autoFreigegeben) {
+        setFreigabeFindings(null);
+        toast.success(result.data.summary);
+        return;
+      }
+      setFreigabeFindings(
+        result.data.findings.length > 0 ? result.data.findings : null,
+      );
+      toast.message(result.data.summary);
+    } finally {
+      setSavePending(false);
+      setFreigabePendingMode(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
+      <ManuskriptFreigabeDialog
+        open={Boolean(freigabeFindings?.length)}
+        findings={freigabeFindings ?? []}
+        pending={savePending && freigabePendingMode != null}
+        pendingMode={freigabePendingMode}
+        onClose={() => {
+          if (!savePending) setFreigabeFindings(null);
+        }}
+        onNachziehen={() => void nachziehenFreigabeHinweise()}
+        onTrotzdemFreigeben={() => void confirmFreigabeTrotzHinweise()}
+      />
+      <RomanSceneWaitDialog
+        open={freigabePendingMode === "nachziehen" && savePending}
+        variant="manuskript-vereinfachen"
+        contextLabel="Manuskript · Hinweise nachziehen"
+        title="Nähte & Emotion nachziehen"
+        progressLabel="Co-Autor schärft betroffene Kapitel (günstig, kein Opus) …"
+      />
       <div className="flex flex-wrap items-center gap-3">
         <Link
           href={adminModule.basePath}
@@ -1501,6 +1698,14 @@ export function RomanAdminWorkspace({
                     )}
                   />
                   <RomanWissensgraphTrigger graph={editorial.wissensGraph} />
+                  {!isCleverErzaehlt ? (
+                    <RomanManuskriptContinuityControl
+                      romanId={roman.id}
+                      target="kapitelgeruest"
+                      disabled={savePending || pipelineBusy}
+                      onComplete={syncFromPipelineRoman}
+                    />
+                  ) : null}
                   <RomanKapitelGeruestPanel
                     hasExpose={hasExposeDoc}
                     value={kapitelGeruest}
@@ -1567,6 +1772,14 @@ export function RomanAdminWorkspace({
                     )}
                   />
                   <RomanWissensgraphTrigger graph={editorial.wissensGraph} />
+                  {!isCleverErzaehlt ? (
+                    <RomanManuskriptContinuityControl
+                      romanId={roman.id}
+                      target="szenenplot"
+                      disabled={savePending || pipelineBusy}
+                      onComplete={syncFromPipelineRoman}
+                    />
+                  ) : null}
                   <RomanSzenenplotPanel
                     hasGeruest={hasGeruestDoc}
                     value={szenenplot}
@@ -1637,6 +1850,7 @@ export function RomanAdminWorkspace({
                   checked={isPipelineTabFertig(editorial, "schreiben")}
                   disabled={!canSave}
                   pending={savePending}
+                  pendingLabel="Prüfen …"
                   onCheckedChange={(v) =>
                     void savePipelineFertig("schreiben", v)
                   }
@@ -1660,9 +1874,10 @@ export function RomanAdminWorkspace({
                     <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
                       Vor „Erzeugen“: Szenenplot fertig (Schreibprompts
                       eingefroren) oder Logik/Dramaturgie ≥75%. Co-Autor schreibt
-                      kapitelweise Prosa (Stil, Ton, Emotion — Show, don’t
-                      tell). Oben Kapitel wählen — im Feld nur dieses Kapitel;
-                      Buch-Wortzahl bleibt sichtbar.
+                      kapitelweise Prosa. Beim „fertig“-Toggle: günstiger
+                      Seam/Payoff- und Emotion-Check als Hinweis vor dem
+                      Opus-Feinschliff. Oben Kapitel wählen — im Feld nur dieses
+                      Kapitel; Buch-Wortzahl bleibt sichtbar.
                     </p>
                   ) : null}
                   <RomanPipelineStageActions
@@ -1689,6 +1904,12 @@ export function RomanAdminWorkspace({
                       />
                       <RomanContinuityTrigger
                         storyState={editorial.storyState}
+                      />
+                      <RomanManuskriptContinuityControl
+                        romanId={roman.id}
+                        target="manuskript"
+                        disabled={savePending || pipelineBusy}
+                        onComplete={syncFromPipelineRoman}
                       />
                     </>
                   ) : null}
@@ -1889,6 +2110,9 @@ export function RomanAdminWorkspace({
                             (c) => c.number === ch.number,
                           )?.body.trim(),
                         );
+                        const fertig = Boolean(
+                          editorial.romanKapitelFertig?.[String(ch.number)],
+                        );
                         const selected = ch.number === romanChapterNumber;
                         return (
                           <button
@@ -1900,13 +2124,26 @@ export function RomanAdminWorkspace({
                               "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition",
                               selected
                                 ? "bg-amber-800 text-white ring-amber-800"
-                                : filled
-                                  ? "bg-emerald-50 text-emerald-900 ring-emerald-200 hover:bg-emerald-100/80"
-                                  : "bg-white text-zinc-600 ring-zinc-950/10 hover:bg-zinc-50",
+                                : fertig
+                                  ? "bg-emerald-100 text-emerald-950 ring-emerald-300 hover:bg-emerald-200/80"
+                                  : filled
+                                    ? "bg-sky-50 text-sky-950 ring-sky-200 hover:bg-sky-100/80"
+                                    : "bg-white text-zinc-600 ring-zinc-950/10 hover:bg-zinc-50",
                             )}
+                            title={
+                              fertig
+                                ? "Stil-Pass fertig — Verbessern überspringt dieses Kapitel"
+                                : filled
+                                  ? "Text vorhanden — noch nicht als fertig markiert"
+                                  : "Noch kein Roman-Text"
+                            }
                           >
                             Kap. {ch.number}
-                            {filled ? "" : " · leer"}
+                            {fertig
+                              ? " · fertig"
+                              : filled
+                                ? ""
+                                : " · leer"}
                           </button>
                         );
                       })}
@@ -1940,6 +2177,10 @@ export function RomanAdminWorkspace({
                     onSave={() => void saveRomanBook()}
                     onClear={() => void clearRomanBook()}
                     clearPending={savePending}
+                    onRestoreChapter={() =>
+                      void restoreRomanChapterFromManuskript()
+                    }
+                    restorePending={savePending}
                     zielWortzahl={editorial.zielWortzahlRoman}
                     mode="roman"
                     bookMarkdown={romanBook}
@@ -1962,6 +2203,12 @@ export function RomanAdminWorkspace({
                       description:
                         "Nur der Feinschliff (Roman-Tab) wird gelöscht. Das Manuskript, der Szenenplot und Export-Texte bleiben erhalten.",
                       confirmLabel: "Roman leeren",
+                    }}
+                    restoreDialog={{
+                      title: `Kapitel ${romanChapterNumber} aus Manuskript wiederherstellen?`,
+                      description:
+                        "Der Roman-Text dieses Kapitels wird durch den Manuskript-Text ersetzt. Das Fertig-Flag entfällt, damit Verbessern das Kapitel erneut anfasst. Andere Kapitel bleiben unverändert.",
+                      confirmLabel: "Aus Manuskript wiederherstellen",
                     }}
                   />
                 </div>

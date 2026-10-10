@@ -12,7 +12,7 @@ import {
 import {
   CLIP,
   ROMAN_EXCELLENCE_MANDATE,
-  ROMAN_PROSE_MAX_TOKENS,
+  ROMAN_STIL_PASS_MAX_TOKENS,
 } from "@/lib/roman/pipeline/quality-brief";
 import {
   assertRealManuskriptProse,
@@ -26,7 +26,7 @@ import {
 } from "@/lib/roman/plot-chapters";
 import { buildRomanSlimCanon } from "@/lib/roman/prompt-prefix";
 import { getRomanKontext, upsertRomanKontext } from "@/lib/roman/repository";
-import { buildVerbessernCacheableExtras } from "@/lib/roman/roman-verbessern-context";
+import { buildVerbessernRunCachePrefix } from "@/lib/roman/roman-verbessern-context";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import type { RomanKontext } from "@/lib/roman/types";
 import { buildWeaveSystemAddendum } from "@/lib/roman/weave-comment";
@@ -108,12 +108,12 @@ export async function applyRomanDimensionToRomanText(input: {
     weltRegeln: input.roman.weltRegeln,
     wissensGraph: editorial.wissensGraph,
   });
-  const extras = buildVerbessernCacheableExtras({
+  const cacheablePrefix = buildVerbessernRunCachePrefix({
+    slimCanon,
     roman: input.roman,
     editorial,
     manuskriptChapters: draftChapters.length ? draftChapters : chapters,
   });
-  const cacheablePrefix = `${slimCanon}\n\n${extras}`.trim();
   const reasoningEffort = resolveReasoningEffort(
     model.modelSlug,
     rolle.reasoningEffort || "medium",
@@ -166,7 +166,7 @@ ${
     : ""
 }
 Schreibe den vollständigen neuen Body. Handlung/Fakten identisch; Stil/Lesefluss laut Brief.`,
-        maxTokens: ROMAN_PROSE_MAX_TOKENS,
+        maxTokens: ROMAN_STIL_PASS_MAX_TOKENS,
         timeoutMs: 180_000,
       })
     ).trim();

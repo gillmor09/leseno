@@ -1,7 +1,7 @@
 /**
  * Clever erzählt cover pipeline:
  * 1) Cover-Art-Director (DB role) → Gemini 3 Pro Image artwork (no text/logos)
- * 2) Fixed PNG logos: series badge top-center, leseno mark bottom-right
+ * 2) Fixed PNG logos: series badge top-center, leseno mark bottom-left
  * 3) Cover-Typograf (DB role) → Nunito title overlay in upper third (topic only; series is the badge)
  */
 
@@ -356,7 +356,7 @@ Do NOT mention logos, badges, brands, publisher marks, titles, title zones, or p
     ? `\n\n— Typografie (Cover-Typograf) —\n${JSON.stringify(design, null, 2)}`
     : "";
 
-  const debugPrompt = `— Cover-Art-Director (${artRolle.modelSlug} → Text ${artModel.label}) —\n${sceneDescription}\n\n— Image (${imagesModel.label}) —\n${fluxPrompt}\n\n— Logos (code, 1:1 PNG, no AI) —\n${CLEVER_SERIES_BADGE_FILE} top-center + ${LESENO_MARK_FILE} bottom-right${designBlock}`;
+  const debugPrompt = `— Cover-Art-Director (${artRolle.modelSlug} → Text ${artModel.label}) —\n${sceneDescription}\n\n— Image (${imagesModel.label}) —\n${fluxPrompt}\n\n— Logos (code, 1:1 PNG, no AI) —\n${CLEVER_SERIES_BADGE_FILE} top-center + ${LESENO_MARK_FILE} bottom-left${designBlock}`;
 
   return {
     dataUrl,

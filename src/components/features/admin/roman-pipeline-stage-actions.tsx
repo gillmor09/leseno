@@ -64,6 +64,35 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Silent background poll after the wait dialog closes — keeps hitting
+ * pipeline-progress so the server stale-watchdog can auto-continue.
+ */
+async function pollGenerateWatchdogInBackground(input: {
+  romanId: string;
+  runId: string;
+  onSettled?: () => void;
+}): Promise<void> {
+  const deadline = Date.now() + 8 * 60 * 60_000;
+  while (Date.now() < deadline) {
+    await sleep(30_000);
+    try {
+      const res = await fetch(
+        `/api/admin/roman/pipeline-progress?romanId=${encodeURIComponent(input.romanId)}&runId=${encodeURIComponent(input.runId)}`,
+        { credentials: "same-origin", cache: "no-store" },
+      );
+      if (!res.ok) continue;
+      const data = (await res.json()) as ProgressPollPayload;
+      if (data.status === "ok" || data.status === "error") {
+        input.onSettled?.();
+        return;
+      }
+    } catch {
+      /* keep watching */
+    }
+  }
+}
+
+/**
  * Client recovery when Erzeugen finished but stage Reifegrad is still missing
  * (e.g. background worker timed out after clearing/before scoring).
  */
@@ -349,7 +378,14 @@ export function RomanPipelineStageActions({
         return;
       }
 
-      const deadline = Date.now() + 90 * 60_000;
+      // Manuskript/Gerüst can span many auto-continue hops (unattended).
+      const deadline =
+        Date.now() +
+        (stage === "manuskript" ||
+        stage === "kapitelgeruest" ||
+        stage === "szenenplot"
+          ? 8 * 60 * 60_000
+          : 90 * 60_000);
       let finalPoll: ProgressPollPayload | null = null;
       while (Date.now() < deadline) {
         await sleep(1_200);
@@ -397,9 +433,24 @@ export function RomanPipelineStageActions({
       }
 
       if (!finalPoll) {
-        toast.error(
-          "Zeitüberschreitung beim Warten auf die Erzeugung. Bitte Seite neu laden und Fortschritt prüfen — der Job kann noch laufen.",
+        const reloaded = await romanPipelineReloadRomanAction({ romanId });
+        if (reloaded.success && reloaded.data?.roman) {
+          onComplete?.(reloaded.data.roman);
+        }
+        toast.message(
+          "Dialog zu — Erzeugung läuft im Hintergrund weiter (Watchdog setzt bei Hängern automatisch fort). Historie prüfen oder warten.",
         );
+        // Keep progress polls alive so stale-watchdog can fire without the dialog.
+        void pollGenerateWatchdogInBackground({
+          romanId,
+          runId,
+          onSettled: () => {
+            void romanPipelineReloadRomanAction({ romanId }).then((r) => {
+              if (r.success && r.data?.roman) onComplete?.(r.data.roman);
+            });
+            toast.message("Hintergrund-Erzeugung beendet — Seite aktualisieren.");
+          },
+        });
         return;
       }
 
@@ -407,6 +458,16 @@ export function RomanPipelineStageActions({
         const errMsg = finalPoll.error?.trim() || "Erzeugen fehlgeschlagen.";
         const reloaded = await romanPipelineReloadRomanAction({ romanId });
         const romanAfter = reloaded.success ? reloaded.data?.roman : null;
+        if (
+          /gespeichert|fortsetz|Kapitel/i.test(errMsg) &&
+          romanAfter?.editorial?.manuskriptText?.trim()
+        ) {
+          onComplete?.(romanAfter);
+          toast.message(
+            `${errMsg} Erneut „Erzeugen“ setzt nur fehlende Kapitel fort.`,
+          );
+          return;
+        }
         // Draft may already be persisted when only Reifegrad failed — recover.
         if (
           showAssess &&

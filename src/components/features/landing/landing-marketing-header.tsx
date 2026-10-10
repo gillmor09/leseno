@@ -77,7 +77,7 @@ export function LandingMarketingHeader({
           onClick={closeMenu}
         >
           <Image
-            src="/landing/vogel-hell.webp"
+            src="/leseno-vogel-neu.png"
             alt="Logo der Lese-App"
             width={40}
             height={40}

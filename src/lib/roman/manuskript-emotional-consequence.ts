@@ -188,6 +188,8 @@ ${clip(next.body, AFTERMATH_HEAD)}`,
 export async function auditManuskriptEmotionalConsequence(input: {
   manuskriptText: string;
   structured: RomanSzenenplotStructured | null | undefined;
+  /** When true, model/transport failures throw instead of empty findings. */
+  strict?: boolean;
 }): Promise<EmotionalConsequenceFinding[]> {
   const chapters = parsePlotChapters(input.manuskriptText).filter((c) =>
     c.body.trim(),
@@ -253,15 +255,32 @@ Welche klaren emotionalen Schwächen? Max. 5.`,
         await new Promise((r) => setTimeout(r, 800));
       }
     }
-    if (lastErr || !raw) return [];
+    if (lastErr || !raw) {
+      if (input.strict) {
+        throw lastErr instanceof Error
+          ? lastErr
+          : new Error("Emotion-Check lieferte keine Antwort.");
+      }
+      return [];
+    }
 
     let obj: unknown = null;
     try {
       obj = parseModelJsonObject(raw, "Emotional-Consequence");
-    } catch {
+    } catch (parseErr) {
+      if (input.strict) {
+        throw parseErr instanceof Error
+          ? parseErr
+          : new Error("Emotion-Antwort ungültig.");
+      }
       return [];
     }
-    if (!obj || typeof obj !== "object") return [];
+    if (!obj || typeof obj !== "object") {
+      if (input.strict) {
+        throw new Error("Emotion-Antwort ohne findings.");
+      }
+      return [];
+    }
     const list = Array.isArray((obj as { findings?: unknown }).findings)
       ? ((obj as { findings: unknown[] }).findings)
       : [];
@@ -292,7 +311,8 @@ Welche klaren emotionalen Schwächen? Max. 5.`,
       if (findings.length >= 5) break;
     }
     return findings;
-  } catch {
+  } catch (error) {
+    if (input.strict) throw error;
     return [];
   }
 }

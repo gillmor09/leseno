@@ -22,6 +22,10 @@ import { CLIP, ROMAN_PROSE_MAX_TOKENS } from "@/lib/roman/pipeline/quality-brief
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import type { RomanSzenenplotStructured } from "@/lib/roman/szenenplot-structured";
 import type { RomanCharakter } from "@/lib/roman/types";
+import {
+  freezeMetricFactsFromChapters,
+  protectFrozenMetricAttrs,
+} from "@/lib/roman/wissens-metric-facts";
 
 export type {
   RomanWissensGraph,
@@ -77,7 +81,10 @@ Für person/place/prop/event/fact passende attrs setzen — wenn Quelle nichts s
 - Zeiten/Termine: datum, uhrzeit|zeit, wochentag (wenn die Story Zeit braucht)
 - Personen: name|vorname|nachname, alter (wenn relevant), telefon|handy (nur wenn dramaturgisch genutzt)
 - Sonstige Props: farbe, standort, besitzer, zustand
-Jedes zentrale Prop/Ort/Fahrzeug OHNE solche Details = Lücke. hardInvariant für jedes feste Detail („Kennzeichen X gilt“, „Hausnr. Y“, „Termin Do 14:30“).`;
+- MESSWERTE (Raum/Objekt — sobald die Prosa eine Zahl nennt): abstand_cm|hoehe_cm|tiefe_cm|breite_cm|laenge_cm|mass_cm + mass_label/mass_kontext
+  Beispiele: Auto hängt 11 cm über Carport → abstand_cm=11, mass_label="Auto über Carport"; Türspalt 2 cm → abstand_cm=2
+  Zusätzlich hardInvariant: „MASS: Auto über Carport = 11 cm — FROZEN“. Erste Nennung gilt; stilles Ändern verboten.
+Jedes zentrale Prop/Ort/Fahrzeug OHNE solche Details = Lücke. hardInvariant für jedes feste Detail („Kennzeichen X gilt“, „Hausnr. Y“, „MASS: … = N cm“, „Termin Do 14:30“).`;
 
 const GRAPH_JSON_HINT = `{
   "nodes": [
@@ -94,6 +101,8 @@ const GRAPH_JSON_HINT = `{
         "besitzer": "Name",
         "farbe": "silber",
         "modell": "Golf",
+        "abstand_cm": "11",
+        "mass_label": "Auto über Carport",
         "hausnummer": "14",
         "strasse": "Birkenweg",
         "uhrzeit": "14:30",
@@ -461,6 +470,13 @@ const CONCRETE_ATTR_KEYS = [
   "handy",
   "besitzer",
   "standort",
+  "abstand_cm",
+  "hoehe_cm",
+  "tiefe_cm",
+  "breite_cm",
+  "laenge_cm",
+  "mass_cm",
+  "clearance_cm",
 ] as const;
 
 /**
@@ -593,7 +609,7 @@ ${chapterBlock}
 Liefere den VOLLSTÄNDIG aktualisierten Graphen.`,
   });
 
-  return mergeWissensGraphs(
+  const merged = mergeWissensGraphs(
     {
       ...input.previous,
       seededFrom: Array.from(
@@ -602,4 +618,7 @@ Liefere den VOLLSTÄNDIG aktualisierten Graphen.`,
     },
     grown,
   )!;
+  // First-seen measurements win; then pull any new cm/mm/m facts from chapter prose.
+  const protectedGraph = protectFrozenMetricAttrs(input.previous, merged);
+  return freezeMetricFactsFromChapters(protectedGraph, input.chapters);
 }

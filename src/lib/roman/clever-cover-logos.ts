@@ -1,6 +1,6 @@
 /**
- * Clever erzählt cover branding: paste two PNGs 1:1 onto Flux artwork.
- * No frames, no backgrounds, no extra type — only the PNG pixels (with alpha).
+ * Clever erzählt / Roman cover branding: paste PNGs 1:1 onto artwork.
+ * Series badge top-center; leseno mark bottom-left (`leseno-komplett-neu.png`).
  */
 
 import {
@@ -15,8 +15,8 @@ const PUBLIC_DIR = path.join(process.cwd(), "public");
 
 /** Series badge — `public/clever_erzählt_300.png` (native 300×180). */
 export const CLEVER_SERIES_BADGE_FILE = "clever_erzählt_300.png";
-/** Publisher mark — `public/leseno-komplett-256.png` (native 256×256). */
-export const LESENO_MARK_FILE = "leseno-komplett-256.png";
+/** Publisher mark — `public/leseno-komplett-neu.png`. */
+export const LESENO_MARK_FILE = "leseno-komplett-neu.png";
 
 function parseDataUrl(dataUrl: string): Buffer {
   const m = /^data:image\/[a-zA-Z0-9+.-]+;base64,([\s\S]+)$/.exec(
@@ -30,8 +30,8 @@ function readPublicPng(fileName: string): Buffer {
   return readFileSync(/*turbopackIgnore: true*/ path.join(PUBLIC_DIR, fileName));
 }
 
-/** Draw leseno mark bottom-right (scaled ≤22% of cover width). */
-export async function drawLesenoMarkBottomRight(
+/** Draw leseno mark bottom-left (scaled ≤22% of cover width). */
+export async function drawLesenoMarkBottomLeft(
   ctx: SKRSContext2D,
   width: number,
   height: number,
@@ -39,16 +39,19 @@ export async function drawLesenoMarkBottomRight(
   const mark = await loadImage(readPublicPng(LESENO_MARK_FILE));
   const markW = Math.min(mark.width, Math.round(width * 0.22));
   const markH = Math.round((markW / mark.width) * mark.height);
-  // Extra inset from the right edge so the mark breathes on shelf thumbnails.
-  const marginRight = Math.max(40, Math.round(width * 0.065));
+  // Extra inset from the left edge so the mark breathes on shelf thumbnails.
+  const marginLeft = Math.max(40, Math.round(width * 0.065));
   const marginBottom = Math.max(28, Math.round(height * 0.04));
-  const markX = width - marginRight - markW;
+  const markX = marginLeft;
   const markY = height - marginBottom - markH;
   ctx.drawImage(mark, markX, markY, markW, markH);
 }
 
+/** @deprecated Use drawLesenoMarkBottomLeft — alias for older call sites. */
+export const drawLesenoMarkBottomRight = drawLesenoMarkBottomLeft;
+
 /**
- * Draw series PNG top-center + leseno PNG bottom-right at native pixel size (1:1).
+ * Draw series PNG top-center + leseno PNG bottom-left at native pixel size (1:1).
  * Transparent PNG alpha shows the cover art underneath — no fill, no frame.
  */
 export async function overlayCleverCoverLogos(input: {
@@ -74,7 +77,7 @@ export async function overlayCleverCoverLogos(input: {
   const badgeY = Math.max(24, Math.round(height * 0.035));
   ctx.drawImage(badge, badgeX, badgeY, badgeW, badgeH);
 
-  await drawLesenoMarkBottomRight(ctx, width, height);
+  await drawLesenoMarkBottomLeft(ctx, width, height);
 
   const out = canvas.toBuffer("image/jpeg", 90);
   return `data:image/jpeg;base64,${out.toString("base64")}`;

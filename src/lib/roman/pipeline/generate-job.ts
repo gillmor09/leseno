@@ -3,6 +3,9 @@
  * Started via API `after()` so the wait dialog only polls history — not one
  * long Server Action HTTP response (browser/proxy timeouts).
  *
+ * Long Manuskript runs use chunk budgets: stop before platform kill, keep
+ * status `running`, return `continue` so the route self-kicks a new hop.
+ *
  * Reifegrad is hardened: after a successful draft we verify the stage score
  * exists and retry assess if the in-draft `assessAfter` was skipped/failed
  * (common when long Gerüst jobs hit maxDuration during scoring).
@@ -12,8 +15,20 @@ import { emptyRomanEditorial } from "@/lib/roman/editorial";
 import { getRomanKontext } from "@/lib/roman/repository";
 import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
 import {
+  createGenerateChunkBudget,
+  formatGenerateHopDetail,
+  GENERATE_CONTINUE_DETAIL,
+  GENERATE_MAX_CONTINUE_HOPS,
+  latestGenerateHop,
+} from "@/lib/roman/pipeline/generate-budget";
+import {
+  formatGenerateWorkerLockDetail,
+  hopWorkerLockIsFresh,
+} from "@/lib/roman/pipeline/generate-stale-watchdog";
+import {
   getPipelineHistoryRun,
   historyEvent,
+  updatePipelineHistoryRun,
   type PipelineHistoryEvent,
 } from "@/lib/roman/pipeline/history";
 import {
@@ -27,6 +42,7 @@ import {
   PIPELINE_STAGE_LABELS,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
+import { missingManuskriptChapterNumbers } from "@/lib/roman/plot-chapters";
 
 export type RomanGenerateJobInput = {
   romanId: string;
@@ -35,6 +51,12 @@ export type RomanGenerateJobInput = {
   /** `spec-chain` = Charaktere → Welt → Exposé. */
   generateMode: "stage" | "spec-chain";
   showAssess: boolean;
+};
+
+export type RomanGenerateJobOutcome = {
+  /** `noop` = another worker already owns this hop (fresh lock). */
+  outcome: "ok" | "error" | "continue" | "noop";
+  message?: string;
 };
 
 async function loadEvents(
@@ -146,24 +168,94 @@ async function ensureStageReifegrad(input: {
   };
 }
 
+async function manuskriptStillIncomplete(romanId: string): Promise<boolean> {
+  const roman = await getRomanKontext(romanId, { omitCover: true });
+  if (!roman) return false;
+  const plot = roman.manuskriptRaw ?? "";
+  const text = roman.editorial?.manuskriptText ?? "";
+  if (!plot.trim() || !text.trim()) return Boolean(plot.trim());
+  return missingManuskriptChapterNumbers(plot, text).length > 0;
+}
+
 /**
- * Runs to completion and marks history `ok` / `error`.
+ * Runs to completion, or returns `continue` for the next worker hop.
  * Safe to call from `after()` — does not depend on the client connection.
  */
 export async function runRomanGenerateJob(
   input: RomanGenerateJobInput,
-): Promise<void> {
+): Promise<RomanGenerateJobOutcome> {
   const { romanId, runId, stage, generateMode, showAssess } = input;
 
   const existing = await getPipelineHistoryRun(romanId, runId);
   if (!existing) {
-    return;
+    return { outcome: "error", message: "Pipeline-Lauf nicht gefunden." };
   }
   if (existing.status === "ok" || existing.status === "error") {
-    return;
+    return { outcome: existing.status === "ok" ? "ok" : "error" };
   }
 
   let events = [...existing.events];
+  const hop = latestGenerateHop(events) + 1;
+  if (hop > GENERATE_MAX_CONTINUE_HOPS) {
+    await pipelineStepFinish({
+      romanId,
+      runId,
+      events: [
+        ...events,
+        historyEvent({
+          type: "error",
+          stage,
+          summary: `Zu viele automatische Fortsetzungen (${GENERATE_MAX_CONTINUE_HOPS}). Bitte Erzeugen erneut starten.`,
+        }),
+      ],
+      ok: false,
+      error: `Zu viele automatische Fortsetzungen (${GENERATE_MAX_CONTINUE_HOPS}).`,
+    });
+    revalidateRomanAdmin(romanId);
+    return { outcome: "error", message: "Zu viele Fortsetzungs-Hops." };
+  }
+
+  // Another instance already claimed this hop and is still writing.
+  if (hopWorkerLockIsFresh(events, hop)) {
+    return {
+      outcome: "noop",
+      message: `Hop ${hop} läuft bereits — kein zweiter Worker.`,
+    };
+  }
+
+  events.push(
+    historyEvent({
+      type: "info",
+      stage,
+      summary:
+        hop <= 1
+          ? "Erzeugen · Worker gestartet"
+          : `Erzeugen · Fortsetzung Hop ${hop}`,
+      detail: formatGenerateHopDetail(hop),
+    }),
+  );
+  events.push(
+    historyEvent({
+      type: "info",
+      stage,
+      summary: `Worker-Lock Hop ${hop}`,
+      detail: formatGenerateWorkerLockDetail(hop),
+    }),
+  );
+  try {
+    await updatePipelineHistoryRun({
+      runId,
+      status: "running",
+      events,
+    });
+  } catch {
+    /* fail-soft */
+  }
+
+  const chunkBudget =
+    stage === "manuskript" && generateMode === "stage"
+      ? createGenerateChunkBudget()
+      : undefined;
 
   try {
     if (generateMode === "spec-chain") {
@@ -181,7 +273,7 @@ export async function runRomanGenerateJob(
           error: drafted.error ?? "Spec-Entwurf fehlgeschlagen.",
         });
         revalidateRomanAdmin(romanId);
-        return;
+        return { outcome: "error", message: drafted.error };
       }
 
       if (showAssess) {
@@ -206,7 +298,7 @@ export async function runRomanGenerateJob(
             error: ensured.error ?? "Reifegrad-Bewertung fehlgeschlagen.",
           });
           revalidateRomanAdmin(romanId);
-          return;
+          return { outcome: "error", message: ensured.error };
         }
       }
     } else {
@@ -218,13 +310,52 @@ export async function runRomanGenerateJob(
         runId,
         events,
         assessAfter: showAssess,
+        chunkBudget,
       });
       events = drafted.events;
+
+      if (drafted.status === "continue") {
+        revalidateRomanAdmin(romanId);
+        return {
+          outcome: "continue",
+          message: drafted.progressLabel,
+        };
+      }
 
       const draftFailed =
         drafted.status === "error" &&
         !/reifegrad/i.test(drafted.error ?? "");
       if (draftFailed) {
+        // Incomplete Manuskript after crash → auto-continue instead of dead end.
+        if (
+          stage === "manuskript" &&
+          (await manuskriptStillIncomplete(romanId))
+        ) {
+          events.push(
+            historyEvent({
+              type: "info",
+              stage,
+              summary:
+                drafted.error ??
+                "Abbruch mit Teilstand — automatische Fortsetzung …",
+              detail: GENERATE_CONTINUE_DETAIL,
+            }),
+          );
+          try {
+            await updatePipelineHistoryRun({
+              runId,
+              status: "running",
+              events,
+            });
+          } catch {
+            /* fail-soft */
+          }
+          revalidateRomanAdmin(romanId);
+          return {
+            outcome: "continue",
+            message: drafted.error,
+          };
+        }
         await finishIfStillRunning({
           romanId,
           runId,
@@ -232,7 +363,7 @@ export async function runRomanGenerateJob(
           error: drafted.error ?? "Erzeugen fehlgeschlagen.",
         });
         revalidateRomanAdmin(romanId);
-        return;
+        return { outcome: "error", message: drafted.error };
       }
 
       // Draft ok, or draft ok but in-step assess failed/timed out → ensure score.
@@ -261,7 +392,7 @@ export async function runRomanGenerateJob(
               error: ensured.error ?? "Reifegrad-Bewertung fehlgeschlagen.",
             });
             revalidateRomanAdmin(romanId);
-            return;
+            return { outcome: "error", message: ensured.error };
           }
         }
       }
@@ -275,6 +406,7 @@ export async function runRomanGenerateJob(
       ok: true,
     });
     revalidateRomanAdmin(romanId);
+    return { outcome: "ok" };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Erzeugen fehlgeschlagen.";
@@ -283,7 +415,33 @@ export async function runRomanGenerateJob(
       const run = await getPipelineHistoryRun(romanId, runId);
       if (run?.status === "error") {
         revalidateRomanAdmin(romanId);
-        return;
+        return { outcome: "error", message };
+      }
+      if (run?.status === "ok") {
+        revalidateRomanAdmin(romanId);
+        return { outcome: "ok" };
+      }
+
+      if (
+        stage === "manuskript" &&
+        generateMode === "stage" &&
+        (await manuskriptStillIncomplete(romanId))
+      ) {
+        events.push(
+          historyEvent({
+            type: "info",
+            stage,
+            summary: `${message} — Teilstand gespeichert, automatische Fortsetzung …`,
+            detail: GENERATE_CONTINUE_DETAIL,
+          }),
+        );
+        await updatePipelineHistoryRun({
+          runId,
+          status: "running",
+          events,
+        });
+        revalidateRomanAdmin(romanId);
+        return { outcome: "continue", message };
       }
 
       // Last-chance: draft may already be persisted — still try Reifegrad.
@@ -325,7 +483,7 @@ export async function runRomanGenerateJob(
                 ok: true,
               });
               revalidateRomanAdmin(romanId);
-              return;
+              return { outcome: "ok" };
             }
           }
         } catch {
@@ -344,6 +502,7 @@ export async function runRomanGenerateJob(
       /* best-effort finish */
     }
     revalidateRomanAdmin(romanId);
+    return { outcome: "error", message };
   }
 }
 

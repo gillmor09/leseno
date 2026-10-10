@@ -2,12 +2,16 @@
 
 /**
  * Roman tab: Verbessern — prose quality up (Autor / Opus via Claude Batch).
- * Source = Manuskript draft; writes chapter-wise into editorial.romanText.
- * Kick+poll are resilient: retries on kick, long poll, partial reload on timeout.
+ * Hard-gated: Manuskript freigabe (Seam/Payoff) must be clean first — no Opus
+ * costs until then. Source = Manuskript draft → editorial.romanText.
  */
 
 import { useState } from "react";
 import { toast } from "sonner";
+import {
+  applyManuskriptFreigabeFixesAction,
+  auditManuskriptFreigabeAction,
+} from "@/app/actions/roman-manuskript-freigabe";
 import {
   romanManuskriptOriginalRestoreAction,
   romanManuskriptVerbessernAction,
@@ -15,7 +19,9 @@ import {
 import { romanPipelineReloadRomanAction } from "@/app/actions/roman-pipeline";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import type { RomanEditorial } from "@/lib/roman/editorial";
+import { isManuskriptFreigabeReadyForRoman } from "@/lib/roman/editorial";
 import { parsePlotChapters } from "@/lib/roman/plot-chapters";
+import { getManuskriptRomanVerbessernGate } from "@/lib/roman/roman-verbessern-preflight";
 import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
 import type { RomanKontext } from "@/lib/roman/types";
 
@@ -74,17 +80,91 @@ export function RomanManuskriptVerbessernControl({
   disabled?: boolean;
   onComplete?: (roman: RomanKontext) => void;
 }) {
-  const [pending, setPending] = useState<"verbessern" | "restore" | null>(
-    null,
-  );
+  const [pending, setPending] = useState<
+    "verbessern" | "restore" | "freigabe" | "nachziehen" | null
+  >(null);
   const [progressLabel, setProgressLabel] = useState<string | null>(null);
 
   const hasManuskript = hasFilledManuskript(editorial.manuskriptText ?? "");
   const hasRoman = hasFilledManuskript(editorial.romanText ?? "");
   const busy = Boolean(disabled || pending);
+  const gate = getManuskriptRomanVerbessernGate({ editorial });
+  const gateBlocks = !gate.ok;
+  const freigabeReady = isManuskriptFreigabeReadyForRoman(editorial);
+  const freigabeFindings = editorial.manuskriptFreigabe?.findings ?? [];
+  const freigabeBlocks =
+    !freigabeReady &&
+    Boolean(gate.ok === false && gate.reason.includes("Freigabe"));
+
+  async function runFreigabeCheck(override = false) {
+    if (!canSave || busy || !hasManuskript) return;
+    setPending("freigabe");
+    try {
+      const audit = await auditManuskriptFreigabeAction({
+        romanId,
+        override,
+      });
+      if (!audit.success || !audit.data) {
+        toast.error(audit.error ?? "Freigabe-Check fehlgeschlagen.");
+        return;
+      }
+      onComplete?.(audit.data.roman);
+      if (audit.data.findings.length > 0 && !override) {
+        toast.message(audit.data.summary);
+      } else {
+        toast.success(audit.data.summary);
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Freigabe-Check fehlgeschlagen.",
+      );
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function runNachziehen() {
+    if (!canSave || busy || !hasManuskript) return;
+    setPending("nachziehen");
+    try {
+      const result = await applyManuskriptFreigabeFixesAction({ romanId });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Nachziehen fehlgeschlagen.");
+        return;
+      }
+      onComplete?.(result.data.roman);
+      if (result.data.autoFreigegeben) {
+        toast.success(result.data.summary);
+      } else {
+        toast.message(result.data.summary);
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Nachziehen fehlgeschlagen.",
+      );
+    } finally {
+      setPending(null);
+    }
+  }
 
   async function runVerbessern() {
     if (!canSave || busy || !hasManuskript) return;
+    // Re-read gate after possible freigabe — never kick Opus while blocked.
+    const liveGate = getManuskriptRomanVerbessernGate({ editorial });
+    if (!liveGate.ok) {
+      toast.error(liveGate.reason);
+      return;
+    }
+    if (!isManuskriptFreigabeReadyForRoman(editorial)) {
+      toast.error(
+        "Zuerst Manuskript-Freigabe (Seam/Payoff) — sonst startet kein Stil-Pass.",
+      );
+      return;
+    }
     setPending("verbessern");
     setProgressLabel("Roman Verbessern · Kapitelstruktur & Batch …");
     try {
@@ -102,7 +182,7 @@ export function RomanManuskriptVerbessernControl({
       if (!kick.ok) {
         toast.error(
           kick.message ??
-            "Worker-Start fehlgeschlagen — bitte erneut „Verbessern“ (hängt am gleichen Lauf bzw. Resume).",
+            "Worker-Start fehlgeschlagen — bitte erneut „Verbessern“.",
         );
         return;
       }
@@ -132,10 +212,8 @@ export function RomanManuskriptVerbessernControl({
           }
         } catch {
           consecutivePollErrors += 1;
-          /* keep polling */
         }
         if (consecutivePollErrors >= 40) {
-          // ~72s of pure poll failures — still wait out deadline, but surface hint.
           setProgressLabel(
             "Verbindung zum Fortschritt wackelig — Job läuft im Hintergrund weiter …",
           );
@@ -156,7 +234,7 @@ export function RomanManuskriptVerbessernControl({
         toast.message(
           polishedCount > 0
             ? `Verbessern läuft noch oder Poll-Timeout — ${polishedCount} Kapitel bereits im Roman. Erneut „Verbessern“ setzt nur offene Kapitel fort.`
-            : "Verbessern läuft noch im Hintergrund — Fortschritt in der Pipeline-Historie prüfen. Erneut starten setzt fort.",
+            : "Verbessern läuft noch im Hintergrund — Fortschritt in der Pipeline-Historie prüfen.",
         );
         return;
       }
@@ -164,7 +242,7 @@ export function RomanManuskriptVerbessernControl({
         toast.error(
           finalPoll.error?.trim() ||
             (polishedCount > 0
-              ? `Verbessern mit Fehlern beendet — ${polishedCount} Kapitel bleiben im Roman. Erneut starten setzt fehlende fort.`
+              ? `Verbessern mit Fehlern beendet — ${polishedCount} Kapitel bleiben im Roman.`
               : "Verbessern fehlgeschlagen."),
         );
         return;
@@ -210,15 +288,78 @@ export function RomanManuskriptVerbessernControl({
 
   return (
     <>
+      {!gate.ok ? (
+        <div
+          role="status"
+          className="space-y-3 rounded-2xl bg-amber-50 px-3 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200"
+        >
+          <p>Verbessern gesperrt: {gate.reason}</p>
+          {freigabeFindings.length > 0 ? (
+            <ul className="list-disc space-y-1 pl-5 text-xs font-semibold text-amber-900">
+              {freigabeFindings.map((f, i) => (
+                <li key={`${f.source}-${i}-${f.chapterNumbers.join("-")}`}>
+                  [{f.source === "seam" ? (f.kind === "payoff" ? "Payoff" : "Naht") : "Emotion"}]
+                  {" "}
+                  Kap. {f.chapterNumbers.join(", ")}: {f.summary}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {hasManuskript ? (
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                disabled={!canSave || busy}
+                onClick={() => void runFreigabeCheck(false)}
+                className="rounded-full bg-white px-4 py-2 text-xs font-bold text-amber-950 ring-1 ring-amber-300 hover:bg-amber-100/80 disabled:opacity-50"
+              >
+                {pending === "freigabe" ? "Prüfen …" : "Erneut prüfen"}
+              </button>
+              {freigabeFindings.length > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={!canSave || busy}
+                    onClick={() => void runNachziehen()}
+                    className="rounded-full bg-orange-700 px-4 py-2 text-xs font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+                  >
+                    {pending === "nachziehen"
+                      ? "Nachziehen …"
+                      : "Hinweise nachziehen"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canSave || busy}
+                    onClick={() => void runFreigabeCheck(true)}
+                    className="rounded-full bg-zinc-200 px-4 py-2 text-xs font-bold text-zinc-800 hover:bg-zinc-300 disabled:opacity-50"
+                  >
+                    Trotzdem freigeben
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
-          disabled={!canSave || busy || !hasManuskript}
+          disabled={!canSave || busy || !hasManuskript || gateBlocks}
           onClick={() => void runVerbessern()}
           className="rounded-full bg-amber-800 px-5 py-2.5 text-sm font-bold text-white hover:bg-amber-900 disabled:opacity-50"
         >
           {pending === "verbessern" ? "Verbessern …" : "Verbessern"}
         </button>
+        {hasManuskript && (freigabeBlocks || !freigabeReady) && gate.ok ? (
+          <button
+            type="button"
+            disabled={!canSave || busy}
+            onClick={() => void runFreigabeCheck(false)}
+            className="rounded-full bg-sky-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-sky-800 disabled:opacity-50"
+          >
+            {pending === "freigabe" ? "Prüfen …" : "Freigabe prüfen"}
+          </button>
+        ) : null}
         {hasManuskript ? (
           <button
             type="button"
@@ -234,22 +375,39 @@ export function RomanManuskriptVerbessernControl({
           </button>
         ) : null}
         <p className="max-w-xl text-xs font-semibold text-zinc-500">
-          Zuerst Seam/Payoff und emotionale Konsequenzen (Wertwechsel /
-          Nachwirkung) im Manuskript, dann zwei Wellen Stil (Stilanker zuerst),
-          Freeze-QA + Soft-Repair. Resume: polierte Kapitel werden übersprungen.
-          Gate: Logik/Dramaturgie ≥70%, Stil/Lesefluss ≥60%, Versprechen ≥70%.
-          Danach Auto-Reifegrad. Override: „Roman fertig“.
+          Nur Stil-Pass (Opus) — startet erst nach Manuskript-Freigabe
+          (Seam/Payoff). Keine Inhalts-Reparatur hier. Gate: Reifegrad + Freigabe.
         </p>
       </div>
 
       <RomanSceneWaitDialog
-        open={pending === "verbessern"}
+        open={
+          pending === "verbessern" ||
+          pending === "freigabe" ||
+          pending === "nachziehen"
+        }
         variant="manuskript-vereinfachen"
-        contextLabel="Roman · Verbessern (Batch)"
-        title="Prosa verbessern"
+        contextLabel={
+          pending === "nachziehen"
+            ? "Manuskript · Hinweise nachziehen"
+            : pending === "freigabe"
+              ? "Manuskript · Freigabe-Check"
+              : "Roman · Verbessern (Batch)"
+        }
+        title={
+          pending === "nachziehen"
+            ? "Nähte & Emotion nachziehen"
+            : pending === "freigabe"
+              ? "Seam / Payoff prüfen"
+              : "Prosa verbessern"
+        }
         progressLabel={
-          progressLabel ??
-          "Autor schärft Wortwahl und Satzbau — Kapitel landen im Roman …"
+          pending === "nachziehen"
+            ? "Co-Autor schärft betroffene Kapitel (günstig, kein Opus) …"
+            : pending === "freigabe"
+              ? "Günstiger Assist prüft Nähte, Payoffs und emotionale Konsequenzen …"
+              : (progressLabel ??
+                "Autor schärft Wortwahl und Satzbau — Kapitel landen im Roman …")
         }
       />
     </>

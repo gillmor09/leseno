@@ -16,6 +16,7 @@ import {
   type RomanStoryState,
   type RomanWissensGraph,
 } from "@/lib/roman/editorial";
+import { formatMetricFactsForContracts } from "@/lib/roman/wissens-metric-facts";
 import {
   buildDeterministicChapterContextBuffer,
   CONTINUITY_PREV_TAIL_CHARS,
@@ -168,11 +169,13 @@ export function buildDeterministicChapterPacket(input: {
     input.chapter.number,
     3,
   );
-  const facts = formatFactContractsForChapter(
+  const factsBase = formatFactContractsForChapter(
     input.wissensGraph,
     input.chapter.number,
-    { storyState: input.storyState, maxChars: 1_800 },
+    { storyState: input.storyState, maxChars: 1_600 },
   );
+  const metricFacts = formatMetricFactsForContracts(input.wissensGraph, 8);
+  const facts = [factsBase, metricFacts].filter(Boolean).join("\n\n").slice(0, 2_000);
   const lifecycle = formatPropLifecycleMandates(
     input.wissensGraph,
     input.chapter.number,
@@ -194,7 +197,7 @@ export function buildDeterministicChapterPacket(input: {
     [
       {
         priority: 0,
-        text: `# Kapitel-Paket ${input.chapter.number}\n${formatChapterHeading(input.chapter)}\nARBEITSTEILUNG: Plot/Logik = Szenenverträge + Gerüst + Fakten/Graph + Raum-Spine (lückenlos umsetzen). Deine Arbeit = Ton, Stimme, Emotion, SHOW — keine neuen Stränge, Props oder Enthüllungen.`,
+        text: `# Kapitel-Paket ${input.chapter.number}\n${formatChapterHeading(input.chapter)}\nARBEITSTEILUNG: Plot/Logik = Szenenverträge + Gerüst + Fakten/Graph + Raum-Spine + FROZEN-Maße (lückenlos umsetzen). Deine Arbeit = Ton, Stimme, Emotion, SHOW — keine neuen Stränge, Props oder Enthüllungen.`,
       },
       {
         priority: 1,
@@ -268,11 +271,13 @@ export function buildFrozenContractChapterPacket(input: {
     input.chapter.number,
     1,
   );
-  const facts = formatFactContractsForChapter(
+  const factsBase = formatFactContractsForChapter(
     input.wissensGraph,
     input.chapter.number,
-    { storyState: input.storyState, maxChars: 1_400 },
+    { storyState: input.storyState, maxChars: 1_200 },
   );
+  const metricFacts = formatMetricFactsForContracts(input.wissensGraph, 8);
+  const facts = [factsBase, metricFacts].filter(Boolean).join("\n\n").slice(0, 1_600);
   const lifecycle = formatPropLifecycleMandates(
     input.wissensGraph,
     input.chapter.number,
@@ -284,7 +289,7 @@ export function buildFrozenContractChapterPacket(input: {
     .map((h) => `- ${h.slice(0, 180)}`)
     .join("\n");
   const invariantBlock = invariants
-    ? `## Harte Invarianten (Graph — Logik, kein Widerspruch)\n${invariants}`
+    ? `## Harte Invarianten (Graph — Logik/Maße, kein Widerspruch)\n${invariants}`
     : "";
   const state = formatStoryStateForPrompt(input.storyState).slice(0, 700);
 
@@ -410,11 +415,16 @@ export async function assembleManuskriptChapterPacket(input: {
       input.chapter.number,
       3,
     );
-    const facts = formatFactContractsForChapter(
+    const factsBase = formatFactContractsForChapter(
       input.wissensGraph,
       input.chapter.number,
-      { storyState: input.storyState, maxChars: 2_000 },
+      { storyState: input.storyState, maxChars: 1_700 },
     );
+    const metricFacts = formatMetricFactsForContracts(input.wissensGraph, 8);
+    const facts = [factsBase, metricFacts]
+      .filter(Boolean)
+      .join("\n\n")
+      .slice(0, 2_200);
     const beats =
       hard?.scenes ||
       formatStructuredChapterForManuskript(

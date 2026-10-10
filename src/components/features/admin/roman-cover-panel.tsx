@@ -165,7 +165,7 @@ export function RomanCoverPanel({
         {isCleverErzaehlt ? (
           <>
             Ablauf: Cover-Art-Director (KI-Rolle) → Bild → Serien-Badge oben
-            mittig + leseno-Logo unten rechts → Cover-Typograf (KI-Rolle) →
+            mittig + leseno-Logo unten links → Cover-Typograf (KI-Rolle) →
             Buchtitel mittig. Rollen unter KI-Rollen anpassbar. Format{" "}
             {romanCoverSizeLabel()} (Druck).
           </>
@@ -173,7 +173,7 @@ export function RomanCoverPanel({
           <>
             Motiv und Schrift frei nach Genre-Bestsellern (Marketing-Blickfang —
             kein festes Nunito). Overlay: Autor oben mittig, Titel + Untertitel
-            (Einzeiler), leseno-Logo unten rechts. Format{" "}
+            (Einzeiler), leseno-Logo unten links. Format{" "}
             {romanCoverSizeLabel()} (Druck).
           </>
         )}

@@ -1,8 +1,8 @@
 /**
  * Roman book-cover pipeline:
- * Art director (visual, no text) → Gemini 3 Pro Image artwork →
- * Marketing typography brief → exact title overlay + author (top-center) +
- * Untertitel + leseno mark (bottom-right).
+ * Art director derives a book-specific emotional core, proposes 3 concepts,
+ * picks one → image model artwork → Marketing typography brief →
+ * exact title overlay + author (top-center) + Untertitel + leseno mark (bottom-left).
  */
 
 import { generateImage } from "@/lib/ai/generate-image";
@@ -52,32 +52,45 @@ export { ROMAN_COVER_SIZE } from "@/lib/roman/cover-size";
 const MAX_MANUSCRIPT_FOR_SCENE = 10_000;
 
 /**
- * Distilled emotional core for this novel's cover (all prior brief improvements):
- * luminous invitation + social contrast + moral tension → one unanswered question.
- */
-const COVER_EMOTIONAL_CORE = [
-  "EMOTIONAL CORE (answer this visually, do NOT paint any words): „Wann ist es genug?“",
-  "Meaning: the ache between enough-for-the-family and never-enough status money — security that tips into excess, conscience that still smiles",
-  "Show that question through contrast in ONE frame: warm Vorort / family life against distant glass skyscrapers or banking towers; home-scale tenderness against career-scale pressure",
-  "Feeling to hit: warm irony + quiet moral unease — inviting light, not gloom; recognition, not horror",
-].join(". ");
-
-/**
- * Marketing art lock: readable, content-true literary cover —
- * bright enough to invite, sharp on the book's moral/social contrasts.
+ * Quality floor for trade covers — no universal book thesis.
+ * Emotional core + technique come from the per-book concept plan.
  */
 const COVER_STYLE_LOCK = [
-  "German literary TRADE BOOK COVER — contemporary fiction / Gesellschaftssatire energy: emotionally clear, imaginative, morally charged",
-  COVER_EMOTIONAL_CORE,
-  "LIGHTING: inviting and luminous — golden hour, clear daylight, soft bright interiors, crisp sky — NOT gloom, noir, muddy dusk, or horror darkness",
-  "CONTENT FIRST: mirror the book's core tensions so a stranger senses the story — suburb vs skyline, secure family vs too much money, conscience vs comfort",
-  "Creative metaphor + juxtaposition in ONE inventive frame (window, reflection, scale contrast, two worlds) — not stickers, not a car ad or real-estate brochure",
-  "Art technique FREE (painterly, illustrative, graphic, atmospheric photo, conceptual montage) IF it feels like a novel cover — never like advertising",
-  "HARD FORBIDDEN: car advertisement, dealership brochure, eBay Kleinanzeigen / classified listing, product catalog, sterile stock lifestyle, shiny brand vehicle hero, oppressive blacked-out thriller palette",
-  "Status objects (cars, houses, phones) only as SYMBOLS of „is this enough?“ — never as polished merchandise",
+  "German literary TRADE BOOK COVER — emotionally clear, imaginative, content-true",
   "Finished imprint quality from a major house — not Midjourney sludge, not flat clipart",
+  "Creative metaphor + juxtaposition in ONE inventive frame — not stickers, not a product ad",
+  "HARD FORBIDDEN: car advertisement, dealership brochure, eBay Kleinanzeigen / classified listing, product catalog, sterile stock lifestyle, shiny brand vehicle hero",
   "Only use Pixar / 3D animation CGI when the brief explicitly asks for it (e.g. children's knowledge series)",
 ].join(". ");
+
+export type CoverConceptApproach =
+  | "symbolic"
+  | "figurative"
+  | "graphic";
+
+/** One of three competing cover directions before a single render. */
+export type CoverConcept = {
+  id: string;
+  approach: CoverConceptApproach;
+  label: string;
+  /** Full image brief for this direction (no painted text). */
+  sceneBrief: string;
+  /** Concrete technique (linocut, painterly, collage, hard-light photo, …). */
+  artTechnique: string;
+  /** Lighting / mood for THIS book — genre may be dark, bright, or mixed. */
+  lighting: string;
+};
+
+/** Book-specific cover plan: unique thesis → 3 concepts → one pick. */
+export type CoverConceptPlan = {
+  /** One visual question only THIS book answers (not a universal motto). */
+  emotionalCore: string;
+  /** Dominant metaphor pulled from premise / places / tone. */
+  dominantMetaphor: string;
+  concepts: CoverConcept[];
+  chosenId: string;
+  chosenRationale: string;
+};
 
 function formatCharBrief(chars: RomanCharakter[]): string {
   return chars
@@ -95,10 +108,69 @@ function formatCharBrief(chars: RomanCharakter[]): string {
     .join("\n");
 }
 
+function asApproach(v: unknown): CoverConceptApproach {
+  const s = String(v ?? "").toLowerCase();
+  if (s === "figurative" || s === "graphic") return s;
+  return "symbolic";
+}
+
+function sanitizeConcept(raw: unknown, index: number): CoverConcept | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const sceneBrief = String(o.sceneBrief ?? o.brief ?? "")
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "");
+  if (sceneBrief.length < 40) return null;
+  const id =
+    String(o.id ?? "").trim() ||
+    ["A", "B", "C"][index] ||
+    `C${index + 1}`;
+  return {
+    id,
+    approach: asApproach(o.approach),
+    label: String(o.label ?? o.name ?? id).trim().slice(0, 80) || id,
+    sceneBrief: sceneBrief.slice(0, 2_200),
+    artTechnique: String(o.artTechnique ?? o.technique ?? "")
+      .trim()
+      .slice(0, 240),
+    lighting: String(o.lighting ?? o.mood ?? "")
+      .trim()
+      .slice(0, 240),
+  };
+}
+
 /**
- * Gemini plans the illustration only (title is composited later from a type brief).
+ * Fallback when the planner JSON fails: one symbolic brief from raw prose.
  */
-export function buildRomanCoverScenePlanPrompt(input: {
+function fallbackCoverConceptPlan(
+  sceneRaw: string,
+  title: string,
+): CoverConceptPlan {
+  const brief =
+    sceneRaw.trim().replace(/^["'`]+|["'`]+$/g, "").slice(0, 2_200) ||
+    `Atmospheric literary book-cover for „${title || "untitled"}“ — one strong metaphor, calm title zone, no painted text.`;
+  const concept: CoverConcept = {
+    id: "A",
+    approach: "symbolic",
+    label: "Fallback single concept",
+    sceneBrief: brief,
+    artTechnique: "painterly atmospheric illustration",
+    lighting: "genre-true light with a calm title zone",
+  };
+  return {
+    emotionalCore: `What does „${title || "this book"}“ make a stranger feel before they open it?`,
+    dominantMetaphor: "one strong story-true visual metaphor",
+    concepts: [concept],
+    chosenId: "A",
+    chosenRationale: "Planner JSON unavailable — render the single recovered brief.",
+  };
+}
+
+/**
+ * Art director: book-specific emotional core + 3 concepts + pick (JSON).
+ * Universal mottos (e.g. suburb vs skyline) only if the book truly is about that.
+ */
+export function buildRomanCoverConceptPlanPrompt(input: {
   title: string;
   genre: string;
   praemisse: string;
@@ -112,41 +184,53 @@ export function buildRomanCoverScenePlanPrompt(input: {
 }): { systemInstruction: string; userText: string } {
   const title = input.title.trim() || "(untitled)";
 
-  const systemInstruction = `You are a senior cover art director at a German literary trade publisher (Romane / Jugendbuch / Gesellschaftssatire).
-Your concepts are signed off by an acquisitions editor who wants ONE clear emotional message — inviting light, sharp content, moral heart.
+  const systemInstruction = `You are a senior cover art director at a German literary trade publisher.
+Your job: invent a UNIQUE visual promise for THIS book — not a house-style template reused for every title.
 
-# Emotional core (mandatory — answer visually, NEVER paint these words)
-The cover must make a stranger feel the unanswered question „Wann ist es genug?“
-That is the distilled core of this book:
-- Vorort / family security  vs  skyline / finance / too much money
-- warmth at home  vs  career pressure and status hunger
-- conscience that knows something is wrong  vs  the comfort of looking away
-Warm irony + quiet moral unease in luminous light — not gloom, not a product pitch.
-
-Goal: ONE cover IMAGE that feels like that question without writing it.
+# Process (mandatory)
+1) Distill ONE book-specific emotionalCore: a visual question or tension only THIS story answers (1 short sentence). Do NOT reuse a universal motto unless the book truly is about that exact theme.
+2) Name ONE dominantMetaphor grounded in premise / places / characters / tone.
+3) Propose EXACTLY 3 competing concepts with distinct approaches:
+   - A symbolic — conceptual metaphor / juxtaposition (object, scale, reflection, two worlds)
+   - B figurative — a charged human/story moment (silhouette or face welcome)
+   - C graphic — bold graphic / abstract-literary / typographic-space-aware composition (still ZERO painted letters)
+4) Pick exactly ONE concept to render (chosenId). Prefer the boldest shelf-stopper that stays faithful to the book — not the safest average.
+5) Commit to a concrete artTechnique per concept (e.g. linocut, flat gouache, oil-painterly, collage montage, hard-light photography, grainy documentary still). Never say "art technique free".
+6) Lighting follows genre + Altersklasse: thriller may be dark; satire may be garish; YA may be clear and bright. Do NOT force golden-hour warmth on every book.
 
 Hard rules:
-- English only; image brief only — no markdown, no quotes wrapping the whole answer.
-- LIGHT FIRST: BRIGHT / luminous (daylight, golden hour, clear sky, soft bright rooms). Avoid noir, underexposed gloom, muddy brown-black, “dark prestige” thriller looks.
-- CONTENT MIRROR: pull concrete contrasts from premise/idea/places and stage them in ONE inventive frame (window, reflection, scale contrast, two worlds sharing one light). Typical motifs:
-  - suburb / tidy family home / garden fence  vs  glass skyscrapers, banking towers
-  - secure family warmth  vs  excess money / status
-  - conscience  vs  comfortable blindness
-- Every prop must serve „is this enough?“ — not generic mood, not a car-ad hero shot.
-- HARD BAN: automotive ads, dealership campaigns, eBay Kleinanzeigen / classified photos, product catalogs, sterile stock lifestyle, oppressive blacked-out covers. Do NOT paint any letters or the question as text.
-- Art technique free (painterly, illustrative, graphic, atmospheric photo, conceptual montage) only when it reads as a NOVEL cover.
-- ZERO text/letters/numbers/signs/logos/UI/title on the image — typography is added later.
-- Fixed chrome (composited later — protect quiet pictorial space, do NOT paint text/logos):
-  - AUTHOR name: top-center band
+- English only in string values. Return ONLY valid JSON (no markdown fences).
+- ZERO text/letters/numbers/signs/logos/UI/title painted in any sceneBrief — typography is composited later.
+- Fixed chrome later (protect quiet pictorial space, do NOT paint):
+  - AUTHOR: top-center band
   - TITLE + subtitle: prefer lower/bottom (or center when art opens there) — never top/upper
-  - PUBLISHER mark: bottom-right corner
-- Leave quiet pictorial space — NEVER paint a dark header bar, gradient strip, banner, UI chrome, or dimmed slab.
+  - PUBLISHER mark: bottom-left corner
+- Leave quiet pictorial space — NEVER describe a dark header bar, gradient strip, banner, or UI chrome.
 - Motif AND palette must fit genre AND Altersklasse; still feel premium when parents buy.
-- Match the book's Kernaussage / premise tightly — not a generic genre cliché.
-- Compose for a tall portrait cover exactly 1600×2560 px (5:8, print @ 300 ppi), full-bleed.
-- Do not invent spoilers that contradict the premise; stay faithful to the book's world.
-- About 90–160 words.
-- Mention briefly where the title will sit later (e.g. “title zone: lower third, center”) without darkening it into a bar.`;
+- Match Kernaussage / premise tightly — forbid generic genre clichés that ignore THIS book.
+- Compose for tall portrait 1600×2560 (5:8). About 70–140 words per sceneBrief.
+- No spoilers that contradict the premise.
+- HARD BAN in briefs: automotive ads, dealership shine, Kleinanzeigen/listing photos, product catalogs, sterile stock lifestyle.
+
+JSON shape:
+{
+  "emotionalCore": "…",
+  "dominantMetaphor": "…",
+  "concepts": [
+    {
+      "id": "A",
+      "approach": "symbolic",
+      "label": "short name",
+      "sceneBrief": "full image brief…",
+      "artTechnique": "…",
+      "lighting": "…"
+    },
+    { "id": "B", "approach": "figurative", "label": "…", "sceneBrief": "…", "artTechnique": "…", "lighting": "…" },
+    { "id": "C", "approach": "graphic", "label": "…", "sceneBrief": "…", "artTechnique": "…", "lighting": "…" }
+  ],
+  "chosenId": "A"|"B"|"C",
+  "chosenRationale": "one sentence why this wins the shelf for THIS book"
+}`;
 
   let manuskript = input.manuskriptRaw.trim();
   if (manuskript.length > MAX_MANUSCRIPT_FOR_SCENE) {
@@ -157,9 +241,9 @@ Hard rules:
   const extra = input.extraInstruction?.trim();
   const idee = (input.ideeKurz ?? "").trim().slice(0, 4_000);
 
-  const userText = `Brief the cover artwork as an emotional literary hit (image only — no painted text).
+  const userText = `Plan the cover for this book (JSON only — three concepts, then pick one).
 
-# Working title (for context / title-zone planning only — do NOT write it in the image)
+# Working title (context only — do NOT write it in any sceneBrief)
 ${title}
 
 # Genre
@@ -167,7 +251,6 @@ ${input.genre.trim() || "(unspecified)"}
 
 # Reader age group (Altersklasse) + parent buyers
 ${input.alterLabel?.trim() || "(unspecified)"}
-Design must speak to this age with feeling — and still feel like a book worth giving.
 
 # Premise / Kernaussage
 ${input.praemisse.trim() || "(none)"}
@@ -178,47 +261,117 @@ ${idee || "(none)"}
 # Tonality & style
 ${input.tonalitaet.trim() || "(unspecified)"}
 
-# Key places (sensory atmosphere — not product locations)
+# Key places (sensory atmosphere)
 ${input.weltSchauplaetze.trim().slice(0, 2_000) || "(none)"}
 
-# Characters (emotion / relationship — faces or silhouettes welcome; not catalog models)
+# Characters (emotion / relationship)
 ${chars || "(none listed)"}
 
 # Outline / manuscript excerpt
 ${manuskript || "(empty — invent from premise/genre/age only)"}
 
 ${extra ? `# Extra art direction\n${extra}\n` : ""}
-Write the image brief now:
-1) State how the image answers „Wann ist es genug?“ without any painted words (one sentence).
-2) Name the CONTENT CONTRASTS you will show (Vorort/family vs skyline/finance; secure home vs too much money; conscience vs comfort) — pull them from premise/places above.
-3) Describe ONE inventive visual that stages those contrasts as the emotional core — not a literal product scene.
-4) Lighting + palette: LUMINOUS / inviting overall; reserved calm title zone; age-true; absolutely no text.
-Forbidden: car ads, Kleinanzeigen/listing photos, dealership shine, sterile stock lifestyle, dark noir thriller look.`;
+Remember: unique thesis for THIS book → bold technique → 3 concepts → 1 chosenId.`;
 
   return { systemInstruction, userText };
 }
 
-/** Final Flux prompt: artwork only, hard no-text (strip title leaks). */
+/** @deprecated Use buildRomanCoverConceptPlanPrompt — kept for callers/tests. */
+export function buildRomanCoverScenePlanPrompt(
+  input: Parameters<typeof buildRomanCoverConceptPlanPrompt>[0],
+): { systemInstruction: string; userText: string } {
+  return buildRomanCoverConceptPlanPrompt(input);
+}
+
+function parseCoverConceptPlan(
+  raw: string,
+  title: string,
+): CoverConceptPlan {
+  try {
+    const parsed = parseModelJsonObject(raw) as Record<string, unknown>;
+    const conceptsRaw = Array.isArray(parsed.concepts)
+      ? parsed.concepts
+      : [];
+    const concepts = conceptsRaw
+      .map((c, i) => sanitizeConcept(c, i))
+      .filter((c): c is CoverConcept => Boolean(c))
+      .slice(0, 3);
+
+    if (concepts.length === 0) {
+      return fallbackCoverConceptPlan(raw, title);
+    }
+
+    const emotionalCore =
+      String(parsed.emotionalCore ?? "").trim().slice(0, 320) ||
+      `What unique tension does „${title || "this book"}“ put on the shelf?`;
+    const dominantMetaphor =
+      String(parsed.dominantMetaphor ?? "").trim().slice(0, 240) ||
+      "one story-true metaphor";
+
+    const chosenRaw = String(parsed.chosenId ?? "").trim();
+    const chosen =
+      concepts.find(
+        (c) =>
+          c.id === chosenRaw ||
+          c.id.toLowerCase() === chosenRaw.toLowerCase(),
+      ) ?? concepts[0]!;
+
+    return {
+      emotionalCore,
+      dominantMetaphor,
+      concepts,
+      chosenId: chosen.id,
+      chosenRationale: String(parsed.chosenRationale ?? "")
+        .trim()
+        .slice(0, 320),
+    };
+  } catch {
+    return fallbackCoverConceptPlan(raw, title);
+  }
+}
+
+/** Final image prompt: artwork only, hard no-text (strip title leaks). */
 export function buildRomanCoverFluxPrompt(
   sceneDescription: string,
   title = "",
   styleMandate = "",
+  plan?: Pick<
+    CoverConceptPlan,
+    "emotionalCore" | "dominantMetaphor"
+  > & {
+    artTechnique?: string;
+    lighting?: string;
+  },
 ): string {
   const cleanedScene = stripTitleLeakFromScene(sceneDescription, title);
   const scene =
     sanitizeFluxVisualCue(cleanedScene, 1_100) ||
-    "Atmospheric literary book-cover scene, strong focal silhouette, moody premium light";
+    "Atmospheric literary book-cover scene, strong focal silhouette, premium light";
   const style = sanitizeFluxStyleCue(styleMandate, 1_000);
+  const core = (plan?.emotionalCore ?? "").trim();
+  const metaphor = (plan?.dominantMetaphor ?? "").trim();
+  const technique = (plan?.artTechnique ?? "").trim();
+  const lighting = (plan?.lighting ?? "").trim();
 
   return [
     COVER_STYLE_LOCK,
+    core
+      ? `BOOK-SPECIFIC EMOTIONAL CORE (answer visually, never paint these words): ${core}.`
+      : "",
+    metaphor ? `DOMINANT METAPHOR: ${metaphor}.` : "",
+    technique
+      ? `MANDATORY ART TECHNIQUE (commit — do not default to generic AI sludge): ${technique}.`
+      : "",
+    lighting
+      ? `LIGHTING / MOOD (genre-true for THIS book): ${lighting}.`
+      : "",
     style
-      ? `MANDATORY TONALITY (emotion/mood only — keep it luminous; serve „Wann ist es genug?“; never a car ad, classified listing, or noir gloom): ${style}.`
+      ? `ADDITIONAL TONALITY (serve the book — never a car ad or classified listing): ${style}.`
       : "",
     FLUX_NO_TEXT_BLOCK,
-    `Literary cover brief (visual answer to „Wann ist es genug?“ — no painted words): ${scene}.`,
-    "Portrait full-bleed novel cover 1600×2560 (5:8, print @ 300 ppi), luminous inviting light, Vorort/family vs skyline/money contrast, calm title zone.",
-    "Not an advertisement. Not a product photo. Not eBay Kleinanzeigen. Not a dark thriller poster. A bright, human cover that makes the viewer feel: when is it enough?",
+    `Literary cover brief (visual only — no painted words): ${scene}.`,
+    "Portrait full-bleed novel cover 1600×2560 (5:8, print @ 300 ppi), calm title zone, publisher mark reserved bottom-left.",
+    "Not an advertisement. Not a product photo. Not eBay Kleinanzeigen. A cover that feels like THIS book alone.",
     FLUX_NO_TEXT_BLOCK,
   ]
     .filter(Boolean)
@@ -311,7 +464,7 @@ Hard rules:
   - First strong topic noun is primary (e.g. "Wald"). Lines that start with "&" / "und" are secondary — NEVER primary.
 - Prefer 2–3 short lines when the title has 3+ words so EACH topic line can be huge; one line only for 1–2 word titles.
 - ALWAYS set size to "hero". Never "compact". Thumbnail readability beats clever micro type.
-- Prefer zone "lower" or "bottom" (or "center" when art clearly opens there). NEVER "top"/"upper" — author name is fixed in the top band; publisher mark is bottom-right.
+- Prefer zone "lower" or "bottom" (or "center" when art clearly opens there). NEVER "top"/"upper" — author name is fixed in the top band; publisher mark is bottom-left.
 - Contrast comes from the type itself (opaque halo). Default scrim to "none". Never plan a header bar. Only allow "soft"/"strong" for a subtle bottom fade when type sits in the lower third on busy art.
 - Prefer "light" tone (white type) on mid/dark fields.
 - Plan ONLY the book title lines — no author, no subtitle, no imprint, no ALL-CAPS unless the source title is already all caps.
@@ -374,10 +527,12 @@ export type RomanCoverGenerateResult = {
   dataUrl: string;
   sceneDescription: string;
   promptUsed: string;
+  /** Book-specific concept plan (debug / UI). */
+  conceptPlan?: CoverConceptPlan;
 };
 
 /**
- * Art direction → Gemini 3 Pro Image → title overlay + author / subtitle / leseno.
+ * Concept plan → image → title overlay + author / subtitle / leseno.
  */
 export async function generateRomanCover(
   input: RomanCoverGenerateInput,
@@ -402,24 +557,29 @@ export async function generateRomanCover(
     resolveRomanCoverImagesModel(),
   ]);
 
-  const plan = buildRomanCoverScenePlanPrompt({
+  const planPrompt = buildRomanCoverConceptPlanPrompt({
     ...input,
     manuskriptRaw: outlineOrProse,
   });
-  const sceneRaw = await generateText({
+  const planRaw = await generateText({
     model: textModel,
-    systemInstruction: plan.systemInstruction,
-    userText: plan.userText,
+    preferJson: true,
+    maxTokens: 2_400,
+    timeoutMs: 90_000,
+    systemInstruction: planPrompt.systemInstruction,
+    userText: planPrompt.userText,
   });
-  const sceneDescription = sceneRaw
-    .trim()
-    .replace(/^["'`]+|["'`]+$/g, "")
-    .trim();
-  if (!sceneDescription) {
+
+  const title = input.title.trim();
+  const conceptPlan = parseCoverConceptPlan(planRaw, title);
+  const chosen =
+    conceptPlan.concepts.find((c) => c.id === conceptPlan.chosenId) ??
+    conceptPlan.concepts[0];
+  if (!chosen?.sceneBrief) {
     throw new Error("Gemini hat keine Cover-Szene geliefert.");
   }
 
-  const title = input.title.trim();
+  const sceneDescription = chosen.sceneBrief;
   const author =
     (input.autorName ?? "").trim() || ROMAN_DEFAULT_AUTHOR;
   const untertitel = usableCoverSubtitle(input.untertitel);
@@ -431,6 +591,12 @@ export async function generateRomanCover(
     sceneDescription,
     title,
     styleMandate,
+    {
+      emotionalCore: conceptPlan.emotionalCore,
+      dominantMetaphor: conceptPlan.dominantMetaphor,
+      artTechnique: chosen.artTechnique,
+      lighting: chosen.lighting,
+    },
   );
   const result = await generateImage({
     model: imagesModel,
@@ -467,13 +633,18 @@ export async function generateRomanCover(
   const designBlock = design
     ? `\n\n— Typografie (Bestseller-Display) —\n${JSON.stringify(design, null, 2)}`
     : "";
-  const chromeBlock = `\n\n— Chrome (code) —\nAutor oben mittig: ${author}\nUntertitel: ${untertitel || "(leer)"}\nleseno-Logo: unten rechts`;
+  const chromeBlock = `\n\n— Chrome (code) —\nAutor oben mittig: ${author}\nUntertitel: ${untertitel || "(leer)"}\nleseno-Logo: unten links`;
+  const conceptBlock = `\n\n— Konzeptplan —\nKern: ${conceptPlan.emotionalCore}\nMetapher: ${conceptPlan.dominantMetaphor}\nGewählt: ${chosen.id} (${chosen.approach}) — ${chosen.label}\nTechnik: ${chosen.artTechnique || "(n/a)"}\nLicht: ${chosen.lighting || "(n/a)"}\nWarum: ${conceptPlan.chosenRationale || "(n/a)"}\nAlternativen: ${conceptPlan.concepts
+    .filter((c) => c.id !== chosen.id)
+    .map((c) => `${c.id}/${c.approach}: ${c.label}`)
+    .join("; ") || "(keine)"}`;
 
-  const debugPrompt = `— Art Direction (Bild ohne Text) —\n${sceneDescription}\n\n— Image Prompt —\n${promptUsed}${designBlock}${chromeBlock}`;
+  const debugPrompt = `— Art Direction (Buch-Kern + 3 Konzepte → Wahl) —\n${sceneDescription}${conceptBlock}\n\n— Image Prompt —\n${promptUsed}${designBlock}${chromeBlock}`;
 
   return {
     dataUrl,
     sceneDescription,
     promptUsed: debugPrompt,
+    conceptPlan,
   };
 }

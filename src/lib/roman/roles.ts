@@ -564,7 +564,7 @@ function isRomanRoleSelectableProvider(provider: string): boolean {
   return isTextLlmProvider(provider) || isImageAiProvider(provider);
 }
 
-/** Catalog-shaped config for a wired image endpoint (FLUX / Gemini Image). */
+/** Catalog-shaped config for a wired image endpoint (FLUX / Gemini / OpenAI). */
 function wiredImageEndpointToConfig(endpoint: WiredAiEndpoint): AiModelConfig {
   return {
     id: endpoint.modelSlug,
@@ -579,7 +579,7 @@ function wiredImageEndpointToConfig(endpoint: WiredAiEndpoint): AiModelConfig {
   };
 }
 
-/** Wired text LLMs + FLUX.2 for the role model dropdown. */
+/** Wired text LLMs + image endpoints for the role model dropdown. */
 export function listRomanRoleModelOptions(): Array<{
   modelSlug: string;
   label: string;

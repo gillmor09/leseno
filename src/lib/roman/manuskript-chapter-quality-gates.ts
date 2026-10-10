@@ -1,10 +1,11 @@
 /**
  * Sequential post-draft quality gates for Manuskript chapters.
- * Order: Verbote/Geheimnisse → Abdeckung → Raum → Sprache → Verify.
+ * Order: Verbote/Geheimnisse → Abdeckung → Raum → Maße → Sprache → Verify.
  * One rewrite per failing phase so later fixes do not undo earlier ones;
- * final verify re-checks Raum+Sprache once.
+ * final verify re-checks Raum+Maße+Sprache once.
  */
 
+import type { RomanWissensGraph } from "@/lib/roman/editorial";
 import {
   formatContractViolationRewriteBrief,
   validateManuskriptChapterAgainstContracts,
@@ -22,6 +23,10 @@ import {
   validateManuskriptChapterSpatial,
 } from "@/lib/roman/manuskript-spatial-validate";
 import type { RomanSzenenplotChapterNode } from "@/lib/roman/szenenplot-structured";
+import {
+  formatMetricViolationRewriteBrief,
+  validateProseAgainstMetricFacts,
+} from "@/lib/roman/wissens-metric-facts";
 
 export type ManuskriptGateWritten = {
   chapterMarkdown: string;
@@ -40,6 +45,8 @@ export async function runManuskriptPostDraftQualityGates(input: {
   chapterPacket?: string;
   structuredChapter: RomanSzenenplotChapterNode | null | undefined;
   factContractsBlock?: string;
+  /** For deterministic cm/mm continuity vs frozen MASS facts. */
+  wissensGraph?: RomanWissensGraph | null;
   extractBody: (markdown: string, chapterNumber: number) => string | null;
   wordCountOf: (body: string) => number;
   rewrite: (patchedPacket: string) => Promise<ManuskriptGateWritten>;
@@ -120,7 +127,24 @@ export async function runManuskriptPostDraftQualityGates(input: {
     }
   }
 
-  // 4) Grammar last (after plot/space stable)
+  // 3b) Frozen measurements (cm/mm) vs Wissensgraph — deterministic
+  {
+    const body = currentBody();
+    if (body && input.wissensGraph) {
+      const metrics = validateProseAgainstMetricFacts({
+        prose: body,
+        graph: input.wissensGraph,
+      });
+      if (!metrics.ok) {
+        await doRewrite(
+          formatMetricViolationRewriteBrief(metrics.violations),
+          "Maße/Fakten",
+        );
+      }
+    }
+  }
+
+  // 4) Grammar last (after plot/space/metrics stable)
   {
     const body = currentBody();
     if (body) {
@@ -134,7 +158,7 @@ export async function runManuskriptPostDraftQualityGates(input: {
     }
   }
 
-  // 5) Verify: Raum + Sprache once more (catch tear-apart from last rewrite)
+  // 5) Verify: Raum + Maße + Sprache once more (catch tear-apart from last rewrite)
   {
     const body = currentBody();
     if (!body || rewrites >= MAX_REWRITES) return written;
@@ -148,12 +172,21 @@ export async function runManuskriptPostDraftQualityGates(input: {
         briefs.push(formatSpatialViolationRewriteBrief(spatial.violations));
       }
     }
+    if (input.wissensGraph) {
+      const metrics = validateProseAgainstMetricFacts({
+        prose: body,
+        graph: input.wissensGraph,
+      });
+      if (!metrics.ok) {
+        briefs.push(formatMetricViolationRewriteBrief(metrics.violations));
+      }
+    }
     const grammar = await validateManuskriptChapterGrammar({ prose: body });
     if (!grammar.ok) {
       briefs.push(formatGrammarViolationRewriteBrief(grammar.violations));
     }
     if (briefs.length) {
-      await doRewrite(briefs.join("\n\n"), "Nachprüfung Raum/Sprache");
+      await doRewrite(briefs.join("\n\n"), "Nachprüfung Raum/Maße/Sprache");
     }
   }
 

@@ -86,6 +86,36 @@ export function validateManuskriptChapterAgainstContracts(input: {
   return { ok: violations.length === 0, violations };
 }
 
+/** Stable key so draft vs polish can drop shared false positives. */
+export function contractViolationKey(
+  violation: ManuskriptContractViolation,
+): string {
+  return `${violation.code}:${normalizeHay(violation.message).slice(0, 160)}`;
+}
+
+/**
+ * Contract hits that appear in polish but not in the Manuskript draft.
+ * Stil-Pass must not fail because the draft already narrates the same
+ * kept_secret / mustNotRepeat tokens (classic „Geheimnis geleakt“ FP).
+ */
+export function novelContractViolations(input: {
+  draftProse: string;
+  polishedProse: string;
+  chapter: RomanSzenenplotChapterNode;
+}): ManuskriptContractViolation[] {
+  const draft = validateManuskriptChapterAgainstContracts({
+    prose: input.draftProse,
+    chapter: input.chapter,
+  });
+  const polish = validateManuskriptChapterAgainstContracts({
+    prose: input.polishedProse,
+    chapter: input.chapter,
+  });
+  if (polish.ok) return [];
+  const draftKeys = new Set(draft.violations.map(contractViolationKey));
+  return polish.violations.filter((v) => !draftKeys.has(contractViolationKey(v)));
+}
+
 /** Patch brief fragment to force a rewrite that respects contracts. */
 export function formatContractViolationRewriteBrief(
   violations: ManuskriptContractViolation[],

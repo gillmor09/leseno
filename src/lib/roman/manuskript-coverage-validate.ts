@@ -81,8 +81,9 @@ export function buildChapterCoverageMandates(
       const t = line.replace(/^[-*•]\s*/, "").trim();
       if (
         t.length >= 20 &&
-        (/FROZEN|HIER erstmals|HIER abschließen|kennzeichen|besitz/i.test(t) ||
-          t.startsWith("### "))
+        (/FROZEN|MASS:|HIER erstmals|HIER abschließen|kennzeichen|besitz|abstand_cm|hoehe_cm|\bcm\b/i.test(
+          t,
+        ) || t.startsWith("### "))
       ) {
         if (t.startsWith("###")) continue;
         out.push(`Fakt/Prop: ${t.slice(0, 160)}`);

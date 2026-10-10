@@ -11,12 +11,15 @@ export function RomanStepFertigToggle({
   checked,
   disabled,
   pending,
+  pendingLabel = "Speichern …",
   onCheckedChange,
   className,
 }: {
   checked: boolean;
   disabled?: boolean;
   pending?: boolean;
+  /** Shown instead of „Fertig“ while pending (e.g. Freigabe-Check). */
+  pendingLabel?: string;
   onCheckedChange: (checked: boolean) => void;
   className?: string;
 }) {
@@ -34,7 +37,7 @@ export function RomanStepFertigToggle({
           checked ? "text-emerald-900" : "text-zinc-500",
         )}
       >
-        {pending ? "Speichern …" : "Fertig"}
+        {pending ? pendingLabel : "Fertig"}
       </span>
       <ToggleSwitch
         checked={checked}
