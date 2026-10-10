@@ -102,12 +102,13 @@ export const FALLBACK_AI_MODELS: AiModelConfig[] = [
     id: "tts-default",
     label: "Vorlesen",
     provider: "elevenlabs",
-    modelSlug: "eleven_v3",
+    modelSlug: "eleven_v4",
     supportsSystemPrompt: false,
     supportsJsonOutput: false,
     isActive: true,
     ttsVoiceId: null,
-    notes: "Liest die Geschichte vor (Eleven v3, Deutsch).",
+    notes:
+      "Liest Geschichten und Hörbücher vor (Eleven v4, Sprache steuerbar, 90+ Sprachen).",
   },
   {
     id: "fact-why-default",

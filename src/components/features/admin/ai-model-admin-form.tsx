@@ -6,10 +6,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import {
-  listTtsVoicesAction,
-  saveAiModelsAction,
-} from "@/app/actions/prompt-admin";
+import { saveAiModelsAction } from "@/app/actions/prompt-admin";
 import {
   WIRED_AI_ENDPOINTS,
   findWiredAiEndpoint,
@@ -55,7 +52,7 @@ export function AiModelAdminForm({
   );
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
 
     async function loadVoices(provider: string) {
       setVoicesLoading((current) => ({ ...current, [provider]: true }));
@@ -64,20 +61,41 @@ export function AiModelAdminForm({
         delete next[provider];
         return next;
       });
-      const result = await listTtsVoicesAction({ provider });
-      if (cancelled) return;
-      setVoicesLoading((current) => ({ ...current, [provider]: false }));
-      if (!result.success || !result.data) {
+      try {
+        // Route Handler — does not block App Router soft-navigation.
+        const response = await fetch(
+          `/api/admin/tts-voices?provider=${encodeURIComponent(provider)}`,
+          { signal: controller.signal, cache: "no-store" },
+        );
+        const payload = (await response.json()) as {
+          voices?: TtsVoiceOption[];
+          error?: string;
+        };
+        if (controller.signal.aborted) return;
+        setVoicesLoading((current) => ({ ...current, [provider]: false }));
+        if (!response.ok) {
+          setVoicesError((current) => ({
+            ...current,
+            [provider]:
+              payload.error ?? "Stimmen konnten nicht geladen werden.",
+          }));
+          return;
+        }
+        setVoicesByProvider((current) => ({
+          ...current,
+          [provider]: payload.voices ?? [],
+        }));
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setVoicesLoading((current) => ({ ...current, [provider]: false }));
         setVoicesError((current) => ({
           ...current,
-          [provider]: result.error ?? "Stimmen konnten nicht geladen werden.",
+          [provider]:
+            error instanceof Error
+              ? error.message
+              : "Stimmen konnten nicht geladen werden.",
         }));
-        return;
       }
-      setVoicesByProvider((current) => ({
-        ...current,
-        [provider]: result.data!.voices,
-      }));
     }
 
     for (const provider of ttsProviders) {
@@ -86,7 +104,7 @@ export function AiModelAdminForm({
     }
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
     // Only re-run when the set of TTS providers on the form changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional cache of loaded providers

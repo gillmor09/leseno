@@ -1,7 +1,8 @@
 /**
- * ElevenLabs Text-to-Speech (`POST /v1/text-to-speech/{voice_id}`).
- * Models: `eleven_v3`, `eleven_flash_v2_5`, …; German via `language_code: de`.
- * Uses compact MP3 (`mp3_44100_64`) for smaller files and faster transfer.
+ * ElevenLabs speech synthesis.
+ * - Classic TTS: `POST /v1/text-to-speech/{voice_id}` (v3, Flash, v4).
+ * - Eleven v4: same TTS path with `language_code` + request stitching for long-form.
+ * Default model: `eleven_v4` (90+ languages, Hörbuch-tauglich).
  */
 
 import {
@@ -21,20 +22,64 @@ export const ELEVENLABS_TTS_OUTPUT_FORMAT = "mp3_44100_64";
 
 export type ElevenLabsTtsInput = {
   text: string;
-  /** Model id body field (`eleven_v3`, `eleven_flash_v2_5`, …). */
+  /** Model id body field (`eleven_v4`, `eleven_v3`, `eleven_flash_v2_5`, …). */
   modelSlug?: string;
   /** Optional voice id; defaults to Leseno ElevenLabs voice. */
   voiceId?: string | null;
+  /**
+   * ISO 639-1 language for the model + text normalization (v3/v4).
+   * Defaults to {@link ELEVENLABS_TTS_LANGUAGE_CODE} (`de`).
+   */
+  languageCode?: string | null;
+  /** Continuity: trailing text from the previous chunk (max ~100–200 chars). */
+  previousText?: string | null;
+  /** Continuity: prior ElevenLabs `request-id` values (max 3). */
+  previousRequestIds?: string[] | null;
 };
 
 export type ElevenLabsTtsResult = {
   audio: Buffer;
   mimeType: "audio/mpeg";
   modelSlug: string;
+  /** ElevenLabs request id for stitching the next chunk. */
+  requestId: string | null;
 };
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Fail hung ElevenLabs calls instead of freezing the Hörbuch UI for minutes. */
+const ELEVENLABS_TTS_TIMEOUT_MS = 90_000;
+
+async function fetchElevenLabsAudio(
+  url: string,
+  apiKey: string,
+  body: string,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ELEVENLABS_TTS_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new UserFacingError(
+        "ElevenLabs braucht zu lange (Timeout 90 s). Bitte erneut versuchen oder kürzere Kapitel/Casting prüfen.",
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** True when ElevenLabs reports monthly / credit quota exhaustion. */
@@ -48,8 +93,21 @@ export function isElevenLabsQuotaMessage(detail: string): boolean {
   );
 }
 
+function isElevenV4Family(modelSlug: string): boolean {
+  return /^eleven_v4(_turbo)?$/i.test(modelSlug.trim());
+}
+
+function pickRequestId(response: Response): string | null {
+  return (
+    response.headers.get("request-id")?.trim() ||
+    response.headers.get("x-request-id")?.trim() ||
+    response.headers.get("elevenlabs-request-id")?.trim() ||
+    null
+  );
+}
+
 /**
- * Synthesizes MP3 speech via ElevenLabs (default: Eleven v3 + German).
+ * Synthesizes MP3 speech via ElevenLabs (default: Eleven v4).
  * Retries on transient 429/503; quota exhaustion fails immediately (clear German copy).
  */
 export async function synthesizeSpeechWithElevenLabs(
@@ -57,34 +115,48 @@ export async function synthesizeSpeechWithElevenLabs(
 ): Promise<ElevenLabsTtsResult> {
   const apiKey = getElevenLabsApiKey();
   const baseUrl = getElevenLabsBaseUrl();
-  const modelSlug = input.modelSlug?.trim() || "eleven_v3";
+  const modelSlug = input.modelSlug?.trim() || "eleven_v4";
   const voiceId = input.voiceId?.trim() || getElevenLabsTtsVoiceId();
   const text = input.text.trim();
+  const languageCode =
+    input.languageCode?.trim().toLowerCase() ||
+    ELEVENLABS_TTS_LANGUAGE_CODE;
 
   if (!text) {
     throw new Error("Kein Text zum Vorlesen.");
   }
 
+  const previousText = (input.previousText ?? "").trim().slice(-100);
+  const previousRequestIds = (input.previousRequestIds ?? [])
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .slice(-3);
+
+  // v4 marketing/docs: TTS convert supports model_id eleven_v4 + language_code.
+  // Keep a single path for all ElevenLabs speech models.
   const url = `${baseUrl}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${ELEVENLABS_TTS_OUTPUT_FORMAT}`;
-  const body = JSON.stringify({
+  const bodyPayload: Record<string, unknown> = {
     text,
     model_id: modelSlug,
-    language_code: ELEVENLABS_TTS_LANGUAGE_CODE,
-  });
+    language_code: languageCode,
+  };
+  if (previousRequestIds.length > 0) {
+    bodyPayload.previous_request_ids = previousRequestIds;
+  } else if (previousText) {
+    bodyPayload.previous_text = previousText;
+  }
+  // v4 audiobook: keep normalization on for numbers / dates.
+  if (isElevenV4Family(modelSlug)) {
+    bodyPayload.apply_text_normalization = "auto";
+  }
+
+  const body = JSON.stringify(bodyPayload);
 
   let response: Response | null = null;
   let lastDetail = "";
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "xi-api-key": apiKey,
-        "Content-Type": "application/json",
-        Accept: "audio/mpeg",
-      },
-      body,
-    });
+    response = await fetchElevenLabsAudio(url, apiKey, body);
 
     if (response.ok) break;
 
@@ -114,7 +186,12 @@ export async function synthesizeSpeechWithElevenLabs(
     throw new Error("ElevenLabs-TTS hat kein Audio zurückgegeben.");
   }
 
-  return { audio, mimeType: "audio/mpeg", modelSlug };
+  return {
+    audio,
+    mimeType: "audio/mpeg",
+    modelSlug,
+    requestId: pickRequestId(response),
+  };
 }
 
 async function readElevenLabsErrorDetail(response: Response): Promise<string> {

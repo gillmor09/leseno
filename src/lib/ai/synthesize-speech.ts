@@ -17,6 +17,8 @@ export type SynthesizeSpeechResult = {
   mimeType: "audio/mpeg";
   modelSlug: string;
   provider: string;
+  /** ElevenLabs request id when available (chunk stitching). */
+  requestId?: string | null;
 };
 
 export type ResolvedTtsModelConfig = {
@@ -49,7 +51,7 @@ export async function resolveTtsModelConfig(): Promise<ResolvedTtsModelConfig> {
 
   return {
     provider: "elevenlabs",
-    modelSlug: "eleven_v3",
+    modelSlug: "eleven_v4",
     voiceId: null,
   };
 }
@@ -100,6 +102,9 @@ async function synthesizeSpeechChunkOnce(input: {
   provider: string;
   modelSlug: string;
   voiceId: string | null;
+  languageCode?: string | null;
+  previousText?: string | null;
+  previousRequestIds?: string[] | null;
 }): Promise<SynthesizeSpeechResult> {
   const wired = findWiredAiEndpoint(input.modelSlug);
   const provider = wired?.provider ?? input.provider;
@@ -110,6 +115,9 @@ async function synthesizeSpeechChunkOnce(input: {
       text: input.text,
       modelSlug: input.modelSlug,
       voiceId,
+      languageCode: input.languageCode,
+      previousText: input.previousText,
+      previousRequestIds: input.previousRequestIds,
     });
     return { ...result, provider };
   }
@@ -153,6 +161,10 @@ export async function synthesizeSpeechChunk(input: {
   provider?: string;
   modelSlug?: string;
   voiceId?: string | null;
+  /** ISO 639-1 for ElevenLabs v3/v4 (Hörbuch language control). */
+  languageCode?: string | null;
+  previousText?: string | null;
+  previousRequestIds?: string[] | null;
   /** When true, do not attempt quota fallbacks (used by story-level fallback). */
   disableQuotaFallback?: boolean;
 }): Promise<SynthesizeSpeechResult> {
@@ -171,6 +183,9 @@ export async function synthesizeSpeechChunk(input: {
       provider: resolved.provider,
       modelSlug: resolved.modelSlug,
       voiceId: resolved.voiceId,
+      languageCode: input.languageCode,
+      previousText: input.previousText,
+      previousRequestIds: input.previousRequestIds,
     });
   } catch (error) {
     if (
@@ -192,6 +207,7 @@ export async function synthesizeSpeechChunk(input: {
           provider: fallback.provider,
           modelSlug: fallback.modelSlug,
           voiceId: fallback.voiceId,
+          languageCode: input.languageCode,
         });
       } catch (fallbackError) {
         console.error(

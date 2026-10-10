@@ -147,16 +147,28 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     usage: "Bilder: Illustrationen / Social (IONOS)",
   },
   {
+    modelSlug: "eleven_v4",
+    provider: "elevenlabs",
+    label: "ElevenLabs Eleven v4",
+    usage: "Vorlesen / Hörbuch (neueste Qualität, 90+ Sprachen)",
+  },
+  {
+    modelSlug: "eleven_v4_turbo",
+    provider: "elevenlabs",
+    label: "ElevenLabs Eleven v4 Turbo",
+    usage: "Vorlesen (Echtzeit / schnell, 90+ Sprachen)",
+  },
+  {
     modelSlug: "eleven_v3",
     provider: "elevenlabs",
     label: "ElevenLabs Eleven v3",
-    usage: "Vorlesen (höchste Qualität, Deutsch)",
+    usage: "Vorlesen (älteres Qualitätsmodell)",
   },
   {
     modelSlug: "eleven_flash_v2_5",
     provider: "elevenlabs",
     label: "ElevenLabs Flash v2.5",
-    usage: "Vorlesen (schnell / günstiger, Deutsch)",
+    usage: "Vorlesen (schnell / günstiger)",
   },
   {
     modelSlug: "inworld-tts-2-flash",

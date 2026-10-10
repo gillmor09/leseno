@@ -17,6 +17,15 @@ export const MAX_TTS_CHARS_FISH = 3500;
  */
 export const MAX_TTS_CHARS_ELEVENLABS = 3200;
 
+/**
+ * Eleven v4 allows up to 10_000 characters per request.
+ * Hörbuch uses smaller windows so each Server Action finishes quickly and the UI can show Teil-Fortschritt.
+ */
+export const MAX_TTS_CHARS_ELEVENLABS_V4 = 8_000;
+
+/** Practical Hörbuch chunk size (single-voice) — balances quality vs. hang risk. */
+export const MAX_TTS_CHARS_ELEVENLABS_HOERBUCH = 2_800;
+
 /** Prefer Storage upload once story plain text exceeds this many words. */
 export const TTS_STORAGE_PREFERRED_WORD_COUNT = 5000;
 
@@ -37,6 +46,23 @@ export function ttsChunkMaxCharsForProvider(provider: string): number {
     default:
       return MAX_TTS_CHARS_OPENAI;
   }
+}
+
+/**
+ * Provider + model aware chunk size (Eleven v4 Hörbuch uses larger windows).
+ */
+export function ttsChunkMaxCharsForModel(
+  provider: string,
+  modelSlug?: string | null,
+): number {
+  const slug = (modelSlug ?? "").trim().toLowerCase();
+  if (
+    provider.trim().toLowerCase() === "elevenlabs" &&
+    /^eleven_v4(_turbo)?$/.test(slug)
+  ) {
+    return MAX_TTS_CHARS_ELEVENLABS_V4;
+  }
+  return ttsChunkMaxCharsForProvider(provider);
 }
 
 /**

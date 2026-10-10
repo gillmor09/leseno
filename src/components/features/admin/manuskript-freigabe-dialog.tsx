@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, X } from "lucide-react";
 import type { ManuskriptFreigabeFinding } from "@/lib/roman/editorial";
+import { lockBodyScroll } from "@/lib/ui/body-scroll-lock";
 
 function findingLabel(f: ManuskriptFreigabeFinding): string {
   if (f.source === "emotion") return "Emotion";
@@ -34,11 +35,7 @@ export function ManuskriptFreigabeDialog({
 }) {
   useEffect(() => {
     if (!open) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
+    return lockBodyScroll();
   }, [open]);
 
   useEffect(() => {

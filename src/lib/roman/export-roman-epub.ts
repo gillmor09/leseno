@@ -318,7 +318,9 @@ async function prepareEpubCoverImage(dataUrl: string): Promise<{
   }
 
   try {
-    const blob = new Blob([parsed.bytes], { type: parsed.mediaType });
+    const blob = new Blob([new Uint8Array(parsed.bytes)], {
+      type: parsed.mediaType,
+    });
     const bitmap = await createImageBitmap(blob);
     const tw = Math.max(1, Math.round(bitmap.width * EPUB_COVER_SCALE));
     const th = Math.max(1, Math.round(bitmap.height * EPUB_COVER_SCALE));

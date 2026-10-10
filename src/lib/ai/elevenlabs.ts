@@ -12,7 +12,7 @@ const DEFAULT_ELEVENLABS_BASE_URL = "https://api.elevenlabs.io";
  */
 export const ELEVENLABS_TTS_DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 
-/** ISO 639-1; Eleven v3 supports `language_code` for German. */
+/** ISO 639-1 default; Eleven v3/v4 accept `language_code` (Hörbuch steuert override). */
 export const ELEVENLABS_TTS_LANGUAGE_CODE = "de";
 
 export function getElevenLabsApiKey(): string {

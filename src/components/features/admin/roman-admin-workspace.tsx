@@ -2,12 +2,13 @@
 
 /**
  * Book admin tab shell: Basics → Idee → Recherche → Spec → Grob/Fein Gerüst/Plot →
- * Manuskript → Roman → Export. Clever: Basics → Unterthemen → Geschichten.
+ * Manuskript → Roman → Export → Hörbuch. Clever: Basics → Unterthemen → Geschichten.
  * KI-Rollen live at `{basePath}/rollen` (Roman / Clever).
  */
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Circle } from "lucide-react";
 import { toast } from "sonner";
 import { saveRomanKontextAction } from "@/app/actions/roman-admin";
@@ -22,8 +23,40 @@ import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wa
 import { CleverUnterthemenPanel } from "@/components/features/admin/clever-unterthemen-panel";
 import { RomanCharakterePanel } from "@/components/features/admin/roman-charaktere-panel";
 import { RomanCoverPanel } from "@/components/features/admin/roman-cover-panel";
-import { RomanExportMarketingPanel } from "@/components/features/admin/roman-export-marketing-panel";
+import { ExportPanelErrorBoundary } from "@/components/features/admin/export-panel-error-boundary";
 import { RomanExposePanel } from "@/components/features/admin/roman-expose-panel";
+import { forceUnlockBodyScroll } from "@/lib/ui/body-scroll-lock";
+
+/** Lazy: jspdf/JSZip must not block other tabs or kill navigation. */
+const RomanExportMarketingPanel = dynamic(
+  () =>
+    import("@/components/features/admin/roman-export-marketing-panel").then(
+      (m) => m.RomanExportMarketingPanel,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="text-sm font-semibold text-zinc-500">
+        Export wird geladen …
+      </p>
+    ),
+  },
+);
+
+const RomanHoerbuchPanel = dynamic(
+  () =>
+    import("@/components/features/admin/roman-hoerbuch-panel").then(
+      (m) => m.RomanHoerbuchPanel,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="text-sm font-semibold text-zinc-500">
+        Hörbuch wird geladen …
+      </p>
+    ),
+  },
+);
 import {
   RomanFundamentPanel,
   fundamentBasicsFromState,
@@ -115,6 +148,7 @@ const PIPELINE_TABS = [
   { id: "schreiben", label: "Manuskript" },
   { id: "roman", label: "Roman" },
   { id: "export", label: "Export" },
+  { id: "hoerbuch", label: "Hörbuch" },
 ] as const;
 
 type TabId = (typeof PIPELINE_TABS)[number]["id"];
@@ -256,6 +290,12 @@ export function RomanAdminWorkspace({
     return text;
   });
   const [tab, setTab] = useState<TabId>("typ");
+
+  useEffect(() => {
+    // Recover from stuck modal scroll-lock (dead Links / untouchable UI).
+    forceUnlockBodyScroll();
+  }, []);
+
   const [savePending, setSavePending] = useState(false);
   const [enrichSpatialPending, setEnrichSpatialPending] = useState(false);
   const [freigabeFindings, setFreigabeFindings] = useState<
@@ -397,6 +437,8 @@ export function RomanAdminWorkspace({
         Boolean(roman.coverImageDataUrl?.trim()) ||
         ((editorial.klappentext ?? "").trim().length >= 40 &&
           (editorial.einzeiler ?? "").trim().length >= 8),
+      hoerbuch:
+        hasFilledManuskript(manuskript) || hasFilledManuskript(romanBook),
     };
   }, [
     fundament.title,
@@ -1260,6 +1302,7 @@ export function RomanAdminWorkspace({
               }`}
               disabled={locked}
               onClick={() => {
+                forceUnlockBodyScroll();
                 setTab(item.id);
               }}
               className={cn(
@@ -2259,33 +2302,66 @@ export function RomanAdminWorkspace({
                     }}
                   />
                 </div>
-                <RomanExportMarketingPanel
-                  roman={roman}
-                  editorial={editorial}
-                  canSave={canSave}
-                  disabled={savePending}
-                  onComplete={(patch) => {
-                    setEditorial((prev) => ({
-                      ...prev,
-                      klappentext: patch.klappentext,
-                      einzeiler: patch.einzeiler,
-                      amazonKeywords: patch.amazonKeywords,
-                    }));
-                    setRoman((prev) => ({
-                      ...prev,
-                      autorName:
-                        patch.autorName?.trim() || prev.autorName,
-                      vorsatz: patch.vorsatz ?? prev.vorsatz,
-                      editorial: {
-                        ...(prev.editorial ?? emptyRomanEditorial()),
+                <ExportPanelErrorBoundary>
+                  <RomanExportMarketingPanel
+                    roman={roman}
+                    editorial={editorial}
+                    canSave={canSave}
+                    disabled={savePending}
+                    onComplete={(patch) => {
+                      setEditorial((prev) => ({
+                        ...prev,
                         klappentext: patch.klappentext,
                         einzeiler: patch.einzeiler,
                         amazonKeywords: patch.amazonKeywords,
-                      },
-                    }));
-                  }}
-                />
+                      }));
+                      setRoman((prev) => ({
+                        ...prev,
+                        autorName:
+                          patch.autorName?.trim() || prev.autorName,
+                        vorsatz: patch.vorsatz ?? prev.vorsatz,
+                        editorial: {
+                          ...(prev.editorial ?? emptyRomanEditorial()),
+                          klappentext: patch.klappentext,
+                          einzeiler: patch.einzeiler,
+                          amazonKeywords: patch.amazonKeywords,
+                        },
+                      }));
+                    }}
+                  />
+                </ExportPanelErrorBoundary>
               </div>
+            )}
+          </section>
+        ) : tab === "hoerbuch" ? (
+          <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-extrabold text-zinc-950">Hörbuch</h2>
+              <RomanStepFertigToggle
+                checked={isPipelineTabFertig(editorial, "hoerbuch")}
+                disabled={!canSave}
+                pending={savePending}
+                onCheckedChange={(v) => void savePipelineFertig("hoerbuch", v)}
+              />
+            </div>
+            {!typSet ? (
+              <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+                Zuerst Buchtyp wählen.
+              </p>
+            ) : (
+              <ExportPanelErrorBoundary>
+                <RomanHoerbuchPanel
+                  roman={roman}
+                  editorial={editorial}
+                  disabled={savePending}
+                  onHoerbuchPrefsSaved={(prefs) =>
+                    setEditorial((prev) => ({
+                      ...prev,
+                      hoerbuchPrefs: prefs,
+                    }))
+                  }
+                />
+              </ExportPanelErrorBoundary>
             )}
           </section>
         ) : (

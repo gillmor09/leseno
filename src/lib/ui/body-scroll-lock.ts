@@ -32,3 +32,15 @@ export function lockBodyScroll(): () => void {
     }
   };
 }
+
+/**
+ * Emergency unlock when a modal left `overflow: hidden` / a stale lock count
+ * (e.g. interrupted Server Action / HMR). Safe to call on page mount.
+ */
+export function forceUnlockBodyScroll(): void {
+  if (typeof document === "undefined") return;
+  lockCount = 0;
+  savedOverflow = "";
+  document.body.style.overflow = "";
+  document.documentElement.style.overflow = "";
+}

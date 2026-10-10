@@ -3,11 +3,12 @@
 /**
  * Export tab: Cover, Amazon Klappentext + Einzeiler + Keywords, Titelei
  * (Titelseite / Copyright / Motto), Manuskript PDF/EPUB.
+ * Hörbuch lives in its own tab (`roman-hoerbuch-panel.tsx`).
  * Clever chapters: prose → Infografik → Abenteuer-Wissen.
  * After PDF export: keep blob for inline reopen via StoryPdfPreviewDialog.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   generateRomanMarketingCopyAction,
@@ -155,9 +156,19 @@ export function RomanExportMarketingPanel({
     : proseSource === "roman" && hasRomanProse
       ? "roman"
       : "manuskript";
-  const chapters = collectExportChaptersFromEditorial(editorial, {
-    source: effectiveSource,
-  });
+  const chapters = useMemo(
+    () =>
+      collectExportChaptersFromEditorial(editorial, {
+        source: effectiveSource,
+      }),
+    [
+      editorial.buchTyp,
+      editorial.manuskriptText,
+      editorial.romanText,
+      editorial.cleverUnterthemen,
+      effectiveSource,
+    ],
+  );
   const hasExportProse = chapters.length > 0;
   const hasCover = Boolean(roman.coverImageDataUrl?.startsWith("data:image/"));
   const proseLabel =
@@ -522,6 +533,7 @@ export function RomanExportMarketingPanel({
             </span>
           </div>
         )}
+
       </div>
 
       <div className="space-y-5 border-t border-zinc-200 pt-8">

@@ -146,6 +146,38 @@ export type ManuskriptFreigabeState = {
   overrideAt: string | null;
 };
 
+/**
+ * One chapter MP3 stored for Hörbuch (Storage path + generation settings).
+ * See `src/lib/roman/hoerbuch-storage.ts`.
+ */
+export type RomanHoerbuchAudioChapter = {
+  storagePath: string;
+  fileName: string;
+  byteSize: number;
+  mimeType: string;
+  languageCode: string;
+  proseSource: "manuskript" | "roman";
+  mode: "single" | "cast";
+  modelSlug: string;
+  provider: string;
+  charCount: number;
+  chunkCount: number;
+  updatedAt: string;
+};
+
+/**
+ * Saved Hörbuch UI prefs (language, mode, casting voice ids).
+ * Persisted so casting does not reset when reopening the tab.
+ */
+export type RomanHoerbuchPrefs = {
+  languageCode: string;
+  proseSource: "manuskript" | "roman";
+  mode: "single" | "cast";
+  /** Role key → ElevenLabs voice id (see `hoerbuch-dialogue.ts`). */
+  casting: Record<string, string>;
+  updatedAt: string;
+};
+
 /** Manual „Fertig“ flags per Buch-Pipeline-Tab (UI tab ids). */
 export type RomanPipelineFertig = Partial<
   Record<
@@ -163,7 +195,8 @@ export type RomanPipelineFertig = Partial<
     /** Belletristik: polished prose (Verbessern / Claude Batch) — distinct from Manuskript draft. */
     | "roman"
     | "cover"
-    | "export",
+    | "export"
+    | "hoerbuch",
     boolean
   >
 >;
@@ -588,6 +621,16 @@ export type RomanEditorial = {
    * Amazon KDP search keywords — up to 7 phrases (Export tab), each ≤50 chars.
    */
   amazonKeywords: string[];
+  /**
+   * Per-chapter Hörbuch MP3s in Storage bucket `roman-hoerbuch`
+   * (see `src/lib/roman/hoerbuch-storage.ts`). Keys = chapter numbers as strings.
+   */
+  hoerbuchAudio: Record<string, RomanHoerbuchAudioChapter> | null;
+  /**
+   * Last saved Hörbuch settings (language / mode / casting).
+   * See `saveRomanHoerbuchPrefsAction`.
+   */
+  hoerbuchPrefs: RomanHoerbuchPrefs | null;
   gates: RomanEditorialGates;
   zielAlterMin: number | null;
   zielAlterMax: number | null;
@@ -806,6 +849,8 @@ export function emptyRomanEditorial(): RomanEditorial {
     klappentext: "",
     einzeiler: "",
     amazonKeywords: [],
+    hoerbuchAudio: null,
+    hoerbuchPrefs: null,
     gates: emptyEditorialGates(),
     zielAlterMin: null,
     zielAlterMax: null,
@@ -884,6 +929,7 @@ export const PIPELINE_FERTIG_STEPS_CLEVER = [
   "outline",
   "schreiben",
   "export",
+  "hoerbuch",
 ] as const satisfies ReadonlyArray<keyof RomanPipelineFertig>;
 
 export const PIPELINE_FERTIG_STEPS_FULL = [
@@ -898,6 +944,7 @@ export const PIPELINE_FERTIG_STEPS_FULL = [
   "schreiben",
   "roman",
   "export",
+  "hoerbuch",
 ] as const satisfies ReadonlyArray<keyof RomanPipelineFertig>;
 
 /** How many Fertig-Schritte are done vs total for this buchTyp. */
@@ -945,6 +992,7 @@ function parsePipelineFertig(raw: unknown): RomanPipelineFertig {
     "roman",
     "cover",
     "export",
+    "hoerbuch",
   ]);
   const out: RomanPipelineFertig = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -1745,6 +1793,78 @@ function asInt(value: unknown): number | null {
   const n = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(n)) return null;
   return Math.round(n);
+}
+
+function parseRomanHoerbuchPrefs(raw: unknown): RomanHoerbuchPrefs | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const languageCode = String(row.languageCode ?? "").trim().slice(0, 8);
+  if (!languageCode) return null;
+  const proseSource =
+    row.proseSource === "roman" || row.proseSource === "manuskript"
+      ? row.proseSource
+      : "manuskript";
+  const mode = row.mode === "cast" || row.mode === "single" ? row.mode : "single";
+  const castingRaw =
+    row.casting && typeof row.casting === "object" && !Array.isArray(row.casting)
+      ? (row.casting as Record<string, unknown>)
+      : {};
+  const casting: Record<string, string> = {};
+  for (const [key, value] of Object.entries(castingRaw)) {
+    const role = String(key ?? "").trim().slice(0, 120);
+    const voiceId = String(value ?? "").trim().slice(0, 120);
+    if (!role || !voiceId) continue;
+    casting[role] = voiceId;
+    if (Object.keys(casting).length >= 40) break;
+  }
+  return {
+    languageCode,
+    proseSource,
+    mode,
+    casting,
+    updatedAt: String(row.updatedAt ?? "").trim().slice(0, 40),
+  };
+}
+
+function parseRomanHoerbuchAudio(
+  raw: unknown,
+): Record<string, RomanHoerbuchAudioChapter> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  const out: Record<string, RomanHoerbuchAudioChapter> = {};
+  for (const [key, value] of Object.entries(row)) {
+    const n = Number(key);
+    if (!Number.isFinite(n) || n < 1 || !value || typeof value !== "object") {
+      continue;
+    }
+    const v = value as Record<string, unknown>;
+    const storagePath = String(v.storagePath ?? "").trim();
+    const fileName = String(v.fileName ?? "").trim();
+    if (!storagePath || !fileName) continue;
+    const proseSource =
+      v.proseSource === "roman" || v.proseSource === "manuskript"
+        ? v.proseSource
+        : "manuskript";
+    const mode = v.mode === "cast" || v.mode === "single" ? v.mode : "single";
+    const byteSize = asInt(v.byteSize) ?? 0;
+    const charCount = asInt(v.charCount) ?? 0;
+    const chunkCount = asInt(v.chunkCount) ?? 1;
+    out[String(Math.floor(n))] = {
+      storagePath: storagePath.slice(0, 500),
+      fileName: fileName.slice(0, 200),
+      byteSize: Math.max(0, byteSize),
+      mimeType: String(v.mimeType ?? "audio/mpeg").trim().slice(0, 80) || "audio/mpeg",
+      languageCode: String(v.languageCode ?? "de").trim().slice(0, 8) || "de",
+      proseSource,
+      mode,
+      modelSlug: String(v.modelSlug ?? "").trim().slice(0, 120),
+      provider: String(v.provider ?? "").trim().slice(0, 40),
+      charCount: Math.max(0, charCount),
+      chunkCount: Math.max(1, chunkCount),
+      updatedAt: String(v.updatedAt ?? "").trim().slice(0, 40),
+    };
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 /** Amazon KDP: up to 7 keyword phrases, each ≤50 characters. */
@@ -4098,6 +4218,8 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
     klappentext: String(row.klappentext ?? "").trim().slice(0, 4_000),
     einzeiler: String(row.einzeiler ?? "").trim().slice(0, 120),
     amazonKeywords: parseAmazonKeywordsField(row.amazonKeywords),
+    hoerbuchAudio: parseRomanHoerbuchAudio(row.hoerbuchAudio),
+    hoerbuchPrefs: parseRomanHoerbuchPrefs(row.hoerbuchPrefs),
     gates: parseGates(row.gates),
     zielAlterMin: asInt(row.zielAlterMin),
     zielAlterMax: asInt(row.zielAlterMax),
