@@ -23,8 +23,7 @@ const NUNITO_SEMIBOLD_TTF = path.join(
 const LESENO_LOGO_PATH = path.join(
   process.cwd(),
   "public",
-  "landing",
-  "vogel-hell.webp",
+  "leseno-vogel-neu.png",
 );
 
 const FRAGE_BG_PATH = path.join(process.cwd(), "public", "bg3.jpg");

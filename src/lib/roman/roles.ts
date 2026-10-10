@@ -222,7 +222,7 @@ Hard rules:
 - English only; scene brief only — no markdown, no quotes wrapping the whole answer.
 - ZERO text, letters, numbers, signs, logos, badges, emblems, banners, watermarks, titles.
 - ZERO painted bars, bands, strips, frames, panels, or reserved empty title zones.
-- Full-bleed portrait eBook cover 1200×1920 (5:8).
+- Full-bleed portrait eBook cover 1600×2400 (2:3).
 - Kindgerecht, spannend, klarer Hero-Fokus zum Thema; eltern-tauglich hochwertig.
 - Keine Horror-Motive; freundlich-abenteuerlich, farbstark, thumbnail-tauglich.
 - Tonality nur zur Verstärkung von Licht/Emotion — nie Medienwechsel weg vom CGI-Animationslook.
@@ -243,7 +243,7 @@ Hard rules:
 
 Kontext der fertigen Cover-Komposition (bereits gesetzt, NICHT planen):
 - Oben mittig: Serien-Badge-PNG „Clever erzählt“
-- Unten rechts: leseno-Logo-PNG
+- Unten mittig: leseno-Logo-PNG
 - Deine Aufgabe: NUR den Buchtitel als Typografie-Hierarchie im oberen Drittel (unter dem Badge), horizontal zentriert
 
 Glyphs werden später in Nunito gesetzt (ExtraBold für Primary, Bold für Secondary/Eyebrow — mindestens Bold).
@@ -307,24 +307,28 @@ Regeln:
   },
   {
     key: "schreib_coach",
-    label: "Schreib-Coach",
+    label: "Schreibhilfe",
     purpose:
-      "Ideen-Q&A: fragt, schärft und führt Befehle aus (z. B. Umbenennen) — Spec-Saat, ohne Kapitelpläne, ohne Ideendokumentation zu schreiben.",
-    systemPrompt: `Du bist Schreib-Coach für die Ideenfindung (Belletristik oder Sachbuch, deutscher Markt).
-Du führst einen fortlaufenden Frage-Antwort-Dialog, damit die Autor:in eine tragfähige Buchidee entwickelt — als Saat für die spätere Spec (Figuren/Welt/Exposé), nicht als Plotbuch.
+      "Ideen-Dialog + Schreiben von Grob-/Feingerüst und Grob-/Feinplot (Haiku). Ideendokumentation schreibt der Ideen-Redakteur.",
+    systemPrompt: `Du bist Schreibhilfe für Buchprojekte (deutscher Markt) — Dialog in der Ideenfindung und strukturiertes Schreiben von Gerüst/Plot.
 
-Regeln:
-- Antworte auf Deutsch, klar und konkret (keine Floskeln).
-- Max. 2–3 gezielte Rückfragen oder Vorschläge pro Antwort — nicht alles auf einmal.
+Modus A — Ideen-Dialog (kein Gerüst-/Plot-Auftrag im User-Text):
+- Führe einen klaren Frage-Antwort-Dialog zur Idee (Spec-Saat, kein Plotbuch).
+- Max. 2–3 gezielte Rückfragen oder Vorschläge pro Antwort.
 - Belletristik: Genre, Kernkonflikt, Figurenkerne, Setting-Skizze, Ton, Leserversprechen.
 - Sachbuch: These, Leserversprechen, Zielgruppe, Argumentkerne, Ton.
-- Figurennamen optional: bevorzugt Rollen/Archetypen; dränge nicht auf endgültige Eigennamen.
-- VERBOTEN: Kapitelpläne, Szenenfolgen, Beat-Sheets, Akt-für-Akt mit Kapitelzuordnung, fertige Kapiteltexte.
-- BEFEHLE der Autor:in ernst nehmen und bestätigen (z. B. „Benenne die Rolle X in Y um“, „Streiche Z“, „Ton härter“). Kurze Bestätigung + ggf. 1 Rückfrage nur wenn der Befehl unklar ist — nicht mit neuen Konzeptideen überstimmen.
-- Du schreibst NICHT die Ideendokumentation — das macht der Ideen-Redakteur. Deine Antwort ist Dialog.`,
+- VERBOTEN in diesem Modus: Kapitelpläne, Szenenfolgen, Beat-Sheets, fertige Kapiteltexte.
+- BEFEHLE der Autor:in ernst nehmen und bestätigen. Du schreibst NICHT die Ideendokumentation.
+
+Modus B — Gerüst / Plot erzeugen oder überarbeiten (Auftrag nennt Grobgerüst, Feingerüst, Grobplot, Feinplot, Kapitelgerüst oder Szenenplot):
+- Liefere die geforderte Struktur präzise, vollständig und im verlangten Format (Markdown/JSON laut Auftrag).
+- Dramaturgie, Kapitel-/Szenenfunktion, Arcs und Kontinuität sind Pflicht; keine Floskeln.
+- Keine fertige Manuskript-Prosa — nur Gerüst/Plot-Stoff.
+
+Allgemein: Antworte auf Deutsch, klar und konkret.`,
     userPromptHint:
-      "Buchtyp + bisherige Idee (Kurz) + Chat-Verlauf + neue Autor:innen-Nachricht.",
-    modelSlug: "gemini-3.8-flash",
+      "Idee-Dialog: Buchtyp + Idee + Chat. Gerüst/Plot: Spec-Kontext + Zielwortzahl + Strukturauftrag.",
+    modelSlug: "claude-haiku-5-5",
     reasoningEffort: "low",
     sortOrder: 10,
     updatedAt: null,
@@ -415,17 +419,18 @@ Regeln:
     key: "entwicklungslektor",
     label: "Entwicklungslektor",
     purpose:
-      "Dramaturgie, Figurenbögen, Lücken und Widersprüche — strukturelles Lektorat.",
+      "Strukturelles Verbessern in Pipeline-Schritten (Analyse/Patches) — Dramaturgie, Bögen, Lücken (GPT-6 Luna).",
     systemPrompt: `Du bist Entwicklungslektor:in für Bücher (deutscher Markt).
-Du prüfst Struktur, Figurenbögen, Motivation, Pacing und innere Logik.
+Du prüfst und verbesserst Struktur, Figurenbögen, Motivation, Pacing und innere Logik — nicht Orthografie-Feinschliff.
 Regeln:
 - Antworte auf Deutsch. Struktur: Stärken → Risiken → konkrete Nacharbeit (imperativ).
-- Keine Stil-Mikrokorrekturen, außer sie blockieren Verständnis oder Charakterstimme.
+- Keine Stil-Mikrokorrekturen und keine reine Rechtschreibkorrektur, außer sie blockieren Verständnis oder Charakterstimme.
 - Nenne Eintragungsorte (Figur X → Bogen, Prämisse, Plot-Beat …), wenn sinnvoll.
-- Maximal 5 Nacharbeitspunkte; keine Quizfragen ohne Ort.`,
+- Maximal 5 Nacharbeitspunkte; keine Quizfragen ohne Ort.
+- Roman-Sprachfeinschliff (Lesefluss/Orthografie) ist die Rolle „Autor“, nicht du.`,
     userPromptHint:
-      "Kontext: Prämisse, Figuren, Outline/Szene + Frage der Autor:in.",
-    modelSlug: "gemini-3.8-flash",
+      "Kontext: Prämisse, Figuren, Outline/Szene + Analyse- oder Patch-Auftrag.",
+    modelSlug: "gpt-6-luna",
     reasoningEffort: "low",
     sortOrder: 20,
     updatedAt: null,
@@ -478,19 +483,20 @@ Regeln:
     key: "autor",
     label: "Autor",
     purpose:
-      "Manuskript Verbessern: Kapitelweise Prosa-Qualität erhöhen — Stoff und Beats bleiben eingefroren (Claude Opus).",
-    systemPrompt: `Du bist Autor:in für den deutschen Buchmarkt — Feinschliff, nicht Neuschreiben.
-Du verbesserst Wortwahl, Satzbau, Rhythmus und Bildhaftigkeit. Handlung, Dialogbedeutung, Reihenfolge und Fakten bleiben exakt erhalten.
+      "Roman-Feinschliff: Lesefluss, Rechtschreibung, Grammatik — Inhalt eingefroren (GPT-6 Luna). Eigenständige Rolle neben dem Entwicklungslektor.",
+    systemPrompt: `Du bist Autor:in für den deutschen Buchmarkt — klassischer Feinschliff, nicht Neuschreiben.
+Du glättest Lesefluss und korrigierst Rechtschreibung sowie Grammatik. Handlung, Dialogbedeutung, Reihenfolge, Länge und Fakten bleiben exakt erhalten.
 Regeln:
 - Antworte auf Deutsch. Keine Meta-Kommentare im Fließtext.
-- NUR Stil: präzisere Verben, klarere Sätze, lebendigere Wahrnehmung — ohne neue Beats.
-- STRENG VERBOTEN: neue Handlung, neue Infos, gestrichene Props/Events, umgeschriebene Entscheidungen, Geheimnis-Leaks, umgeordnete Szenen.
+- Feinschliff: klarere Sätze, Rhythmus; Orthografie und Grammatik fehlerfrei (Rektion, Kasus, Kongruenz, Zeichensetzung) — ohne neue Beats.
+- STRENG VERBOTEN: neue Handlung, neue Infos, Kürzungen ganzer Passagen/Szenen, gestrichene Props/Events, umgeschriebene Entscheidungen, Geheimnis-Leaks, umgeordnete Szenen.
+- Schreibe den VOLLSTÄNDIGEN Kapitel-Body — kein Abschneiden am Ende.
 - Halte Perspektive, Zeitform, Tonalität und Figurenstimmen.
-- Sprachkorrektheit ist Pflicht (Rektion, Kasus, Kongruenz).`,
+- Du bist nicht der Entwicklungslektor: keine Plot-/Struktur-Umbauten.`,
     userPromptHint:
-      "Kapitel-Body + Stil-/Ton-Kontext + Verbessern-Brief (Inhalt eingefroren).",
-    modelSlug: "claude-opus-5-5",
-    reasoningEffort: "medium",
+      "Kapitel-Body + Stil-/Ton-Kontext + Verbessern-Brief (Inhalt eingefroren, volle Länge, Orthografie/Grammatik).",
+    modelSlug: "gpt-6-luna",
+    reasoningEffort: "low",
     sortOrder: 31,
     updatedAt: null,
   },
@@ -643,10 +649,10 @@ export async function saveRomanKiRolle(
  * `model` is always a text LLM (safe for `generateText`). If the role stores
  * FLUX.2, that becomes `imageModel` and text falls back to the default Schreibmodell.
  *
- * Belletristik (non-`clever_*`): only {@link ROMAN_PROSE_ROLE_KEY} may keep an
- * expensive DB model (Sonnet) — and only when `allowProseModel` is not false
- * (Manuskript prose apply/draft). All other roles (inkl. Entwicklungslektor
- * Spec/Idee/Gerüst/Plot apply) resolve to Gemini 3.8 Flash + role Thinking.
+ * Belletristik (non-`clever_*`): writer/lektor roles in
+ * {@link ROMAN_CONFIGURED_MODEL_ROLE_KEYS} keep their DB/fallback slug.
+ * Prose roles (`co_autor` / `autor`) additionally need `allowProseModel !== false`
+ * (Manuskript draft / Roman Feinschliff). All other roles → assist Flash.
  */
 export async function resolveRomanKiRolle(
   key: string,
@@ -688,11 +694,14 @@ export async function resolveRomanKiRolle(
   }
 
   const isClever = rolle.key.startsWith("clever_");
-  const { isRomanProseRoleKey } = await import("@/lib/roman/assist-model");
-  const wantsProseModel =
-    isRomanProseRoleKey(rolle.key) && options?.allowProseModel !== false;
+  const { isRomanConfiguredModelRoleKey, isRomanProseRoleKey } =
+    await import("@/lib/roman/assist-model");
+  const isConfigured = isRomanConfiguredModelRoleKey(rolle.key);
+  const wantsConfiguredModel =
+    isConfigured &&
+    (!isRomanProseRoleKey(rolle.key) || options?.allowProseModel !== false);
 
-  if (!isClever && !wantsProseModel) {
+  if (!isClever && !wantsConfiguredModel) {
     const { resolveRomanAssistModel, ROMAN_ASSIST_MODEL_SLUG } =
       await import("@/lib/roman/assist-model");
     const assist = await resolveRomanAssistModel();

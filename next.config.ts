@@ -33,9 +33,9 @@ const nextConfig: NextConfig = {
       "./src/assets/fonts/Sora-Bold.ttf",
       "./src/assets/fonts/Sora-SemiBold.ttf",
       "./public/clever_erzählt_300.png",
-      "./public/leseno-komplett-256.png",
+      "./public/leseno-vogel-neu.png",
+      "./public/leseno-vogel-256.png",
       "./public/bg3.jpg",
-      "./public/landing/vogel-hell.webp",
     ],
   },
   experimental: {

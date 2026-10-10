@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Roman tab: Verbessern — prose quality up (Autor / Opus via Claude Batch).
- * Hard-gated: Manuskript freigabe (Seam/Payoff) must be clean first — no Opus
- * costs until then. Source = Manuskript draft → editorial.romanText.
+ * Roman tab: Verbessern — Feinschliff (Autor / GPT-6 Luna).
+ * Hard-gated: Manuskript freigabe (Seam/Payoff) must be clean first.
+ * Source = Manuskript draft → editorial.romanText.
  */
 
 import { useState } from "react";
@@ -153,7 +153,7 @@ export function RomanManuskriptVerbessernControl({
 
   async function runVerbessern() {
     if (!canSave || busy || !hasManuskript) return;
-    // Re-read gate after possible freigabe — never kick Opus while blocked.
+    // Re-read gate after possible freigabe — never kick stil-pass while blocked.
     const liveGate = getManuskriptRomanVerbessernGate({ editorial });
     if (!liveGate.ok) {
       toast.error(liveGate.reason);
@@ -166,7 +166,7 @@ export function RomanManuskriptVerbessernControl({
       return;
     }
     setPending("verbessern");
-    setProgressLabel("Roman Verbessern · Kapitelstruktur & Batch …");
+    setProgressLabel("Roman Verbessern · Kapitel vorbereiten …");
     try {
       const started = await romanManuskriptVerbessernAction({ romanId });
       if (!started.success || !started.data) {
@@ -175,7 +175,7 @@ export function RomanManuskriptVerbessernControl({
       }
       const { runId, chapterCount } = started.data;
       setProgressLabel(
-        `Claude Batch einreichen · ${chapterCount} Kapitel …`,
+        `Feinschliff starten · ${chapterCount} Kapitel (Luna) …`,
       );
 
       const kick = await kickVerbessernJob(romanId, runId);
@@ -249,8 +249,8 @@ export function RomanManuskriptVerbessernControl({
       }
       toast.success(
         polishedCount > 0
-          ? `Roman verbessert (Claude Batch · ${polishedCount}/${chapterCount} Kapitel). Manuskript unverändert.`
-          : `Roman verbessert (Claude Batch · ${chapterCount} Kapitel). Manuskript unverändert.`,
+          ? `Roman verbessert (Lesefluss · ${polishedCount}/${chapterCount} Kapitel). Manuskript unverändert.`
+          : `Roman verbessert (Lesefluss · ${chapterCount} Kapitel). Manuskript unverändert.`,
       );
     } catch (error) {
       toast.error(
@@ -375,8 +375,8 @@ export function RomanManuskriptVerbessernControl({
           </button>
         ) : null}
         <p className="max-w-xl text-xs font-semibold text-zinc-500">
-          Nur Stil-Pass (Opus) — startet erst nach Manuskript-Freigabe
-          (Seam/Payoff). Keine Inhalts-Reparatur hier. Gate: Reifegrad + Freigabe.
+          Feinschliff: Lesefluss, Rechtschreibung, Grammatik (Autor · Luna) —
+          erst nach Manuskript-Freigabe. Keine Inhalts-Reparatur. Gate: Reifegrad + Freigabe.
         </p>
       </div>
 
@@ -392,22 +392,36 @@ export function RomanManuskriptVerbessernControl({
             ? "Manuskript · Hinweise nachziehen"
             : pending === "freigabe"
               ? "Manuskript · Freigabe-Check"
-              : "Roman · Verbessern (Batch)"
+              : "Roman · Verbessern (Lesefluss)"
         }
         title={
           pending === "nachziehen"
             ? "Nähte & Emotion nachziehen"
             : pending === "freigabe"
               ? "Seam / Payoff prüfen"
-              : "Prosa verbessern"
+              : "Lesefluss verbessern"
         }
         progressLabel={
           pending === "nachziehen"
-            ? "Co-Autor schärft betroffene Kapitel (günstig, kein Opus) …"
+            ? "Co-Autor schärft betroffene Kapitel (günstig) …"
             : pending === "freigabe"
               ? "Günstiger Assist prüft Nähte, Payoffs und emotionale Konsequenzen …"
               : (progressLabel ??
-                "Autor schärft Wortwahl und Satzbau — Kapitel landen im Roman …")
+                "Autor: Lesefluss, Rechtschreibung, Grammatik — Kapitel landen im Roman …")
+        }
+        steps={
+          pending === "verbessern"
+            ? [
+                "Manuskript lesen",
+                "Feinschliff (Lesefluss, Orthografie, Grammatik)",
+                "Ergebnis speichern",
+              ]
+            : undefined
+        }
+        agentInfo={
+          pending === "verbessern"
+            ? { roleLabel: "Autor", modelLabel: "GPT-6 Luna" }
+            : undefined
         }
       />
     </>

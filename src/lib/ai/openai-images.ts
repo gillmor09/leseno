@@ -16,7 +16,7 @@ export type OpenAiImageQuality =
 
 export type OpenAiImageGenerateInput = {
   prompt: string;
-  /** e.g. `1024x1024`, `1024x1536`, `1280x2048`. */
+  /** e.g. `1024x1024`, `1024x1536`, `1600x2400` (cover native 2:3). */
   size?: string;
   modelSlug?: string;
   quality?: OpenAiImageQuality;

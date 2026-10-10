@@ -857,7 +857,7 @@ function ClosingSection() {
     <section className="bg-gray-100">
       <div className="mx-auto max-w-3xl px-4 py-16 text-center sm:px-6 sm:py-20">
         <Image
-          src="/landing/vogel-hell.webp"
+          src="/leseno-vogel-neu.png"
           alt="Buntes Vogel-Maskottchen"
           width={80}
           height={80}

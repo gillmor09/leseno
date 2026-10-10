@@ -65,7 +65,7 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     provider: "claude",
     label: "Claude Haiku 5.5",
     usage:
-      "Text: günstig/schnell (Assist, A/B bis Freigabe, hohe Volumen)",
+      "Text: Schreibhilfe Gerüst/Plot + Ideen-Dialog (günstig/schnell)",
   },
   {
     modelSlug: "gpt-6-astra",
@@ -77,7 +77,8 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     modelSlug: "gpt-6-luna",
     provider: "openai",
     label: "GPT-6 Luna (OpenAI)",
-    usage: "Text: Sachbuch Interviewer / Style Matcher · schnell",
+    usage:
+      "Text: Entwicklungslektor + Roman-Feinschliff (Autor) · schnell",
   },
   {
     modelSlug: "gpt-5.6-luna",

@@ -1219,7 +1219,7 @@ export function RomanAdminWorkspace({
         variant="manuskript-vereinfachen"
         contextLabel="Manuskript · Hinweise nachziehen"
         title="Nähte & Emotion nachziehen"
-        progressLabel="Co-Autor schärft betroffene Kapitel (günstig, kein Opus) …"
+        progressLabel="Co-Autor schärft betroffene Kapitel (günstig) …"
       />
       <div className="flex flex-wrap items-center gap-3">
         <Link
@@ -1876,7 +1876,7 @@ export function RomanAdminWorkspace({
                       eingefroren) oder Logik/Dramaturgie ≥75%. Co-Autor schreibt
                       kapitelweise Prosa. Beim „fertig“-Toggle: günstiger
                       Seam/Payoff- und Emotion-Check als Hinweis vor dem
-                      Opus-Feinschliff. Oben Kapitel wählen — im Feld nur dieses
+                      Roman-Feinschliff. Oben Kapitel wählen — im Feld nur dieses
                       Kapitel; Buch-Wortzahl bleibt sichtbar.
                     </p>
                   ) : null}
@@ -2080,9 +2080,9 @@ export function RomanAdminWorkspace({
               ) : (
                 <div className="space-y-5">
                   <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
-                    Feinschliff aus dem Manuskript: Zwei-Wellen-Batch (Opus) mit
-                    Stilanker, Freeze-QA und Stimmen-Check. Vorher: Manuskript-
-                    Reifegrad + Idee-Versprechen. Manuskript bleibt als Entwurf.
+                    Feinschliff aus dem Manuskript (Autor · Luna): Lesefluss,
+                    Rechtschreibung, Grammatik — weiche Freeze-QA. Vorher:
+                    Manuskript-Reifegrad + Freigabe. Manuskript bleibt Entwurf.
                   </p>
                   {typSet && !isCleverErzaehlt ? (
                     <RomanReifegradCard

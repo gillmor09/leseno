@@ -181,7 +181,7 @@ export async function suggestSzenenplotDetailFromCoAutor(input: {
   const mode = input.mode ?? "full";
   const skeletonOnly = mode === "skeleton";
   const weave = hasFilledPlot(input.existingPlot);
-  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
+  const { rolle, model } = await resolveRomanKiRolle("schreib_coach");
   const rechercheDossier = input.editorial.rechercheDossier ?? "";
   const tonalitaet = (input.tonalitaet ?? "").trim();
 

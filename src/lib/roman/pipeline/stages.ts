@@ -111,8 +111,8 @@ export function cleverManuskriptSkipsReifegrad(
 
 /**
  * Who applies Verbessern / Feedback patches on structure stages.
- * Manuskript draft → Co-Autor; Manuskript style „Verbessern“ → Autor (Opus)
- * is resolved separately in apply / manuskript-verbessern.
+ * Manuskript draft → Co-Autor; Roman Feinschliff → Autor (Luna) separately
+ * in manuskript-verbessern / roman-reifegrad-apply.
  */
 export function romanApplyRoleKey(
   stage: PipelineStage,

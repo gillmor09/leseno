@@ -1,8 +1,8 @@
 # A/B-Checkliste: Modelle bis Manuskript-Freigabe
 
-Ziel: **Gemini 3.8 Flash** (Baseline) gegen günstigere/alternative Text-LLMs vergleichen — **nur bis Manuskript „fertig“ / Freigabe-Check**, nicht den Opus-Stil-Pass.
+Ziel: **Gemini 3.8 Flash** (Baseline) gegen günstigere/alternative Text-LLMs vergleichen — **nur bis Manuskript „fertig“ / Freigabe-Check**.
 
-Roman Verbessern (Opus) bleibt außen vor; sonst mischen sich Prosa- und Stilkosten.
+Roman Verbessern (Lesefluss, ebenfalls Gemini 3.8 Flash) getrennt bewerten — sonst mischen sich Manuskript- und Feinschliff-Kosten.
 
 ## Kandidaten (verdrahtet)
 
@@ -62,7 +62,10 @@ Oft besser als ein Billigmodell für alles:
 | --- | --- |
 | Assist (Graph, Continuity, Freigabe-Audit, JSON) | Haiku 5.5 oder OSS-120 / Llama |
 | Co-Autor Manuskript-Prosa | Flash oder (wenn gut) Qwen 397B / Luna |
-| Roman Stil-Pass | Opus (unverändert) |
+| Roman Feinschliff | GPT-6 Luna (Rolle Autor) |
+| Gerüst/Plot Entwurf | Claude Haiku 5.5 (Schreibhilfe) |
+| Pipeline Verbessern | GPT-6 Luna (Entwicklungslektor) |
+| Manuskript Prosa | Gemini 3.8 Flash (Co-Autor) |
 
 ## Protokoll-Vorlage (kopieren)
 

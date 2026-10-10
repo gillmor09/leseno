@@ -53,7 +53,7 @@ export function LandingFooter() {
           <div>
             <div className="flex items-center gap-3">
               <Image
-                src="/landing/vogel-hell.webp"
+                src="/leseno-vogel-neu.png"
                 alt="Logo der Lese-App"
                 width={36}
                 height={36}

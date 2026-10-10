@@ -38,6 +38,10 @@ export const metadata: Metadata = {
     icon: [
       { url: "/favicon.ico" },
       {
+        url: "/leseno-vogel-neu.png",
+        type: "image/png",
+      },
+      {
         url: "/leseno-vogel-256.png",
         sizes: "256x256",
         type: "image/png",
@@ -45,7 +49,7 @@ export const metadata: Metadata = {
     ],
     apple: [
       {
-        url: "/leseno-vogel-256.png",
+        url: "/apple-touch-icon.png",
         sizes: "180x180",
         type: "image/png",
       },

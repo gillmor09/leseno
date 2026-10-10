@@ -121,7 +121,7 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
     label: "Grobgerüst · Entwurf",
     stage: "grobgeruest",
     kind: "draft",
-    rolleKey: "entwicklungslektor",
+    rolleKey: "schreib_coach",
     sortOrder: 100,
     updatedAt: null,
   },
@@ -139,7 +139,7 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
     label: "Feingerüst · Entwurf",
     stage: "feingeruest",
     kind: "draft",
-    rolleKey: "entwicklungslektor",
+    rolleKey: "schreib_coach",
     sortOrder: 110,
     updatedAt: null,
   },
@@ -157,7 +157,7 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
     label: "Grobplot · Entwurf",
     stage: "grobplot",
     kind: "draft",
-    rolleKey: "entwicklungslektor",
+    rolleKey: "schreib_coach",
     sortOrder: 120,
     updatedAt: null,
   },
@@ -175,7 +175,7 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
     label: "Feinplot · Entwurf",
     stage: "feinplot",
     kind: "draft",
-    rolleKey: "entwicklungslektor",
+    rolleKey: "schreib_coach",
     sortOrder: 130,
     updatedAt: null,
   },
@@ -194,7 +194,7 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
     label: "Kapitelgerüst · Entwurf (Legacy)",
     stage: "feingeruest",
     kind: "draft",
-    rolleKey: "entwicklungslektor",
+    rolleKey: "schreib_coach",
     sortOrder: 136,
     updatedAt: null,
   },
@@ -203,7 +203,7 @@ export const FALLBACK_PIPELINE_AUFGABEN: RomanPipelineAufgabe[] = [
     label: "Szenenplot · Entwurf (Legacy)",
     stage: "feinplot",
     kind: "draft",
-    rolleKey: "entwicklungslektor",
+    rolleKey: "schreib_coach",
     sortOrder: 137,
     updatedAt: null,
   },
@@ -361,8 +361,8 @@ export async function savePipelineAufgabe(
 
 /**
  * Resolve task → role + wired model.
- * Manuskript draft keeps expensive co_autor (prose). Gerüst/Szenenplot use
- * Entwicklungslektor (analytical Flash). allowProseModel only for MS draft.
+ * Gerüst/Plot draft → Schreibhilfe (Haiku). Critique/Verbessern → Entwicklungslektor (Luna).
+ * Manuskript draft → Co-Autor (Gemini). Roman Feinschliff → Autor (Luna).
  */
 export async function resolvePipelineTask(taskKey: string): Promise<{
   aufgabe: RomanPipelineAufgabe;
@@ -377,9 +377,10 @@ export async function resolvePipelineTask(taskKey: string): Promise<{
     throw new Error(`Unbekannte Pipeline-Aufgabe „${taskKey}“.`);
   }
   const allowProseModel =
-    (aufgabe.rolleKey === "co_autor" || aufgabe.rolleKey === "autor") &&
-    aufgabe.stage === "manuskript" &&
-    aufgabe.kind === "draft";
+    (aufgabe.rolleKey === "co_autor" &&
+      aufgabe.stage === "manuskript" &&
+      aufgabe.kind === "draft") ||
+    (aufgabe.rolleKey === "autor" && aufgabe.stage === "manuskript");
   const { rolle, model } = await resolveRomanKiRolle(aufgabe.rolleKey, {
     allowProseModel,
   });

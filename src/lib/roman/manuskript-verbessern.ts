@@ -1,22 +1,14 @@
 /**
- * Roman „Verbessern“ (Stil-Pass): chapter-wise prose quality up — content frozen.
+ * Roman „Verbessern“ (Lesefluss-Feinschliff): chapter-wise — content frozen.
  * Source = `editorial.manuskriptText` (draft, untouched). Target = `editorial.romanText`.
- * KI-Rolle `autor` (Claude Opus 5.5) via Anthropic Message Batches (~50%).
- * Each finished chapter is persisted to `romanText` as soon as its batch result
- * is applied (Message Batches deliver results when the whole batch ends).
+ * KI-Rolle `autor` (GPT-6 Luna) via `generateText` (per chapter).
+ * Each finished chapter is persisted to `romanText` immediately.
  *
  * Flow: `startManuskriptVerbessern` → `runManuskriptVerbessernJob` (API `after`).
  */
 
 import { generateText } from "@/lib/ai/provider";
 import { resolveReasoningEffort } from "@/lib/ai/reasoning-effort";
-import {
-  createClaudeMessageBatch,
-  fetchClaudeMessageBatchResults,
-  formatClaudeBatchProgress,
-  waitForClaudeMessageBatch,
-  type ClaudeBatchRequest,
-} from "@/lib/ai/claude-batches";
 import { runWithAiUsageCollector } from "@/lib/ai/usage-collector";
 import { resolveRomanSchreibModel } from "@/lib/roman/model";
 import {
@@ -82,38 +74,36 @@ import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
 import type { RomanKontext } from "@/lib/roman/types";
 import { buildWeaveSystemAddendum } from "@/lib/roman/weave-comment";
 import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
-import type { AiTokenUsage } from "@/lib/ai/usage-types";
-import { sumAiUsages } from "@/lib/ai/usage-types";
 
-/** Shared patch brief — content lock + style-only elevation. */
-export const MANUSKRIPT_VERBESSERN_BRIEF = `ARBEITSAUFTRAG — Verbessern (Stil-Pass):
-Erhöhe die Prosa-Qualität DIESES Kapitels — NUR Sprache und Form.
+/** Shared patch brief — classic Feinschliff (Lesefluss + Orthografie/Grammatik), content locked. */
+export const MANUSKRIPT_VERBESSERN_BRIEF = `ARBEITSAUFTRAG — Verbessern (klassischer Feinschliff):
+Nur Sprache und Form DIESES Kapitels — Lesefluss, Rechtschreibung, Grammatik. Sonst nichts.
 
 ERLAUBT:
-- präzisere, lebendigere Wortwahl (ohne Bedeutung zu ändern)
-- klarerer, rhythmischer Satzbau; Schachtelsätze glätten wenn nötig
-- sinnliche Details und Subtext in bestehender Handlung schärfen
-- Dialoge sprachlich schärfen — gleiche Aussage, bessere Stimme
+- klarere, geschmeidigere Sätze; Stolperstellen und Schachtelsätze glätten
+- Rechtschreibfehler korrigieren (Orthografie, Getrennt-/Zusammenschreibung, Groß-/Kleinschreibung)
+- grammatikalische Korrektheit prüfen und richten (Rektion, Kasus, Kongruenz, Tempus, Zeichensetzung)
+- leichte Wortwahl-Korrekturen, wenn sie den Fluss verbessern (Bedeutung gleich)
+- Dialoge sprachlich glätten — gleiche Aussage, gleicher Inhalt
 
-STRENG VERBOTEN (Inhalt unverändert):
+STRENG VERBOTEN:
 - keine neue Handlung, keine neuen Beats, Entschlüsse oder Infos
 - keine Figuren, Orte, Gegenstände, Zeitlinien oder Fakten ändern/erfinden/streichen
-- keine Szenen umordnen, weglassen oder hinzufügen
+- keine Szenen umordnen, weglassen, kürzen oder hinzufügen
+- keine „sinnliche Schärfung“ oder Subtext-Erfindung, die Inhalt verändert
 - keine Geheimnisse verraten, die im Entwurf noch gehalten sind
 - keine Kapitelüberschrift ändern; keine Meta-Kommentare
 
-Schreibe den vollständigen Kapitel-Body neu — gleiche Ereignisse in derselben Reihenfolge, nur bessere Prosa.`;
+Schreibe den VOLLSTÄNDIGEN Kapitel-Body neu — gleiche Ereignisse in derselben Reihenfolge, annähernd gleiche Länge, nur sprachlich sauberer und flüssiger. Nicht abschneiden.`;
 
 const LIVE_PROGRESS = "live-progress";
 const CUSTOM_ID_PREFIX = "kap-";
 /** Wave 1 establishes polished voice; Wave 2 uses it as Stilanker + prev. */
 const WAVE1_CHAPTER_COUNT = 2;
 /** Full chapter body for stil-pass (must not truncate mid-prose for typical caps). */
-const STIL_PASS_BODY_CHARS = 20_000;
+const STIL_PASS_BODY_CHARS = 48_000;
 /** Prevents double `after()` workers on the same runId. */
 const JOB_LOCK_DETAIL = "verbessern-job-lock";
-/** Persisted in history.detail so a crashed worker can resume a Batch. */
-const BATCH_META_PREFIX = "BATCH_META:";
 /** Re-attach to this run instead of spawning a second worker. */
 const ACTIVE_VERBESSERN_MS = 90 * 60_000;
 /**
@@ -171,38 +161,6 @@ async function assertVerbessernRunStillActive(
   }
 }
 
-function formatBatchMeta(input: {
-  wave: string;
-  batchId: string;
-  chapters: number[];
-}): string {
-  return `${BATCH_META_PREFIX}wave=${encodeURIComponent(input.wave)};id=${input.batchId};chapters=${input.chapters.join(",")}`;
-}
-
-function parseBatchMeta(
-  detail: string | undefined,
-): { wave: string; batchId: string; chapters: number[] } | null {
-  const raw = (detail ?? "").trim();
-  if (!raw.startsWith(BATCH_META_PREFIX)) return null;
-  const body = raw.slice(BATCH_META_PREFIX.length);
-  const parts = Object.fromEntries(
-    body.split(";").map((p) => {
-      const i = p.indexOf("=");
-      if (i < 0) return [p, ""];
-      return [p.slice(0, i), p.slice(i + 1)];
-    }),
-  );
-  const batchId = String(parts.id ?? "").trim();
-  const wave = decodeURIComponent(String(parts.wave ?? "").trim());
-  const chapters = String(parts.chapters ?? "")
-    .split(",")
-    .map((n) => Number(n))
-    .filter((n) => Number.isFinite(n) && n > 0)
-    .map((n) => Math.floor(n));
-  if (!batchId || chapters.length === 0) return null;
-  return { wave, batchId, chapters };
-}
-
 /**
  * True when Roman chapter is fertig (Autor accepted) or body already differs
  * from Manuskript — skip on resume (abort mid-book / re-kick).
@@ -228,19 +186,6 @@ function chapterAlreadyPolished(
     if (a[i] === b[i]) same += 1;
   }
   return same / Math.max(a.length, b.length) < 0.97;
-}
-
-function findResumableBatch(
-  events: PipelineHistoryEvent[],
-  waveLabel: string,
-): { batchId: string; chapters: number[] } | null {
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const meta = parseBatchMeta(events[i]?.detail);
-    if (!meta) continue;
-    if (meta.wave !== waveLabel) continue;
-    return { batchId: meta.batchId, chapters: meta.chapters };
-  }
-  return null;
 }
 
 function persistFields(roman: RomanKontext) {
@@ -336,73 +281,62 @@ ${buildWeaveSystemAddendum({
     "Nur den Kapitel-BODY ohne Überschrift. Die Heading-Zeile setzt der Server.",
 })}
 
-Du erhältst GENAU ein Kapitel. Ändere den Body laut Patch-Brief — SICHTBAR und ENTSCHIEDEN.
+Du erhältst GENAU ein Kapitel. Ändere den Body laut Patch-Brief — klassischer Feinschliff.
 ${MANUSKRIPT_CHAPTER_PROSE_RULES}
 Buchdruck: Überschriften setzt das System (ohne Rauten). Erzähle als echte Prosa — keine Streich-/Meta-Notizen.
-Stil-Pass: gleiche Beats/Fakten/Dialogbedeutung — nur Wortwahl und Satzbau verbessern.
-Stimme: Cross-Chapter-Stilanker + Tonalität + Regeln aus dem Cache-Prefix sind verbindlich — Register und Satzrhythmus ans Buch angleichen, Inhalt nicht ändern.
-Gib NUR den neuen Body zurück — keine Kapitel-Überschrift („Kapitel N — …“), kein JSON.`);
+Feinschliff: gleiche Beats/Fakten/Dialogbedeutung/Länge — Lesefluss glätten; Rechtschreibung und Grammatik korrigieren.
+Stimme: Cross-Chapter-Stilanker + Tonalität + Regeln aus dem Cache-Prefix sind verbindlich — Register angleichen, Inhalt nicht ändern.
+Gib NUR den vollständigen neuen Body zurück — keine Kapitel-Überschrift („Kapitel N — …“), kein JSON.`);
 }
 
 /**
- * Build one Claude Batch request per chapter (slim userText for stil-pass).
+ * Build stil-pass user prompt for one chapter.
  * Continuity prefers polished `romanChapters` prev-tail; next head = Manuskript.
  */
-function buildVerbessernBatchRequests(input: {
-  waveChapters: PlotChapter[];
+function buildVerbessernChapterUserText(input: {
+  chapter: PlotChapter;
   manuskriptChapters: PlotChapter[];
   romanChapters: PlotChapter[];
-  /** Byte-identical for every request in the run (both waves). */
-  cacheablePrefix: string;
-  systemInstruction: string;
-  /** Optional Wave-2 polished voice hint — same string for every chapter in the wave. */
   voiceLockAddendum?: string;
-  modelSlug: string;
-  reasoningEffort: ReturnType<typeof resolveReasoningEffort>;
   liveStructured: RomanEditorial["szenenplotStructured"];
-}): ClaudeBatchRequest[] {
-  const batchRequests: ClaudeBatchRequest[] = [];
+}): string {
+  const ch = input.chapter;
+  const heading = formatManuskriptChapterHeading({
+    number: ch.number,
+    title: ch.title,
+    body: "",
+  });
+  const prevRoman = input.romanChapters.find((c) => c.number === ch.number - 1);
+  const prevMs = input.manuskriptChapters.find(
+    (c) => c.number === ch.number - 1,
+  );
+  const prevBody =
+    (prevRoman?.body.trim().length ?? 0) >= 40
+      ? prevRoman!.body
+      : (prevMs?.body ?? "");
+  const previousTail = prevBody.trim().slice(-STIL_PASS_PREV_TAIL_CHARS);
 
-  for (const ch of input.waveChapters) {
-    const heading = formatManuskriptChapterHeading({
-      number: ch.number,
-      title: ch.title,
-      body: "",
-    });
-    const prevRoman = input.romanChapters.find(
-      (c) => c.number === ch.number - 1,
-    );
-    const prevMs = input.manuskriptChapters.find(
-      (c) => c.number === ch.number - 1,
-    );
-    const prevBody =
-      (prevRoman?.body.trim().length ?? 0) >= 40
-        ? prevRoman!.body
-        : (prevMs?.body ?? "");
-    const previousTail = prevBody.trim().slice(-STIL_PASS_PREV_TAIL_CHARS);
+  const nextMs = input.manuskriptChapters.find(
+    (c) => c.number === ch.number + 1,
+  );
+  const nextHead = nextMs?.body.trim().slice(0, STIL_PASS_NEXT_HEAD_CHARS) ?? "";
 
-    const nextMs = input.manuskriptChapters.find(
-      (c) => c.number === ch.number + 1,
-    );
-    const nextHead =
-      nextMs?.body.trim().slice(0, STIL_PASS_NEXT_HEAD_CHARS) ?? "";
+  const slimContext = buildStilPassChapterContext({
+    previousTail,
+    structured: input.liveStructured,
+    chapterNumber: ch.number,
+  });
 
-    const slimContext = buildStilPassChapterContext({
-      previousTail,
-      structured: input.liveStructured,
-      chapterNumber: ch.number,
-    });
-
-    const nextBlock = nextHead
-      ? `\n# Nächstes Kapitel (Kopf — Seam halten, nicht vorwegnehmen)
+  const nextBlock = nextHead
+    ? `\n# Nächstes Kapitel (Kopf — Seam halten, nicht vorwegnehmen)
 ${nextHead}\n`
-      : "";
+    : "";
 
-    const voiceLock = input.voiceLockAddendum?.trim()
-      ? `\n${input.voiceLockAddendum.trim()}\n`
-      : "";
+  const voiceLock = input.voiceLockAddendum?.trim()
+    ? `\n${input.voiceLockAddendum.trim()}\n`
+    : "";
 
-    const userText = `# Patch-Brief (verbindlich)
+  return `# Patch-Brief (verbindlich)
 ${MANUSKRIPT_VERBESSERN_BRIEF}
 ${voiceLock}
 ${slimContext}
@@ -410,31 +344,22 @@ ${nextBlock}
 # Kapitel (Meta unveränderlich)
 ${heading}
 
-# Bisheriger Body (Inhalt eingefroren — nur Stil verbessern)
+# Bisheriger Body (Inhalt eingefroren — Feinschliff)
 ${ch.body.slice(0, STIL_PASS_BODY_CHARS)}
 
-Schreibe den vollständigen neuen Body.
+Schreibe den vollständigen neuen Body (nicht kürzen, nicht abschneiden).
 HARTE ERFOLGSKRITERIEN:
-- Bessere Prosa bei IDENTISCHEM Inhalt — keine neuen Beats.
+- Flüssigerer Lesefluss + korrekte Rechtschreibung/Grammatik bei IDENTISCHEM Inhalt — keine neuen Beats, keine Szenenverluste.
 - Stimme wie Stilanker + Tonalität im Cache-Prefix.
 - Keine Meta-Sätze. Nur erzählende Prosa. Nur DIESES Kapitel.`;
-
-    batchRequests.push({
-      customId: chapterCustomId(ch.number),
-      params: {
-        modelSlug: input.modelSlug,
-        systemInstruction: input.systemInstruction,
-        cacheablePrefix: input.cacheablePrefix,
-        cacheTtl: "1h",
-        userText,
-        maxTokens: ROMAN_STIL_PASS_MAX_TOKENS,
-        reasoningEffort: input.reasoningEffort,
-      },
-    });
-  }
-
-  return batchRequests;
 }
+
+type VerbessernChapterResult = {
+  customId: string;
+  type: "succeeded" | "errored" | "expired" | "canceled";
+  text?: string;
+  error?: string;
+};
 
 type ApplyWaveResult = {
   liveRomanText: string;
@@ -444,7 +369,7 @@ type ApplyWaveResult = {
 };
 
 /**
- * One sync Opus retry: keep stil gains, undo content drift named in Freeze-QA.
+ * One sync retry: keep stil gains, undo content drift named in Freeze-QA.
  */
 async function softRepairFrozenPolish(input: {
   chapter: PlotChapter;
@@ -473,8 +398,8 @@ async function softRepairFrozenPolish(input: {
           systemInstruction: input.systemInstruction,
           cacheablePrefix: input.cacheablePrefix,
           userText: `# Soft-Repair (Content-Freeze)
-Der Stil-Pass hat Inhaltsfehler. Behalte die bessere Prosa, korrigiere NUR die genannten Freeze-Probleme.
-Inhalt muss wieder dem Entwurf entsprechen (gleiche Beats/Fakten/Figuren/Reihenfolge).
+Der Lesefluss-Pass hat Inhaltsfehler. Behalte den flüssigeren Stil, korrigiere NUR die genannten Freeze-Probleme.
+Inhalt muss wieder dem Entwurf entsprechen (gleiche Beats/Fakten/Figuren/Reihenfolge/volle Länge).
 
 # Freeze-Probleme
 - ${reasons}
@@ -482,13 +407,13 @@ Inhalt muss wieder dem Entwurf entsprechen (gleiche Beats/Fakten/Figuren/Reihenf
 # Entwurf (verbindlicher Inhalt)
 ${input.chapter.body.slice(0, STIL_PASS_BODY_CHARS)}
 
-# Fehlgeschlagener Polish (Stil ok, Inhalt falsch — als Ausgangspunkt)
+# Fehlgeschlagener Polish (Lesefluss ok, Inhalt falsch — als Ausgangspunkt)
 ${input.failedPolish.slice(0, STIL_PASS_BODY_CHARS)}
 
 # Kapitel (Meta)
 ${heading}
 
-Schreibe den vollständigen korrigierten Body (Stil behalten, Inhalt wie Entwurf). Nur Body, keine Überschrift.`,
+Schreibe den vollständigen korrigierten Body (Lesefluss behalten, Inhalt wie Entwurf, nicht kürzen). Nur Body, keine Überschrift.`,
           maxTokens: ROMAN_STIL_PASS_MAX_TOKENS,
           timeoutMs: 180_000,
         }),
@@ -507,14 +432,12 @@ Schreibe den vollständigen korrigierten Body (Stil behalten, Inhalt wie Entwurf
 }
 
 /**
- * Apply batch results chapter-wise with Content-Freeze-QA;
- * one soft-repair retry on fail, then Manuskript fallback.
+ * Apply chapter results with soft Freeze-QA;
+ * one soft-repair retry on hard fail, then Manuskript fallback.
  */
 async function applyVerbessernWaveResults(input: {
   waveChapters: PlotChapter[];
-  results: Awaited<
-    ReturnType<typeof fetchClaudeMessageBatchResults>
-  >["results"];
+  results: VerbessernChapterResult[];
   liveRomanText: string;
   roman: RomanKontext;
   editorial: RomanEditorial;
@@ -544,7 +467,7 @@ async function applyVerbessernWaveResults(input: {
     let body = ch.body;
     let accepted = false;
 
-    if (!hit || hit.type !== "succeeded" || !hit.text.trim()) {
+    if (!hit || hit.type !== "succeeded" || !hit.text?.trim()) {
       failed.push(
         `Kap. ${ch.number}: ${
           hit && hit.type !== "succeeded"
@@ -575,7 +498,7 @@ async function applyVerbessernWaveResults(input: {
           await reportLiveProgress(
             input.runId,
             input.events,
-            `Roman · Kap. ${ch.number}: Content-Freeze-QA …`,
+            `Roman · Kap. ${ch.number}: Freeze-QA …`,
           );
           let freeze = await assertRomanChapterContentFrozen({
             draftBody: ch.body,
@@ -795,7 +718,7 @@ export async function startManuskriptVerbessern(input: {
     firstEvent: historyEvent({
       type: "info",
       stage: "manuskript",
-      summary: `Roman Verbessern · ${chapters.length} Kapitel (Stil-Pass · Freeze-QA)`,
+      summary: `Roman Verbessern · ${chapters.length} Kapitel (Feinschliff · Luna)`,
       detail: MANUSKRIPT_VERBESSERN_BRIEF.slice(0, 2_000),
     }),
   });
@@ -804,10 +727,9 @@ export async function startManuskriptVerbessern(input: {
 }
 
 /**
- * Background job: submit one Claude Messages request per chapter as a Batch,
- * poll to completion, write each finished chapter into `romanText` immediately.
- * Idempotent on re-kick: skips ok/error runs, resumes unfinished batches,
- * skips already polished chapters after abort.
+ * Background job: Autor/Luna Feinschliff per chapter; write into `romanText`
+ * immediately. Idempotent on re-kick: skips ok/error runs and already polished
+ * chapters after abort.
  */
 export async function runManuskriptVerbessernJob(input: {
   romanId: string;
@@ -963,12 +885,6 @@ export async function runManuskriptVerbessernJob(input: {
           `Das Modell „${model.label}“ für Rolle Autor ist deaktiviert.`,
         );
       }
-      const provider = model.provider.trim().toLowerCase();
-      if (provider !== "claude") {
-        throw new Error(
-          `Rolle Autor muss ein Claude-Modell nutzen (aktuell: ${model.provider} / ${model.modelSlug}). Bitte KI-Rollen prüfen.`,
-        );
-      }
 
       const buchTyp = (editorial.buchTyp ?? "unbekannt") as RomanBuchTyp;
       const slimCanon = buildRomanSlimCanon({
@@ -989,7 +905,7 @@ export async function runManuskriptVerbessernJob(input: {
       const systemInstruction = verbessernSystemInstruction(rolle.systemPrompt);
       const reasoningEffort = resolveReasoningEffort(
         model.modelSlug,
-        rolle.reasoningEffort || "medium",
+        rolle.reasoningEffort || "low",
       );
 
       /** Wave 1 = Stilanker-Kapitel (längste unter den ersten vier), not blind 1–2. */
@@ -1009,8 +925,6 @@ export async function runManuskriptVerbessernJob(input: {
       );
       const allFailed: string[] = [];
       const allPatched: number[] = alreadyDone.map((c) => c.number);
-      const batchIds: string[] = [];
-      let batchUsageAcc: AiTokenUsage | undefined;
 
       // One cache prefix for the whole run (both waves) — Manuskript Stilanker only.
       const cacheablePrefix = buildVerbessernRunCachePrefix({
@@ -1027,168 +941,106 @@ export async function runManuskriptVerbessernJob(input: {
       ) => {
         if (waveChapters.length === 0) return;
 
-        const romanChapters = parsePlotChapters(liveRomanText);
-
-        await reportLiveProgress(
-          input.runId,
-          events,
-          `Verbessern · ${waveLabel}: ${waveChapters.length} Pakete …`,
+        events.push(
+          historyEvent({
+            type: "info",
+            stage: "manuskript",
+            roleKey: "autor",
+            modelLabel: model.label || model.modelSlug,
+            summary: `${waveLabel} gestartet · ${waveChapters.length} Kap. (Luna)`,
+            detail: `Kap. ${waveChapters.map((c) => c.number).join(", ")}`,
+          }),
         );
 
-        const resumable = findResumableBatch(events, waveLabel);
-        const resumeNums = new Set(resumable?.chapters ?? []);
-        const canResume =
-          Boolean(resumable) &&
-          waveChapters.every((c) => resumeNums.has(c.number)) &&
-          resumeNums.size === waveChapters.length;
+        for (const ch of waveChapters) {
+          await assertVerbessernRunStillActive(input.romanId, input.runId);
+          const romanChapters = parsePlotChapters(liveRomanText);
+          // Mid-wave resume: skip chapters already accepted this run / prior.
+          if (
+            chapterAlreadyPolished(
+              ch,
+              romanChapters.find((c) => c.number === ch.number)?.body,
+              roman.editorial ?? editorial,
+            )
+          ) {
+            if (!allPatched.includes(ch.number)) {
+              allPatched.push(ch.number);
+            }
+            continue;
+          }
 
-        let finishedBatchId = resumable?.batchId ?? "";
-        let results: Awaited<
-          ReturnType<typeof fetchClaudeMessageBatchResults>
-        >["results"] = [];
-
-        if (canResume && resumable) {
-          events.push(
-            historyEvent({
-              type: "info",
-              stage: "manuskript",
-              summary: `${waveLabel}: Batch fortsetzen · ${resumable.batchId}`,
-            }),
-          );
           await reportLiveProgress(
             input.runId,
             events,
-            `${waveLabel}: wartend auf Batch ${resumable.batchId} …`,
+            `Verbessern · ${waveLabel}: Kap. ${ch.number} …`,
           );
-          const finished = await waitForClaudeMessageBatch({
-            batchId: resumable.batchId,
-            timeoutMs: 50 * 60_000,
-            pollIntervalMs: 20_000,
-            onProgress: async (batch) => {
-              await assertVerbessernRunStillActive(input.romanId, input.runId);
-              await reportLiveProgress(
-                input.runId,
-                events,
-                `${waveLabel}: ${formatClaudeBatchProgress(batch, waveChapters.length)}`,
-              );
-            },
-          });
-          finishedBatchId = finished.id;
-          const fetched = await withRetries("Batch-Ergebnisse", () =>
-            fetchClaudeMessageBatchResults(finished),
-          );
-          results = fetched.results;
-          if (fetched.usage) {
-            batchUsageAcc = batchUsageAcc
-              ? sumAiUsages([batchUsageAcc, fetched.usage])
-              : fetched.usage;
-          }
-        } else {
-          const batchRequests = buildVerbessernBatchRequests({
-            waveChapters,
+
+          const userText = buildVerbessernChapterUserText({
+            chapter: ch,
             manuskriptChapters: chapters,
             romanChapters,
-            cacheablePrefix,
-            systemInstruction,
             voiceLockAddendum,
-            modelSlug: model.modelSlug,
-            reasoningEffort,
             liveStructured,
           });
 
-          await reportLiveProgress(
-            input.runId,
-            events,
-            `Verbessern · ${waveLabel}: Claude Batch (${waveChapters.length} Kap.) …`,
-          );
-
-          const submitted = await withRetries("Claude Batch anlegen", () =>
-            createClaudeMessageBatch(batchRequests),
-          );
-          finishedBatchId = submitted.id;
-          batchIds.push(submitted.id);
-          events.push(
-            historyEvent({
-              type: "info",
-              stage: "manuskript",
-              roleKey: "autor",
-              modelLabel: model.label || model.modelSlug,
-              summary: `${waveLabel} gestartet · ${submitted.id}`,
-              detail: formatBatchMeta({
-                wave: waveLabel,
-                batchId: submitted.id,
-                chapters: waveChapters.map((c) => c.number),
-              }),
-            }),
-          );
+          let result: VerbessernChapterResult;
           try {
-            await updatePipelineHistoryRun({
-              runId: input.runId,
-              status: "running",
-              events,
-            });
-          } catch {
-            /* fail-soft */
+            const raw = (
+              await withRetries(`Kap. ${ch.number} Lesefluss`, () =>
+                generateText({
+                  model: {
+                    ...model,
+                    reasoningEffort,
+                  },
+                  systemInstruction,
+                  cacheablePrefix,
+                  userText,
+                  maxTokens: ROMAN_STIL_PASS_MAX_TOKENS,
+                  timeoutMs: 180_000,
+                }),
+                2,
+              )
+            ).trim();
+            result = {
+              customId: chapterCustomId(ch.number),
+              type: "succeeded",
+              text: raw,
+            };
+          } catch (genErr) {
+            result = {
+              customId: chapterCustomId(ch.number),
+              type: "errored",
+              error:
+                genErr instanceof Error
+                  ? genErr.message
+                  : "Generate fehlgeschlagen",
+            };
           }
 
-          const finished = await waitForClaudeMessageBatch({
-            batchId: submitted.id,
-            timeoutMs: 50 * 60_000,
-            pollIntervalMs: 20_000,
-            onProgress: async (batch) => {
-              await assertVerbessernRunStillActive(input.romanId, input.runId);
-              await reportLiveProgress(
-                input.runId,
-                events,
-                `${waveLabel}: ${formatClaudeBatchProgress(batch, waveChapters.length)}`,
-              );
+          const applied = await applyVerbessernWaveResults({
+            waveChapters: [ch],
+            results: [result],
+            liveRomanText,
+            roman,
+            editorial: roman.editorial ?? editorial,
+            baseline,
+            plot,
+            runId: input.runId,
+            events,
+            patchedSoFar: allPatched.length,
+            totalChapters: chapters.length,
+            repair: {
+              systemInstruction,
+              cacheablePrefix,
+              modelSlug: model.modelSlug,
+              reasoningEffort,
             },
           });
-
-          await reportLiveProgress(
-            input.runId,
-            events,
-            `${waveLabel}: Ergebnisse laden / Freeze-QA …`,
-          );
-
-          const fetched = await withRetries("Batch-Ergebnisse", () =>
-            fetchClaudeMessageBatchResults(finished),
-          );
-          results = fetched.results;
-          if (fetched.usage) {
-            batchUsageAcc = batchUsageAcc
-              ? sumAiUsages([batchUsageAcc, fetched.usage])
-              : fetched.usage;
-          }
+          liveRomanText = applied.liveRomanText;
+          roman = applied.roman;
+          allPatched.push(...applied.patched);
+          allFailed.push(...applied.failed);
         }
-
-        if (finishedBatchId && !batchIds.includes(finishedBatchId)) {
-          batchIds.push(finishedBatchId);
-        }
-
-        const applied = await applyVerbessernWaveResults({
-          waveChapters,
-          results,
-          liveRomanText,
-          roman,
-          editorial,
-          baseline,
-          plot,
-          runId: input.runId,
-          events,
-          patchedSoFar: allPatched.length,
-          totalChapters: chapters.length,
-          repair: {
-            systemInstruction,
-            cacheablePrefix,
-            modelSlug: model.modelSlug,
-            reasoningEffort,
-          },
-        });
-        liveRomanText = applied.liveRomanText;
-        roman = applied.roman;
-        allPatched.push(...applied.patched);
-        allFailed.push(...applied.failed);
       };
 
       const runWaveSafe = async (
@@ -1299,7 +1151,7 @@ export async function runManuskriptVerbessernJob(input: {
           stage: "roman",
           focusChapterNumbers: allPatched.slice(0, 8),
           previous: roman.editorial?.reifegrade?.roman ?? null,
-          changeSummary: `Stil-Pass (Opus Batch) · Kap. ${allPatched.join(", ")}`,
+          changeSummary: `Feinschliff (Luna) · Kap. ${allPatched.join(", ")}`,
         });
         const edScored = editorialWithReifegrad(
           roman.editorial ?? editorial,
@@ -1336,8 +1188,6 @@ export async function runManuskriptVerbessernJob(input: {
         roman,
         patched: [...new Set(allPatched)].sort((a, b) => a - b),
         failed: allFailed,
-        batchId: batchIds.join(" + ") || "—",
-        batchUsage: batchUsageAcc,
         modelLabel: model.label || model.modelSlug,
         skipped: alreadyDone.map((c) => c.number),
       };
@@ -1362,8 +1212,8 @@ export async function runManuskriptVerbessernJob(input: {
         stage: "manuskript",
         roleKey: "autor",
         modelLabel: result.modelLabel,
-        summary: `Roman verbessert (Claude Batch · ${result.patched.length} Kapitel)${failNote}${skipNote}`,
-        detail: `Batch ${result.batchId} · Kap. ${result.patched.join(", ")}${
+        summary: `Roman verbessert (Luna Feinschliff · ${result.patched.length} Kapitel)${failNote}${skipNote}`,
+        detail: `Kap. ${result.patched.join(", ")}${
           result.skipped.length
             ? `\nResume: ${result.skipped.join(", ")}`
             : ""
@@ -1372,7 +1222,7 @@ export async function runManuskriptVerbessernJob(input: {
             ? `\nHinweise: ${result.failed.slice(0, 22).join("; ")}`
             : ""
         }`,
-        usage: usage ?? result.batchUsage,
+        usage,
       }),
     );
     events.push(
@@ -1443,7 +1293,7 @@ export async function verbessereManuskript(input: {
   }
   return {
     roman,
-    summary: `Roman verbessert (Claude Batch)${
+    summary: `Roman verbessert (Luna Feinschliff)${
       started.originalSaved ? " · Kapitelstruktur angelegt" : ""
     }.`,
     patchedChapters: [],

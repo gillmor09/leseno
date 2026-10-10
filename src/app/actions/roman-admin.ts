@@ -190,6 +190,8 @@ export async function generateRomanCoverAction(
       autorName: (roman.autorName ?? "").trim(),
       // Prefer marketing Einzeiler; fall back to Vorsatz-Untertitel.
       untertitel: einzeiler || vorsatzUntertitel,
+      // Frozen vehicles/places so covers don't invent a different car.
+      wissensGraph: ed?.wissensGraph ?? null,
     };
 
     const result =

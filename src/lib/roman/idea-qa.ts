@@ -59,7 +59,7 @@ function formatHistory(messages: RomanIdeaChatMessage[]): string {
   return messages
     .slice(-MAX_HISTORY)
     .map((m) => {
-      const who = m.role === "user" ? "Autor:in" : "Schreib-Coach";
+      const who = m.role === "user" ? "Autor:in" : "Schreibhilfe";
       return `${who}:\n${m.content.trim()}`;
     })
     .join("\n\n");
@@ -235,7 +235,7 @@ ${formatHistory(input.history) || "(Beginn)"}
 # Neue Nachricht der Autor:in
 ${input.userMessage.trim()}
 
-Antworte als Schreib-Coach.
+Antworte als Schreibhilfe.
 Befehle der Autor:in (Umbenennen, Streichen, Ton, Fokus) zuerst bestätigen und für den Redakteur klar formulieren.
 Die Schreiber-Vorgabe zu Sprache/Tonalität ist verbindlich, sofern gesetzt.
 Keine Kapitelpläne, keine Szenenfolgen — nur Konzeptfragen und Schärfung für die spätere Spec.`;
@@ -252,7 +252,7 @@ ${IDEE_SCOPE_MANDATE}`,
   ).trim();
 
   if (!reply) {
-    throw new Error("Schreib-Coach hat keine Antwort geliefert.");
+    throw new Error("Schreibhilfe hat keine Antwort geliefert.");
   }
   return { reply: reply.slice(0, 20_000), modelLabel: model.label };
 }

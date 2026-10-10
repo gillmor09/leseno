@@ -296,7 +296,7 @@ export async function suggestSzenenplotFromCoAutor(input: {
   }
 
   const weave = hasFilledSzenenplot(input.existingPlot);
-  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
+  const { rolle, model } = await resolveRomanKiRolle("schreib_coach");
   const kapitelZiel = suggestedChapterCount(input.editorial.zielWortzahlRoman);
   const rechercheDossier = input.editorial.rechercheDossier ?? "";
   const tonalitaet = (input.tonalitaet ?? "").trim();
@@ -580,7 +580,7 @@ export async function outlineSzenenplotFromCoAutor(input: {
 }): Promise<SzenenplotOutlineResult> {
   const data = await suggestSzenenplotFromCoAutor(input);
   const chapters = parsePlotChapters(data.szenenplot).slice(0, MAX_CHAPTERS);
-  const { rolle } = await resolveRomanKiRolle("entwicklungslektor");
+  const { rolle } = await resolveRomanKiRolle("schreib_coach");
   return {
     chapters,
     outlineMarkdown: data.szenenplot,
@@ -593,7 +593,7 @@ export async function outlineSzenenplotFromCoAutor(input: {
 }
 
 /**
- * Entwicklungslektor fills one chapter beat sheet — short, complete response.
+ * Schreibhilfe fills one chapter beat sheet — short, complete response.
  */
 export async function writeSzenenplotChapterBeat(input: {
   coAutorSystem: string;
@@ -604,7 +604,7 @@ export async function writeSzenenplotChapterBeat(input: {
   existingPlot: string;
   weave: boolean;
 }): Promise<SzenenplotChapterBeatResult> {
-  const { model } = await resolveRomanKiRolle("entwicklungslektor");
+  const { model } = await resolveRomanKiRolle("schreib_coach");
   const chapter = input.chapter;
   const slimContext = input.sharedContext.slice(0, CLIP.sharedContext);
   const index = input.allChapters
@@ -773,7 +773,7 @@ export async function weaveSzenenplotChapterFromLektorKritik(input: {
     throw new Error("Lektor-Kritik fehlt.");
   }
 
-  const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
+  const { rolle, model } = await resolveRomanKiRolle("schreib_coach");
   const { comment, hasExplicitComment } = resolveAuthorWeaveComment(
     input.authorComment,
   );

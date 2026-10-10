@@ -4,6 +4,9 @@
  * Front matter = separate spine docs: Titelseite, Copyright, Motto
  * (plus optional Widmung). Clever: Infografik + Abenteuer-Wissen after prose.
  * Client-side via JSZip.
+ *
+ * Cover pixels are shrunk to {@link EPUB_COVER_SCALE} of the source so Tolino
+ * accepts the package (full 1600×2400 JPEGs often trip device limits).
  */
 
 import JSZip from "jszip";
@@ -273,6 +276,9 @@ type ManifestExtra = {
   mediaType: string;
 };
 
+/** Linear shrink for EPUB cover only (stored cover stays full size). */
+const EPUB_COVER_SCALE = 0.9;
+
 function parseImageDataUrl(dataUrl: string): {
   mediaType: string;
   ext: string;
@@ -292,6 +298,54 @@ function parseImageDataUrl(dataUrl: string): {
     return { mediaType, ext, bytes };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Decode cover → scale to 90% → JPEG for the EPUB package.
+ * Falls back to the original bytes if canvas resize is unavailable.
+ */
+async function prepareEpubCoverImage(dataUrl: string): Promise<{
+  mediaType: string;
+  ext: string;
+  bytes: Uint8Array;
+} | null> {
+  const parsed = parseImageDataUrl(dataUrl);
+  if (!parsed) return null;
+
+  if (typeof createImageBitmap !== "function") {
+    return parsed;
+  }
+
+  try {
+    const blob = new Blob([parsed.bytes], { type: parsed.mediaType });
+    const bitmap = await createImageBitmap(blob);
+    const tw = Math.max(1, Math.round(bitmap.width * EPUB_COVER_SCALE));
+    const th = Math.max(1, Math.round(bitmap.height * EPUB_COVER_SCALE));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = tw;
+    canvas.height = th;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close();
+      return parsed;
+    }
+    ctx.drawImage(bitmap, 0, 0, tw, th);
+    bitmap.close();
+
+    const jpegBlob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.85);
+    });
+    if (!jpegBlob) return parsed;
+
+    return {
+      mediaType: "image/jpeg",
+      ext: "jpg",
+      bytes: new Uint8Array(await jpegBlob.arrayBuffer()),
+    };
+  } catch {
+    return parsed;
   }
 }
 
@@ -381,7 +435,7 @@ export async function buildRomanEpubBlob(
   let coverMetaId: string | null = null;
 
   const coverParsed = input.coverImageDataUrl
-    ? parseImageDataUrl(input.coverImageDataUrl)
+    ? await prepareEpubCoverImage(input.coverImageDataUrl)
     : null;
   if (coverParsed) {
     const coverHref = `cover.${coverParsed.ext}`;

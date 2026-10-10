@@ -44,7 +44,7 @@ export function waitModelLabelForRole(
 
 
 const IDEE_QA_STEPS = [
-  "Schreib-Coach liest deine Nachricht",
+  "Schreibhilfe liest deine Nachricht",
   "Coach formuliert Rückfragen und Impulse",
   "Ideen-Redakteur verwebt die Runde",
   "Idee und Dialog werden gespeichert",

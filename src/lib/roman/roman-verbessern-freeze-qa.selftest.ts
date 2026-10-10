@@ -9,6 +9,7 @@ import { novelContractViolations } from "@/lib/roman/manuskript-contract-validat
 import {
   filterDraftSharedFreezeReasons,
   isSoftOnlyFreezeNoise,
+  polishLengthCollapsed,
   shouldSoftRepairFreezeReasons,
 } from "@/lib/roman/roman-verbessern-freeze-qa";
 import type { RomanSzenenplotChapterNode } from "@/lib/roman/szenenplot-structured";
@@ -82,6 +83,19 @@ assert.equal(
 assert.equal(
   isSoftOnlyFreezeNoise(["Inhalt: Satzbau etwas holprig am Absatzende"]),
   true,
+);
+assert.equal(
+  shouldSoftRepairFreezeReasons(["Abdeckung: Pflicht 3 fehlt"]),
+  false,
+  "plot coverage is not a stil-pass hard fail",
+);
+assert.equal(
+  polishLengthCollapsed("wort ".repeat(500), "wort ".repeat(200)),
+  true,
+);
+assert.equal(
+  polishLengthCollapsed("wort ".repeat(500), "wort ".repeat(480)),
+  false,
 );
 
 console.log("roman-verbessern-freeze-qa.selftest: ok");

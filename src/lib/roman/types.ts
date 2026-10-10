@@ -79,7 +79,7 @@ export type RomanKontext = {
   fanPersonaProfil: string;
   /** Publisher controls: length, age, series, checklist */
   editorial: RomanEditorial;
-  /** Book cover (Flux data URL) + last Gemini/Flux prompt debug */
+  /** Book cover data URL + last art-direction / image prompt debug */
   coverImageDataUrl: string;
   coverPrompt: string;
   /** Author line for spine / title page */

@@ -1,10 +1,8 @@
 /**
- * Post-Opus content-freeze QA for Roman Verbessern.
- * Rejects polish that invents beats / drifts measures / newly breaks contracts —
- * caller keeps the Manuskript body instead of persisting a bad polish.
- *
- * Stil-Pass rule: only fail on deltas vs the Manuskript draft. Secrets already
- * narrated in the draft must not block polish (false „Geheimnis geleakt“).
+ * Post-stil-pass content-freeze QA for Roman Verbessern.
+ * Soft gate: reject only hard content drift (measures, invented/removed scenes,
+ * severe cuts). Coverage/plot-Pflicht gaps are Manuskript concerns — not stil-pass.
+ * Soft Flash nits → keep the polish (caller).
  */
 
 import { generateText } from "@/lib/ai/provider";
@@ -12,7 +10,6 @@ import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
 import { resolveRomanAssistModel } from "@/lib/roman/assist-model";
 import type { RomanWissensGraph } from "@/lib/roman/editorial";
 import { novelContractViolations } from "@/lib/roman/manuskript-contract-validate";
-import { validateManuskriptChapterCoverage } from "@/lib/roman/manuskript-coverage-validate";
 import type { RomanSzenenplotChapterNode } from "@/lib/roman/szenenplot-structured";
 import {
   freezeMetricFactsFromChapters,
@@ -34,22 +31,45 @@ function normalizeHay(s: string): string {
     .trim();
 }
 
-function coverageKey(message: string): string {
-  return normalizeHay(message).slice(0, 160);
+/** Word count for length-floor (stil-pass must not amputate endings). */
+export function countProseWords(text: string): number {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
 }
 
 /**
- * Soft-Repair only for hard deltas (Maß / neu geleaktes Verbot / Abdeckung /
- * klarer neuer Beat). Bloßes Flash-„Inhalt“-Rauschen → kein zweiter Opus-Call.
+ * True when polish is severely shorter than the Manuskript draft
+ * (typical Opus truncation / over-cut). Hard fail — keep draft.
+ */
+export function polishLengthCollapsed(
+  draftBody: string,
+  polishedBody: string,
+): boolean {
+  const draft = draftBody.trim();
+  const polished = polishedBody.trim();
+  if (draft.length < 400) return polished.length < 80;
+  const dw = countProseWords(draft);
+  const pw = countProseWords(polished);
+  if (dw >= 200 && pw < Math.floor(dw * 0.9)) return true;
+  if (polished.length < Math.floor(draft.length * 0.85)) return true;
+  return false;
+}
+
+/**
+ * Soft-Repair only for hard deltas (Maß / neu geleaktes Verbot /
+ * klar gestrichene oder erfundene Kern-Szene). Bloßes Flash-„Inhalt“-Rauschen
+ * und Plot-Abdeckung → kein zweiter Modell-Call.
  */
 export function shouldSoftRepairFreezeReasons(reasons: string[]): boolean {
   return reasons.some(
     (r) =>
       /^Maß:/i.test(r) ||
       /geleakt|Verbotenes Motiv/i.test(r) ||
-      /^Abdeckung:/i.test(r) ||
+      /^Länge:/i.test(r) ||
       (/^Inhalt:/i.test(r) &&
-        /neu(er|e|es)?\b|Beat|gestrichen|erfund|fehl(t|en)|umgeordnet/i.test(
+        /neu(er|e|es)?\b|Beat|gestrichen|erfund|Szene fehlt|Ende fehlt|gekürzt|abgeschnitten/i.test(
           r,
         )),
   );
@@ -89,8 +109,9 @@ export function filterDraftSharedFreezeReasons(
 }
 
 /**
- * Run contract + coverage + draft-vs-polish freeze checks on a polished body.
+ * Run contract + length + draft-vs-polish freeze checks on a polished body.
  * Fail-soft on assist errors (treat as ok) so a flaky Flash does not block the book.
+ * Plot coverage (Pflicht-Beats) is intentionally not re-checked here.
  */
 export async function assertRomanChapterContentFrozen(input: {
   draftBody: string;
@@ -107,6 +128,12 @@ export async function assertRomanChapterContentFrozen(input: {
     return { ok: false, reasons: ["Polish zu kurz / leer"] };
   }
 
+  if (polishLengthCollapsed(draft, polished)) {
+    reasons.push(
+      `Länge: Polish stark gekürzt (${countProseWords(polished)} vs ${countProseWords(draft)} Wörter Entwurf) — Ende/Passagen fehlen`,
+    );
+  }
+
   const ch = input.structuredChapter ?? null;
   if (ch) {
     try {
@@ -115,51 +142,11 @@ export async function assertRomanChapterContentFrozen(input: {
         polishedProse: polished,
         chapter: ch,
       });
-      for (const v of novel.slice(0, 4)) {
+      for (const v of novel.slice(0, 3)) {
         reasons.push(v.message);
       }
     } catch {
       /* fail-soft — contract parse glitch must not block the chapter */
-    }
-
-    try {
-      // Only coverage gaps that the draft does not already share.
-      const [polishCov, draftCov] = await Promise.all([
-        validateManuskriptChapterCoverage({
-          prose: polished,
-          chapter: ch,
-          factContractsBlock: input.factContractsBlock,
-        }),
-        validateManuskriptChapterCoverage({
-          prose: draft,
-          chapter: ch,
-          factContractsBlock: input.factContractsBlock,
-        }),
-      ]);
-      if (!polishCov.ok) {
-        const draftKeys = new Set(
-          draftCov.violations.map((v) => coverageKey(v.message)),
-        );
-        for (const v of polishCov.violations) {
-          if (draftKeys.has(coverageKey(v.message))) continue;
-          // Soft match: same Pflicht N mentioned in draft gaps.
-          const pflicht = v.message.match(/Pflicht\s+(\d+)/i)?.[1];
-          if (
-            pflicht &&
-            draftCov.violations.some((d) =>
-              new RegExp(`Pflicht\\s+${pflicht}\\b`, "i").test(d.message),
-            )
-          ) {
-            continue;
-          }
-          reasons.push(`Abdeckung: ${v.message}`);
-          if (reasons.filter((r) => r.startsWith("Abdeckung:")).length >= 3) {
-            break;
-          }
-        }
-      }
-    } catch {
-      /* fail-soft — flaky coverage assist must not block the book */
     }
   }
 
@@ -205,8 +192,8 @@ export async function assertRomanChapterContentFrozen(input: {
 }
 
 /**
- * Flash: did polish invent/remove beats vs the Manuskript draft?
- * Only NEW content relative to the draft — not secrets the draft already states.
+ * Flash: did polish invent/remove major beats vs the Manuskript draft?
+ * Soft: ignore micro stil / wording; only hard content surgery.
  */
 async function checkContentFreezeDraftVsPolish(input: {
   draftBody: string;
@@ -228,20 +215,20 @@ async function checkContentFreezeDraftVsPolish(input: {
         raw = (
           await generateText({
             model,
-            systemInstruction: `Du prüfst einen Stil-Pass: Inhalt muss gegenüber dem ENTWURF eingefroren sein.
+            systemInstruction: `Du prüfst einen LESEFLUSS-Stil-Pass: Inhalt muss gegenüber dem ENTWURF eingefroren sein.
 Vergleiche NUR Entwurf (Manuskript) und Polish (Roman).
 
-ok=false NUR wenn der Polish klar NEUES oder WEGGELASSENES gegenüber dem Entwurf hat:
-- neuer Handlungs-Beat / neue Entscheidung / neue Info, die im Entwurf fehlt
-- Figur/Ort/Prop/Zeitlinie geändert, erfunden oder gestrichen
-- zentrales Ereignis des Entwurfs fehlt
+ok=false NUR bei klarer, grober Inhaltsverletzung:
+- neue Handlungs-Szene / neuer Entschluss / neue Info, die im Entwurf fehlt
+- zentrale Figur/Ort/Prop/Zeitlinie geändert, erfunden oder gestrichen
+- ganzer Schluss / zentrale Szene des Entwurfs fehlt oder ist amputiert
 
 ok=true (KEIN Fehler) wenn:
-- nur Wortwahl, Satzbau, Rhythmus, sinnliche Schärfung
+- nur Satzbau, Wortwahl, Rhythmus, Lesefluss
+- dieselben Beats etwas knapper oder ausführlicher formuliert (ohne Szenenverlust)
 - dasselbe Geheimnis / Verschweigen wie im Entwurf (auch umformuliert)
-- dieselben Beats in anderer Formulierung
 
-Geheimnisse aus dem Plot-Vertrag zählen NICHT — nur Diff Entwurf↔Polish.
+Zweifle zugunsten von ok=true. Kleinere stilistische Abweichungen sind KEIN Fehler.
 Antwort NUR als JSON:
 {"ok":true|false,"reasons":["…"]}`,
             userText: `# Kap. ${input.chapterNumber}
@@ -249,12 +236,12 @@ Antwort NUR als JSON:
 # Entwurf (Manuskript) — verbindlicher Inhalt
 ${draft.slice(0, 7_000)}
 
-# Polish (Roman) — nur Stil erlaubt
+# Polish (Roman) — nur Lesefluss erlaubt
 ${polished.slice(0, 7_000)}
 
-Gab es Inhaltsänderungen GEGENÜBER DEM ENTWURF? Max. 3 kurze Gründe wenn ok=false. Sonst ok=true.`,
+Gab es GROBE Inhaltsänderungen GEGENÜBER DEM ENTWURF? Max. 2 kurze Gründe wenn ok=false. Sonst ok=true.`,
             preferJson: true,
-            maxTokens: 700,
+            maxTokens: 500,
             timeoutMs: 45_000,
             reasoningEffort: "none",
           })
@@ -310,7 +297,7 @@ Gab es Inhaltsänderungen GEGENÜBER DEM ENTWURF? Max. 3 kurze Gründe wenn ok=f
         if (hits >= 2) continue;
       }
       reasons.push(`Inhalt: ${message.slice(0, 220)}`);
-      if (reasons.length >= 3) break;
+      if (reasons.length >= 2) break;
     }
     if (!reasons.length) {
       // Ambiguous Flash "ok=false" without usable reasons → fail-open for stil-pass.

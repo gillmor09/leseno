@@ -1,7 +1,7 @@
 /**
  * Clever erzählt cover pipeline:
  * 1) Cover-Art-Director (DB role) → Gemini 3 Pro Image artwork (no text/logos)
- * 2) Fixed PNG logos: series badge top-center, leseno mark bottom-left
+ * 2) Fixed PNG logos: series badge top-center, leseno mark bottom-center
  * 3) Cover-Typograf (DB role) → Nunito title overlay in upper third (topic only; series is the badge)
  */
 
@@ -12,7 +12,8 @@ import {
 } from "@/lib/ai/flux-prompt-guards";
 import { generateText } from "@/lib/ai/provider";
 import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
-import { compressCoverDataUrl } from "@/lib/roman/cover-compress";
+import { ensureRomanCoverExactSize } from "@/lib/roman/cover-compress";
+import { ROMAN_COVER_GENERATE_SIZE } from "@/lib/roman/cover-size";
 import {
   CLEVER_SERIES_BADGE_FILE,
   LESENO_MARK_FILE,
@@ -223,7 +224,7 @@ function buildCleverFluxPrompt(
       "ABSOLUTELY NO logos, badges, emblems, shields, banners, stickers, seals, crests, brand marks, publisher marks, or fake UI chrome anywhere.",
       "Do NOT paint yellow ribbons, blue-outlined badges, bird/phoenix logos, or any graphic that looks like a brand sticker.",
       "CRITICAL: do NOT paint any header bar, title band, dark strip, gradient slab, panel, frame, or reserved empty rectangle in the upper third — continuous scene only (title/logos are composited later in code).",
-      "Portrait full-bleed cover 1600×2560 (5:8, print @ 300 ppi), single cinematic still, no collage.",
+      "Portrait full-bleed cover 1600×2400 (2:3, print @ 300 ppi), single cinematic still, no collage.",
       FLUX_NO_TEXT_BLOCK,
     ],
   });
@@ -328,12 +329,14 @@ Do NOT mention logos, badges, brands, publisher marks, titles, title zones, or p
     model: imagesModel,
     prompt: fluxPrompt,
     sizePx: 2048,
-    aspectRatio: "5:8",
+    aspectRatio: "2:3",
+    sizeExact: ROMAN_COVER_GENERATE_SIZE,
     outputFormat: "jpeg",
   });
 
-  let dataUrl = await overlayCleverCoverLogos({
-    imageDataUrl: image.dataUrl,
+  let dataUrl = await ensureRomanCoverExactSize(image.dataUrl);
+  dataUrl = await overlayCleverCoverLogos({
+    imageDataUrl: dataUrl,
   });
 
   let design: CoverTitleDesign | null = null;
@@ -349,14 +352,13 @@ Do NOT mention logos, badges, brands, publisher marks, titles, title zones, or p
       design,
     });
   }
-
-  dataUrl = await compressCoverDataUrl(dataUrl);
+  dataUrl = await ensureRomanCoverExactSize(dataUrl);
 
   const designBlock = design
     ? `\n\n— Typografie (Cover-Typograf) —\n${JSON.stringify(design, null, 2)}`
     : "";
 
-  const debugPrompt = `— Cover-Art-Director (${artRolle.modelSlug} → Text ${artModel.label}) —\n${sceneDescription}\n\n— Image (${imagesModel.label}) —\n${fluxPrompt}\n\n— Logos (code, 1:1 PNG, no AI) —\n${CLEVER_SERIES_BADGE_FILE} top-center + ${LESENO_MARK_FILE} bottom-left${designBlock}`;
+  const debugPrompt = `— Cover-Art-Director (${artRolle.modelSlug} → Text ${artModel.label}) —\n${sceneDescription}\n\n— Image (${imagesModel.label}) —\n${fluxPrompt}\n\n— Logos (code, 1:1 PNG, no AI) —\n${CLEVER_SERIES_BADGE_FILE} top-center + ${LESENO_MARK_FILE} bottom-center${designBlock}`;
 
   return {
     dataUrl,

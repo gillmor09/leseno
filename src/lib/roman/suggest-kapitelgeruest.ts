@@ -407,7 +407,7 @@ export async function suggestKapitelGeruestFromCoAutor(input: {
 
   const weave = hasFilledKapitelGeruest(input.existingGeruest);
   const { rolle, model: baseModel } = await resolveRomanKiRolle(
-    "entwicklungslektor",
+    "schreib_coach",
   );
   // Structured JSON: keep thinking light — high thinking + many chapter calls
   // often yields empty STOP (thought tokens only).

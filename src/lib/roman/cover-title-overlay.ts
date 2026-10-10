@@ -9,11 +9,12 @@ import { createCanvas, loadImage, type SKRSContext2D } from "@napi-rs/canvas";
 import { parse, type Font as OtFont } from "opentype.js";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { drawLesenoMarkBottomLeft } from "@/lib/roman/clever-cover-logos";
+import { drawLesenoMarkBottomCenter } from "@/lib/roman/clever-cover-logos";
 import {
   COVER_FONT_FAMILIES,
   type CoverFontFamilyId,
 } from "@/lib/roman/cover-fonts";
+import { ROMAN_COVER_SIZE } from "@/lib/roman/cover-size";
 
 const FONTS_DIR = path.join(process.cwd(), "src", "assets", "fonts");
 
@@ -142,7 +143,7 @@ function meanBandLuminance(
 }
 
 function baseSizePx(size: CoverTitleSize, width: number): number {
-  // Thumbnail-readable on 1600×2560: ExtraBold primary needs real shelf presence.
+  // Thumbnail-readable on 1600×2400: ExtraBold primary needs real shelf presence.
   const ratio =
     size === "compact" ? 0.12 : size === "hero" ? 0.2 : 0.155;
   return Math.min(248, Math.max(108, Math.round(width * ratio)));
@@ -748,7 +749,7 @@ export async function overlayCoverTitleByDesign(input: {
   author?: string;
   /** Marketing subtitle under the title block (exact spelling). */
   subtitle?: string;
-  /** Paste leseno PNG bottom-left. */
+  /** Paste leseno PNG bottom-center. */
   lesenoMark?: boolean;
 }): Promise<string> {
   const author = (input.author ?? "").trim();
@@ -766,11 +767,21 @@ export async function overlayCoverTitleByDesign(input: {
 
   const { buffer } = parseDataUrl(input.imageDataUrl);
   const image = await loadImage(buffer);
-  const width = image.width;
-  const height = image.height;
+  // Always composite on the canonical cover frame so output is exactly 1600×2400.
+  const width = ROMAN_COVER_SIZE.width;
+  const height = ROMAN_COVER_SIZE.height;
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(image, 0, 0, width, height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  if (image.width === width && image.height === height) {
+    ctx.drawImage(image, 0, 0);
+  } else {
+    const scale = Math.max(width / image.width, height / image.height);
+    const dw = image.width * scale;
+    const dh = image.height * scale;
+    ctx.drawImage(image, (width - dw) / 2, (height - dh) / 2, dw, dh);
+  }
 
   // Author occupies the top band — keep title out of top/upper.
   let designZone = input.design.zone;
@@ -800,7 +811,6 @@ export async function overlayCoverTitleByDesign(input: {
     const font = fontForRole(family, "eyebrow");
     const fontSize = Math.max(36, Math.min(64, Math.round(width * 0.042)));
     const tracking = fontSize * (family === "impact" ? 0.14 : 0.08);
-    // Match publisher-mark side inset (~6.5% of cover width).
     const padX = Math.max(40, Math.round(width * 0.065));
     const maxW = width - padX * 2;
     const wrapped = wrapLines(font, author, fontSize, maxW, tracking);
@@ -826,10 +836,9 @@ export async function overlayCoverTitleByDesign(input: {
     }
   }
 
-  // Same side breathing room as the leseno mark (left inset ~6.5%).
   const padX = Math.max(40, Math.round(width * 0.065));
   const maxTextWidth = width - padX * 2;
-  /** Keep title/subtitle clear of the leseno mark in the lower-left. */
+  /** Keep title/subtitle clear of the centered leseno mark at the bottom. */
   const logoReserveY = input.lesenoMark
     ? height - Math.round(height * 0.15)
     : height - Math.round(height * 0.05);
@@ -1045,7 +1054,7 @@ export async function overlayCoverTitleByDesign(input: {
   }
 
   if (input.lesenoMark) {
-    await drawLesenoMarkBottomLeft(ctx, width, height);
+    await drawLesenoMarkBottomCenter(ctx, width, height);
   }
 
   const out = canvas.toBuffer("image/jpeg", 82);

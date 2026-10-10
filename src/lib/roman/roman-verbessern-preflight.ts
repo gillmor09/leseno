@@ -1,5 +1,5 @@
 /**
- * Hard gate before Roman Verbessern (Opus Stil-Pass).
+ * Hard gate before Roman Verbessern (Gemini Lesefluss-Pass).
  * Blocks polish of a weak draft: Manuskript must clear Logik + Dramaturgie +
  * Stil/Lesefluss floors, and Idee Versprechen/Alleinstellung must hold —
  * unless Roman tab is marked fertig.
@@ -15,7 +15,7 @@ import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
 /** Min Manuskript Logik / Dramaturgie % before Roman Verbessern. */
 export const MANUSKRIPT_ROMAN_AXIS_MIN_PCT = 70;
 
-/** Min Manuskript Stil / Lesefluss % — floor so Opus does not cement a broken register. */
+/** Min Manuskript Stil / Lesefluss % — floor so stil-pass does not cement a broken register. */
 export const MANUSKRIPT_ROMAN_STIL_MIN_PCT = 60;
 
 /** Min Idee-Versprechen % (craft B → dramaturgiePct) before Roman Verbessern. */
@@ -31,7 +31,7 @@ export type RomanVerbessernGate =
 /**
  * Manuskript Reifegrad alone clears the content floors for Roman Verbessern
  * (Logik/Dramaturgie + Stil/Lesefluss). When true, Seam/Payoff + Emotion
- * should not rewrite the draft again — only the Opus stil-pass on romanText.
+ * should not rewrite the draft again — only the Lesefluss stil-pass on romanText.
  */
 export function manuskriptClearsRomanContentFloors(
   editorial: RomanEditorial,
@@ -130,13 +130,13 @@ export function getManuskriptRomanVerbessernGate(input: {
       return {
         ok: false,
         reason:
-          "Zuerst Manuskript „fertig“ setzen — dort läuft der günstige Seam/Payoff-Check. Ohne Freigabe startet der teure Stil-Pass nicht.",
+          "Zuerst Manuskript „fertig“ setzen — dort läuft der günstige Seam/Payoff-Check. Ohne Freigabe startet der Roman-Feinschliff nicht.",
       };
     }
     if (n > 0 && !freigabe.overrideAt) {
       return {
         ok: false,
-        reason: `Manuskript-Freigabe: noch ${n} Hinweis${n === 1 ? "" : "e"} (Nähte/Payoffs/Emotion). Bitte im Manuskript nachziehen oder dort „Trotzdem freigeben“ — sonst kein Opus-Stil-Pass.`,
+        reason: `Manuskript-Freigabe: noch ${n} Hinweis${n === 1 ? "" : "e"} (Nähte/Payoffs/Emotion). Bitte im Manuskript nachziehen oder dort „Trotzdem freigeben“ — sonst kein Roman-Feinschliff.`,
       };
     }
     return {

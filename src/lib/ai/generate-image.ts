@@ -6,7 +6,10 @@
 import type { AiModelConfig } from "@/lib/prompts/catalog";
 import { generateWithGeminiImage } from "@/lib/ai/gemini-images";
 import { generateIonosImage } from "@/lib/ai/ionos-images";
-import { generateOpenAiImage } from "@/lib/ai/openai-images";
+import {
+  generateOpenAiImage,
+  type OpenAiImageQuality,
+} from "@/lib/ai/openai-images";
 
 export type GenerateImageInput = {
   model: AiModelConfig;
@@ -21,8 +24,15 @@ export type GenerateImageInput = {
    * Defaults to 1:1. IONOS maps to a concrete WxH string.
    */
   aspectRatio?: "1:1" | "2:3" | "3:2" | "4:5" | "5:8" | "9:16" | "16:9";
+  /**
+   * Exact `WIDTHxHEIGHT` for OpenAI / IONOS when the caller needs a native
+   * resolution (e.g. cover 1600×2400). Overrides aspectRatio size mapping.
+   */
+  sizeExact?: string;
   /** Prefer PNG for social overlays (avoids double JPEG softening). */
   outputFormat?: "png" | "jpeg" | "webp";
+  /** OpenAI Images quality override (covers use xhigh). Ignored by other providers. */
+  quality?: OpenAiImageQuality;
 };
 
 export type GenerateImageResult = {
@@ -57,10 +67,10 @@ function ionosSizeForAspect(
   const large = !sizePx || sizePx > 512;
   switch (aspectRatio) {
     case "2:3":
-      return large ? "1024x1536" : "512x768";
+      // Cover target 1600×2400; IONOS max edge 2048 → 1280×1920 (2:3).
+      return large ? "1280x1920" : "640x960";
     case "5:8":
-      // Print cover target is 1600×2560; IONOS FLUX max edge 2048 → 1280×2048
-      // (=5:8, multiples of 16). Pipeline upscales to ROMAN_COVER_SIZE after.
+      // Legacy portrait; multiples of 16 under 2048 px edge.
       return large ? "1280x2048" : "640x1024";
     case "3:2":
       return large ? "1536x1024" : "768x512";
@@ -78,7 +88,7 @@ function ionosSizeForAspect(
 
 /**
  * OpenAI GPT Image sizes: listed presets + custom resolutions.
- * Portrait covers prefer 1024×1536 (official) or 1280×2048 (5:8 custom).
+ * Cover 2:3 uses native 1600×2400 (no post-upscale).
  */
 function openAiSizeForAspect(
   aspectRatio: GenerateImageInput["aspectRatio"],
@@ -87,9 +97,8 @@ function openAiSizeForAspect(
   const large = !sizePx || sizePx > 512;
   switch (aspectRatio) {
     case "2:3":
-      return large ? "1024x1536" : "512x768";
+      return large ? "1600x2400" : "640x960";
     case "5:8":
-      // Same as IONOS cover path; pipeline upscales to ROMAN_COVER_SIZE.
       return large ? "1280x2048" : "640x1024";
     case "3:2":
       return large ? "1536x1024" : "768x512";
@@ -107,6 +116,12 @@ function openAiSizeForAspect(
   }
 }
 
+function normalizeExactSize(raw: string | undefined): string | null {
+  const m = /^(\d{2,5})x(\d{2,5})$/i.exec((raw ?? "").trim());
+  if (!m) return null;
+  return `${Number(m[1])}x${Number(m[2])}`;
+}
+
 /**
  * Generates one image with the configured catalog model.
  */
@@ -119,11 +134,12 @@ export async function generateImage(
 
   const provider = input.model.provider.trim().toLowerCase();
   const aspectRatio = input.aspectRatio ?? "1:1";
+  const sizeExact = normalizeExactSize(input.sizeExact);
 
   if (provider === "ionos-image") {
     const result = await generateIonosImage({
       prompt: input.prompt,
-      size: ionosSizeForAspect(aspectRatio, input.sizePx),
+      size: sizeExact ?? ionosSizeForAspect(aspectRatio, input.sizePx),
       modelSlug: input.model.modelSlug,
       outputFormat:
         input.outputFormat ??
@@ -133,7 +149,7 @@ export async function generateImage(
   }
 
   if (provider === "gemini-image") {
-    // Gemini has no 5:8; 2:3 is the closest portrait ebook ratio.
+    // Gemini has no 5:8; map legacy 5:8 to 2:3 (cover target).
     const geminiAspect =
       aspectRatio === "5:8" ? "2:3" : aspectRatio;
     const result = await generateWithGeminiImage({
@@ -149,8 +165,10 @@ export async function generateImage(
     const result = await generateOpenAiImage({
       modelSlug: input.model.modelSlug,
       prompt: input.prompt,
-      size: openAiSizeForAspect(aspectRatio, input.sizePx),
-      quality: input.sizePx && input.sizePx >= 1024 ? "high" : "medium",
+      size: sizeExact ?? openAiSizeForAspect(aspectRatio, input.sizePx),
+      quality:
+        input.quality ??
+        (input.sizePx && input.sizePx >= 1024 ? "high" : "medium"),
       outputFormat:
         input.outputFormat ??
         (input.sizePx && input.sizePx >= 1024 ? "jpeg" : "png"),
