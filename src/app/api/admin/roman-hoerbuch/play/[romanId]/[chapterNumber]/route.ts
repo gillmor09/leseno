@@ -89,7 +89,7 @@ export async function GET(request: Request, context: RouteContext) {
 
   if (range) {
     const { start, end } = range;
-    const chunk = audio.subarray(start, end + 1);
+    const chunk = Uint8Array.from(audio.subarray(start, end + 1));
     return new NextResponse(chunk, {
       status: 206,
       headers: {
@@ -103,7 +103,8 @@ export async function GET(request: Request, context: RouteContext) {
     });
   }
 
-  return new NextResponse(audio, {
+  // Uint8Array: NextResponse BodyInit rejects Node Buffer under current TS DOM libs.
+  return new NextResponse(Uint8Array.from(audio), {
     status: 200,
     headers: {
       "Content-Type": meta?.mimeType || ROMAN_HOERBUCH_MIME,
