@@ -254,11 +254,14 @@ async function listElevenLabsSharedVoices(
   baseUrl: string,
   language: string,
   pageSize = 40,
+  search?: string,
 ): Promise<TtsVoiceOption[]> {
   const params = new URLSearchParams({
     page_size: String(pageSize),
     language,
   });
+  const q = search?.trim();
+  if (q) params.set("search", q);
   try {
     const response = await fetchElevenLabs(
       `${baseUrl}/v1/shared-voices?${params}`,
@@ -331,6 +334,31 @@ export async function ensureElevenLabsSharedVoice(input: {
   );
 }
 
+/**
+ * Search Voice Library by name (used to bind Hörbuch screenshot presets).
+ */
+export async function searchElevenLabsSharedVoices(
+  search: string,
+  opts?: { language?: string; pageSize?: number },
+): Promise<TtsVoiceOption[]> {
+  const q = search.trim();
+  if (!q) return [];
+  try {
+    const apiKey = getElevenLabsApiKey();
+    const baseUrl = getElevenLabsBaseUrl();
+    return await listElevenLabsSharedVoices(
+      apiKey,
+      baseUrl,
+      opts?.language ?? "de",
+      opts?.pageSize ?? 15,
+      q,
+    );
+  } catch (error) {
+    console.warn("[searchElevenLabsSharedVoices]", search, error);
+    return [];
+  }
+}
+
 async function listElevenLabsVoices(): Promise<TtsVoiceOption[]> {
   try {
     const apiKey = getElevenLabsApiKey();
@@ -344,10 +372,15 @@ async function listElevenLabsVoices(): Promise<TtsVoiceOption[]> {
 
     const account = await accountPromise;
     const [sharedDe, sharedEn] = await sharedPromise;
+    // Lazy import avoids circular deps with roman casting hints.
+    const { HOERBUCH_SCREENSHOT_VOICE_OPTIONS } = await import(
+      "@/lib/roman/hoerbuch-casting-hints"
+    );
     const merged = mergeVoiceLists(
       account,
       sharedDe,
       sharedEn,
+      [...HOERBUCH_SCREENSHOT_VOICE_OPTIONS],
       [...ELEVENLABS_CURATED_VOICE_OPTIONS],
     );
     if (merged.length > 0) return merged;

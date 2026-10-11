@@ -9,11 +9,15 @@ import { useEffect, useMemo, useState } from "react";
 import JSZip from "jszip";
 import { toast } from "sonner";
 import {
+  applyRomanHoerbuchScreenshotCastingAction,
+  deleteRomanHoerbuchChapterAction,
   listRomanHoerbuchStoredAction,
   saveRomanHoerbuchPrefsAction,
 } from "@/app/actions/roman-hoerbuch";
+import { HoerbuchAudioPlayer } from "@/components/features/admin/hoerbuch-audio-player";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import { TtsVoicePicker } from "@/components/features/admin/tts-voice-picker";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import type { TtsVoiceOption } from "@/lib/ai/tts-voices";
 import type {
   RomanEditorial,
@@ -22,6 +26,7 @@ import type {
 import {
   isRomanHoerbuchLanguageCode,
   ROMAN_HOERBUCH_LANGUAGES,
+  romanChapterSpokenText,
   romanHoerbuchZipFilename,
   type RomanHoerbuchLanguageCode,
 } from "@/lib/roman/export-roman-hoerbuch";
@@ -30,6 +35,7 @@ import {
   ROMAN_HOERBUCH_MAX_VOICES,
   ROMAN_HOERBUCH_NARRATOR_KEY,
   ROMAN_HOERBUCH_UNKNOWN_KEY,
+  splitChapterIntoDialogueTurns,
   validateRomanHoerbuchCasting,
   type RomanHoerbuchCasting,
 } from "@/lib/roman/hoerbuch-dialogue";
@@ -58,6 +64,16 @@ function downloadBlob(blob: Blob, filename: string): void {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Stable admin play URL (sanitized MP3 + ranges) — not time-limited signed URLs. */
+function hoerbuchPlayPath(
+  romanId: string,
+  chapterNumber: number,
+  byteSize?: number,
+): string {
+  const v = byteSize && byteSize > 0 ? `?v=${byteSize}` : "";
+  return `/api/admin/roman-hoerbuch/play/${romanId}/${chapterNumber}${v}`;
 }
 
 type ChapterAudio = {
@@ -128,6 +144,7 @@ export function RomanHoerbuchPanel({
     () => ({ ...(savedPrefs?.casting ?? {}) }),
   );
   const [prefsSaving, setPrefsSaving] = useState(false);
+  const [hintApplying, setHintApplying] = useState(false);
   const [busyChapter, setBusyChapter] = useState<number | null>(null);
   const [busyAll, setBusyAll] = useState(false);
   const [storedLoading, setStoredLoading] = useState(true);
@@ -138,6 +155,14 @@ export function RomanHoerbuchPanel({
   const [waitTitle, setWaitTitle] = useState("Hörbuch-Kapitel erzeugen");
   const [waitProgress, setWaitProgress] = useState<string | null>(null);
   const [waitStepIndex, setWaitStepIndex] = useState<number | null>(null);
+  const [previewChapterNumber, setPreviewChapterNumber] = useState<number | null>(
+    null,
+  );
+  const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [deleteChapterNumber, setDeleteChapterNumber] = useState<number | null>(
+    null,
+  );
+  const [deletePending, setDeletePending] = useState(false);
 
   const effectiveSource: RomanExportProseSource = isClever
     ? "manuskript"
@@ -169,6 +194,59 @@ export function RomanHoerbuchPanel({
   const doneCount = chapters.filter(
     (c) => runtimeByNumber[c.number]?.status === "done",
   ).length;
+
+  const effectivePreviewNumber =
+    previewChapterNumber &&
+    chapters.some((c) => c.number === previewChapterNumber)
+      ? previewChapterNumber
+      : (chapters[0]?.number ?? null);
+
+  const speakerPreview = useMemo(() => {
+    if (effectivePreviewNumber == null) return null;
+    const chapter = chapters.find((c) => c.number === effectivePreviewNumber);
+    if (!chapter) return null;
+    const spoken = romanChapterSpokenText(chapter);
+    const turns = splitChapterIntoDialogueTurns({
+      spokenText: spoken,
+      charaktere: roman.charaktere ?? [],
+    });
+    const counts = new Map<string, number>();
+    for (const turn of turns) {
+      counts.set(turn.speakerKey, (counts.get(turn.speakerKey) ?? 0) + 1);
+    }
+    const roleLabel = (key: string) =>
+      castingRoles.find((r) => r.key === key)?.label ?? key;
+    const voiceLabel = (key: string) => {
+      const id = casting[key]?.trim();
+      if (!id) {
+        if (key === ROMAN_HOERBUCH_NARRATOR_KEY) return "— keine Stimme —";
+        return "Wie Erzähler / Unbekannt";
+      }
+      return voices.find((v) => v.id === id)?.label ?? id;
+    };
+    return {
+      chapter,
+      turns,
+      counts,
+      roleLabel,
+      voiceLabel,
+      totalTurns: turns.length,
+      dialogueTurns: turns.filter(
+        (t) => t.speakerKey !== ROMAN_HOERBUCH_NARRATOR_KEY,
+      ).length,
+      uniqueSpeakers: [...counts.keys()].filter(
+        (k) =>
+          k !== ROMAN_HOERBUCH_NARRATOR_KEY && k !== ROMAN_HOERBUCH_UNKNOWN_KEY,
+      ).length,
+    };
+  }, [
+    effectivePreviewNumber,
+    chapters,
+    roman.charaktere,
+    castingRoles,
+    casting,
+    voices,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,6 +362,49 @@ export function RomanHoerbuchPanel({
       }
       return next;
     });
+  }
+
+  async function applyScreenshotCasting() {
+    if (busy || hintApplying) return;
+    setHintApplying(true);
+    setMode("cast");
+    try {
+      const result = await applyRomanHoerbuchScreenshotCastingAction({
+        romanId: roman.id,
+      });
+      if (!result.success || !result.data) {
+        toast.error(
+          result.error ?? "Screenshot-Stimmen konnten nicht zugeordnet werden.",
+        );
+        return;
+      }
+      const nextCasting = { ...casting, ...result.data.casting };
+      setVoices((prev) => {
+        const map = new Map(prev.map((v) => [v.id, v]));
+        for (const voice of result.data!.voices) map.set(voice.id, voice);
+        return [...map.values()];
+      });
+      setCasting(nextCasting);
+      const saved = await saveRomanHoerbuchPrefsAction({
+        romanId: roman.id,
+        languageCode: lang,
+        proseSource: effectiveSource,
+        mode: "cast",
+        casting: nextCasting,
+      });
+      if (saved.success && saved.data) {
+        onHoerbuchPrefsSaved?.(saved.data.prefs);
+      }
+      const n = result.data.matched.length;
+      const missing = result.data.missing;
+      toast.success(
+        missing.length
+          ? `${n} Stimmen zugeordnet · ${missing.length} Figur(en) ohne Treffer`
+          : `${n} Screenshot-Stimmen zugeordnet und gespeichert.`,
+      );
+    } finally {
+      setHintApplying(false);
+    }
   }
 
   async function persistPrefs(options?: {
@@ -517,7 +638,9 @@ export function RomanHoerbuchPanel({
           progress: `Kapitel ${i + 1}/${total}: ZIP vorbereiten …`,
           stepIndex: 3,
         });
-        const response = await fetch(result.url);
+        const response = await fetch(
+          hoerbuchPlayPath(roman.id, chapter.number, result.bytes),
+        );
         if (!response.ok) {
           toast.error(
             `Kapitel ${chapter.number}: Download aus Storage fehlgeschlagen.`,
@@ -542,25 +665,112 @@ export function RomanHoerbuchPanel({
     }
   }
 
+  async function confirmDeleteChapter() {
+    if (deleteChapterNumber == null || deletePending) return;
+    const chapterNumber = deleteChapterNumber;
+    setDeletePending(true);
+    try {
+      const result = await deleteRomanHoerbuchChapterAction({
+        romanId: roman.id,
+        chapterNumber,
+      });
+      if (!result.success) {
+        toast.error(
+          result.error ?? `Kapitel ${chapterNumber} konnte nicht gelöscht werden.`,
+        );
+        return;
+      }
+      patchRuntime(chapterNumber, emptyRuntime());
+      setDeleteChapterNumber(null);
+      toast.success(`Hörbuch-Kapitel ${chapterNumber} gelöscht.`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : `Kapitel ${chapterNumber} konnte nicht gelöscht werden.`,
+      );
+    } finally {
+      setDeletePending(false);
+    }
+  }
+
   async function downloadZipOfDone() {
+    // Prefer fresh Storage list — client signed URLs expire after 2h and were
+    // silently skipped, which looked like „only chapter 9+ in the ZIP“.
+    const stored = await listRomanHoerbuchStoredAction({ romanId: roman.id });
+    const fromStorage =
+      stored.success && stored.data
+        ? stored.data.chapters
+        : chapters
+            .map((c) => {
+              const audio = runtimeByNumber[c.number]?.audio;
+              if (!audio) return null;
+              return {
+                chapterNumber: c.number,
+                fileName: audio.fileName,
+                byteSize: audio.bytes,
+              };
+            })
+            .filter(
+              (
+                row,
+              ): row is {
+                chapterNumber: number;
+                fileName: string;
+                byteSize: number;
+              } => row != null,
+            );
+
+    if (fromStorage.length === 0) {
+      toast.error(
+        stored.success === false
+          ? (stored.error ?? "Gespeicherte Kapitel konnten nicht geladen werden.")
+          : "Noch keine fertigen Kapitel.",
+      );
+      return;
+    }
+
     const zip = new JSZip();
+    const failed: number[] = [];
     let added = 0;
-    for (const chapter of chapters) {
-      const item = runtimeByNumber[chapter.number]?.audio;
-      if (!item) continue;
-      const response = await fetch(item.url);
-      if (!response.ok) continue;
+    for (const item of fromStorage) {
+      const response = await fetch(
+        hoerbuchPlayPath(roman.id, item.chapterNumber, item.byteSize),
+      );
+      if (!response.ok) {
+        failed.push(item.chapterNumber);
+        continue;
+      }
       zip.file(item.fileName, await response.arrayBuffer());
       added += 1;
     }
     if (added === 0) {
-      toast.error("Noch keine fertigen Kapitel.");
+      toast.error(
+        failed.length
+          ? `Kein Kapitel ladbar (u. a. Kap. ${failed.slice(0, 5).join(", ")}).`
+          : "Noch keine fertigen Kapitel.",
+      );
       return;
     }
     const blob = await zip.generateAsync({ type: "blob" });
     downloadBlob(blob, romanHoerbuchZipFilename(roman.title, lang));
-    toast.success(`ZIP mit ${added} Kapitel heruntergeladen.`);
+    if (failed.length) {
+      toast.success(
+        `ZIP mit ${added} Kapitel — fehlgeschlagen: ${failed.join(", ")}`,
+      );
+    } else {
+      toast.success(`ZIP mit ${added} Kapitel heruntergeladen.`);
+    }
   }
+
+  const deleteChapter = chapters.find((c) => c.number === deleteChapterNumber);
+  const deleteLabel = deleteChapter
+    ? `Kapitel ${deleteChapter.number}${
+        deleteChapter.title ? ` — ${deleteChapter.title}` : ""
+      }`
+    : deleteChapterNumber != null
+      ? `Kapitel ${deleteChapterNumber}`
+      : "Kapitel";
 
   return (
     <div className="space-y-6">
@@ -581,6 +791,17 @@ export function RomanHoerbuchPanel({
           roleLabel: mode === "cast" ? "ElevenLabs Dialog" : "ElevenLabs TTS",
           modelLabel: "eleven_v4",
         }}
+      />
+      <ConfirmDeleteDialog
+        open={deleteChapterNumber != null}
+        title="Hörbuch-Kapitel löschen?"
+        description={`${deleteLabel}: Die MP3-Datei wird aus dem Supabase-Speicher entfernt. Manuskript- und Roman-Text bleiben unverändert. Du kannst das Kapitel später neu erzeugen.`}
+        confirmLabel="Kapitel-Audio löschen"
+        pending={deletePending}
+        onCancel={() => {
+          if (!deletePending) setDeleteChapterNumber(null);
+        }}
+        onConfirm={() => void confirmDeleteChapter()}
       />
       <p className="text-sm font-semibold text-zinc-600">
         Jedes Kapitel einzeln erzeugen — MP3s und Stimmenauswahl bleiben
@@ -711,15 +932,31 @@ export function RomanHoerbuchPanel({
                     ? " · gespeichert"
                     : ""}
                 </p>
-                <button
-                  type="button"
-                  disabled={busy || prefsSaving}
-                  onClick={() => void persistPrefs()}
-                  className="rounded-full bg-orange-700 px-4 py-2 text-xs font-bold text-white hover:bg-orange-800 disabled:opacity-50"
-                >
-                  {prefsSaving ? "Speichert …" : "Stimmen speichern"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={busy || hintApplying || prefsSaving}
+                    onClick={() => void applyScreenshotCasting()}
+                    className="rounded-full bg-white px-4 py-2 text-xs font-bold text-zinc-950 ring-1 ring-zinc-950/15 hover:bg-zinc-50 disabled:opacity-50"
+                  >
+                    {hintApplying
+                      ? "Stimmen zuordnen …"
+                      : "Screenshot-Stimmen zuordnen"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || prefsSaving || hintApplying}
+                    onClick={() => void persistPrefs()}
+                    className="rounded-full bg-orange-700 px-4 py-2 text-xs font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+                  >
+                    {prefsSaving ? "Speichert …" : "Stimmen speichern"}
+                  </button>
+                </div>
               </div>
+              <p className="text-[11px] font-semibold text-zinc-400">
+                Ordnet Lucius (Erzähler), Leo liest, Lennart, Emilia, Torsten,
+                Rebecca Green und Voice of Gad den Spec-Figuren zu.
+              </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {castingRoles.map((role) => (
                   <div key={role.key} className="space-y-1">
@@ -734,7 +971,7 @@ export function RomanHoerbuchPanel({
                     <TtsVoicePicker
                       voices={voices}
                       value={casting[role.key] ?? ""}
-                      disabled={busy || prefsSaving}
+                      disabled={busy || prefsSaving || hintApplying}
                       loading={voicesLoading}
                       allowEmpty={role.key !== ROMAN_HOERBUCH_NARRATOR_KEY}
                       onChange={(voiceId) => setCastVoice(role.key, voiceId)}
@@ -742,6 +979,75 @@ export function RomanHoerbuchPanel({
                   </div>
                 ))}
               </div>
+
+              {speakerPreview ? (
+                <div className="space-y-2 border-t border-zinc-100 pt-3">
+                  <div className="flex flex-wrap items-end justify-between gap-2">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold tracking-wide text-zinc-400 uppercase">
+                        Sprecher-Vorschau
+                      </p>
+                      <p className="text-xs font-semibold text-zinc-500">
+                        {speakerPreview.totalTurns} Turns ·{" "}
+                        {speakerPreview.dialogueTurns} Dialog ·{" "}
+                        {speakerPreview.uniqueSpeakers} Figuren erkannt
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        value={effectivePreviewNumber ?? ""}
+                        disabled={busy}
+                        onChange={(e) =>
+                          setPreviewChapterNumber(Number(e.target.value))
+                        }
+                        className="rounded-lg bg-gray-100 px-2 py-1.5 text-xs font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10"
+                      >
+                        {chapters.map((c) => (
+                          <option key={c.number} value={c.number}>
+                            Kap. {c.number}
+                            {c.title ? ` — ${c.title}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setPreviewExpanded((v) => !v)}
+                        className="rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
+                      >
+                        {previewExpanded ? "Vorschau schließen" : "Vorschau zeigen"}
+                      </button>
+                    </div>
+                  </div>
+                  {previewExpanded ? (
+                    <ul className="max-h-80 space-y-2 overflow-y-auto rounded-xl bg-zinc-50 px-3 py-3 ring-1 ring-zinc-950/5">
+                      {speakerPreview.turns.slice(0, 40).map((turn, index) => (
+                        <li
+                          key={`${turn.speakerKey}-${index}`}
+                          className="space-y-0.5"
+                        >
+                          <p className="text-[11px] font-extrabold text-zinc-900">
+                            {speakerPreview.roleLabel(turn.speakerKey)}
+                            <span className="ml-1 font-semibold text-zinc-400">
+                              · {speakerPreview.voiceLabel(turn.speakerKey)}
+                            </span>
+                          </p>
+                          <p className="text-xs font-semibold leading-snug text-zinc-600">
+                            {turn.text.length > 160
+                              ? `${turn.text.slice(0, 160)}…`
+                              : turn.text}
+                          </p>
+                        </li>
+                      ))}
+                      {speakerPreview.turns.length > 40 ? (
+                        <li className="text-xs font-semibold text-zinc-400">
+                          … und {speakerPreview.turns.length - 40} weitere Turns
+                        </li>
+                      ) : null}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -811,35 +1117,39 @@ export function RomanHoerbuchPanel({
                           : ""}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void runOne(chapter.number)}
-                      className="rounded-full bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
-                    >
-                      {isThisBusy && runtime.status === "running"
-                        ? "Erzeugt …"
-                        : runtime.status === "done"
-                          ? "Erneut erzeugen"
-                          : "Dieses Kapitel erzeugen"}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      {runtime.audio || runtime.status === "done" ? (
+                        <button
+                          type="button"
+                          disabled={busy || deletePending}
+                          onClick={() => setDeleteChapterNumber(chapter.number)}
+                          className="rounded-full bg-white px-4 py-2 text-xs font-bold text-red-800 ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-50"
+                        >
+                          Löschen
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void runOne(chapter.number)}
+                        className="rounded-full bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
+                      >
+                        {isThisBusy && runtime.status === "running"
+                          ? "Erzeugt …"
+                          : runtime.status === "done"
+                            ? "Erneut erzeugen"
+                            : "Dieses Kapitel erzeugen"}
+                      </button>
+                    </div>
                   </div>
                   {runtime.audio ? (
-                    <div className="space-y-2">
-                      <audio
-                        controls
-                        preload="metadata"
-                        src={runtime.audio.url}
-                        className="w-full"
-                      />
-                      <a
-                        href={runtime.audio.url}
-                        download={runtime.audio.fileName}
-                        className="inline-flex text-xs font-bold text-orange-800 hover:underline"
-                      >
-                        MP3 laden ({runtime.audio.fileName})
-                      </a>
-                    </div>
+                    <HoerbuchAudioPlayer
+                      romanId={roman.id}
+                      chapterNumber={chapter.number}
+                      fileName={runtime.audio.fileName}
+                      byteSize={runtime.audio.bytes}
+                      fallbackUrl={runtime.audio.url}
+                    />
                   ) : null}
                 </li>
               );

@@ -60,10 +60,15 @@ export async function createRomanHoerbuchSignedUrl(
   return data.signedUrl;
 }
 
-/** Best-effort delete when regenerating is not needed (upsert overwrites). */
+/** Deletes a chapter MP3 from the private Hörbuch bucket. */
 export async function deleteRomanHoerbuchObject(
   storagePath: string,
 ): Promise<void> {
+  const path = storagePath.trim();
+  if (!path) return;
   const storage = createServiceClient(null).storage.from(ROMAN_HOERBUCH_BUCKET);
-  await storage.remove([storagePath]);
+  const { error } = await storage.remove([path]);
+  if (error) {
+    throw new Error(`Hörbuch-Löschen fehlgeschlagen: ${error.message}`);
+  }
 }

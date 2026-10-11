@@ -32,18 +32,34 @@ export type RomanHoerbuchDialogueInput = {
 const SPEECH_VERBS =
   "sagte|fragte|rief|antwortete|flüsterte|meinte|erwiderte|schrie|murmelte|entgegnete|seufzte|keuchte|lachte|grinste|brummte|fauchte|jammerte|stöhnte|prahlte|beteuerte|erklärte|berichtete|erzählte|gab zurück|warf ein|fiel ein";
 
+/** Optional article / title before a speaker name in attribution. */
+const SPEAKER_ARTICLE =
+  "(?:(?:der|die|das|dem|den|des|ein|eine|einem|einer|herr|frau|nachbar(?:in)?)\\s+)?";
+
+const NAME_CAPTURE =
+  "([A-ZÄÖÜ][\\wÄÖÜäöüß.'\\-]{1,40}(?:\\s+[A-ZÄÖÜ][\\wÄÖÜäöüß.'\\-]{1,40})?)";
+
 const ATTR_AFTER_RE = new RegExp(
-  `^\\s*[,.]?\\s*(?:${SPEECH_VERBS})\\s+([A-ZÄÖÜ][\\wÄÖÜäöüß.'\\-]{1,40}(?:\\s+[A-ZÄÖÜ][\\wÄÖÜäöüß.'\\-]{1,40})?)`,
+  `^\\s*[,.]?\\s*(?:${SPEECH_VERBS})\\s+${SPEAKER_ARTICLE}${NAME_CAPTURE}`,
   "i",
 );
 
 const ATTR_BEFORE_RE = new RegExp(
-  `([A-ZÄÖÜ][\\wÄÖÜäöüß.'\\-]{1,40}(?:\\s+[A-ZÄÖÜ][\\wÄÖÜäöüß.'\\-]{1,40})?)\\s*(?:${SPEECH_VERBS})\\s*:\\s*$`,
+  `${SPEAKER_ARTICLE}${NAME_CAPTURE}\\s*(?:${SPEECH_VERBS})\\s*:\\s*$`,
   "i",
 );
 
-const ATTR_COLON_RE =
-  /([A-ZÄÖÜ][\wÄÖÜäöüß.'\-]{1,40}(?:\s+[A-ZÄÖÜ][\wÄÖÜäöüß.'\-]{1,40})?)\s*:\s*$/;
+const ATTR_COLON_RE = new RegExp(
+  `${SPEAKER_ARTICLE}${NAME_CAPTURE}\\s*:\\s*$`,
+  "i",
+);
+
+/**
+ * Role epithets often used instead of the proper name in prose
+ * („der Nachbar sagte“ → Ulf Behrens).
+ */
+const ROLE_EPITHET_RE =
+  /\b(nachbar(?:in)?|nachbarn|lehrer(?:in)?|doktor|dr\.?|arzt|ärztin|pfarrer(?:in)?|polizist(?:in)?|chef(?:in)?|kollege|kollegin)\b/gi;
 
 type CharacterAlias = {
   key: string;
@@ -57,6 +73,16 @@ function normalizeName(value: string): string {
     .normalize("NFKC")
     .replace(/\s+/g, " ")
     .toLowerCase();
+}
+
+/** Strip leading der/die/Herr before matching Spec names. */
+function stripSpeakerArticles(value: string): string {
+  return value
+    .replace(
+      /^(der|die|das|dem|den|des|ein|eine|einem|einer|herr|frau)\s+/i,
+      "",
+    )
+    .trim();
 }
 
 /**
@@ -99,6 +125,32 @@ export function listRomanHoerbuchCastingRoles(
   return roles;
 }
 
+function collectRoleEpithets(...fields: Array<string | null | undefined>): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const field of fields) {
+    if (!field) continue;
+    ROLE_EPITHET_RE.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = ROLE_EPITHET_RE.exec(field)) != null) {
+      const epithet = normalizeName(match[1] ?? "");
+      if (!epithet || seen.has(epithet)) continue;
+      seen.add(epithet);
+      out.push(epithet);
+      // „Nachbarin“ / „Nachbarn“ also match bare „nachbar“ in prose.
+      if (epithet.startsWith("nachbar") && !seen.has("nachbar")) {
+        seen.add("nachbar");
+        out.push("nachbar");
+      }
+      if (epithet.startsWith("lehrer") && !seen.has("lehrer")) {
+        seen.add("lehrer");
+        out.push("lehrer");
+      }
+    }
+  }
+  return out;
+}
+
 function buildCharacterAliases(charaktere: RomanCharakter[]): CharacterAlias[] {
   const out: CharacterAlias[] = [];
   for (const c of charaktere) {
@@ -114,6 +166,13 @@ function buildCharacterAliases(charaktere: RomanCharakter[]): CharacterAlias[] {
       const last = parts[parts.length - 1]!;
       if (last.length >= 3) aliases.add(normalizeName(last));
     }
+    for (const epithet of collectRoleEpithets(
+      c.rolle,
+      c.name,
+      c.wesenszuege,
+    )) {
+      aliases.add(epithet);
+    }
     out.push({
       key,
       aliases: [...aliases].sort((a, b) => b.length - a.length),
@@ -126,11 +185,16 @@ function matchSpeakerName(
   rawName: string,
   aliases: CharacterAlias[],
 ): string | null {
-  const needle = normalizeName(rawName);
+  const needle = normalizeName(stripSpeakerArticles(rawName));
   if (!needle) return null;
   for (const entry of aliases) {
     for (const alias of entry.aliases) {
-      if (needle === alias || needle.startsWith(`${alias} `)) {
+      if (
+        needle === alias ||
+        needle.startsWith(`${alias} `) ||
+        needle.endsWith(` ${alias}`) ||
+        needle.includes(` ${alias} `)
+      ) {
         return entry.key;
       }
     }
