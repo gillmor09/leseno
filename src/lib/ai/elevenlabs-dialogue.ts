@@ -25,6 +25,8 @@ export type ElevenLabsDialogueRequest = {
   languageCode?: string | null;
   previousText?: string | null;
   previousRequestIds?: string[] | null;
+  /** Overrides default compact TTS format (Hörbuch: `mp3_44100_128`). */
+  outputFormat?: string | null;
 };
 
 export type ElevenLabsDialogueResult = {
@@ -154,7 +156,9 @@ export async function synthesizeDialogueWithElevenLabs(
     .filter(Boolean)
     .slice(-3);
 
-  const url = `${baseUrl}/v1/text-to-dialogue?output_format=${ELEVENLABS_TTS_OUTPUT_FORMAT}`;
+  const outputFormat =
+    input.outputFormat?.trim() || ELEVENLABS_TTS_OUTPUT_FORMAT;
+  const url = `${baseUrl}/v1/text-to-dialogue?output_format=${encodeURIComponent(outputFormat)}`;
   const bodyPayload: Record<string, unknown> = {
     inputs,
     model_id: modelSlug,

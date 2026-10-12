@@ -16,6 +16,7 @@
     "@supabase/supabase-js": "^2.114.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "ffmpeg-static": "^5.3.0",
     "html2pdf.js": "^0.10.3",
     "hyphen": "^1.14.1",
     "isomorphic-dompurify": "^4.1.0",
@@ -57,5 +58,8 @@
     "edge >= 111",
     "firefox >= 111",
     "safari >= 16.4"
-  ]
+  ],
+  "allowScripts": {
+    "ffmpeg-static@5.3.0": true
+  }
 }

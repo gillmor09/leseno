@@ -9,6 +9,10 @@ import {
   synthesizeSpeechChunk,
 } from "@/lib/ai/synthesize-speech";
 import { mergeMp3Buffers } from "@/lib/ai/tts-mp3";
+import {
+  ELEVENLABS_HOERBUCH_OUTPUT_FORMAT,
+  remuxMp3ForTolino,
+} from "@/lib/ai/tts-tolino-mp3";
 import { UserFacingError } from "@/lib/errors/user-facing";
 import type { RomanHoerbuchAudioChapter } from "@/lib/roman/editorial";
 import {
@@ -210,6 +214,7 @@ async function synthesizePreparedAudio(
         previousText: previousRequestIds.length ? null : previousText || null,
         previousRequestIds:
           previousRequestIds.length > 0 ? previousRequestIds : null,
+        outputFormat: ELEVENLABS_HOERBUCH_OUTPUT_FORMAT,
       });
       parts.push(result.audio);
       if (result.requestId) {
@@ -239,6 +244,7 @@ async function synthesizePreparedAudio(
       previousText: previousRequestIds.length ? null : previousText || null,
       previousRequestIds:
         previousRequestIds.length > 0 ? previousRequestIds : null,
+      outputFormat: ELEVENLABS_HOERBUCH_OUTPUT_FORMAT,
       disableQuotaFallback: false,
     });
     parts.push(result.audio);
@@ -280,10 +286,21 @@ export async function synthesizeRomanHoerbuchChapterToStorage(
     throw new UserFacingError("ElevenLabs lieferte kein nutzbares Audio.");
   }
 
+  // Tolino Media: stereo ≥128 kbps @ 44.1 kHz (ElevenLabs is mono).
+  let tolinoAudio: Buffer;
+  try {
+    tolinoAudio = Buffer.from(await remuxMp3ForTolino(audio));
+  } catch (error) {
+    console.error("[synthesizeRomanHoerbuchChapterToStorage] tolino remux", error);
+    throw new UserFacingError(
+      "Hörbuch-MP3 konnte nicht für Tolino (Stereo/128 kbps) aufbereitet werden.",
+    );
+  }
+
   const { storagePath, byteSize } = await uploadRomanHoerbuchAudio({
     romanId: input.romanId,
     chapterNumber: input.chapterNumber,
-    audio,
+    audio: tolinoAudio,
   });
 
   const meta: RomanHoerbuchAudioChapter = {

@@ -14,9 +14,10 @@ import {
 import { UserFacingError } from "@/lib/errors/user-facing";
 
 /**
- * Compact CBR MP3 (half of mp3_44100_128).
+ * Compact CBR MP3 for story / preview TTS (half of mp3_44100_128).
  * Note: ElevenLabs has no `mp3_22050_64` — closest small formats are
- * `mp3_22050_32` or `mp3_44100_64`.
+ * `mp3_22050_32` or `mp3_44100_64`. Hörbuch uses `mp3_44100_128` via
+ * {@link ELEVENLABS_HOERBUCH_OUTPUT_FORMAT} in `tts-tolino-mp3.ts`.
  */
 export const ELEVENLABS_TTS_OUTPUT_FORMAT = "mp3_44100_64";
 
@@ -35,6 +36,11 @@ export type ElevenLabsTtsInput = {
   previousText?: string | null;
   /** Continuity: prior ElevenLabs `request-id` values (max 3). */
   previousRequestIds?: string[] | null;
+  /**
+   * ElevenLabs `output_format` query value.
+   * Defaults to {@link ELEVENLABS_TTS_OUTPUT_FORMAT}; Hörbuch passes `mp3_44100_128`.
+   */
+  outputFormat?: string | null;
 };
 
 export type ElevenLabsTtsResult = {
@@ -132,9 +138,12 @@ export async function synthesizeSpeechWithElevenLabs(
     .filter(Boolean)
     .slice(-3);
 
+  const outputFormat =
+    input.outputFormat?.trim() || ELEVENLABS_TTS_OUTPUT_FORMAT;
+
   // v4 marketing/docs: TTS convert supports model_id eleven_v4 + language_code.
   // Keep a single path for all ElevenLabs speech models.
-  const url = `${baseUrl}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${ELEVENLABS_TTS_OUTPUT_FORMAT}`;
+  const url = `${baseUrl}/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`;
   const bodyPayload: Record<string, unknown> = {
     text,
     model_id: modelSlug,

@@ -1,10 +1,12 @@
 /**
  * Admin Hörbuch playback with byte-range support.
  * Sanitizes concatenated ElevenLabs MP3s (strip Xing/ID3) so pause/seek work.
+ * `?tolino=1` remuxes to stereo 128 kbps for Tolino Media ZIP export.
  */
 
 import { NextResponse } from "next/server";
 import { sanitizeMp3ForSeek } from "@/lib/ai/tts-mp3";
+import { remuxMp3ForTolino } from "@/lib/ai/tts-tolino-mp3";
 import { isCurrentUserAdmin } from "@/lib/auth/session";
 import {
   ROMAN_HOERBUCH_BUCKET,
@@ -82,10 +84,29 @@ export async function GET(request: Request, context: RouteContext) {
   }
 
   const raw = Buffer.from(await file.arrayBuffer());
-  const audio = sanitizeMp3ForSeek(raw);
+  const wantTolino =
+    new URL(request.url).searchParams.get("tolino") === "1";
+
+  let prepared: Buffer = raw;
+  if (wantTolino) {
+    try {
+      prepared = Buffer.from(await remuxMp3ForTolino(raw));
+    } catch (error) {
+      console.error("[roman-hoerbuch/play] tolino remux", error);
+      return new NextResponse(
+        "Hörbuch-MP3 konnte nicht für Tolino aufbereitet werden.",
+        { status: 500 },
+      );
+    }
+  }
+
+  const audio = sanitizeMp3ForSeek(prepared);
   const fileName = meta?.fileName?.trim() || `kapitel-${chapterNumber}.mp3`;
   const total = audio.byteLength;
-  const range = parseRange(request.headers.get("range"), total);
+  // Full-file remux for Tolino ZIP — skip range (client fetches whole chapter).
+  const range = wantTolino
+    ? null
+    : parseRange(request.headers.get("range"), total);
 
   if (range) {
     const { start, end } = range;

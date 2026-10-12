@@ -71,9 +71,13 @@ function hoerbuchPlayPath(
   romanId: string,
   chapterNumber: number,
   byteSize?: number,
+  opts?: { tolino?: boolean },
 ): string {
-  const v = byteSize && byteSize > 0 ? `?v=${byteSize}` : "";
-  return `/api/admin/roman-hoerbuch/play/${romanId}/${chapterNumber}${v}`;
+  const params = new URLSearchParams();
+  if (byteSize && byteSize > 0) params.set("v", String(byteSize));
+  if (opts?.tolino) params.set("tolino", "1");
+  const q = params.toString();
+  return `/api/admin/roman-hoerbuch/play/${romanId}/${chapterNumber}${q ? `?${q}` : ""}`;
 }
 
 type ChapterAudio = {
@@ -639,7 +643,9 @@ export function RomanHoerbuchPanel({
           stepIndex: 3,
         });
         const response = await fetch(
-          hoerbuchPlayPath(roman.id, chapter.number, result.bytes),
+          hoerbuchPlayPath(roman.id, chapter.number, result.bytes, {
+            tolino: true,
+          }),
         );
         if (!response.ok) {
           toast.error(
@@ -735,7 +741,9 @@ export function RomanHoerbuchPanel({
     let added = 0;
     for (const item of fromStorage) {
       const response = await fetch(
-        hoerbuchPlayPath(roman.id, item.chapterNumber, item.byteSize),
+        hoerbuchPlayPath(roman.id, item.chapterNumber, item.byteSize, {
+          tolino: true,
+        }),
       );
       if (!response.ok) {
         failed.push(item.chapterNumber);
@@ -805,7 +813,7 @@ export function RomanHoerbuchPanel({
       />
       <p className="text-sm font-semibold text-zinc-600">
         Jedes Kapitel einzeln erzeugen — MP3s und Stimmenauswahl bleiben
-        gespeichert. ZIP optional aus den fertigen Kapiteln.
+        gespeichert. ZIP liefert Tolino-taugliche Stereo-128-kbps-Dateien.
       </p>
 
       {!isClever ? (
@@ -915,7 +923,7 @@ export function RomanHoerbuchPanel({
               onClick={() => void downloadZipOfDone()}
               className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-zinc-950 ring-1 ring-zinc-950/15 hover:bg-zinc-50 disabled:opacity-50"
             >
-              ZIP der fertigen ({doneCount})
+              Tolino-ZIP ({doneCount})
             </button>
           </div>
 

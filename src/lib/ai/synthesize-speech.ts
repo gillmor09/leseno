@@ -105,6 +105,7 @@ async function synthesizeSpeechChunkOnce(input: {
   languageCode?: string | null;
   previousText?: string | null;
   previousRequestIds?: string[] | null;
+  outputFormat?: string | null;
 }): Promise<SynthesizeSpeechResult> {
   const wired = findWiredAiEndpoint(input.modelSlug);
   const provider = wired?.provider ?? input.provider;
@@ -118,6 +119,7 @@ async function synthesizeSpeechChunkOnce(input: {
       languageCode: input.languageCode,
       previousText: input.previousText,
       previousRequestIds: input.previousRequestIds,
+      outputFormat: input.outputFormat,
     });
     return { ...result, provider };
   }
@@ -165,6 +167,8 @@ export async function synthesizeSpeechChunk(input: {
   languageCode?: string | null;
   previousText?: string | null;
   previousRequestIds?: string[] | null;
+  /** ElevenLabs output_format override (Hörbuch: mp3_44100_128). */
+  outputFormat?: string | null;
   /** When true, do not attempt quota fallbacks (used by story-level fallback). */
   disableQuotaFallback?: boolean;
 }): Promise<SynthesizeSpeechResult> {
@@ -186,6 +190,7 @@ export async function synthesizeSpeechChunk(input: {
       languageCode: input.languageCode,
       previousText: input.previousText,
       previousRequestIds: input.previousRequestIds,
+      outputFormat: input.outputFormat,
     });
   } catch (error) {
     if (
@@ -208,6 +213,7 @@ export async function synthesizeSpeechChunk(input: {
           modelSlug: fallback.modelSlug,
           voiceId: fallback.voiceId,
           languageCode: input.languageCode,
+          outputFormat: input.outputFormat,
         });
       } catch (fallbackError) {
         console.error(
