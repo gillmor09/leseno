@@ -738,6 +738,7 @@ export function RomanHoerbuchPanel({
 
     const zip = new JSZip();
     const failed: number[] = [];
+    let firstErrorHint: string | null = null;
     let added = 0;
     for (const item of fromStorage) {
       const response = await fetch(
@@ -747,6 +748,11 @@ export function RomanHoerbuchPanel({
       );
       if (!response.ok) {
         failed.push(item.chapterNumber);
+        if (!firstErrorHint) {
+          const body = (await response.text().catch(() => "")).trim();
+          firstErrorHint =
+            body.slice(0, 160) || `HTTP ${response.status}`;
+        }
         continue;
       }
       zip.file(item.fileName, await response.arrayBuffer());
@@ -755,7 +761,9 @@ export function RomanHoerbuchPanel({
     if (added === 0) {
       toast.error(
         failed.length
-          ? `Kein Kapitel ladbar (u. a. Kap. ${failed.slice(0, 5).join(", ")}).`
+          ? `Kein Kapitel ladbar (u. a. Kap. ${failed.slice(0, 5).join(", ")})${
+              firstErrorHint ? `: ${firstErrorHint}` : "."
+            }`
           : "Noch keine fertigen Kapitel.",
       );
       return;

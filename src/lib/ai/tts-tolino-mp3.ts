@@ -1,14 +1,18 @@
 /**
  * Tolino Media Hörbuch requirements: MP3 stereo, ≥128 kbps, 44.1 kHz.
  * ElevenLabs delivers mono (often 64 kbps); remux via ffmpeg-static before upload/ZIP.
+ *
+ * Resolve the binary from `process.cwd()` — do not import the path from
+ * `ffmpeg-static` (Next/Turbopack rewrites it to `\ROOT\…`, spawn ENOENT).
+ * Keep the package in `serverExternalPackages` + outputFileTracingIncludes.
  */
 
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import ffmpegStatic from "ffmpeg-static";
 
 const execFileAsync = promisify(execFile);
 
@@ -20,16 +24,19 @@ export const TOLINO_MP3_BITRATE = "128k";
 export const TOLINO_MP3_SAMPLE_RATE = "44100";
 
 function resolveFfmpegPath(): string {
-  const path =
-    typeof ffmpegStatic === "string"
-      ? ffmpegStatic
-      : ((ffmpegStatic as { default?: string } | null)?.default ?? null);
-  if (!path) {
+  const binaryName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const candidate = join(
+    process.cwd(),
+    "node_modules",
+    "ffmpeg-static",
+    binaryName,
+  );
+  if (!existsSync(candidate)) {
     throw new Error(
-      "ffmpeg-static fehlt — npm install / allowScripts für ffmpeg-static prüfen.",
+      `ffmpeg-static Binary fehlt (${candidate}) — npm install / allowScripts prüfen.`,
     );
   }
-  return path;
+  return candidate;
 }
 
 /**

@@ -21,9 +21,15 @@ const nextConfig: NextConfig = {
    * @see https://github.com/vercel/next.js/pull/97698
    */
   compress: false,
-  // Native canvas must stay external for social image text overlay.
-  serverExternalPackages: ["@napi-rs/canvas", "sharp", "opentype.js", "unpdf"],
-  // Vendored TTFs + Clever cover logos + Frage background.
+  // Native canvas / ffmpeg binary must stay external (no webpack path rewrite).
+  serverExternalPackages: [
+    "@napi-rs/canvas",
+    "sharp",
+    "opentype.js",
+    "unpdf",
+    "ffmpeg-static",
+  ],
+  // Vendored TTFs + Clever cover logos + Frage background + Tolino ffmpeg.
   outputFileTracingIncludes: {
     "/*": [
       "./src/assets/fonts/Nunito-ExtraBold.ttf",
@@ -36,6 +42,8 @@ const nextConfig: NextConfig = {
       "./public/leseno-vogel-neu.png",
       "./public/leseno-vogel-256.png",
       "./public/bg3.jpg",
+      "./node_modules/ffmpeg-static/ffmpeg",
+      "./node_modules/ffmpeg-static/ffmpeg.exe",
     ],
   },
   experimental: {
