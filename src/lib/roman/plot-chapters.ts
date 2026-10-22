@@ -33,6 +33,49 @@ const SCENE_HEADING_RE =
   /^#{2,4}\s*Szene\s+(\d+(?:\.\d+)?)\s*(?:[—–\-:]\s*|\s+)(.+?)\s*$/i;
 
 /**
+ * Scene break inside Manuskript prose: its own paragraph `* * *` (blank line
+ * before and after). Exports render it centered, Hörbuch drops it (the
+ * paragraph pause remains). Writers must place it exactly at Szenenplot scene
+ * boundaries; `manuskript-scene-breaks.ts` retrofits it on existing prose.
+ */
+export const SCENE_BREAK_MARKER = "* * *";
+
+const SCENE_BREAK_RE = /^\s*(?:\*\s*\*\s*\*|\*\*\*|⁂|~\s*~\s*~)\s*$/;
+
+/** True when a paragraph / line is a scene break marker (tolerant variants). */
+export function isSceneBreakParagraph(paragraph: string): boolean {
+  return SCENE_BREAK_RE.test(paragraph.trim());
+}
+
+/** Number of scene breaks in a chapter body (= scenes − 1 when complete). */
+export function countSceneBreaks(body: string): number {
+  return body
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => isSceneBreakParagraph(line)).length;
+}
+
+/**
+ * Drop scene-break marker lines for spoken / Hörbuch text. The surrounding
+ * blank-line pause stays — readers hear a beat, not „Stern Stern Stern“.
+ */
+export function stripSceneBreaksForSpeech(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((line) => !isSceneBreakParagraph(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Prompt fragment: print-style `* * *` between Szenenplot scenes. */
+export const MANUSKRIPT_SCENE_BREAK_HINT = `Szenentrenner (Buchdruck, verbindlich):
+- Zwischen den Szenen DIESES Kapitels (laut Szenenplot, nicht frei erfunden) genau ein eigener Absatz \`* * *\` — Leerzeile davor und danach.
+- Keine Markdown-Szenenüberschriften (kein \`### Szene\`) in der Prosa.
+- Ein Kapitel mit N geplanten Szenen hat genau N−1 Trenner. Ein-Szenen-Kapitel: keinen Trenner.`;
+
+/**
  * True when this line is a structural chapter heading (not mid-prose).
  * Manuskript print-style only at doc start or after ≥2 blank lines.
  * Markdown `## Kapitel` stays recognized on any line (Szenenplot).
@@ -558,7 +601,8 @@ VERBOTEN im Beat-Sheet: Meta wie „endet mit …“, „geht in Kapitel X auf�
 export const MANUSKRIPT_HEADING_FORM_HINT = `Kapitelüberschriften (Buchdruck, verbindlich):
 - Form: „Kapitel N — Kurztitel“ (KEINE Rauten/Markdown wie ##).
 - Nach der Überschrift genau eine Leerzeile, dann Fließtext.
-- Vor jeder weiteren Kapitelüberschrift genau drei Leerzeilen.`;
+- Vor jeder weiteren Kapitelüberschrift genau drei Leerzeilen.
+${MANUSKRIPT_SCENE_BREAK_HINT}`;
 
 /**
  * Hard rules so models never invent “chapter deleted / merged” stubs.
@@ -578,7 +622,8 @@ export const MANUSKRIPT_CHAPTER_PROSE_RULES = `Kapitel-Prosa (verbindlich — Ar
 - VERBOTEN: Behaupten, ein Kapitel sei „gestrichen“, „gibt es nicht mehr“, „sei in anderen Kapiteln aufgegangen“, „nur noch Markierung“.
 - VERBOTEN: Kapitel zusammenlegen, überspringen, umnummerieren oder weglassen.
 - VERBOTEN: Über andere Kapitel sprechen statt die Handlung DIESES Kapitels zu erzählen.
-- Schreibe nur erzählenden Fließtext (Handlung, Dialog, Wahrnehmung) für DIESES Kapitel.`;
+- Schreibe nur erzählenden Fließtext (Handlung, Dialog, Wahrnehmung) für DIESES Kapitel.
+- Szenentrenner: zwischen den geplanten Szenen ein eigener Absatz \`* * *\` (Leerzeile davor/danach). Keine \`### Szene\`-Überschriften in der Prosa.`;
 
 /**
  * Detect editorial “chapter deleted/merged” stubs — not ordinary narrative

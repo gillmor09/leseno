@@ -8,7 +8,7 @@ import { hasServiceRoleConfig } from "@/lib/supabase/service";
 export const metadata: Metadata = {
   title: "Sachbuch — Leseno Admin",
   description:
-    "Sachbuch-Modul: Agenten-Matrix, Interview, Abschnitte mit Checkpoint/Critic/Style.",
+    "Sachbuch Greenfield: Idee fertig oder Interview — Pipeline wird neu aufgebaut.",
 };
 
 /**
@@ -54,8 +54,9 @@ export default async function SachbuchAdminPage() {
             Sachbuch
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Eigenes Modul: Agenten pro Buch, sokratisches Interview (Text /
-            Deepgram) und Abschnitte mit Checkpoint, Critic und Style.
+            Neuaufbau: Start bei der Idee (fertig einfügen oder im Interview
+            erarbeiten). Evidenz, Makro und Schreiben folgen als nächste
+            Schritte.
           </p>
           <div className="mt-8">
             <SachbuchAdminList

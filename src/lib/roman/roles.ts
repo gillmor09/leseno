@@ -350,69 +350,20 @@ Regeln:
 - Alternative nur wenn ausdrücklich JSON verlangt: {"ideeKurz":"…"} mit korrekt escaped Newlines (\\n) — keine echten Zeilenumbrüche im JSON-String.
 - ideeKurz / Marker-Inhalt = vollständige Ideendokumentation auf Deutsch (nicht nur Diff, nicht anhängen).
 - Bewahre brauchbare Alt-Inhalte; löse Widersprüche zugunsten der neuesten Autor:innen-Aussagen.
+- Neue Fakten, Welt-/Setting-Details, Konflikt- und Figurenkerne aus dem Turn VOLLSTÄNDIG einweben — nichts Wichtiges weglassen nur um kurz zu bleiben.
 - Keine Chat-Floskeln, keine Meta-Kommentare, keine Coach-Fragen im Dokument.
 - Figurennamen: wenn nur Rollen genannt sind, so belassen — keine Eigennamen erfinden.
 - Belletristik: Prämisse, Figurenkerne, Kernkonflikt, Setting-Skizze, Ton, Leserversprechen, offene Punkte.
 - Sachbuch: These, Leserversprechen, Zielgruppe, Argumentkerne, Ton, offene Punkte.
 - VERBOTEN: Kapitelgliederung, „Kapitel 1/2/3“, Beat-Sheets, Szenenfolgen, Akt-für-Akt mit Kapitelzuordnung.
-- Falls Alt-Text Kapitelpläne enthält: streichen und auf Konzept-Ebene verdichten.
+- Falls Alt-Text Kapitelpläne enthält: nur die Kapitelstruktur streichen — Faktenstoff und Konzept behalten und ggf. umformulieren.
 - BEFEHLE aus dem Dialog-Turn verbindlich umsetzen (Umbenennen von Rollen/Personen, Streichen, Ton ändern, Fokus verschieben). Bei Umbenennung: konsistent in der ganzen Dokumentation ersetzen.
-- Länge: kompakt und spez-fähig (typisch 6–25 Sätze oder klar gegliederte Absätze — nicht romanlang).`,
+- Länge: so lang wie nötig für eine vollständige Spec-Saat. Die Dokumentation DARF wachsen. Keine künstliche Kürze, kein Abschneiden mitten im Satz. Kein Roman-/Kapiteltext — aber reichhaltige Konzept-/Mythos-Doku ist erwünscht.`,
     userPromptHint:
       "Aktuelle Idee + letzter User-Turn + Coach-Antwort + Buchtyp → ===IDEE=== … ===ENDE===.",
     modelSlug: "gemini-3.8-flash",
     reasoningEffort: "low",
     sortOrder: 15,
-    updatedAt: null,
-  },
-  {
-    key: "recherche_coach",
-    label: "Recherche-Coach",
-    purpose:
-      "Hintergrundrecherche zwischen Idee und Spec: Google Search, gezielte Fragen, Faktenimpulse — kein Plotbau.",
-    systemPrompt: `Du bist Recherche-Coach für Buchprojekte (deutscher Markt).
-Zwischen Idee und Spec führst du einen Dialog und recherchierst mit Google Search Hintergründe, die dem Thema Tiefe geben.
-
-Regeln:
-- Antworte auf Deutsch, klar und belegt (keine erfundenen Fakten).
-- Nutze Google Search aktiv: Fachbegriffe, Historie, Orte, Prozesse, Kontroversen, typische Missverständnisse, aktuelle Bezüge.
-- Max. 2–3 Rückfragen oder Recherche-Impulse pro Antwort — plus knappe, nutzbare Faktenkerne.
-- Belletristik: Welt-/Setting-Hintergründe, Berufe, Technologien, gesellschaftliche Kontexte — ohne Kapitelpläne.
-- Sachbuch: Evidenz, Definitionen, Gegenpositionen, Standardwissen der Zielgruppe.
-- VERBOTEN: Kapitelpläne, Szenenfolgen, fertige Spec (Figurensteckbriefe/Exposé), Ideendokumentation umschreiben.
-- Kennzeichne Unsicheres ehrlich; unterscheide gesichert vs. umstritten.
-- Du schreibst NICHT das Recherche-Dossier — das macht der Recherche-Redakteur. Deine Antwort ist Dialog + Recherche-Impulse.`,
-    userPromptHint:
-      "Buchtyp + Idee + bisheriges Dossier + Chat + Autor:innen-Nachricht → Google Search + Dialog.",
-    modelSlug: "gemini-3.8-flash",
-    reasoningEffort: "low",
-    sortOrder: 16,
-    updatedAt: null,
-  },
-  {
-    key: "recherche_redakteur",
-    label: "Recherche-Redakteur",
-    purpose:
-      "Verwebt Recherche-Dialog und Suchergebnisse in das Hintergrunddossier (Idee → Spec).",
-    systemPrompt: `Du bist Recherche-Redakteur:in für Buchprojekte (deutscher Markt).
-Aufgabe: Das bestehende Hintergrunddossier mit dem neuesten Dialog-Turn und den recherchierten Fakten zu EINER klaren, verwobenen Fassung aktualisieren.
-Zweck: Tiefer Hintergrund für die Spec — kein Ersatz für Idee, Spec oder Kapitelgerüst.
-
-Regeln:
-- Ausgabe mit Markern:
-===RECHERCHE===
-…vollständiges Hintergrunddossier…
-===ENDE===
-- Inhalt auf Deutsch: belegte Fakten, Kontexte, Definitionen, Kontroversen, offene Recherchefragen.
-- Quellen/URLs im Fließtext nennen, wo sinnvoll (kurz); keine Chat-Floskeln, keine Coach-Fragen.
-- Bewahre brauchbare Alt-Inhalte; löse Widersprüche zugunsten neuerer, besser belegter Aussagen.
-- VERBOTEN: Kapitelpläne, Figurensteckbriefe, Exposé-Prosa, reine Plot-Erfindung ohne Recherchebezug.
-- Länge: spez-fähig verdichtet (typisch strukturierte Absätze, nicht romanlang).`,
-    userPromptHint:
-      "Idee + bisheriges Dossier + Dialog-Turn → ===RECHERCHE=== … ===ENDE===.",
-    modelSlug: "gemini-3.8-flash",
-    reasoningEffort: "low",
-    sortOrder: 17,
     updatedAt: null,
   },
   {
@@ -649,10 +600,11 @@ export async function saveRomanKiRolle(
  * `model` is always a text LLM (safe for `generateText`). If the role stores
  * FLUX.2, that becomes `imageModel` and text falls back to the default Schreibmodell.
  *
- * Belletristik (non-`clever_*`): writer/lektor roles in
- * {@link ROMAN_CONFIGURED_MODEL_ROLE_KEYS} keep their DB/fallback slug.
- * Prose roles (`co_autor` / `autor`) additionally need `allowProseModel !== false`
- * (Manuskript draft / Roman Feinschliff). All other roles → assist Flash.
+ * Named Admin roles use their DB `modelSlug` (label + model as configured under
+ * KI-Rollen). Exception: prose roles (`co_autor` / `autor`) with
+ * `allowProseModel: false` → assist model (Haiku 5.5; Spec-Entwurf ohne teure Prosa).
+ * Clever roles always keep their slug. Anonymous helpers use
+ * {@link resolveRomanAssistModel} directly — not this function.
  */
 export async function resolveRomanKiRolle(
   key: string,
@@ -693,15 +645,13 @@ export async function resolveRomanKiRolle(
     };
   }
 
-  const isClever = rolle.key.startsWith("clever_");
-  const { isRomanConfiguredModelRoleKey, isRomanProseRoleKey } =
-    await import("@/lib/roman/assist-model");
-  const isConfigured = isRomanConfiguredModelRoleKey(rolle.key);
-  const wantsConfiguredModel =
-    isConfigured &&
-    (!isRomanProseRoleKey(rolle.key) || options?.allowProseModel !== false);
+  const { isRomanProseRoleKey } = await import("@/lib/roman/assist-model");
+  const forceAssistForProse =
+    !rolle.key.startsWith("clever_") &&
+    isRomanProseRoleKey(rolle.key) &&
+    options?.allowProseModel === false;
 
-  if (!isClever && !wantsConfiguredModel) {
+  if (forceAssistForProse) {
     const { resolveRomanAssistModel, ROMAN_ASSIST_MODEL_SLUG } =
       await import("@/lib/roman/assist-model");
     const assist = await resolveRomanAssistModel();

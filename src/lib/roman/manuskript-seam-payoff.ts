@@ -29,9 +29,11 @@ const SEAM_TAIL_CHARS = 520;
 const SEAM_HEAD_CHARS = 420;
 /** Cap Co-Autor rewrites so the pass stays focused and affordable. */
 const MAX_REWRITE_CHAPTERS = 6;
+/** Freigabe-Nachziehen with seeds: fewer full-chapter rewrites (timeout / no-op). */
+const MAX_REWRITE_CHAPTERS_SEEDED = 2;
 
 export type SeamPayoffFinding = {
-  kind: "seam" | "payoff";
+  kind: "seam" | "payoff" | "timeline";
   /** Chapters to patch (often N and/or N+1 for seams). */
   chapterNumbers: number[];
   summary: string;
@@ -146,26 +148,28 @@ export async function auditManuskriptSeamAndPayoff(input: {
         raw = (
           await generateText({
             model,
-            systemInstruction: `Du bist Entwicklungslektor für Roman-Nähte und Spannungsbögen.
+            systemInstruction: `Du bist Entwicklungslektor für Roman-Nähte, Zeitrahmen und Spannungsbögen.
 Prüfe NUR:
 1) Nähte: Ende Kap.N → Anfang Kap.N+1 — verdient der Anfang die Fortsetzung? Reset/Exposition-Dump/Tonbruch/verlorene Bewegung?
-2) Payoffs: Sind Setup / Peak / Payoff der zentralen Bögen in der Prosa spürbar (nicht nur im Plan)?
+2) Timeline/Flashback: Wenn Kap.N+1 ein Rückblick, Zeitsprung oder anderer Erzählrahmen ist — ist das in den ERSTEN Sätzen klar markiert (Zeitanker)? Unklarer Rückblick ohne „damals/früher/Jahre zuvor/Erinnerung“ = kind=timeline.
+3) Payoffs: Sind Setup / Peak / Payoff der zentralen Bögen in der Prosa spürbar (nicht nur im Plan)?
 
 Antworte NUR als JSON:
-{"findings":[{"kind":"seam"|"payoff","chapterNumbers":[12,13],"summary":"…","patchFocus":"…"}]}
+{"findings":[{"kind":"seam"|"payoff"|"timeline","chapterNumbers":[12,13],"summary":"…","patchFocus":"…"}]}
 Max. 5 findings. Nur klare Schwächen. Wenn gut: leeres Array.
 kind=seam → chapterNumbers oft [N,N+1] oder eines davon.
+kind=timeline → Kapitel mit unklarem Zeitrahmen (oft Rückblick-Kapitel).
 kind=payoff → Setup/Peak/Payoff-Kapitelnummern.`,
             userText: `# Zentrale Bögen
-${arcsOverview || "(keine centralArcs — nur Nähte prüfen)"}
+${arcsOverview || "(keine centralArcs — nur Nähte/Timeline prüfen)"}
 
-# Nähte (Ende → Anfang)
+# Nähte (Ende → Anfang) — auch Zeitrahmen am Kapitelanfang prüfen
 ${seamBlock || "(keine Nähte)"}
 
 # Arc-Rollen Stichproben
 ${arcBlock || "(keine Arc-Stichproben)"}
 
-Welche klaren Schwächen? Max. 5.`,
+Welche klaren Schwächen (Naht / Timeline / Payoff)? Max. 5.`,
             preferJson: true,
             maxTokens: 1_200,
             timeoutMs: 70_000,
@@ -215,8 +219,12 @@ Welche klaren Schwächen? Max. 5.`,
       if (!item || typeof item !== "object") continue;
       const row = item as Record<string, unknown>;
       const kindRaw = String(row.kind ?? "").trim().toLowerCase();
-      const kind: "seam" | "payoff" =
-        kindRaw === "payoff" ? "payoff" : "seam";
+      const kind: "seam" | "payoff" | "timeline" =
+        kindRaw === "payoff"
+          ? "payoff"
+          : kindRaw === "timeline" || kindRaw === "flashback"
+            ? "timeline"
+            : "seam";
       const nums = Array.isArray(row.chapterNumbers)
         ? uniqueSortedChapters(
             row.chapterNumbers.map((n) => Number(n)),
@@ -274,15 +282,23 @@ function buildPatchBriefForChapter(input: {
     2,
   );
 
-  return `ARBEITSAUFTRAG — Seam/Payoff-Pass Kap. ${input.chapterNumber}:
-Schärfe NUR Übergänge und Spannungs-Payoffs. Keine neue Handlung erfinden, die das Gerüst bricht.
+  const dedupeNeeded = /duplikat|doppelung|dopplung|doppelt|wiederhol|nahtdopp|überlapp|nochmals|zweite\s+zustellung/i.test(
+    focusLines,
+  );
+
+  return `ARBEITSAUFTRAG — Seam/Payoff/Timeline-Pass Kap. ${input.chapterNumber}:
+Schärfe NUR Übergänge, Zeitrahmen und Spannungs-Payoffs. Keine neue Handlung erfinden, die das Gerüst bricht.
 Behalte Beats/Fakten/Figuren — ändere Anfang und/oder Ende so, dass die Naht verdient ist und Arc-MUSS spürbar wird.
+${dedupeNeeded ? "FREIGABE-NACHZIEHEN: Genannte Dopplungen/Nahtdopplungen/Wiederholungen im Body STREICHEN (eine Passage komplett entfernen, nicht umschreiben und behalten)." : ""}
 
 HARTE REGELN:
 - Ende des Kapitels muss den nächsten Anfang verdienen (Hook, offene Bewegung, emotionale Residuen).
 - Anfang muss sich wie natürliche Fortsetzung des Vorgängers anfühlen — kein Reset, kein Exposition-Dump.
+- Bei Rückblick/Zeitsprung: in den ERSTEN Sätzen klarer Zeitanker (damals / Jahre zuvor / Erinnerung / …) — Leser darf den Rahmen nicht raten.
 - Setup/Peak/Payoff der zentralen Bögen in DIESEM Kapitel nur wenn vorgesehen — nicht vorwegnehmen.
 - Keine Meta-Sätze. Nur erzählende Prosa.
+- Vorhandene Szenentrenner \`* * *\` beibehalten (eigene Absätze, Leerzeile davor/danach).
+${dedupeNeeded ? "- Überzählige Doppel-Passage: MUSS im fertigen Body fehlen." : ""}
 
 # Befunde für dieses Kapitel
 ${focusLines || "- Naht/Payoff lokal schärfen"}
@@ -306,6 +322,11 @@ Schreibe den vollständigen Kapitel-Body neu (gleiche Ereignisse, bessere Naht/P
 export async function runManuskriptSeamPayoffPass(input: {
   roman: RomanKontext;
   onProgress?: (label: string) => void | Promise<void>;
+  /**
+   * Findings from a prior audit to patch even when a fresh audit misses them
+   * (the seam model is not stable across calls).
+   */
+  seedFindings?: SeamPayoffFinding[];
 }): Promise<SeamPayoffPassResult> {
   const editorial = input.roman.editorial ?? emptyRomanEditorial();
   if (editorial.buchTyp === "clever_erzaehlt") {
@@ -332,10 +353,31 @@ export async function runManuskriptSeamPayoffPass(input: {
   }
 
   await input.onProgress?.("Seam/Payoff · Nähte & Bögen prüfen …");
-  const findings = await auditManuskriptSeamAndPayoff({
+  // Fail-soft: Freigabe-Nachziehen must still apply seedFindings when Assist
+  // returns empty (Haiku/Flash flakiness).
+  const audited = await auditManuskriptSeamAndPayoff({
     manuskriptText: text,
     structured: editorial.szenenplotStructured,
+    strict: false,
   });
+  const findings = [...audited];
+  for (const seed of input.seedFindings ?? []) {
+    const key = seed.chapterNumbers.join(",");
+    const covered = findings.some(
+      (f) => f.chapterNumbers.join(",") === key && f.kind === seed.kind,
+    );
+    if (
+      !covered &&
+      seed.chapterNumbers.length &&
+      seed.summary.trim()
+    ) {
+      findings.push({
+        ...seed,
+        patchFocus:
+          seed.patchFocus?.trim() || seed.summary.slice(0, 320),
+      });
+    }
+  }
 
   if (findings.length === 0) {
     return {
@@ -348,9 +390,29 @@ export async function runManuskriptSeamPayoffPass(input: {
   }
 
   const chapters = parsePlotChapters(text);
-  const toPatch = uniqueSortedChapters(
+  const rewriteCap =
+    (input.seedFindings?.length ?? 0) > 0
+      ? MAX_REWRITE_CHAPTERS_SEEDED
+      : MAX_REWRITE_CHAPTERS;
+  // Freigabe seeds: keep seed order (not ascending unique) so Kap. 17/18
+  // Nahtdopplung is not skipped for lower chapter numbers from other seeds.
+  const seedChapters: number[] = [];
+  const seedSeen = new Set<number>();
+  for (const seed of input.seedFindings ?? []) {
+    for (const n of seed.chapterNumbers) {
+      if (!Number.isFinite(n) || n < 1 || seedSeen.has(n)) continue;
+      seedSeen.add(n);
+      seedChapters.push(n);
+      if (seedChapters.length >= rewriteCap) break;
+    }
+    if (seedChapters.length >= rewriteCap) break;
+  }
+  const findingChapters = uniqueSortedChapters(
     findings.flatMap((f) => f.chapterNumbers),
-  ).slice(0, MAX_REWRITE_CHAPTERS);
+  );
+  const toPatch = (
+    seedChapters.length > 0 ? seedChapters : findingChapters
+  ).slice(0, rewriteCap);
 
   if (toPatch.length === 0) {
     return {

@@ -480,7 +480,7 @@ export function RomanExportMarketingPanel({
             {isClever
               ? "Zuerst Geschichten im Tab Geschichten erzeugen."
               : proseSource === "roman"
-                ? "Zuerst im Tab Roman verbessern — oder Manuskript als Quelle wählen."
+                ? "Zuerst Manuskript-Stil-Pass (Verbessern) — oder Manuskript als Quelle wählen."
                 : "Zuerst ein Manuskript im Tab Manuskript erzeugen."}
           </p>
         ) : (

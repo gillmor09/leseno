@@ -1,0 +1,36 @@
+/* Quill chrome for Stelle-marked prose — scoped under .highlighted-prose-quill */
+
+.highlighted-prose-quill .ql-toolbar.ql-snow {
+  display: none;
+}
+
+.highlighted-prose-quill .ql-container.ql-snow {
+  border: none;
+  font-family: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+}
+
+.highlighted-prose-quill .ql-editor {
+  min-height: var(--hpq-min-height, 16rem);
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.625;
+  color: #18181b;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.highlighted-prose-quill .ql-editor.ql-blank::before {
+  left: 0.75rem;
+  right: 0.75rem;
+  font-style: normal;
+  color: #a1a1aa;
+}
+
+/* Amber Stelle marks (Quill background format) */
+.highlighted-prose-quill .ql-editor [style*="background-color: rgb(252, 211, 77)"],
+.highlighted-prose-quill .ql-editor [style*="background-color:#fcd34d"],
+.highlighted-prose-quill .ql-editor [style*="background-color: #fcd34d"] {
+  border-radius: 2px;
+}

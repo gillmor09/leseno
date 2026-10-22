@@ -11,6 +11,13 @@ import {
 import { generateText } from "@/lib/ai/provider";
 import { parseModelJsonObjectWithRepair } from "@/lib/ai/repair-model-json";
 import { resolveRomanAssistModel } from "@/lib/roman/assist-model";
+import { extractClaimsFromGeruestChapters } from "@/lib/roman/geruest-plot-claims";
+import {
+  dedupeGeruestChapterIntroduces,
+  hygieneKapitelGeruestLogik,
+  hygieneSzenenplotLogik,
+  introducedLabelsBeforeChapter,
+} from "@/lib/roman/szenenplot-preflight";
 import {
   parseArcBeat,
   parseCentralArcs,
@@ -293,6 +300,7 @@ export async function patchKapitelGeruestStructured(input: {
   chapterNumbers?: number[];
   patchBrief: string;
   critiqueText?: string;
+  canonContext?: string;
 }): Promise<{
   structured: RomanKapitelGeruestStructured;
   markdown: string;
@@ -344,13 +352,64 @@ export async function patchKapitelGeruestStructured(input: {
 }
 Optional nur bei Arc-Änderung: "centralArcs": [...]. Sonst centralArcs WEGLASSEN.`;
 
+  const sortedAll = [...input.structured.chapters].sort(
+    (a, b) => a.number - b.number,
+  );
+  const outlineBlock = sortedAll
+    .map(
+      (c) =>
+        `${c.number}. ${c.title} — ${c.kernsatz}${c.number === n ? " ← DIESES KAPITEL" : ""}`,
+    )
+    .join("\n");
+  const prevCh = sortedAll.find((c) => c.number === n - 1);
+  const nextCh = sortedAll.find((c) => c.number === n + 1);
+  const neighborBlock = `Vorher: ${
+    prevCh
+      ? `Kap. ${prevCh.number} „${prevCh.title}“ — ${prevCh.kernsatz}${
+          prevCh.inhaltKurz?.trim()
+            ? `\n  Skizze: ${prevCh.inhaltKurz.trim().slice(0, 400)}`
+            : ""
+        }`
+      : "(Bandanfang)"
+  }
+Nachher: ${
+    nextCh
+      ? `Kap. ${nextCh.number} „${nextCh.title}“ — ${nextCh.kernsatz}${
+          nextCh.inhaltKurz?.trim()
+            ? `\n  Skizze: ${nextCh.inhaltKurz.trim().slice(0, 400)}`
+            : ""
+        }`
+      : "(Bandende)"
+  }`;
+
+  const priorIntroduces = introducedLabelsBeforeChapter(sortedAll, n);
+  const priorClaims = extractClaimsFromGeruestChapters(
+    sortedAll.filter((c) => c.number < n),
+  );
+  const ledgerLines: string[] = [];
+  if (priorIntroduces.length > 0) {
+    ledgerLines.push(
+      `Bereits vor Kap. ${n} in introduces eingeführt (hier NICHT erneut in introduces listen; höchstens in mustNotRepeat/resolves): ${priorIntroduces.join(", ")}`,
+    );
+  }
+  if (priorClaims.length > 0) {
+    ledgerLines.push(
+      `Festgeschriebene Who-did-X-Taten vor Kap. ${n} (nicht widersprechen): ${priorClaims
+        .map((cl) => `Kap. ${cl.chapter}: ${cl.actor} [${cl.action}]`)
+        .join("; ")}`,
+    );
+  }
+  const canonSection = input.canonContext?.trim()
+    ? `\n# Verbindlicher Gesamt-Kanon (Referenz)\n${input.canonContext.trim().slice(0, 6_000)}\n`
+    : "";
+
   const raw = await generateText({
     model,
     systemInstruction: `Du bist Entwicklungslektor:in und patchst das Kapitelgerüst als STRUCTURED JSON.
 Nur das genannte Kapitel anpassen. centralArcs nur mitschicken, wenn der Brief Arcs ändert — sonst weglassen (spart Tokens, verhindert Abschneiden).
 Felder je Kapitel: number, title, kernsatz, inhaltKurz, props, events, openThreads, mustNotRepeat, introduces, resolves, arcBeats[{arcId,tension,mustShow,delta}].
 Keine Einzelszenen. Keine Markdown-Fences.
-Arrays nur leeren, wenn der Patch-Brief explizit streicht — sonst bestehende Listen behalten.
+Achte auf nahtlosen Anschluss an Vorher-/Nachher-Kapitel, das Lifecycle-Ledger (keine doppelten introduces; resolves nur für eingeführte Motive) und exakte arcId aus centralArcs.
 Antwort NUR als JSON:
 {"chapters":[{...vollständiges Kapitel-Objekt}]}`,
     userText: `# Patch-Brief (verbindlich)
@@ -358,7 +417,13 @@ ${input.patchBrief.trim().slice(0, CLIP_BRIEF) || "(leer)"}
 
 # Kritik (Kontext)
 ${(input.critiqueText ?? "").trim().slice(0, 2_000) || "(keine)"}
+${canonSection}
+# Gesamtes Kapitel-Outline (Kontext)
+${outlineBlock}
 
+# Direkte Nachbarn (Ursache→Wirkung wahren)
+${neighborBlock}
+${ledgerLines.length > 0 ? `\n# Lifecycle- & Claim-Ledger vor Kap. ${n}\n${ledgerLines.join("\n")}\n` : ""}
 # centralArcs (Ist — nur bei Arc-Fix zurückgeben)
 ${clipJson(input.structured.centralArcs, 4_000)}
 
@@ -430,17 +495,13 @@ Auftrag: Liefere das verbesserte Kapitel-Objekt (Nummer ${n}). Ohne Arc-Änderun
         ? mergeStringList(prev.openThreads, plan.openThreads, allowEmptyWipe)
         : prev.openThreads,
       mustNotRepeat: Array.isArray(row.mustNotRepeat ?? row.must_not_repeat)
-        ? mergeStringList(
-            prev.mustNotRepeat,
-            plan.mustNotRepeat,
-            allowEmptyWipe,
-          )
+        ? mergeStringList(prev.mustNotRepeat, plan.mustNotRepeat, true)
         : prev.mustNotRepeat,
       introduces: Array.isArray(row.introduces)
-        ? mergeStringList(prev.introduces, plan.introduces, allowEmptyWipe)
+        ? mergeStringList(prev.introduces, plan.introduces, true)
         : prev.introduces,
       resolves: Array.isArray(row.resolves)
-        ? mergeStringList(prev.resolves, plan.resolves, allowEmptyWipe)
+        ? mergeStringList(prev.resolves, plan.resolves, true)
         : prev.resolves,
       arcBeats,
     };
@@ -469,9 +530,14 @@ Auftrag: Liefere das verbesserte Kapitel-Objekt (Nummer ${n}). Ohne Arc-Änderun
       minChapters: Math.min(2, structured.chapters.length),
     }) ?? structured;
 
+  const hygiened = hygieneKapitelGeruestLogik({
+    ...checked,
+    chapters: dedupeGeruestChapterIntroduces(checked.chapters),
+  }).structured;
+
   return {
-    structured: checked,
-    markdown: structuredKapitelGeruestToMarkdown(checked),
+    structured: hygiened,
+    markdown: structuredKapitelGeruestToMarkdown(hygiened),
     changedChapters: [n],
   };
 }
@@ -550,9 +616,10 @@ export async function patchSzenenplotStructured(input: {
       live = one.structured;
       changed.push(...one.changedChapters);
     }
+    const hygiened = hygieneSzenenplotLogik(live).structured;
     return {
-      structured: live,
-      markdown: structuredSzenenplotToMarkdown(live),
+      structured: hygiened,
+      markdown: structuredSzenenplotToMarkdown(hygiened),
       changedChapters: [...new Set(changed)].sort((a, b) => a - b),
     };
   }
@@ -619,7 +686,7 @@ export async function patchSzenenplotStructured(input: {
     nextArcs = one.centralArcs;
   }
 
-  const structured: RomanSzenenplotStructured = {
+  const structured = hygieneSzenenplotLogik({
     ...structuredAfterDeletes,
     updatedAt: new Date().toISOString(),
     modelLabel: `${structuredAfterDeletes.modelLabel || "—"} · Verbessern`,
@@ -628,7 +695,7 @@ export async function patchSzenenplotStructured(input: {
       ch.number === n ? liveChapter : ch,
     ),
     schreibPromptsFrozenAt: frozenAt,
-  };
+  }).structured;
 
   return {
     structured,

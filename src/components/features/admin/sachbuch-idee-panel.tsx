@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Phase 1 — Mind-Extraction & UVP (book-level interview).
+ * Idea interview (greenfield start): socratic Q&A + optional UVP sharpen → ready.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -35,12 +35,7 @@ export function SachbuchIdeePanel({
   onBookUpdate: (book: SachbuchKontext) => void;
 }) {
   const buchArt = book.makro.typ ?? "journey";
-  const sharpenLabel =
-    buchArt === "erklaerung"
-      ? "Kernaussage schärfen"
-      : buchArt === "erzaehlung"
-        ? "Story-These schärfen"
-        : "UVP schärfen";
+  const sharpenLabel = "Idee übernehmen";
   const dossierTitle =
     buchArt === "erklaerung"
       ? "Kernaussage / Erklärthese"

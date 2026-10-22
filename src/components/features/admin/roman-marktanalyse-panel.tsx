@@ -74,13 +74,13 @@ export function RomanMarktanalysePanel({
     <div className="space-y-4">
       <div className="space-y-1">
         <h3 className="text-sm font-extrabold text-zinc-950">
-          Vorab: Marktanalyse (Konkurrenz)
+          Marktanalyse (Konkurrenz)
         </h3>
         <p className="text-xs font-semibold text-zinc-600">
-          Findet die 5 aktuell meistgelesenen Titel in Deutschland und wertet
-          je bis zu 20 schlechteste sowie 20 beste Rezensionen aus —
-          vernachlässigtes und erfülltes Leserbedürfnis werden MUSS für Entwurf
-          und Gegenlesen.
+          Optional nach Idee/Ableitung: findet die 5 meistgelesenen Titel in
+          Deutschland und wertet Rezensionen aus (vernachlässigtes / erfülltes
+          Bedürfnis). Felder bleiben gespeichert; aktuell kein hartes MUSS in
+          Erzeugen — Genre, Tonalität und Basis-Regeln sind Priority-0-Canon.
         </p>
       </div>
 
@@ -350,7 +350,8 @@ export function RomanMarktanalysePanel({
         </div>
       ) : (
         <p className="text-xs font-semibold text-zinc-500">
-          Noch keine Marktanalyse — optional, aber empfohlen vor der Idee.
+          Noch keine Marktanalyse — optional, sinnvoll nach Genre/Alter aus der
+          Idee.
         </p>
       )}
 

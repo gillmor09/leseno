@@ -3,7 +3,10 @@
  * Synthesis: `/api/admin/roman-hoerbuch/chapter` → Storage (`hoerbuch-storage.ts`).
  */
 
-import { formatManuskriptChapterHeading } from "@/lib/roman/plot-chapters";
+import {
+  formatManuskriptChapterHeading,
+  stripSceneBreaksForSpeech,
+} from "@/lib/roman/plot-chapters";
 import type { RomanExportChapter } from "@/lib/roman/export-roman-pdf";
 
 /** ISO 639-1 codes offered in the Export UI (Eleven v4: 90+; curation for DE market). */
@@ -48,8 +51,7 @@ export function romanChapterSpokenText(chapter: RomanExportChapter): string {
     title: chapter.title,
     body: "",
   });
-  const body = chapter.body
-    .replace(/\r\n/g, "\n")
+  const body = stripSceneBreaksForSpeech(chapter.body)
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

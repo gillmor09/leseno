@@ -166,6 +166,10 @@ function parseStringList(raw: unknown): string[] {
     .filter(Boolean);
 }
 
+function emptyGuide(): SachbuchIdee["guide"] {
+  return { currentStep: "concept", ideaApprovedAt: null };
+}
+
 export function emptySachbuchIdee(): SachbuchIdee {
   return {
     interviewMessages: [],
@@ -173,12 +177,65 @@ export function emptySachbuchIdee(): SachbuchIdee {
     unpopularOpinion: "",
     caseStudies: [],
     status: "empty",
+    guide: emptyGuide(),
+    refineStatus: "idle",
+    refineLog: [],
+    refinedBriefing: "",
+    refinedOpinion: "",
+    refinedCaseStudies: [],
+  };
+}
+
+function parseGuideStep(raw: unknown): SachbuchIdee["guide"]["currentStep"] {
+  if (
+    raw === "concept" ||
+    raw === "refine" ||
+    raw === "book_type" ||
+    raw === "evidenz" ||
+    raw === "makro" ||
+    raw === "write"
+  ) {
+    return raw;
+  }
+  return "concept";
+}
+
+function parseRefineStatus(raw: unknown): SachbuchIdee["refineStatus"] {
+  if (
+    raw === "idle" ||
+    raw === "running" ||
+    raw === "awaiting_approval" ||
+    raw === "approved"
+  ) {
+    return raw;
+  }
+  return "idle";
+}
+
+function parseRefineRound(raw: unknown): SachbuchIdee["refineLog"][number] | null {
+  const row = asRecord(raw);
+  const round = typeof row.round === "number" ? row.round : Number(row.round);
+  if (!Number.isFinite(round) || round < 1) return null;
+  const role = row.role === "luna" ? "luna" : "haiku";
+  return {
+    round: Math.floor(round),
+    role,
+    content: typeof row.content === "string" ? row.content : "",
+    passed:
+      row.passed === true ? true : row.passed === false ? false : null,
+    changeOrders: parseStringList(row.changeOrders),
+    createdAt:
+      typeof row.createdAt === "string" && row.createdAt
+        ? row.createdAt
+        : new Date().toISOString(),
   };
 }
 
 export function parseSachbuchIdee(raw: unknown): SachbuchIdee {
   const row = asRecord(raw);
   const empty = emptySachbuchIdee();
+  const guideRaw = asRecord(row.guide);
+  const logRaw = Array.isArray(row.refineLog) ? row.refineLog : [];
   return {
     interviewMessages: parseMessages(row.interviewMessages),
     briefing: typeof row.briefing === "string" ? row.briefing : empty.briefing,
@@ -188,6 +245,29 @@ export function parseSachbuchIdee(raw: unknown): SachbuchIdee {
         : empty.unpopularOpinion,
     caseStudies: parseStringList(row.caseStudies),
     status: parsePhaseStatus(row.status),
+    guide: {
+      currentStep: parseGuideStep(guideRaw.currentStep ?? row.guideStep),
+      ideaApprovedAt:
+        typeof guideRaw.ideaApprovedAt === "string" &&
+        guideRaw.ideaApprovedAt.trim()
+          ? guideRaw.ideaApprovedAt.trim()
+          : typeof row.ideaApprovedAt === "string" && row.ideaApprovedAt.trim()
+            ? row.ideaApprovedAt.trim()
+            : null,
+    },
+    refineStatus: parseRefineStatus(row.refineStatus),
+    refineLog: logRaw
+      .map(parseRefineRound)
+      .filter((r): r is SachbuchIdee["refineLog"][number] => Boolean(r)),
+    refinedBriefing:
+      typeof row.refinedBriefing === "string"
+        ? row.refinedBriefing
+        : empty.refinedBriefing,
+    refinedOpinion:
+      typeof row.refinedOpinion === "string"
+        ? row.refinedOpinion
+        : empty.refinedOpinion,
+    refinedCaseStudies: parseStringList(row.refinedCaseStudies),
   };
 }
 
@@ -224,12 +304,14 @@ export function parseSachbuchEvidenz(raw: unknown): SachbuchEvidenz {
 
 export function emptySachbuchMakro(
   typ: SachbuchMakroTyp = "journey",
+  bookTypeId = "",
 ): SachbuchMakro {
   return {
     typ,
     stages: emptyMakroStages(typ),
     status: "empty",
     kapitelGenerated: false,
+    bookTypeId,
   };
 }
 
@@ -278,6 +360,8 @@ export function parseSachbuchMakro(raw: unknown): SachbuchMakro {
     ),
     status: parsePhaseStatus(row.status),
     kapitelGenerated: Boolean(row.kapitelGenerated),
+    bookTypeId:
+      typeof row.bookTypeId === "string" ? row.bookTypeId.trim() : "",
   };
 }
 

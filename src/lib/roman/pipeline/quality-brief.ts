@@ -63,6 +63,7 @@ export const ROMAN_CRITIQUE_QUOTE_GROUNDING = `Zitat-Grounding (verbindlich):
  */
 export function structureStageAnalyzePolicy(stage: PipelineStage): string {
   if (
+    stage === "szenen" ||
     stage === "szenenplot" ||
     stage === "grobplot" ||
     stage === "feinplot"
@@ -75,13 +76,14 @@ ABDECKUNG: Prüfe ALLE Kapitel im Artefakt — nicht nur Kap. 1–3. Wenn der h�
 Verbessern nur bei klaren Pflichtlücken — kein Feinschliff-Loop.`;
   }
   if (
+    stage === "plot" ||
     stage === "kapitelgeruest" ||
     stage === "grobgeruest" ||
     stage === "feingeruest"
   ) {
     return `
-STUFEN-POLITIK: Bewerte die STRUCTURED-Felder: centralArcs (Setup/Peak/Payoff), je Kapitel kernsatz/inhaltKurz/props/events/openThreads/mustNotRepeat/introduces/resolves/arcBeats. Keine Einzelszenen erfinden. aenderungsPrompts müssen diese Felder nennen (WO + WAS). Downstream (Plot/Manuskript) wird invalidiert.
-Gerüst = arbeitende SKIZZE mit Ecken und Kanten. Offene Threads, knappe inhaltKurz und Raum für den Plot sind KEIN Mangel.
+STUFEN-POLITIK: Bewerte die STRUCTURED-Felder: centralArcs (Setup/Peak/Payoff), je Kapitel kernsatz/inhaltKurz/props/events/openThreads/mustNotRepeat/introduces/resolves/arcBeats. Keine Einzelszenen erfinden. aenderungsPrompts müssen diese Felder nennen (WO + WAS). Downstream (Szenen/Manuskript) wird invalidiert.
+Gerüst = arbeitende SKIZZE mit Ecken und Kanten. Offene Threads, knappe inhaltKurz und Raum für Szenen sind KEIN Mangel.
 Pflicht nur bei Tragfähigkeit: fehlender Peak/Payoff, funktionsloses Kapitel, harter Lifecycle-Widerspruch, Exposé-Versprechen ohne Kapitel-Anker.
 VERBOTEN: „Dialog/Replik/Satz zu Ende führen“, „Kapitel abrunden“, Mini-Manuskript in inhaltKurz, jedes Motiv ausbuchstabieren, Glattbügeln „fürs Buch“.
 ABDECKUNG: Prüfe ALLE Kapitel — Härteste tragfähige Lücke zuerst (auch hinten). Nicht jedes Kapitel „vollschreiben“.
@@ -232,8 +234,11 @@ export const PROMPT_SOFT_CAP_CHARS = 800_000;
  * Emergency only: {@link PROMPT_SOFT_CAP_CHARS}.
  */
 export const CLIP = {
-  idee: 8_000,
-  recherche: 8_000,
+  /**
+   * Ideendokumentation: darf mit Q&A wachsen (Fakten behalten).
+   * Früher 8k → Abbruch mitten im Satz nach längeren Weave-Turns.
+   */
+  idee: 28_000,
   grob: 4_000,
   charaktere: 12_000,
   weltSchau: 4_000,

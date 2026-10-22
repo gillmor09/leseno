@@ -20,6 +20,8 @@ import {
 } from "@/lib/roman/front-matter";
 import {
   formatManuskriptChapterHeading,
+  isSceneBreakParagraph,
+  SCENE_BREAK_MARKER,
   type PlotChapter,
 } from "@/lib/roman/plot-chapters";
 import {
@@ -81,7 +83,13 @@ function paragraphsToXhtml(text: string): string {
     .map((p) => p.replace(/\s+/g, " ").trim())
     .filter(Boolean);
   if (!parts.length) return "<p>&#160;</p>";
-  return parts.map((p) => `<p>${escapeXml(p)}</p>`).join("\n");
+  return parts
+    .map((p) =>
+      isSceneBreakParagraph(p)
+        ? `<p class="scene-break">${escapeXml(SCENE_BREAK_MARKER)}</p>`
+        : `<p>${escapeXml(p)}</p>`,
+    )
+    .join("\n");
 }
 
 function plainLinesToXhtml(text: string): string {
@@ -171,6 +179,12 @@ p {
   margin: 0 0 0.85em;
   text-indent: 1.2em;
   text-align: left;
+}
+p.scene-break {
+  text-align: center;
+  text-indent: 0;
+  letter-spacing: 0.35em;
+  margin: 1.4em 0;
 }
 .titlepage p, .copyright p, .dedication p, .epigraph p, h1.chapter + p {
   text-indent: 0;

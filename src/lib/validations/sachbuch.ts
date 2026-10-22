@@ -54,12 +54,43 @@ const makroStageKeySchema = z.enum([
   "bedeutung",
 ]);
 
+const guideStepSchema = z.enum([
+  "concept",
+  "refine",
+  "book_type",
+  "evidenz",
+  "makro",
+  "write",
+]);
+
+const refineRoundSchema = z.object({
+  round: z.number().int().min(1).max(20),
+  role: z.enum(["haiku", "luna"]),
+  content: z.string().max(50_000),
+  passed: z.boolean().nullable(),
+  changeOrders: z.array(z.string().max(5000)).max(50),
+  createdAt: z.string().max(80),
+});
+
 export const sachbuchIdeeSchema = z.object({
   interviewMessages: z.array(interviewMessageSchema).max(500),
   briefing: z.string().max(50_000),
   unpopularOpinion: z.string().max(20_000),
   caseStudies: z.array(z.string().max(5000)).max(50),
   status: phaseStatusSchema,
+  guide: z
+    .object({
+      currentStep: guideStepSchema,
+      ideaApprovedAt: z.string().max(80).nullable(),
+    })
+    .default({ currentStep: "concept", ideaApprovedAt: null }),
+  refineStatus: z
+    .enum(["idle", "running", "awaiting_approval", "approved"])
+    .default("idle"),
+  refineLog: z.array(refineRoundSchema).max(40).default([]),
+  refinedBriefing: z.string().max(50_000).default(""),
+  refinedOpinion: z.string().max(20_000).default(""),
+  refinedCaseStudies: z.array(z.string().max(5000)).max(50).default([]),
 });
 
 export const sachbuchEvidenzSchema = z.object({
@@ -92,6 +123,7 @@ export const sachbuchMakroSchema = z.object({
     .max(10),
   status: phaseStatusSchema,
   kapitelGenerated: z.boolean(),
+  bookTypeId: z.string().max(120).default(""),
 });
 
 const contextGraphSchema = z.object({
@@ -166,9 +198,23 @@ export const sachbuchIdSchema = z.object({
   id: z.string().uuid(),
 });
 
+/** Greenfield create: ready idea (paste) or interview (develop on dashboard). */
 export const sachbuchCreateSchema = z.object({
-  title: z.string().trim().min(1).max(300),
-  buchArt: makroTypSchema.default("journey"),
+  title: z.string().trim().max(300).optional(),
+  ideaMode: z.enum(["ready", "interview"]).default("ready"),
+  highConceptIdea: z.string().max(100_000).optional(),
+  /**
+   * Optional override — normally empty; typ is suggested from Idee later.
+   * @deprecated prefer empty at create
+   */
+  bookTypeId: z.string().trim().max(120).optional(),
+  /** Optional book shape; usually follows confirmed book type. */
+  buchArt: makroTypSchema.optional(),
+});
+
+export const sachbuchApplyBookTypeSchema = z.object({
+  sachbuchId: z.string().uuid(),
+  bookTypeId: z.string().trim().min(1).max(120),
 });
 
 export const sachbuchIdeeTurnSchema = z.object({

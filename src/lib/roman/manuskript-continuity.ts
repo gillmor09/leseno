@@ -191,10 +191,12 @@ Antworte NUR als JSON (keine Markdown-Fences):
   "secretsAndKnowledge": ["Wer weiß was"],
   "inventoryAndProps": ["Gegenstand / Status"],
   "relationshipNotes": ["A↔B: …"],
-  "hardFacts": ["unverrückbare Fakten aus dem Text"],
-  "mood": "kurze Stimmung"
+  "hardFacts": ["unverrückbare Fakten; Who-did-X als CLAIM: Actor|Action|Object"],
+  "mood": "kurze Stimmung",
+  "timeFrame": "Gegenwart|Rückblick|Erinnerung|… — Erzählzeit nach diesem Kapitel"
 }
-Regeln: Vorherigen State mergen (überholte Orte/Gegenstände ersetzen, offene Fäden aktualisieren). Kurz halten (Stichpunkte). Nur belegbare Fakten aus dem Kapitel + sinnvollem Carry-over.`,
+Regeln: Vorherigen State mergen (überholte Orte/Gegenstände ersetzen, offene Fäden aktualisieren). Kurz halten (Stichpunkte). Nur belegbare Fakten aus dem Kapitel + sinnvollem Carry-over.
+Wenn das Kapitel einem Akteur eine Tat zuschreibt: hardFacts um „CLAIM: Name|Tat|Objekt“ ergänzen (Canon für spätere Kapitel).`,
         userText: `# Bisheriger State
 ${prevBlock}
 
@@ -255,6 +257,10 @@ Aktualisiere den State nach diesem Kapitel.`,
           ? row.hardFacts
           : input.previous?.hardFacts ?? [],
       mood: row.mood ?? input.previous?.mood ?? "",
+      timeFrame:
+        String(row.timeFrame ?? "").trim() ||
+        input.previous?.timeFrame ||
+        "",
     });
     return merged ?? input.previous;
   } catch {

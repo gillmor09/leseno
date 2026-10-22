@@ -9,6 +9,7 @@ import {
   SACHBUCH_TARGET_WORDS_MAX,
   SACHBUCH_TARGET_WORDS_MIN,
 } from "@/lib/sachbuch/agent-defaults";
+import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import {
   getSachbuchKontext,
   patchSachbuchKapitel,
@@ -44,6 +45,7 @@ export async function generateSachbuchKapitel(input: {
 
   let book = await getSachbuchKontext(input.sachbuchId);
   if (!book) throw new Error("Sachbuch nicht gefunden.");
+  assertSachbuchGuideAllows(book, "write");
   let kapitel = book.kapitel.find((k) => k.id === input.kapitelId);
   if (!kapitel) throw new Error("Kapitel nicht gefunden.");
 

@@ -42,6 +42,12 @@ export async function resolveGeminiCachedContent(input: {
   cacheablePrefix: string;
   ttlSeconds?: number;
 }): Promise<string | null> {
+  const slug = input.modelSlug.trim().toLowerCase();
+  // Gemini 4 Argon: explicit cachedContents is unsupported (API error).
+  if (slug === "gemini-4-argon" || slug.startsWith("gemini-4-argon-")) {
+    return null;
+  }
+
   const prefix = input.cacheablePrefix.trim();
   if (prefix.length < 200) return null;
 

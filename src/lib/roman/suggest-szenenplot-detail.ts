@@ -42,6 +42,7 @@ import {
   formatWissensGraphForPrompt,
   growWissensGraphFromSzenenBatch,
 } from "@/lib/roman/wissens-graph";
+import { hygieneSzenenplotLogik } from "@/lib/roman/szenenplot-preflight";
 
 /** Two chapters per call — three + fat Gerüst prompts often hit the 120s wall. */
 const SCENES_BATCH_SIZE = 2;
@@ -105,17 +106,17 @@ function buildStaticBookPrefix(input: {
   charaktere: RomanCharakter[];
   weltSchauplaetze: string;
   weltRegeln: string;
-  rechercheDossier?: string;
   tonalitaet?: string;
+  kiRegelwerk?: string;
 }): string {
   return `${buildRomanStaticBookPrefix({
     buchTyp: input.buchTyp,
     title: input.title,
     genre: input.genre,
     ideeKurz: input.ideeKurz,
-    rechercheDossier: input.rechercheDossier,
     tonalitaet: input.tonalitaet,
     grobRegeln: input.grobRegeln,
+    kiRegelwerk: input.kiRegelwerk,
     editorial: input.editorial,
     charaktere: input.charaktere,
     weltSchauplaetze: input.weltSchauplaetze,
@@ -164,6 +165,7 @@ export async function suggestSzenenplotDetailFromCoAutor(input: {
   geruest: RomanKapitelGeruestStructured;
   existingPlot: string;
   tonalitaet?: string;
+  kiRegelwerk?: string;
   /**
    * `skeleton` = Grobplot (scene heads only).
    * `full` = Feinplot (contracts + schreibPrompt).
@@ -182,14 +184,12 @@ export async function suggestSzenenplotDetailFromCoAutor(input: {
   const skeletonOnly = mode === "skeleton";
   const weave = hasFilledPlot(input.existingPlot);
   const { rolle, model } = await resolveRomanKiRolle("schreib_coach");
-  const rechercheDossier = input.editorial.rechercheDossier ?? "";
   const tonalitaet = (input.tonalitaet ?? "").trim();
 
   let wissensGraph = input.editorial.wissensGraph ?? null;
 
   const staticPrefix = buildStaticBookPrefix({
     ...input,
-    rechercheDossier,
     tonalitaet,
   });
   const systemBase = `${rolle.systemPrompt}
@@ -332,16 +332,78 @@ ${centralArcs
       maxChars: CLIP.sharedContext,
     });
 
+    const batchDetailBlock = batch
+      .map((c) => {
+        const geruestCh = input.geruest.chapters.find(
+          (g) => g.number === c.number,
+        );
+        const lines = [
+          `## Kapitel ${c.number}: ${c.title}`,
+          `- Kernsatz: ${c.kernsatz}`,
+          geruestCh?.inhaltKurz?.trim()
+            ? `- Inhalt (vollständig umsetzen): ${geruestCh.inhaltKurz.trim()}`
+            : "",
+          c.props.length ? `- Pflicht-Props: ${c.props.join(" | ")}` : "",
+          c.events.length
+            ? `- Pflicht-Events & Claims (in Szenen abbilden):\n  • ${c.events.join("\n  • ")}`
+            : "",
+          c.introduces.length
+            ? `- Neu einführen (introduces): ${c.introduces.join(" | ")}`
+            : "",
+          c.resolves.length
+            ? `- Auflösen (resolves): ${c.resolves.join(" | ")}`
+            : "",
+          c.openThreads.length
+            ? `- Offene Fäden am Kapitelende (openThreads): ${c.openThreads.join(" | ")}`
+            : "",
+          c.mustNotRepeat.length
+            ? `- Nicht als neu wiederholen (mustNotRepeat): ${c.mustNotRepeat.join(" | ")}`
+            : "",
+          c.arcBeats.length
+            ? `- Arc-Beats (in dramaturgy & schreibPrompt spiegeln):\n  • ${c.arcBeats
+                .map(
+                  (b) =>
+                    `${b.arcId} (Tension ${b.tension}): mustShow="${b.mustShow}" | delta="${b.delta}"`,
+                )
+                .join("\n  • ")}`
+            : "",
+        ].filter(Boolean);
+        return lines.join("\n");
+      })
+      .join("\n\n");
+
+    const prevCh = filled.length > 0 ? filled[filled.length - 1] : null;
+    const prevLastScene =
+      prevCh && prevCh.scenes.length > 0
+        ? prevCh.scenes[prevCh.scenes.length - 1]
+        : null;
+    const prevContinuityBlock = prevLastScene
+      ? `# Nahtloser Anschluss an Kapitel ${prevCh!.number} / letzte Szene (${prevLastScene.heading})
+- Letzte Szene kurz: ${prevLastScene.summary}
+- Figuren-Zustände/Orte danach: ${
+          Object.entries(prevLastScene.continuity.character_states_after ?? {})
+            .map(([k, v]) => `${k}: ${v}`)
+            .join("; ") || "—"
+        }
+- Prop-Ablage danach: ${
+          Object.entries(prevLastScene.continuity.prop_placements_after ?? {})
+            .map(([k, v]) => `${k}: ${v}`)
+            .join("; ") || "—"
+        }
+- Hook in dieses Kapitel: ${prevLastScene.continuity.next_scene_hook || prevHook || "—"}
+`
+      : prevHook
+        ? `# Hook aus vorheriger Szene (nahtlos fortsetzen)\n${prevHook}\n`
+        : "";
+
     const userText = `${liveGraphBlock ? `${liveGraphBlock}\n` : ""}${arcsHint}
-# Freigegebenes Kapitelgerüst (verbindlich — keine neuen Kapitel)
+# Freigegebenes Kapitelgerüst (Gesamt-Überblick — keine neuen Kapitel)
 ${outlineBlock}
 
-${
-  prevHook
-    ? `# Hook aus vorheriger Szene (nahtlos fortsetzen)\n${prevHook}\n`
-    : ""
-}
-${
+# Verbindlicher Detail-Vertrag für diesen Batch (Kapitel ${batchNums} — lückenlos in Szenen umsetzen)
+${batchDetailBlock}
+
+${prevContinuityBlock}${
   weave && filled.length === 0
     ? `# Bisheriger Szenenplot (verweben)\n${input.existingPlot.trim().slice(0, CLIP.szenenplot)}\n`
     : ""
@@ -496,9 +558,10 @@ Nur JSON.`;
     ),
     schreibPromptsFrozenAt: null,
   };
-  const structured = skeletonOnly
+  const ensuredStructured = skeletonOnly
     ? baseStructured
     : ensureSchreibPrompts(baseStructured);
+  const { structured } = hygieneSzenenplotLogik(ensuredStructured);
 
   const markdown = structuredSzenenplotToMarkdown(structured);
 
@@ -508,7 +571,6 @@ Nur JSON.`;
         graph: wissensGraph,
         structured,
         ideeKurz: input.ideeKurz,
-        rechercheDossier,
         tonalitaet,
       });
     } catch {

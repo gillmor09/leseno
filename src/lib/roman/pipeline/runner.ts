@@ -28,6 +28,9 @@ import { critiqueStage, draftStage } from "@/lib/roman/pipeline/producers";
 import {
   PIPELINE_STAGE_LABELS,
   cleverManuskriptSkipsReifegrad,
+  isGeruestStage,
+  isPlotStage,
+  isStructureStage,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
 import { emptyRomanEditorial, countWords } from "@/lib/roman/editorial";
@@ -48,6 +51,7 @@ import {
 } from "@/lib/roman/reifegrad";
 import { formatCraftScoresLine } from "@/lib/roman/reifegrad-craft";
 import { getRomanKontext, upsertRomanKontext } from "@/lib/roman/repository";
+import { applyEditorialLogikHygiene } from "@/lib/roman/szenenplot-preflight";
 import type { RomanKontext } from "@/lib/roman/types";
 
 export type PipelineRunResult = {
@@ -442,14 +446,14 @@ export async function pipelineStepDraft(input: {
     let roman = await reload(input.romanId);
     if (input.stage === "manuskript") {
       await reportProgress("Alles erzeugen: Arbeitsbrief vorbereiten …", true);
-    } else if (input.stage === "kapitelgeruest") {
+    } else if (isGeruestStage(input.stage)) {
       await reportProgress(
-        "Kapitelgerüst: Outline & Spannungsbögen vorbereiten …",
+        "Plot: Outline & Spannungsbögen vorbereiten …",
         true,
       );
-    } else if (input.stage === "szenenplot") {
+    } else if (isPlotStage(input.stage)) {
       await reportProgress(
-        "Szenenplot: Szenenverträge aus Gerüst vorbereiten …",
+        "Szenen: Szenenverträge aus Plot vorbereiten …",
         true,
       );
     }
@@ -457,8 +461,8 @@ export async function pipelineStepDraft(input: {
       draftStage(roman, input.stage, {
         onProgress:
           input.stage === "manuskript" ||
-          input.stage === "kapitelgeruest" ||
-          input.stage === "szenenplot"
+          isGeruestStage(input.stage) ||
+          isPlotStage(input.stage)
             ? (label) => reportProgress(label)
             : undefined,
         chunkBudget:
@@ -595,7 +599,57 @@ export async function pipelineStepAssessReifegrad(input: {
     }
 
     let roman = await reload(input.romanId);
-    const editorial = roman.editorial ?? emptyRomanEditorial();
+    let editorial = roman.editorial ?? emptyRomanEditorial();
+
+    // Deterministic Logik hygiene before Bewerter (Plot / Szenen lifecycle).
+    if (isStructureStage(input.stage)) {
+      const hygiene = applyEditorialLogikHygiene(editorial);
+      if (hygiene.changed) {
+        const savedHygiene = await upsertRomanKontext({
+          id: roman.id,
+          title: roman.title,
+          manuskriptRaw: roman.manuskriptRaw,
+          stilbibel: roman.stilbibel,
+          genre: roman.genre,
+          praemisse: roman.praemisse,
+          perspektive: roman.perspektive,
+          zeitform: roman.zeitform,
+          tonalitaet: roman.tonalitaet,
+          charaktere: roman.charaktere,
+          weltSchauplaetze: roman.weltSchauplaetze,
+          weltRegeln: roman.weltRegeln,
+          szenenRaster: roman.szenenRaster,
+          kiRegelwerk: roman.kiRegelwerk,
+          fanPersonaName: roman.fanPersonaName,
+          fanPersonaProfil: roman.fanPersonaProfil,
+          editorial: hygiene.editorial,
+        });
+        roman = { ...savedHygiene, ideenChat: roman.ideenChat };
+        editorial = roman.editorial ?? hygiene.editorial;
+        {
+          const next = events.filter((e) => e.detail !== LIVE_PROGRESS);
+          next.push(
+            historyEvent({
+              type: "info",
+              stage: input.stage,
+              summary: `Logik-Hygiene: ${hygiene.notes.join(" · ")}`,
+            }),
+          );
+          next.push(
+            historyEvent({
+              type: "info",
+              stage: input.stage,
+              summary: `Reifegrad: ${PIPELINE_STAGE_LABELS[input.stage]} wird gemessen …`,
+              detail: LIVE_PROGRESS,
+            }),
+          );
+          events.length = 0;
+          events.push(...next);
+          await appendEvents({ runId: input.runId, events });
+        }
+      }
+    }
+
     if (cleverManuskriptSkipsReifegrad(editorial.buchTyp, input.stage)) {
       const reifegrade = { ...(editorial.reifegrade ?? {}) };
       delete reifegrade.manuskript;

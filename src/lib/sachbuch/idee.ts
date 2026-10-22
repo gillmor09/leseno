@@ -4,6 +4,10 @@
  */
 
 import { generateText } from "@/lib/ai/provider";
+import {
+  formatBookTypeBauplanPrompt,
+  getSachbuchBookType,
+} from "@/lib/sachbuch/book-types";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
 import {
   getSachbuchKontext,
@@ -20,6 +24,24 @@ function bookArt(book: SachbuchKontext): SachbuchMakroTyp {
   return book.makro.typ ?? "journey";
 }
 
+function bookTypeBlock(book: SachbuchKontext): string {
+  const confirmed = getSachbuchBookType(book.makro.bookTypeId);
+  if (!confirmed) {
+    return `Sachbuchtyp: noch offen (ergibt sich aus der Idee).
+Interview ohne festen Bauplan — These, Leserversprechen, Fall/Belege und Abgrenzung klären.`;
+  }
+  const thesis =
+    book.idee.unpopularOpinion.trim() ||
+    book.idee.briefing.trim().slice(0, 400) ||
+    confirmed.defaultThesis;
+  const bauplan = formatBookTypeBauplanPrompt(confirmed.id, { thesis });
+  return `Sachbuchtyp: ${confirmed.name}
+Kerngebiet: ${confirmed.description}
+Interview-Fokus: ${confirmed.interviewFocus}
+
+${bauplan}`;
+}
+
 function transcriptBlock(messages: SachbuchInterviewMessage[]): string {
   return messages
     .map((m) =>
@@ -30,7 +52,23 @@ function transcriptBlock(messages: SachbuchInterviewMessage[]): string {
     .join("\n\n");
 }
 
-function ideeOpener(typ: SachbuchMakroTyp): string {
+function ideeOpener(book: SachbuchKontext): string {
+  const typ = bookArt(book);
+  const t = getSachbuchBookType(book.makro.bookTypeId);
+  if (!t) {
+    return (
+      "Worum geht es in dem Buch in einem Satz — und was sollen Leser:innen danach " +
+      "anders verstehen, entscheiden oder tun? Welche These, Fallgeschichte oder " +
+      "Erfahrungsbasis trägt das Ganze?"
+    );
+  }
+  if (t.id === "transformatives-business-fallstudien") {
+    return (
+      "Welche unpopuläre Business-These will dieses Buch beweisen — und welche " +
+      "Fallstudie oder eigene Erfahrung macht sie greifbar? Was sollen Leser:innen " +
+      "danach anders entscheiden oder umsetzen?"
+    );
+  }
   if (typ === "erklaerung") {
     return "Was soll der Leser nach dem Buch wirklich verstanden haben — und welche Fehlvorstellung oder Verwechslung steht dem heute am meisten im Weg?";
   }
@@ -101,7 +139,7 @@ export async function startSachbuchIdeeInterview(
   const opener: SachbuchInterviewMessage = {
     id: crypto.randomUUID(),
     role: "assistant",
-    content: ideeOpener(bookArt(book)),
+    content: ideeOpener(book),
     createdAt: new Date().toISOString(),
   };
 
@@ -139,11 +177,13 @@ export async function runSachbuchIdeeTurn(input: {
     userText: `Buch: ${book.title}
 Zielgruppe: ${book.zielgruppe.trim() || "—"}
 Buchart: ${typ} (${SACHBUCH_MAKRO_TYP_LABELS[typ]})
+${bookTypeBlock(book)}
 
 Bisheriges Interview:
 ${transcriptBlock(messages)}
 
-${ideeTurnBrief(typ)}`,
+${ideeTurnBrief(typ)}
+Berücksichtige den Sachbuchtyp und Interview-Fokus.`,
     maxTokens: 1200,
     timeoutMs: 120_000,
   });
@@ -183,6 +223,7 @@ export async function sharpenSachbuchUvp(
     userText: `Buch: ${book.title}
 Zielgruppe: ${book.zielgruppe.trim() || "—"}
 Buchart: ${typ}
+${bookTypeBlock(book)}
 
 Interview:
 ${transcriptBlock(book.idee.interviewMessages)}`,
@@ -217,6 +258,12 @@ ${transcriptBlock(book.idee.interviewMessages)}`,
       briefing,
       caseStudies,
       status: "ready",
+      // Rohkonzept fertig → Wizard auf Verfeinern; Freigabe erst nach Haiku/Luna.
+      guide: {
+        currentStep: "refine",
+        ideaApprovedAt: null,
+      },
+      refineStatus: "idle",
     },
   });
 }

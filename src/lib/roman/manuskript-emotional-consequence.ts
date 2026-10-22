@@ -28,6 +28,7 @@ const SAMPLE_CHARS = 780;
 const AFTERMATH_HEAD = 500;
 /** Cap Co-Autor rewrites. */
 const MAX_REWRITE_CHAPTERS = 6;
+const MAX_REWRITE_CHAPTERS_SEEDED = 2;
 /** Cap chapters sent to the auditor. */
 const MAX_AUDIT_FOCUS = 12;
 
@@ -242,8 +243,9 @@ ${samples}
 
 Welche klaren emotionalen Schwächen? Max. 5.`,
             preferJson: true,
-            maxTokens: 1_200,
-            timeoutMs: 70_000,
+            // Truncated {"findings":[… broke Freigabe-Check under Haiku.
+            maxTokens: 2_400,
+            timeoutMs: 90_000,
             reasoningEffort: "low",
           })
         ).trim();
@@ -395,6 +397,11 @@ Schreibe den vollständigen Kapitel-Body neu (gleiche Ereignisse, tiefere emotio
 export async function runManuskriptEmotionalConsequencePass(input: {
   roman: RomanKontext;
   onProgress?: (label: string) => void | Promise<void>;
+  /**
+   * Findings from a prior Freigabe-Check — patch even when a fresh audit
+   * misses them (Assist audit is not stable across calls).
+   */
+  seedFindings?: EmotionalConsequenceFinding[];
 }): Promise<EmotionalConsequencePassResult> {
   const editorial = input.roman.editorial ?? emptyRomanEditorial();
   if (editorial.buchTyp === "clever_erzaehlt") {
@@ -423,10 +430,25 @@ export async function runManuskriptEmotionalConsequencePass(input: {
   await input.onProgress?.(
     "Emotion · Wertwechsel & Nachwirkung prüfen …",
   );
-  const findings = await auditManuskriptEmotionalConsequence({
+  const audited = await auditManuskriptEmotionalConsequence({
     manuskriptText: text,
     structured: editorial.szenenplotStructured,
   });
+  const findings = [...audited];
+  for (const seed of input.seedFindings ?? []) {
+    const key = seed.chapterNumbers.join(",");
+    const covered = findings.some(
+      (f) => f.chapterNumbers.join(",") === key && f.kind === seed.kind,
+    );
+    if (!covered && seed.chapterNumbers.length && seed.summary.trim()) {
+      findings.push({
+        ...seed,
+        patchFocus:
+          seed.patchFocus?.trim() ||
+          `Schärfe: ${seed.summary.slice(0, 280)}`,
+      });
+    }
+  }
 
   if (findings.length === 0) {
     return {
@@ -439,9 +461,27 @@ export async function runManuskriptEmotionalConsequencePass(input: {
   }
 
   const chapters = parsePlotChapters(text);
-  const toPatch = uniqueSortedChapters(
+  const rewriteCap =
+    (input.seedFindings?.length ?? 0) > 0
+      ? MAX_REWRITE_CHAPTERS_SEEDED
+      : MAX_REWRITE_CHAPTERS;
+  const seedChapters: number[] = [];
+  const seedSeen = new Set<number>();
+  for (const seed of input.seedFindings ?? []) {
+    for (const n of seed.chapterNumbers) {
+      if (!Number.isFinite(n) || n < 1 || seedSeen.has(n)) continue;
+      seedSeen.add(n);
+      seedChapters.push(n);
+      if (seedChapters.length >= rewriteCap) break;
+    }
+    if (seedChapters.length >= rewriteCap) break;
+  }
+  const findingChapters = uniqueSortedChapters(
     findings.flatMap((f) => f.chapterNumbers),
-  ).slice(0, MAX_REWRITE_CHAPTERS);
+  );
+  const toPatch = (
+    seedChapters.length > 0 ? seedChapters : findingChapters
+  ).slice(0, rewriteCap);
 
   if (toPatch.length === 0) {
     return {

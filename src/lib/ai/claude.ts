@@ -51,7 +51,28 @@ export type ClaudeGenerateInput = {
    * Ignored on older Claude models that use `thinking: disabled`.
    */
   reasoningEffort?: string | null;
+  /**
+   * Sampling temperature 0–1. On Haiku/Sonnet/Opus 5.5 the API rejects
+   * any value other than default — those models omit this field (see
+   * `claudeAllowsCustomTemperature`). Use `thinkingMode: "disabled"` there
+   * for a “cooler”, more instruction-bound author rewrite.
+   */
+  temperature?: number | null;
+  /**
+   * Override thinking config. Default: adaptive (Haiku/Opus 5.5),
+   * between_tools (Sonnet 5.5), disabled (older).
+   */
+  thinkingMode?: "adaptive" | "disabled" | "between_tools" | "auto" | null;
 };
+
+/** Claude 5.5 family: custom temperature / top_p / top_k → API 400. */
+export function claudeAllowsCustomTemperature(modelSlug: string): boolean {
+  return !(
+    isClaudeHaiku55Slug(modelSlug) ||
+    isClaudeSonnet55Slug(modelSlug) ||
+    isClaudeOpus55Slug(modelSlug)
+  );
+}
 
 export type ClaudeGenerateResult = {
   text: string;
@@ -113,7 +134,19 @@ export function buildClaudeMessagesParams(
   const allowedEffort = new Set(["low", "medium", "high"]);
   const effort = allowedEffort.has(effortRaw) ? effortRaw : "medium";
 
-  if (opus55 || haiku55) {
+  const thinkingOverride = (input.thinkingMode ?? "auto").trim().toLowerCase();
+  if (thinkingOverride === "disabled") {
+    body.thinking = { type: "disabled" };
+    if (opus55 || haiku55 || sonnet55) {
+      body.output_config = { effort };
+    }
+  } else if (thinkingOverride === "adaptive") {
+    body.thinking = { type: "adaptive" };
+    body.output_config = { effort };
+  } else if (thinkingOverride === "between_tools") {
+    body.thinking = { type: "between_tools" };
+    body.output_config = { effort };
+  } else if (opus55 || haiku55) {
     // Opus / Haiku 5.5: adaptive thinking + effort.
     body.thinking = { type: "adaptive" };
     body.output_config = { effort };
@@ -122,6 +155,14 @@ export function buildClaudeMessagesParams(
     body.output_config = { effort };
   } else {
     body.thinking = { type: "disabled" };
+  }
+
+  if (
+    input.temperature != null &&
+    Number.isFinite(input.temperature) &&
+    claudeAllowsCustomTemperature(input.modelSlug)
+  ) {
+    body.temperature = Math.min(1, Math.max(0, input.temperature));
   }
 
   const cacheTtl = input.cacheTtl === "1h" ? "1h" : undefined;
@@ -221,14 +262,7 @@ export async function generateWithClaude(
   input: ClaudeGenerateInput,
 ): Promise<ClaudeGenerateResult> {
   const apiKey = getClaudeApiKey();
-  const body = buildClaudeMessagesParams(input);
-  if (process.env.NODE_ENV === "development") {
-    console.info(
-      `[claude] model=${input.modelSlug} max_tokens=${body.max_tokens}`,
-    );
-  }
-
-  const bodyJson = JSON.stringify(body);
+  let callInput: ClaudeGenerateInput = { ...input };
   let lastError: unknown;
   const budgetMs = Math.min(
     input.timeoutMs ?? AI_FETCH_TIMEOUT_MS,
@@ -237,6 +271,15 @@ export async function generateWithClaude(
   const deadline = Date.now() + budgetMs;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const body = buildClaudeMessagesParams(callInput);
+    const maxTokens = Number(body.max_tokens) || 8192;
+    if (process.env.NODE_ENV === "development") {
+      console.info(
+        `[claude] model=${callInput.modelSlug} max_tokens=${maxTokens} attempt=${attempt}`,
+      );
+    }
+    const bodyJson = JSON.stringify(body);
+
     const remaining = deadline - Date.now();
     if (remaining < MIN_RETRY_BUDGET_MS && attempt > 1) {
       throw mapAiFetchError(
@@ -296,7 +339,29 @@ export async function generateWithClaude(
           .trim() ?? "";
 
       if (!text) {
-        throw new Error("Claude hat keinen Text zurückgegeben.");
+        const types = (payload.content ?? [])
+          .map((b) => b.type || "unknown")
+          .join(",");
+        const stop = payload.stop_reason ?? "?";
+        // Thinking can eat the whole max_tokens budget → empty text.
+        if (
+          attempt < MAX_ATTEMPTS &&
+          deadline - Date.now() > MIN_RETRY_BUDGET_MS
+        ) {
+          console.warn(
+            `[claude] empty text (stop=${stop}, blocks=${types || "none"}), retry with higher max_tokens`,
+          );
+          callInput = {
+            ...callInput,
+            maxTokens: Math.min(64_000, Math.max(maxTokens * 2, 32_768)),
+            reasoningEffort: "low",
+          };
+          await sleep(Math.min(RETRY_BASE_MS * attempt, 2_000));
+          continue;
+        }
+        throw new Error(
+          `Claude hat keinen Text zurückgegeben (stop_reason=${stop}, blocks=${types || "none"}).`,
+        );
       }
 
       const usage = payload.usage;

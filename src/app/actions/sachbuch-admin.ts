@@ -63,7 +63,7 @@ export async function loadSachbuchAction(
   }
 }
 
-/** Create a new book shell (title + default agents). */
+/** Create a new book: ready idea (paste) or interview on the dashboard. */
 export async function createSachbuchAction(
   input: unknown,
 ): Promise<ActionResult<{ book: SachbuchKontext }>> {
@@ -76,10 +76,35 @@ export async function createSachbuchAction(
   }
 
   try {
-    const book = await createSachbuchKontext(
-      parsed.data.title,
-      parsed.data.buchArt,
-    );
+    const mode = parsed.data.ideaMode;
+    const idea = (parsed.data.highConceptIdea ?? "").trim();
+    if (mode === "ready" && idea.length < 20) {
+      return {
+        success: false,
+        error:
+          "Bitte die Idee etwas ausführlicher beschreiben (mind. 20 Zeichen).",
+      };
+    }
+    const title =
+      parsed.data.title?.trim() ||
+      idea.split(/[.!?\n]/)[0]?.trim().slice(0, 80) ||
+      "Unbenanntes Sachbuch";
+
+    let book = await createSachbuchKontext({
+      title,
+      buchArt: parsed.data.buchArt,
+      bookTypeId: parsed.data.bookTypeId,
+      ideaMode: mode,
+      highConceptIdea: idea,
+    });
+
+    if (mode === "interview") {
+      const { startSachbuchIdeeInterview } = await import(
+        "@/lib/sachbuch/idee"
+      );
+      book = await startSachbuchIdeeInterview(book.id);
+    }
+
     revalidateSachbuchAdmin(book.id);
     return { success: true, data: { book } };
   } catch (error) {

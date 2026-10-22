@@ -1,0 +1,31 @@
+---
+description: Bauplan Transformatives Business-Sachbuch (Fallstudien-Analytik) — Kapitel-Triade, Rollen, Container
+globs: src/lib/sachbuch/**/*,src/components/features/admin/sachbuch*/**/*,src/app/admin/sachbuch/**/*,src/app/actions/sachbuch*.ts
+alwaysApply: false
+---
+
+# Sachbuchtyp: Transformatives Business-Sachbuch mit Fallstudien-Analytik
+
+Source of truth for prompts: `src/lib/sachbuch/bauplaene/transformatives-business-fallstudien.ts` via `formatBookTypeBauplanPrompt` / `formatTransformativesBusinessBauplanPrompt`.
+
+## When generating Idee, Outline, or chapters for this type
+
+1. Act as the three-role team: Chef-Analytiker, IT-/Datenschutz-Jurist, Investigativ-Storyteller.
+2. Every main chapter follows **Akt A (Fallstudie ~30%) → Akt B (Faktencheck ~40%) → Akt C (Transformation ~30%)**.
+3. Include at least two containers: **Mythen-Breaker** and/or **Diagnose-Check**.
+4. Tone: no polemic against real privacy; no fluff openings; concrete tools/roles/processes; real legal principles (Zweckbindung, Datenminimierung, Rechenschaftspflicht).
+5. Workflow: Outline → Fact-Check-Prep → Draft (~2–3k words) → Review (no Stammtisch; focus = bad processes as root cause).
+
+## Thesis
+
+Prefer the book's Idee (`unpopularOpinion` / briefing). Fallback default thesis for this Kerngebiet:
+
+> Datenschutz wird als Feigenblatt für verkrustete Prozesse und Verantwortungsvermeidung missbraucht.
+
+Do not invent a different core thesis unless the user/Idee supplies one.
+
+## Do not
+
+- Attack fundamental rights or genuine data protection.
+- Start with „In der heutigen digitalisierten Welt…“.
+- Skip Akt A/B/C or ship chapters without diagnostic/actionable transfer.

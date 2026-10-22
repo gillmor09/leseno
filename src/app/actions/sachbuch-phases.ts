@@ -26,13 +26,27 @@ import {
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 import type { ActionResult } from "@/lib/types/actions";
 import {
+  approveSachbuchIdeeRefine,
+  rejectSachbuchIdeeRefine,
+  runSachbuchIdeeRefine,
+  setSachbuchGuideStep,
+} from "@/lib/sachbuch/idee-refine";
+import {
+  applySachbuchBookType,
+  suggestSachbuchBookType,
+  type SachbuchBookTypeSuggestResult,
+} from "@/lib/sachbuch/suggest-book-type";
+import type { SachbuchGuideStep } from "@/lib/sachbuch/types";
+import {
   firstSachbuchZodMessage,
   sachbuchAbschnittReplySchema,
+  sachbuchApplyBookTypeSchema,
   sachbuchGenerateSchema,
   sachbuchIdeeTurnSchema,
   sachbuchIdSchema,
   sachbuchKapitelRefSchema,
 } from "@/lib/validations/sachbuch";
+import { z } from "zod";
 
 async function wrap(
   sachbuchId: string,
@@ -110,6 +124,135 @@ export async function undoSachbuchIdeeLastTurnAction(
     parsed.data.id,
     () => undoSachbuchIdeeLastTurn(parsed.data.id),
     "Letzte Runde löschen fehlgeschlagen.",
+  );
+}
+
+/** Agentic Haiku↔Luna idea refine (2–3 rounds → awaiting_approval). */
+export async function runSachbuchIdeeRefineAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => runSachbuchIdeeRefine(parsed.data.id),
+    "Idee-Verfeinerung fehlgeschlagen.",
+  );
+}
+
+/** HITL: approve refined dossier → unlock book_type. */
+export async function approveSachbuchIdeeRefineAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => approveSachbuchIdeeRefine(parsed.data.id),
+    "Idee freigeben fehlgeschlagen.",
+  );
+}
+
+/** Clear refine log and allow another agentic run. */
+export async function rejectSachbuchIdeeRefineAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => rejectSachbuchIdeeRefine(parsed.data.id),
+    "Verfeinerung zurücksetzen fehlgeschlagen.",
+  );
+}
+
+const guideStepActionSchema = z.object({
+  sachbuchId: z.string().uuid(),
+  step: z.enum([
+    "concept",
+    "refine",
+    "book_type",
+    "evidenz",
+    "makro",
+    "write",
+  ]),
+});
+
+/** Move wizard cursor to an unlocked step. */
+export async function setSachbuchGuideStepAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = guideStepActionSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.sachbuchId,
+    () =>
+      setSachbuchGuideStep(
+        parsed.data.sachbuchId,
+        parsed.data.step as SachbuchGuideStep,
+      ),
+    "Schritt wechseln fehlgeschlagen.",
+  );
+}
+
+/** Rank gängige Sachbuchtypen against Idee/Konzept (no persist). */
+export async function suggestSachbuchBookTypeAction(
+  input: unknown,
+): Promise<ActionResult<{ suggestion: SachbuchBookTypeSuggestResult }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  try {
+    const suggestion = await suggestSachbuchBookType(parsed.data.id);
+    return { success: true, data: { suggestion } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Buchtyp-Vorschlag fehlgeschlagen.",
+    };
+  }
+}
+
+/** Persist chosen Sachbuchtyp from catalog. */
+export async function applySachbuchBookTypeAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchApplyBookTypeSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.sachbuchId,
+    () =>
+      applySachbuchBookType({
+        sachbuchId: parsed.data.sachbuchId,
+        bookTypeId: parsed.data.bookTypeId,
+      }),
+    "Buchtyp übernehmen fehlgeschlagen.",
   );
 }
 

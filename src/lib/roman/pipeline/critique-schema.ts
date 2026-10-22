@@ -22,11 +22,17 @@ export const critiquePayloadSchema = z.object({
 export type CritiqueFinding = z.infer<typeof critiqueFindingSchema>;
 export type CritiquePayload = z.infer<typeof critiquePayloadSchema>;
 
-/** Canonical + legacy stage ids accepted on patch targets. */
+/** Canonical + legacy / split-era stage ids accepted on patch targets. */
 const ROUTE_TARGET_STAGES = [
   ...PIPELINE_STAGES,
+  "charaktere",
+  "welt",
+  "feingeruest",
+  "feinplot",
   "kapitelgeruest",
   "szenenplot",
+  "grobgeruest",
+  "grobplot",
 ] as const;
 
 /** Patch target for Verbessern / Feedback / Dimension apply (not a KI role). */

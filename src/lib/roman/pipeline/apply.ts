@@ -40,6 +40,11 @@ import {
   patchSzenenplotStructured,
 } from "@/lib/roman/structured-stage-patch";
 import {
+  extractClaimsFromGeruestChapters,
+  formatGeruestClaimsAsInvariants,
+} from "@/lib/roman/geruest-plot-claims";
+import { formatStructureCanonReferenceBlock } from "@/lib/roman/reifegrad";
+import {
   structuredKapitelGeruestToMarkdown,
   structuredSzenenplotToMarkdown,
 } from "@/lib/roman/szenenplot-structured";
@@ -57,20 +62,29 @@ import {
   patchChapterBodies,
 } from "@/lib/roman/pipeline/structure-guard";
 import type { RouteTarget } from "@/lib/roman/pipeline/critique-schema";
+import { canonicalizeKennzeichenInText } from "@/lib/roman/kennzeichen-canon";
 import {
   closeWissensGraphGaps,
   growWissensGraphFromChapterBodies,
+  patchWissensGraphFromKritik,
 } from "@/lib/roman/wissens-graph";
 import {
   CLIP,
   ROMAN_EXCELLENCE_MANDATE,
   ROMAN_PROSE_MAX_TOKENS,
 } from "@/lib/roman/pipeline/quality-brief";
-import { invalidateDownstreamEditorial } from "@/lib/roman/pipeline/cascade";
+import { softInvalidateDownstream } from "@/lib/roman/pipeline/cascade";
+import {
+  retainApprovedGraphFingerprint,
+  retainApprovedStructureFingerprints,
+} from "@/lib/roman/phase-fingerprints";
+import { markPhaseContentChanged } from "@/lib/roman/phase-state";
 import {
   isGeruestStage,
   isPlotStage,
+  normalizePipelineStage,
   type PipelineStage,
+  type ProcessPhase,
 } from "@/lib/roman/pipeline/stages";
 import { resolvePipelineTask } from "@/lib/roman/pipeline/tasks";
 import {
@@ -149,7 +163,7 @@ export function isManuskriptVerbessernPatch(input: {
     .join("\n")
     .toLowerCase();
   return (
-    /manuskript verbessern|stil-pass|prosa-qualität|inhalt eingefroren/.test(
+    /manuskript verbessern|stil-pass|prosa-qualität|inhalt eingefroren|content frozen|formulierungs-variation/.test(
       blob,
     ) || /auftrag — verbessern \(stil-pass\)/.test(blob)
   );
@@ -218,7 +232,28 @@ export function isShortenIntentPatch(input: {
   ]
     .join("\n")
     .toLowerCase();
-  return /duplikat|doppelung|doppelt|redundan|wiederhol|streich|bereinigen|entfernen|kürz|straffen|verdichten|überlapp|nochmals\s+(dieselbe|die\s+gleiche)|zweite\s+zustellung|doppelt\s+erzähl/.test(
+  return /duplikat|doppelung|dopplung|doppelt|redundan|wiederhol|streich|bereinigen|entfernen|kürz|straffen|verdichten|überlapp|nahtdopp|nochmals\s+(dieselbe|die\s+gleiche)|zweite\s+zustellung|doppelt\s+erzähl/.test(
+    blob,
+  );
+}
+
+/**
+ * Freigabe Nachziehen (Seam/Emotion/Ledger): may remove duplicated beats /
+ * openings — must not silently revert when the rewrite is shorter.
+ */
+export function isFreigabeRepairChapterPatch(input: {
+  patchBrief: string;
+  reason?: string;
+  critiqueText?: string;
+}): boolean {
+  const blob = [
+    input.reason ?? "",
+    input.critiqueText ?? "",
+    input.patchBrief,
+  ]
+    .join("\n")
+    .toLowerCase();
+  return /seam\/payoff|emotionale-konsequenzen|kontinuitäts-ledger|freigabe-nachzieh|naht\/payoff|wertwechsel und nachwirkung|zeit\/geld\/wissensstand|timeline-pass|arbeitsauftrag/.test(
     blob,
   );
 }
@@ -382,9 +417,11 @@ async function persistRoman(
  * Manuskript prose (Sonnet): slim canon + chapter packet — not full Spec dump.
  */
 type ChapterDocStage =
+  | "plot"
   | "kapitelgeruest"
   | "grobgeruest"
   | "feingeruest"
+  | "szenen"
   | "szenenplot"
   | "grobplot"
   | "feinplot"
@@ -422,14 +459,16 @@ async function patchOneChapterBody(input: {
   applyRoleKey?: string;
 }): Promise<string> {
   const taskKey =
+    input.stage === "plot" ||
     input.stage === "kapitelgeruest" ||
     input.stage === "grobgeruest" ||
     input.stage === "feingeruest"
-      ? "feingeruest.draft"
-      : input.stage === "szenenplot" ||
+      ? "plot.draft"
+      : input.stage === "szenen" ||
+          input.stage === "szenenplot" ||
           input.stage === "grobplot" ||
           input.stage === "feinplot"
-        ? "feinplot.draft"
+        ? "szenen.draft"
         : "manuskript.draft";
   const { resolveRomanKiRolle } = await import("@/lib/roman/roles");
   const resolved = input.applyRoleKey?.trim()
@@ -484,7 +523,7 @@ async function patchOneChapterBody(input: {
     ? `\n# Context-Buffer (Continuity + Fokus)\n${input.continuityBuffer.trim().slice(0, 4_500)}\n`
     : "";
   const packetBlock = packet
-    ? `\n# Kapitel-Paket (Continuity/Beats/Props — UNTER dem Patch-Brief)\n${packet.slice(0, 5_500)}\n`
+    ? `\n# Kapitel-Paket (Continuity/Beats/Props — UNTER dem Patch-Brief)\n${packet.slice(0, 32_000)}\n`
     : "";
   const lengthRule =
     input.stage === "manuskript"
@@ -616,14 +655,16 @@ ${
       words = manuskriptChapterWordCount(body);
     }
 
-    // Still under floor → accept craft shorten only if ≥85% of chapterMin; else baseline.
+    // Still under floor after expands. Freigabe/Duplikat must NOT silently
+    // revert a visible craft change — that made „Hinweise nachziehen“ a no-op.
     if (words < floor) {
+      const changed =
+        normalizeWhitespace(body) !== normalizeWhitespace(input.body);
+      if (input.allowSubstantialShorten && changed) {
+        return body;
+      }
       const acceptSoft = Math.floor(floor * 0.85);
-      if (
-        input.allowSubstantialShorten &&
-        normalizeWhitespace(body) !== normalizeWhitespace(input.body) &&
-        words >= acceptSoft
-      ) {
+      if (changed && words >= acceptSoft) {
         return body;
       }
       return input.body;
@@ -732,12 +773,18 @@ async function applyChapterDoc(input: {
     reason: input.target.reason,
     critiqueText: input.critiqueText,
   });
+  const freigabeRepairPatch = isFreigabeRepairChapterPatch({
+    patchBrief: input.target.patchBrief,
+    reason: input.target.reason,
+    critiqueText: input.critiqueText,
+  });
   const allowGrowthPatch =
     leserFeedbackPatch ||
     simplifyPatch ||
     leseflussPatch ||
     reifegradImprovePatch ||
-    canonLogicPatch;
+    canonLogicPatch ||
+    freigabeRepairPatch;
   // Dim/Verbessern may delete Duplikate — first pass may shrink, but wordFloor
   // stays at chapterMin so expand restores length elsewhere (not the doubles).
   const allowSubstantialShorten =
@@ -746,7 +793,8 @@ async function applyChapterDoc(input: {
     leseflussPatch ||
     reifegradImprovePatch ||
     shortenIntentPatch ||
-    canonLogicPatch;
+    canonLogicPatch ||
+    freigabeRepairPatch;
   const toPatch = resolveChapterPatchNumbers({
     chapterNumbers: chapters.map((c) => c.number),
     requested: input.target.chapterNumbers,
@@ -1066,9 +1114,9 @@ export async function applyRouteTarget(input: {
     title: roman.title,
     genre: roman.genre,
     ideeKurz,
-    rechercheDossier: editorial.rechercheDossier ?? "",
     tonalitaet: roman.tonalitaet,
     grobRegeln: editorial.grobRegeln ?? "",
+    kiRegelwerk: roman.kiRegelwerk,
     editorial,
     charaktere: roman.charaktere,
     weltSchauplaetze: roman.weltSchauplaetze,
@@ -1086,7 +1134,7 @@ export async function applyRouteTarget(input: {
     .filter(Boolean)
     .join("\n\n");
 
-  const stage: PipelineStage = input.target.stage;
+  const stage: PipelineStage = input.target.stage as PipelineStage;
 
   if (stage === "idee") {
     const woven = await weaveIdeeKurzFromCoAutorKritik({
@@ -1103,7 +1151,7 @@ export async function applyRouteTarget(input: {
     };
   }
 
-  if (stage === "charaktere") {
+  if (stage === "charaktere" || stage === "fundament") {
     const refined = await refineCharaktere({
       buchTyp,
       ideeKurz,
@@ -1149,17 +1197,55 @@ export async function applyRouteTarget(input: {
       critique: input.critiqueText,
       authorComment: input.target.patchBrief,
     });
-    const nextEd = withExposeText(
-      invalidateDownstreamEditorial(editorial, "expose"),
-      woven.expose,
+    // Verbessern: soft stale only — never wipe Plot/Szenen/Manuskript.
+    let nextEd = softInvalidateDownstream(
+      editorial,
+      "expose",
+      "Exposé verbessert",
     );
+    nextEd = markPhaseContentChanged(nextEd, "expose", "Exposé verbessert");
+    nextEd = withExposeText(nextEd, woven.expose);
     const saved = await persistRoman(roman, {
-      manuskriptRaw: "",
       editorial: nextEd,
     });
     return {
       roman: saved,
-      summary: `Exposé angepasst (${woven.modelLabel}). Downstream veraltet.`,
+      summary: `Exposé angepasst (${woven.modelLabel}). Downstream prüfbedürftig (Inhalt bleibt).`,
+    };
+  }
+
+  if (stage === "graph") {
+    const prevGraph = editorial.wissensGraph;
+    if (!prevGraph?.nodes.length) {
+      throw new Error(
+        "Wissensgraph fehlt — bitte zuerst erzeugen, dann Verbessern.",
+      );
+    }
+    const exposeCtx = exposeTextFromEditorial(editorial);
+    const patched = await patchWissensGraphFromKritik({
+      graph: prevGraph,
+      patchBrief: input.target.patchBrief,
+      critiqueText: input.critiqueText,
+      contextText: [
+        ideeKurz,
+        roman.weltSchauplaetze,
+        roman.weltRegeln,
+        exposeCtx,
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+    });
+    let nextEd = softInvalidateDownstream(
+      editorial,
+      "graph",
+      "Wissensgraph verbessert",
+    );
+    nextEd = markPhaseContentChanged(nextEd, "graph", "Wissensgraph verbessert");
+    nextEd = { ...nextEd, wissensGraph: patched };
+    const saved = await persistRoman(roman, { editorial: nextEd });
+    return {
+      roman: saved,
+      summary: `Wissensgraph angepasst (${patched.modelLabel}) · ${patched.nodes.length} Knoten · Downstream prüfbedürftig (Inhalt bleibt).`,
     };
   }
 
@@ -1190,6 +1276,7 @@ export async function applyRouteTarget(input: {
     let live = structured;
     let remirror = "";
     const allChanged: number[] = [];
+    const canonContext = formatStructureCanonReferenceBlock(roman);
     for (const num of chapterNumbers) {
       const brief =
         input.patchBriefForChapter?.(num) ?? input.target.patchBrief;
@@ -1198,6 +1285,7 @@ export async function applyRouteTarget(input: {
         chapterNumbers: [num],
         patchBrief: brief,
         critiqueText: input.critiqueText,
+        canonContext,
       });
       live = patched.structured;
       remirror = patched.markdown;
@@ -1237,6 +1325,17 @@ export async function applyRouteTarget(input: {
       } catch {
         /* keep retract */
       }
+      // Refresh Who-did-X CLAIMs in hardInvariants from updated Kapitelgerüst.
+      const nonClaimInvariants = (nextGraph.hardInvariants ?? []).filter(
+        (inv) => !/^CLAIM:/i.test(inv.trim()),
+      );
+      const claimInv = formatGeruestClaimsAsInvariants(
+        extractClaimsFromGeruestChapters(live.chapters),
+      );
+      nextGraph = {
+        ...nextGraph,
+        hardInvariants: [...nonClaimInvariants, ...claimInv].slice(0, 12),
+      };
     }
     if (
       nextGraph &&
@@ -1248,31 +1347,32 @@ export async function applyRouteTarget(input: {
           graph: nextGraph,
           structured: editorial.szenenplotStructured,
           ideeKurz,
-          rechercheDossier: editorial.rechercheDossier ?? "",
           tonalitaet: roman.tonalitaet ?? "",
         });
       } catch {
         /* keep */
       }
     }
-    const cleared = invalidateDownstreamEditorial(
+    const plotPhase = (normalizePipelineStage(stage) ?? "plot") as ProcessPhase;
+    let nextEd = softInvalidateDownstream(
       editorial,
-      isGeruestStage(stage) ? (stage as PipelineStage) : "feingeruest",
+      plotPhase,
+      "Plot verbessert",
     );
-    const nextEd = {
-      ...cleared,
+    nextEd = markPhaseContentChanged(nextEd, "plot", "Plot verbessert");
+    nextEd = retainApprovedGraphFingerprint({
+      ...nextEd,
       kapitelGeruestRaw: remirror,
       kapitelGeruestStructured: live,
       wissensGraph: nextGraph,
-    };
+    });
     const saved = await persistRoman(roman, {
-      manuskriptRaw: "",
       editorial: nextEd,
     });
     const changed = [...new Set(allChanged)].sort((a, b) => a - b);
     return {
       roman: saved,
-      summary: `Kapitelgerüst structured gepatcht (Kap. ${changed.join(", ")}) · Szenenplot/Manuskript veraltet.`,
+      summary: `Kapitelgerüst structured gepatcht (Kap. ${changed.join(", ")}) · Szenen/Manuskript prüfbedürftig (Inhalt bleibt).`,
       patchedChapters: changed,
     };
   }
@@ -1360,22 +1460,23 @@ export async function applyRouteTarget(input: {
           graph: nextGraph,
           structured: live,
           ideeKurz,
-          rechercheDossier: editorial.rechercheDossier ?? "",
           tonalitaet: roman.tonalitaet ?? "",
         });
       } catch {
         /* keep */
       }
     }
-    const cleared = invalidateDownstreamEditorial(
+    let nextEd = softInvalidateDownstream(
       editorial,
-      isPlotStage(stage) ? (stage as PipelineStage) : "feinplot",
+      "szenen",
+      "Szenen verbessert",
     );
-    const nextEd = {
-      ...cleared,
+    nextEd = markPhaseContentChanged(nextEd, "szenen", "Szenen verbessert");
+    nextEd = retainApprovedGraphFingerprint({
+      ...nextEd,
       szenenplotStructured: live,
       wissensGraph: nextGraph,
-    };
+    });
     const saved = await persistRoman(roman, {
       manuskriptRaw: remirror,
       editorial: nextEd,
@@ -1383,7 +1484,7 @@ export async function applyRouteTarget(input: {
     const changed = [...new Set(allChanged)].sort((a, b) => a - b);
     return {
       roman: saved,
-      summary: `Szenenplot structured gepatcht (Kap. ${changed.join(", ")}).`,
+      summary: `Szenenplot structured gepatcht (Kap. ${changed.join(", ")}) · Manuskript prüfbedürftig (Inhalt bleibt).`,
       patchedChapters: changed,
     };
   }
@@ -1415,25 +1516,34 @@ export async function applyRouteTarget(input: {
       patchBriefForChapter: input.patchBriefForChapter,
       applyRoleKey: input.applyRoleKey,
     });
-    const sealed = normalizeManuskriptDocument(text, {
+    let sealed = normalizeManuskriptDocument(text, {
       requiredFromPlot: plot,
     });
+    // Co-Autor invents new plates (E-HS 2046/4411/…) — snap to frozen Canon.
+    sealed = canonicalizeKennzeichenInText(
+      sealed,
+      wissensGraph ?? editorial.wissensGraph ?? null,
+    );
     const missing = missingManuskriptChapterNumbers(plot, sealed);
     if (missing.length > 0) {
       throw new Error(
         `Manuskript unvollständig nach Patch — fehlende Kapitel aus dem Szenenplot: ${missing.join(", ")}. Bitte Manuskript neu erzeugen.`,
       );
     }
-    const nextEd = {
-      ...editorial,
-      manuskriptText: sealed,
-      storyState: storyState ?? editorial.storyState ?? null,
-      wissensGraph: wissensGraph ?? editorial.wissensGraph ?? null,
-      szenenplotStructured:
-        szenenplotStructured !== undefined
-          ? szenenplotStructured
-          : editorial.szenenplotStructured,
-    };
+    // Graph grow + light Szenen-Sync must not revoke Graph/Plot/Szenen freigabe.
+    const nextEd = retainApprovedStructureFingerprints(
+      {
+        ...editorial,
+        manuskriptText: sealed,
+        storyState: storyState ?? editorial.storyState ?? null,
+        wissensGraph: wissensGraph ?? editorial.wissensGraph ?? null,
+        szenenplotStructured:
+          szenenplotStructured !== undefined
+            ? szenenplotStructured
+            : editorial.szenenplotStructured,
+      },
+      { manuskriptRaw: roman.manuskriptRaw ?? "" },
+    );
     const saved = await persistRoman(roman, { editorial: nextEd });
     return { roman: saved, summary, patchedChapters };
   }

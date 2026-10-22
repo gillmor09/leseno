@@ -892,7 +892,6 @@ export async function runManuskriptVerbessernJob(input: {
         title: roman.title,
         genre: roman.genre,
         ideeKurz: editorial.ideeKurz ?? "",
-        rechercheDossier: editorial.rechercheDossier ?? "",
         tonalitaet: roman.tonalitaet,
         grobRegeln: editorial.grobRegeln ?? "",
         editorial,

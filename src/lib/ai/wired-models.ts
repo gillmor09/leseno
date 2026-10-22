@@ -31,6 +31,13 @@ export type WiredAiEndpoint = {
  */
 export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
   {
+    modelSlug: "gemini-4-argon",
+    provider: "gemini",
+    label: "Gemini 4 Argon",
+    usage:
+      "Text: Flagship-Reasoning (Google) — angebunden, noch keiner Aufgabe zugeordnet",
+  },
+  {
     modelSlug: "gemini-3.8-flash",
     provider: "gemini",
     label: "Gemini 3.8 Flash",

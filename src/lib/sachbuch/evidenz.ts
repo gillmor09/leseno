@@ -4,6 +4,7 @@
 
 import { generateWithGemini } from "@/lib/ai/gemini";
 import { generateText } from "@/lib/ai/provider";
+import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
 import {
   getSachbuchKontext,
@@ -29,8 +30,9 @@ export async function runSachbuchEvidenz(
 ): Promise<SachbuchKontext> {
   const book = await getSachbuchKontext(sachbuchId);
   if (!book) throw new Error("Sachbuch nicht gefunden.");
+  assertSachbuchGuideAllows(book, "evidenz");
   if (!book.idee.unpopularOpinion.trim() && !book.idee.briefing.trim()) {
-    throw new Error("Zuerst UVP schärfen (Phase 1).");
+    throw new Error("Zuerst Idee freigeben (Verfeinerung).");
   }
 
   const slot = book.agents.researcher;

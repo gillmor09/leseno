@@ -22,8 +22,20 @@ import {
   parseCleverThemaStanceField,
   type CleverThemaStance,
 } from "@/lib/roman/clever-thema-stance";
+import {
+  parsePhaseState,
+  parseRomanSources,
+  type RomanPhaseState,
+  type RomanSourceRef,
+} from "@/lib/roman/phase-state";
 
 export type { CleverThemaStance } from "@/lib/roman/clever-thema-stance";
+export type {
+  RomanPhaseState,
+  RomanSourceRef,
+  PhaseStateEntry,
+  PhaseStatus,
+} from "@/lib/roman/phase-state";
 
 /**
  * Max stored length for `editorial.manuskriptText` / original snapshot.
@@ -126,24 +138,51 @@ export type RomanEditorialChecklist = {
   readyToPublish: boolean;
 };
 
-/** One finding from Manuskript freigabe audit (Seam / Emotion). */
+/** Freigabe audit sources — soft style/humor do not block Roman Verbessern. */
+export type ManuskriptFreigabeSource =
+  | "seam"
+  | "emotion"
+  | "canon"
+  | "timeline"
+  | "plot_truth"
+  /** Book-wide ledger: Zeit / Geld / Wissensstand (`manuskript-continuity-ledger.ts`). */
+  | "ledger"
+  | "style";
+
+/** One finding from Manuskript freigabe audit (Seam / Emotion / Canon / …). */
 export type ManuskriptFreigabeFinding = {
-  source: "seam" | "emotion";
+  source: ManuskriptFreigabeSource;
   kind: string;
   chapterNumbers: number[];
   summary: string;
+  /** Soft = Hinweis only (Stockphrase/Humor); hard findings block Feinschliff. */
+  soft?: boolean;
 };
 
 /**
  * Result of the cheap pre-Feinschliff audit (Assist, not Opus).
  * `overrideAt` = user freigegeben despite findings.
+ * `settled` = findings already nachgezogen — suppressed until „Erneut prüfen“.
  */
+export type ManuskriptFreigabeSettled = {
+  source: ManuskriptFreigabeSource;
+  kind: string;
+  chapterNumbers: number[];
+  phrase?: string;
+  settledAt: string;
+};
+
 export type ManuskriptFreigabeState = {
   checkedAt: string;
   /** Fingerprint of manuskriptText at check time — stale if text changes. */
   textFingerprint: string;
   findings: ManuskriptFreigabeFinding[];
   overrideAt: string | null;
+  /**
+   * Addressed by „Hinweise nachziehen“ — re-audit drops matching rows until
+   * a full „Erneut prüfen“ clears this list.
+   */
+  settled?: ManuskriptFreigabeSettled[];
 };
 
 /**
@@ -183,9 +222,15 @@ export type RomanPipelineFertig = Partial<
   Record<
     | "typ"
     | "idee"
+    | "rahmen"
+    | "fundament"
     | "recherche"
     | "spec"
+    | "expose"
     | "outline"
+    | "graph"
+    | "plot"
+    | "szenen"
     | "grobgeruest"
     | "feingeruest"
     | "szenenplot"
@@ -200,6 +245,28 @@ export type RomanPipelineFertig = Partial<
     boolean
   >
 >;
+
+/** Stages that can hold an explicit hard-gate override (not Fertig-toggle). */
+export type StageGateKey =
+  | "idee"
+  | "basics"
+  | "rahmen"
+  | "spec"
+  | "fundament"
+  | "expose"
+  | "graph"
+  | "plot"
+  | "szenen"
+  | "feingeruest"
+  | "feinplot"
+  | "schreiben";
+
+export type StageGateOverride = {
+  at: string;
+  reason: string;
+};
+
+export type StageGateOverrides = Partial<Record<StageGateKey, StageGateOverride>>;
 
 /** Grounding citation from Recherche (Gemini Google Search). */
 export type RomanRechercheSource = {
@@ -426,9 +493,17 @@ export type RomanStoryState = {
   secretsAndKnowledge: string[];
   inventoryAndProps: string[];
   relationshipNotes: string[];
-  /** Hard facts that must not be contradicted later. */
+  /**
+   * Hard facts that must not be contradicted later.
+   * Prefer `CLAIM: Actor|Action|Object` for Who-did-X canon.
+   */
   hardFacts: string[];
   mood: string;
+  /**
+   * Narrative time frame after this chapter (Gegenwart / Rückblick / …).
+   * Helps Kap. N+1 open with an explicit Zeitanker when needed.
+   */
+  timeFrame?: string;
 };
 
 /** Knowledge-graph node kinds (Idee/Recherche/Spec → Gerüst → Manuskript). */
@@ -749,9 +824,109 @@ export type RomanEditorial = {
    * Manual author „Fertig“ toggle per pipeline tab (soft-green tab chrome).
    * Keys: typ | idee | spec | outline | szenenplot | schreiben | export
    * (`cover` kept for legacy stored flags; UI lives under Export).
+   * Soft chrome only — does **not** bypass hard stage gates
+   * (see `stageGateOverrides` / `stage-hard-gates.ts`).
    */
   pipelineFertig: RomanPipelineFertig;
+  /**
+   * Explicit „Trotzdem weiter“ overrides for hard progression gates.
+   * Separate from {@link pipelineFertig}; cleared on cascade wipe.
+   */
+  stageGateOverrides?: StageGateOverrides;
+  /**
+   * Author freigabe / phase lifecycle (canon). Separate from Hard-Gates + Fertig.
+   * See `src/lib/roman/phase-state.ts`.
+   */
+  phaseState?: RomanPhaseState;
+  /** Provenance for Idee import / coach / author notes. */
+  romanSources?: RomanSourceRef[];
+  /**
+   * When Basics (genre/ton/regeln) were last auto-derived from Idee.
+   * Stale when Idee fingerprint no longer matches.
+   */
+  basicsDerivedFromIdeeAt?: string | null;
+  /** Fingerprint of `ideeKurz` used for the last Basics derivation. */
+  basicsDerivedIdeeFingerprint?: string | null;
+  /** Short KI rationale from last Basics derivation (UI). */
+  basicsDerivedBegruendung?: string | null;
 };
+
+const STAGE_GATE_KEYS: StageGateKey[] = [
+  "idee",
+  "basics",
+  "rahmen",
+  "spec",
+  "fundament",
+  "expose",
+  "graph",
+  "plot",
+  "szenen",
+  "feingeruest",
+  "feinplot",
+  "schreiben",
+];
+
+export function parseStageGateOverrides(raw: unknown): StageGateOverrides {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: StageGateOverrides = {};
+  for (const key of STAGE_GATE_KEYS) {
+    const row = (raw as Record<string, unknown>)[key];
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    const r = row as Record<string, unknown>;
+    const at = String(r.at ?? "").trim();
+    const reason = String(r.reason ?? "").trim();
+    if (!at || !reason) continue;
+    out[key] = { at, reason: reason.slice(0, 280) };
+  }
+  return out;
+}
+
+export function withStageGateOverride(
+  editorial: RomanEditorial,
+  key: StageGateKey,
+  override: StageGateOverride | null,
+): RomanEditorial {
+  const next: StageGateOverrides = {
+    ...(editorial.stageGateOverrides ?? {}),
+  };
+  if (!override) delete next[key];
+  else next[key] = override;
+  return { ...editorial, stageGateOverrides: next };
+}
+
+export function hasStageGateOverride(
+  editorial: RomanEditorial | null | undefined,
+  key: StageGateKey,
+): boolean {
+  if (editorial?.stageGateOverrides?.[key]?.at) return true;
+  // Legacy aliases unlock current gates.
+  if (key === "rahmen" || key === "basics") {
+    return Boolean(
+      editorial?.stageGateOverrides?.rahmen?.at ||
+        editorial?.stageGateOverrides?.basics?.at,
+    );
+  }
+  if (key === "fundament" || key === "spec") {
+    return Boolean(
+      editorial?.stageGateOverrides?.fundament?.at ||
+        editorial?.stageGateOverrides?.spec?.at,
+    );
+  }
+  if (key === "plot" || key === "feingeruest") {
+    return Boolean(
+      editorial?.stageGateOverrides?.plot?.at ||
+        editorial?.stageGateOverrides?.feingeruest?.at,
+    );
+  }
+  if (key === "szenen" || key === "feinplot") {
+    return Boolean(
+      editorial?.stageGateOverrides?.szenen?.at ||
+        editorial?.stageGateOverrides?.feinplot?.at ||
+        editorial?.stageGateOverrides?.feingeruest?.at,
+    );
+  }
+  return false;
+}
 
 export const DEFAULT_EDITORIAL_CHECKLIST: RomanEditorialChecklist = {
   ideeKlar: false,
@@ -886,7 +1061,34 @@ export function emptyRomanEditorial(): RomanEditorial {
     szenenplotStructured: null,
     reifegrade: {},
     pipelineFertig: {},
+    stageGateOverrides: {},
+    phaseState: {},
+    romanSources: [],
+    basicsDerivedFromIdeeAt: null,
+    basicsDerivedIdeeFingerprint: null,
+    basicsDerivedBegruendung: null,
   };
+}
+
+/** Compact fingerprint so Basics derivation can detect stale Idee. */
+export function ideeFingerprintForBasics(ideeKurz: string): string {
+  const t = ideeKurz.trim();
+  if (!t) return "";
+  const head = t.slice(0, 80);
+  const mid = t.slice(Math.max(0, Math.floor(t.length / 2) - 40), Math.floor(t.length / 2) + 40);
+  const tail = t.slice(-80);
+  return `${t.length}:${head}|${mid}|${tail}`;
+}
+
+export function basicsDerivationIsStale(
+  editorial: RomanEditorial | null | undefined,
+  ideeKurz: string | null | undefined,
+): boolean {
+  const fp = ideeFingerprintForBasics(ideeKurz ?? "");
+  if (!fp) return false;
+  const stored = (editorial?.basicsDerivedIdeeFingerprint ?? "").trim();
+  if (!stored) return true;
+  return stored !== fp;
 }
 
 export const BUCHTYP_LABELS: Record<RomanBuchTyp, string> = {
@@ -916,13 +1118,36 @@ export function isPipelineTabFertig(
   editorial: RomanEditorial | null | undefined,
   tabId: keyof RomanPipelineFertig | string,
 ): boolean {
-  return Boolean(editorial?.pipelineFertig?.[tabId as keyof RomanPipelineFertig]);
+  const fertig = editorial?.pipelineFertig;
+  if (!fertig) return false;
+  if (fertig[tabId as keyof RomanPipelineFertig]) return true;
+  if (tabId === "rahmen" || tabId === "typ") {
+    return Boolean(fertig.typ || fertig.rahmen);
+  }
+  if (tabId === "fundament") return Boolean(fertig.fundament);
+  if (tabId === "expose" || tabId === "spec") {
+    return Boolean(fertig.expose || fertig.spec);
+  }
+  if (tabId === "graph") return Boolean(fertig.graph);
+  if (tabId === "plot") {
+    return Boolean(fertig.plot || fertig.feingeruest || fertig.grobgeruest);
+  }
+  if (tabId === "szenen" || tabId === "feinplot") {
+    return Boolean(
+      fertig.szenen ||
+        fertig.feinplot ||
+        fertig.grobplot ||
+        fertig.szenenplot,
+    );
+  }
+  if (tabId === "feingeruest") return Boolean(fertig.grobgeruest || fertig.plot);
+  return false;
 }
 
 /**
  * Pipeline tabs counted for list progress (Fertig-Toggles).
  * Clever: Basics → Unterthemen → Geschichten → Export (4).
- * Roman/Sachbuch: + Idee + Recherche + Spec (7).
+ * Roman/Sachbuch: + Idee + Spec (+ Gerüst/Plot/…).
  */
 export const PIPELINE_FERTIG_STEPS_CLEVER = [
   "typ",
@@ -933,16 +1158,14 @@ export const PIPELINE_FERTIG_STEPS_CLEVER = [
 ] as const satisfies ReadonlyArray<keyof RomanPipelineFertig>;
 
 export const PIPELINE_FERTIG_STEPS_FULL = [
-  "typ",
   "idee",
-  "recherche",
-  "spec",
-  "grobgeruest",
-  "feingeruest",
-  "grobplot",
-  "feinplot",
+  "rahmen",
+  "fundament",
+  "expose",
+  "graph",
+  "plot",
+  "szenen",
   "schreiben",
-  "roman",
   "export",
   "hoerbuch",
 ] as const satisfies ReadonlyArray<keyof RomanPipelineFertig>;
@@ -980,9 +1203,15 @@ function parsePipelineFertig(raw: unknown): RomanPipelineFertig {
   const allowed = new Set([
     "typ",
     "idee",
+    "rahmen",
+    "fundament",
     "recherche",
     "spec",
+    "expose",
     "outline",
+    "graph",
+    "plot",
+    "szenen",
     "grobgeruest",
     "feingeruest",
     "szenenplot",
@@ -998,6 +1227,15 @@ function parsePipelineFertig(raw: unknown): RomanPipelineFertig {
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (!allowed.has(key)) continue;
     if (value === true) out[key as keyof RomanPipelineFertig] = true;
+  }
+  if (!out.rahmen && out.typ) out.rahmen = true;
+  if (!out.expose && out.spec) out.expose = true;
+  if (!out.plot && (out.feingeruest || out.grobgeruest)) out.plot = true;
+  if (
+    !out.szenen &&
+    (out.feinplot || out.grobplot || out.szenenplot)
+  ) {
+    out.szenen = true;
   }
   return out;
 }
@@ -2118,6 +2356,36 @@ export function manuskriptFreigabeFingerprint(text: string): string {
   return `${t.length}:${(h >>> 0).toString(16)}`;
 }
 
+/**
+ * Findings that block Stil-Pass / Roman Verbessern.
+ * Only deterministic Canon + Ledger (+ Comedy-Humor when hard).
+ * Assist Seam/Emotion/Timeline/Plot-Truth are advisory (`soft`) — they never
+ * block, because re-audits invent new variants forever.
+ */
+export function isHardFreigabeFinding(f: ManuskriptFreigabeFinding): boolean {
+  if (f.soft) return false;
+  if (f.source === "style") return false;
+  if (
+    f.source === "seam" ||
+    f.source === "timeline" ||
+    f.source === "plot_truth"
+  ) {
+    // Exception: deterministic Nahtdopplung (kind seam_dup)
+    return f.kind === "seam_dup";
+  }
+  if (f.source === "emotion") {
+    return f.kind === "humor";
+  }
+  return f.source === "canon" || f.source === "ledger";
+}
+
+/** Hard freigabe findings that block Feinschliff. */
+export function hardManuskriptFreigabeFindings(
+  findings: ManuskriptFreigabeFinding[] | null | undefined,
+): ManuskriptFreigabeFinding[] {
+  return (findings ?? []).filter(isHardFreigabeFinding);
+}
+
 /** True when freigabe audit is fresh and clean (or user overrode findings). */
 export function isManuskriptFreigabeReadyForRoman(
   editorial: RomanEditorial | null | undefined,
@@ -2126,7 +2394,7 @@ export function isManuskriptFreigabeReadyForRoman(
   if (!state?.checkedAt) return false;
   const fp = manuskriptFreigabeFingerprint(editorial?.manuskriptText ?? "");
   if (state.textFingerprint !== fp) return false;
-  if (state.findings.length === 0) return true;
+  if (hardManuskriptFreigabeFindings(state.findings).length === 0) return true;
   return Boolean(state.overrideAt);
 }
 
@@ -2148,7 +2416,21 @@ function parseManuskriptFreigabe(raw: unknown): ManuskriptFreigabeState | null {
   for (const item of findingsRaw) {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
-    const source = row.source === "emotion" ? "emotion" : "seam";
+    const sourceRaw = String(row.source ?? "").trim().toLowerCase();
+    const source: ManuskriptFreigabeSource =
+      sourceRaw === "emotion"
+        ? "emotion"
+        : sourceRaw === "canon"
+          ? "canon"
+          : sourceRaw === "timeline"
+            ? "timeline"
+            : sourceRaw === "plot_truth"
+              ? "plot_truth"
+              : sourceRaw === "ledger"
+                ? "ledger"
+                : sourceRaw === "style"
+                  ? "style"
+                  : "seam";
     const kind = String(row.kind ?? "").trim() || "hinweis";
     const summary = String(row.summary ?? "").trim();
     const nums = Array.isArray(row.chapterNumbers)
@@ -2158,16 +2440,91 @@ function parseManuskriptFreigabe(raw: unknown): ManuskriptFreigabeState | null {
           .map((n) => Math.floor(n))
       : [];
     if (!summary || nums.length < 1) continue;
+    // Assist taste findings are always soft when loading (legacy rows without soft).
+    // Comedy-Humor stays hard unless explicitly soft; seam_dup stays hard.
+    const forceHard = kind === "seam_dup";
+    const assistSoft =
+      !forceHard &&
+      (source === "seam" ||
+        source === "timeline" ||
+        source === "plot_truth" ||
+        (source === "emotion" && kind !== "humor"));
+    const soft =
+      !forceHard &&
+      (row.soft === true || source === "style" || assistSoft);
     findings.push({
       source,
       kind,
       chapterNumbers: [...new Set(nums)].slice(0, 6),
       summary: summary.slice(0, 280),
+      ...(soft ? { soft: true } : {}),
     });
-    if (findings.length >= 12) break;
+    if (findings.length >= 20) break;
   }
   const overrideAt = String(r.overrideAt ?? "").trim() || null;
-  return { checkedAt, textFingerprint, findings, overrideAt };
+  const settledRaw = Array.isArray(r.settled) ? r.settled : [];
+  const settled: ManuskriptFreigabeSettled[] = [];
+  for (const item of settledRaw) {
+    if (!item || typeof item !== "object") continue;
+    const s = item as Record<string, unknown>;
+    const sourceRaw = String(s.source ?? "").trim().toLowerCase();
+    const source: ManuskriptFreigabeSource =
+      sourceRaw === "emotion"
+        ? "emotion"
+        : sourceRaw === "canon"
+          ? "canon"
+          : sourceRaw === "timeline"
+            ? "timeline"
+            : sourceRaw === "plot_truth"
+              ? "plot_truth"
+              : sourceRaw === "ledger"
+                ? "ledger"
+                : sourceRaw === "style"
+                  ? "style"
+                  : sourceRaw === "seam"
+                    ? "seam"
+                    : "seam";
+    if (
+      sourceRaw &&
+      ![
+        "seam",
+        "emotion",
+        "canon",
+        "timeline",
+        "plot_truth",
+        "ledger",
+        "style",
+      ].includes(sourceRaw)
+    ) {
+      continue;
+    }
+    const kind = String(s.kind ?? "").trim() || "hinweis";
+    const nums = Array.isArray(s.chapterNumbers)
+      ? s.chapterNumbers
+          .map((n) => Number(n))
+          .filter((n) => Number.isFinite(n) && n >= 1)
+          .map((n) => Math.floor(n))
+      : [];
+    const phrase = String(s.phrase ?? "").trim().toLowerCase() || undefined;
+    const settledAt =
+      String(s.settledAt ?? "").trim() || new Date().toISOString();
+    if (!nums.length && !phrase) continue;
+    settled.push({
+      source,
+      kind,
+      chapterNumbers: [...new Set(nums)].slice(0, 8),
+      ...(phrase ? { phrase } : {}),
+      settledAt,
+    });
+    if (settled.length >= 60) break;
+  }
+  return {
+    checkedAt,
+    textFingerprint,
+    findings,
+    overrideAt,
+    ...(settled.length ? { settled } : {}),
+  };
 }
 
 function parseGateChat(raw: unknown): RomanGateChatMessage[] {
@@ -3224,6 +3581,7 @@ export function parseRomanStoryState(raw: unknown): RomanStoryState | null {
   ) {
     return null;
   }
+  const timeFrame = String(row.timeFrame ?? "").trim().slice(0, 120);
   return {
     updatedAt:
       String(row.updatedAt ?? "").trim() || new Date().toISOString(),
@@ -3236,6 +3594,7 @@ export function parseRomanStoryState(raw: unknown): RomanStoryState | null {
     relationshipNotes: asStringList(row.relationshipNotes, 10, 200),
     hardFacts,
     mood: String(row.mood ?? "").trim().slice(0, 160),
+    ...(timeFrame ? { timeFrame } : {}),
   };
 }
 
@@ -3248,6 +3607,9 @@ export function formatStoryStateForPrompt(
     `## Continuity-State (nach Kapitel ${state.afterChapter})`,
   ];
   if (state.location) lines.push(`Ort/Setting: ${state.location}`);
+  if (state.timeFrame?.trim()) {
+    lines.push(`Erzählzeit/Rahmen: ${state.timeFrame.trim()}`);
+  }
   if (state.presentCharacters.length) {
     lines.push(`Anwesend: ${state.presentCharacters.join(", ")}`);
   }
@@ -3313,10 +3675,10 @@ function asWissensAttrs(raw: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     const k = String(key).trim().slice(0, 40);
-    const v = String(value ?? "").trim().slice(0, 200);
+    const v = String(value ?? "").trim().slice(0, 360);
     if (!k || !v) continue;
     out[k] = v;
-    if (Object.keys(out).length >= 12) break;
+    if (Object.keys(out).length >= 16) break;
   }
   return out;
 }
@@ -3368,7 +3730,7 @@ export function parseRomanWissensGraph(raw: unknown): RomanWissensGraph | null {
       label,
       summary: String(n.summary ?? n.description ?? "")
         .trim()
-        .slice(0, 400),
+        .slice(0, 600),
       attrs: asWissensAttrs(n.attrs ?? n.attributes),
       sinceChapter:
         Number.isFinite(since) && since > 0
@@ -3392,7 +3754,8 @@ export function parseRomanWissensGraph(raw: unknown): RomanWissensGraph | null {
 
   const edges: RomanWissensGraphEdge[] = [];
   const seenEdges = new Set<string>();
-  for (const item of edgesRaw.slice(0, 160)) {
+  const seenEdgeTriples = new Set<string>();
+  for (const item of edgesRaw.slice(0, 180)) {
     if (!item || typeof item !== "object") continue;
     const e = item as Record<string, unknown>;
     const from = resolveNodeRef(e.from ?? e.source ?? e.fromId ?? e.from_id);
@@ -3401,6 +3764,9 @@ export function parseRomanWissensGraph(raw: unknown): RomanWissensGraph | null {
       .trim()
       .slice(0, 80);
     if (!from || !to || !rel) continue;
+    const tripleKey = `${from}|${rel.toLowerCase()}|${to}`;
+    if (seenEdgeTriples.has(tripleKey)) continue;
+    seenEdgeTriples.add(tripleKey);
     const id = wissensSlugId(
       String(e.id ?? `${from}_${rel}_${to}`),
       `e_${edges.length + 1}`,
@@ -3415,7 +3781,7 @@ export function parseRomanWissensGraph(raw: unknown): RomanWissensGraph | null {
       rel,
       note: String(e.note ?? e.description ?? "")
         .trim()
-        .slice(0, 240),
+        .slice(0, 360),
       chapter:
         Number.isFinite(chapter) && chapter > 0
           ? Math.min(40, Math.round(chapter))
@@ -3455,8 +3821,8 @@ export function parseRomanWissensGraph(raw: unknown): RomanWissensGraph | null {
       return String(x ?? "").trim();
     })
     .filter((s) => s.length >= 8)
-    .slice(0, 32)
-    .map((s) => s.slice(0, 280));
+    .slice(0, 40)
+    .map((s) => s.slice(0, 360));
 
   return {
     updatedAt:
@@ -4312,6 +4678,21 @@ export function parseRomanEditorial(raw: unknown): RomanEditorial {
     })(),
     reifegrade: parseRomanReifegrade(row.reifegrade),
     pipelineFertig: parsePipelineFertig(row.pipelineFertig),
+    stageGateOverrides: parseStageGateOverrides(row.stageGateOverrides),
+    phaseState: parsePhaseState(row.phaseState),
+    romanSources: parseRomanSources(row.romanSources),
+    basicsDerivedFromIdeeAt: (() => {
+      const v = String(row.basicsDerivedFromIdeeAt ?? "").trim();
+      return v || null;
+    })(),
+    basicsDerivedIdeeFingerprint: (() => {
+      const v = String(row.basicsDerivedIdeeFingerprint ?? "").trim();
+      return v || null;
+    })(),
+    basicsDerivedBegruendung: (() => {
+      const v = String(row.basicsDerivedBegruendung ?? "").trim();
+      return v ? v.slice(0, 1_200) : null;
+    })(),
   };
 }
 
@@ -4347,11 +4728,6 @@ export function buildEditorialMustBlock(
   if (editorial.ideeKurz.trim()) {
     lines.push(
       `Idee (Dokumentation aus Ideen-Finder — Mythos/Plot/Ton; Figurennamen darin IGNORIEREN, nur Steckbriefe gelten):\n${editorial.ideeKurz.trim()}`,
-    );
-  }
-  if (editorial.rechercheDossier.trim()) {
-    lines.push(
-      `Hintergrundrecherche (Fakten/Kontext für Spec — belegte Hintergründe, keine Plot-Erfindung):\n${editorial.rechercheDossier.trim()}`,
     );
   }
   if (editorial.zielAlterMin != null || editorial.zielAlterMax != null) {

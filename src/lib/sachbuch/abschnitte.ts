@@ -9,6 +9,7 @@ import {
   SACHBUCH_ABSCHNITT_WORDS_MAX,
   SACHBUCH_ABSCHNITT_WORDS_MIN,
 } from "@/lib/sachbuch/agent-defaults";
+import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import { concatAbschnitteText } from "@/lib/sachbuch/parse";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
 import {
@@ -162,6 +163,7 @@ export async function generateNextAbschnitt(input: {
 }): Promise<SachbuchKontext> {
   const book = await getSachbuchKontext(input.sachbuchId);
   if (!book) throw new Error("Sachbuch nicht gefunden.");
+  assertSachbuchGuideAllows(book, "write");
   const kapitel = book.kapitel.find((k) => k.id === input.kapitelId);
   if (!kapitel) throw new Error("Kapitel nicht gefunden.");
 
@@ -412,6 +414,7 @@ export async function replyAbschnittCheckpoint(input: {
 }): Promise<SachbuchKontext> {
   const book = await getSachbuchKontext(input.sachbuchId);
   if (!book) throw new Error("Sachbuch nicht gefunden.");
+  assertSachbuchGuideAllows(book, "write");
   const kapitel = book.kapitel.find((k) => k.id === input.kapitelId);
   if (!kapitel) throw new Error("Kapitel nicht gefunden.");
   const abschnitt = kapitel.abschnitte.find((a) => a.id === input.abschnittId);

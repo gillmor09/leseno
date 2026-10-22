@@ -26,7 +26,9 @@ import {
 } from "@/lib/roman/front-matter";
 import {
   formatManuskriptChapterHeading,
+  isSceneBreakParagraph,
   parsePlotChapters,
+  SCENE_BREAK_MARKER,
   stripLeadingChapterHeadings,
   type PlotChapter,
 } from "@/lib/roman/plot-chapters";
@@ -200,7 +202,11 @@ function paragraphsToHtml(text: string): string {
     .filter(Boolean);
   if (!parts.length) return "";
   return parts
-    .map((p) => `<p>${escapeHtml(p).replaceAll("\n", "<br />")}</p>`)
+    .map((p) =>
+      isSceneBreakParagraph(p)
+        ? `<p class="scene-break">${escapeHtml(SCENE_BREAK_MARKER)}</p>`
+        : `<p>${escapeHtml(p).replaceAll("\n", "<br />")}</p>`,
+    )
     .join("\n");
 }
 
@@ -415,6 +421,12 @@ function romanExportCss(wideCharSpacing: boolean): string {
     text-align: left;
     hyphens: auto;
     color: #18181b;
+  }
+  .scene-body p.scene-break {
+    text-align: center;
+    text-indent: 0;
+    letter-spacing: 0.35em;
+    margin: 1.4em 0;
   }
   .scene-body p:last-child { margin-bottom: 0; }
   .infografik {
@@ -1314,6 +1326,12 @@ export async function buildRomanPdfBlob(
     pdf.setTextColor(24, 24, 27);
 
     for (const para of paras) {
+      if (isSceneBreakParagraph(para)) {
+        ctx.y += PDF_BODY_LINE_MM * 0.5;
+        writeCenteredLines(ctx, [SCENE_BREAK_MARKER], PDF_BODY_LINE_MM);
+        ctx.y += PDF_BODY_LINE_MM * 0.5;
+        continue;
+      }
       const lines = pdf.splitTextToSize(para, wrapW) as string[];
       writeLines(ctx, lines, PDF_BODY_LINE_MM);
       ctx.y += PDF_BODY_LINE_MM * 0.4;

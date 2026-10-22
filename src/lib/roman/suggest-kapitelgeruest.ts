@@ -1,11 +1,13 @@
 /**
- * Pass-1 Kapitelgerüst: chapter skeleton + arcs + lifecycle (no scenes).
- * Role: Entwicklungslektor (analytical). Seeds/grows Wissensgraph;
- * markdown mirror → `kapitelGeruestRaw`.
+ * Pass-1 Kapitelgerüst (Plot-Ereignisplan): chapter skeleton + arcs + lifecycle.
+ * Built from the full upstream canon: Regeln & Grenzen + Fundament (Figuren/Welt)
+ * + Exposé + Wissensgraph (nodes, relations, hardInvariants).
+ * Role: Co-Autor. Seeds/grows graph after detail; markdown → `kapitelGeruestRaw`.
  *
- * Flow: outline (all chapters) → one detail call per chapter.
- * Persist via `onPartial` after outline and after each chapter so aborts
- * keep progress; re-run resumes thin chapters without regenerating the outline.
+ * Flow: outline (all chapters) → one detail call per chapter (with neighbor
+ * context + already-introduced ledger). After detail: deterministic
+ * introduce-dedupe so Hard-Gate `double_introduce` cannot fire from the generator.
+ * Persist via `onPartial` for resume.
  */
 
 import { AI_LONG_PROSE_TIMEOUT_MS } from "@/lib/ai/fetch-timeout";
@@ -42,8 +44,21 @@ import {
 } from "@/lib/roman/szenenplot-structured";
 import type { RomanCharakter } from "@/lib/roman/types";
 import {
+  extractClaimsFromGeruestChapters,
+  formatGeruestClaimsAsInvariants,
+} from "@/lib/roman/geruest-plot-claims";
+import {
+  dedupeGeruestChapterIntroduces,
+  hygieneKapitelGeruestLogik,
+  introducedLabelsBeforeChapter,
+  sanitizeCentralArcsAndBeats,
+  sanitizeResolvesWithoutIntro,
+  seedMustNotRepeatFromPriorIntroduces,
+} from "@/lib/roman/szenenplot-preflight";
+import {
   formatWissensGraphForPrompt,
   growWissensGraphFromSkeleton,
+  mergeWissensGraphs,
   seedWissensGraphFromSources,
 } from "@/lib/roman/wissens-graph";
 
@@ -187,6 +202,80 @@ function typHints(buchTyp: RomanBuchTyp): string {
   }
 }
 
+/** Outline/detail budget for graph canon in Plot prompts. */
+const GRAPH_FACTS_CLIP = 10_000;
+
+/**
+ * Unified canon lead for Plot: Exposé + Regeln & Grenzen + Fundament (Figuren/Welt)
+ * + Wissensgraph together drive the chapter spine and arcs.
+ * When Exposé is compact, Figuren/Welt/Regeln/Graph supply the substance.
+ */
+function buildPlotDramaturgyLead(input: {
+  expose: string;
+  ideeKurz: string;
+  grobRegeln: string;
+  editorial: RomanEditorial;
+  charaktere: RomanCharakter[];
+  weltSchauplaetze: string;
+  weltRegeln: string;
+  kiRegelwerk?: string;
+  wissensGraph: RomanWissensGraph | null;
+}): string {
+  const expose = input.expose.trim().slice(0, CLIP.expose);
+  const idee = input.ideeKurz.trim().slice(0, Math.min(CLIP.idee, 4_000));
+  const grob = (input.grobRegeln || input.editorial.grobRegeln || "")
+    .trim()
+    .slice(0, CLIP.grob);
+  const harte = (input.editorial.harteRegeln ?? [])
+    .map((r) => String(r).trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  const ki = (input.kiRegelwerk ?? "").trim().slice(0, CLIP.grob);
+  const chars = formatCharaktere(input.charaktere).trim().slice(0, CLIP.charaktere);
+  const weltSchau = input.weltSchauplaetze.trim().slice(0, CLIP.weltSchau);
+  const weltReg = input.weltRegeln.trim().slice(0, CLIP.weltRegeln);
+  const rawGraph = formatWissensGraphForPrompt(input.wissensGraph, {
+    maxChars: GRAPH_FACTS_CLIP,
+  });
+  const graphBlock = rawGraph
+    ? `# Wissensgraph (Kanon-Netz: Knoten, Relationen, Attrs & harte Invarianten)
+Nutze Knoten, Relationen, Props/Events und hardInvariants aktiv, um Kapitel-Ursache→Wirkung, Konflikte und Lifecycle konsistent aufzubauen.
+Keine Widersprüche zu hardInvariants oder bestehenden Attrs.
+${rawGraph}`
+    : `# Wissensgraph
+(noch dünn — stütze dich auf Regeln & Grenzen, Figuren, Welt und Exposé.)`;
+
+  return `# Gesamt-Kanon für den Plot (verbindlich — alle Quellen zusammenführen)
+Der Plot (centralArcs + Kapitelkette) wird gemeinsam getragen von:
+1) Regeln & Grenzen (Leitplanken, Verbote, Ton/Richtung)
+2) Fundament (Figuren-Antriebe/Reibung + Schauplätze/Weltregeln)
+3) Exposé & Ideenkern (Handlungsbogen & Wendepunkte)
+4) Wissensgraph (konkrete Knoten, Fakten, Props, Invarianten)
+Wenn das Exposé einzelne Phasen knapp hält, ziehe Konfliktstoff, Eskalation und Kausalität direkt aus Figuren, Welt, Regeln und Wissensgraph — erfinde nichts gegen diesen Kanon.
+
+# Regeln & Grenzen
+Basis-Regeln:
+${grob || "(leer)"}
+${harte.length ? `Harte Regeln:\n${harte.map((r) => `– ${r}`).join("\n")}\n` : ""}${ki ? `KI-Regelwerk:\n${ki}\n` : ""}
+# Fundament — Charaktere & Welt
+Charaktere:
+${chars || "(leer)"}
+
+Welt — Schauplätze:
+${weltSchau || "(leer)"}
+Welt — Regeln:
+${weltReg || "(leer)"}
+
+# Exposé & Ideenkern (Handlungsbogen)
+Exposé:
+${expose || "(leer)"}
+
+Ideenkern:
+${idee || "(leer)"}
+
+${graphBlock}`;
+}
+
 function buildStaticBookPrefix(input: {
   buchTyp: RomanBuchTyp;
   title: string;
@@ -197,17 +286,17 @@ function buildStaticBookPrefix(input: {
   charaktere: RomanCharakter[];
   weltSchauplaetze: string;
   weltRegeln: string;
-  rechercheDossier?: string;
   tonalitaet?: string;
+  kiRegelwerk?: string;
 }): string {
   return `${buildRomanStaticBookPrefix({
     buchTyp: input.buchTyp,
     title: input.title,
     genre: input.genre,
     ideeKurz: input.ideeKurz,
-    rechercheDossier: input.rechercheDossier,
     tonalitaet: input.tonalitaet,
     grobRegeln: input.grobRegeln,
+    kiRegelwerk: input.kiRegelwerk,
     editorial: input.editorial,
     charaktere: input.charaktere,
     weltSchauplaetze: input.weltSchauplaetze,
@@ -368,8 +457,134 @@ function mergeDetailIntoOutline(
   });
 }
 
+function normPlotLabel(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 /**
- * Entwicklungslektor: Pass-1 Kapitelgerüst (structure only) + Wissensgraph seed/grow.
+ * Builds the cumulative story/thread/claim/arc ledger up to `beforeChapterNumber`
+ * so each chapter detail call sees:
+ * 1) Chronicle of already-detailed earlier chapters (inhaltKurz + events)
+ * 2) Active unresolved openThreads vs. already resolved threads
+ * 3) Who-did-X claims established in earlier chapters
+ * 4) Explicit centralArc obligations for THIS chapter (setup / peak / payoff / active)
+ */
+function buildCumulativePlotLedgerBeforeChapter(
+  skeleton: SkeletonChapter[],
+  centralArcs: RomanSzenenplotCentralArc[],
+  chapterNumber: number,
+): string {
+  const prior = skeleton
+    .filter((c) => c.number < chapterNumber)
+    .sort((a, b) => a.number - b.number);
+
+  const chronicleLines: string[] = [];
+  const openMap = new Map<string, { label: string; fromChapter: number }>();
+  const resolvedList: { label: string; atChapter: number }[] = [];
+
+  for (const c of prior) {
+    const inhalt = (c.inhaltKurz ?? "").trim();
+    const kern = (c.kernsatz ?? "").trim();
+    const skizze =
+      inhalt && inhalt !== kern
+        ? inhalt.slice(0, 260)
+        : kern.slice(0, 200);
+    const events = c.events ?? [];
+    const ev = events.length
+      ? ` | Events: ${events.slice(0, 4).join("; ").slice(0, 220)}`
+      : "";
+    chronicleLines.push(
+      `- Kap. ${c.number} („${c.title ?? ""}“): ${skizze}${ev}`,
+    );
+
+    for (const t of c.openThreads ?? []) {
+      const k = normPlotLabel(t);
+      if (k && !openMap.has(k)) {
+        openMap.set(k, { label: t.trim(), fromChapter: c.number });
+      }
+    }
+    for (const r of c.resolves ?? []) {
+      const k = normPlotLabel(r);
+      if (!k) continue;
+      openMap.delete(k);
+      // Also remove fuzzy substring matches of open threads that this resolve closes.
+      for (const [openKey] of openMap) {
+        if (openKey.includes(k) || k.includes(openKey)) {
+          openMap.delete(openKey);
+        }
+      }
+      resolvedList.push({ label: r.trim(), atChapter: c.number });
+    }
+  }
+
+  const priorClaims = extractClaimsFromGeruestChapters(prior);
+  const claimLines = priorClaims.map(
+    (cl) =>
+      `- Kap. ${cl.chapter}: ${cl.actor} → [${cl.action}] (${cl.object.slice(0, 140)})`,
+  );
+
+  const arcMandates: string[] = [];
+  for (const arc of centralArcs) {
+    if (arc.setupChapter === chapterNumber) {
+      arcMandates.push(
+        `- PFLICHT-SETUP für Bogen \`${arc.id}\` („${arc.label}“): Dieses Kapitel ist setupChapter (${arc.setupChapter})! Zwingend ein arcBeat mit \`arcId: "${arc.id}"\`, tension 2–3 und klarem Ausgangskonflikt anlegen.`,
+      );
+    } else if (arc.peakChapter === chapterNumber) {
+      arcMandates.push(
+        `- PFLICHT-PEAK für Bogen \`${arc.id}\` („${arc.label}“): Dieses Kapitel ist peakChapter (${arc.peakChapter})! Zwingend ein arcBeat mit \`arcId: "${arc.id}"\` und HÖCHSTER Spannung (\`tension: 5\`) für den Wendepunkt/Krisengipfel anlegen.`,
+      );
+    } else if (arc.payoffChapter === chapterNumber) {
+      arcMandates.push(
+        `- PFLICHT-PAYOFF für Bogen \`${arc.id}\` („${arc.label}“): Dieses Kapitel ist payoffChapter (${arc.payoffChapter})! Zwingend ein arcBeat mit \`arcId: "${arc.id}"\` für die Einlösung anlegen und zugehörige offene Fäden in \`resolves\` abschließen.`,
+      );
+    } else if (
+      chapterNumber > arc.setupChapter &&
+      chapterNumber < arc.payoffChapter
+    ) {
+      arcMandates.push(
+        `- Aktiver Bogen \`${arc.id}\` („${arc.label}“, Setup Kap. ${arc.setupChapter} → Peak Kap. ${arc.peakChapter} → Payoff Kap. ${arc.payoffChapter}): Wenn die Handlung diesen Bogen berührt, arcBeat mit \`arcId: "${arc.id}"\` und tension ≤ Peak-Tension führen.`,
+      );
+    }
+  }
+
+  const blocks: string[] = [];
+  if (chronicleLines.length > 0) {
+    blocks.push(
+      `# Bisherige Kapitel-Chronik (Kap. 1..${chapterNumber - 1} — Ursache→Wirkung strikt fortsetzen)\n${chronicleLines.join("\n")}`,
+    );
+  }
+  if (openMap.size > 0) {
+    const activeLines = Array.from(openMap.values())
+      .slice(-12)
+      .map((o) => `- [offen seit Kap. ${o.fromChapter}] ${o.label}`);
+    blocks.push(
+      `# Aktive offene Handlungsfäden (weiterführen, zuspitzen oder — falls hier gelöst — in \`resolves\` schließen)\n${activeLines.join("\n")}`,
+    );
+  }
+  if (resolvedList.length > 0) {
+    const resLines = resolvedList
+      .slice(-10)
+      .map((r) => `- [gelöst in Kap. ${r.atChapter}] ${r.label}`);
+    blocks.push(
+      `# Bereits gelöste Fäden (NICHT erneut als ungelöst aufmachen)\n${resLines.join("\n")}`,
+    );
+  }
+  if (claimLines.length > 0) {
+    blocks.push(
+      `# Bereits festgeschriebene Taten / Who-did-X (Kanon-Fakten — niemals einem anderen Akteur als Tatsache zuschreiben!)\n${claimLines.join("\n")}`,
+    );
+  }
+  if (arcMandates.length > 0) {
+    blocks.push(
+      `# Dramaturgischer Bogen-Auftrag für Kap. ${chapterNumber}\n${arcMandates.join("\n")}`,
+    );
+  }
+
+  return blocks.join("\n\n");
+}
+
+/**
+ * Co-Autor: Pass-1 Kapitelgerüst from freigegebenem Exposé; graph as facts contract.
  * Callers should persist via `onPartial` so aborts keep outline + filled chapters.
  */
 export async function suggestKapitelGeruestFromCoAutor(input: {
@@ -384,6 +599,7 @@ export async function suggestKapitelGeruestFromCoAutor(input: {
   weltRegeln: string;
   existingGeruest: string;
   tonalitaet?: string;
+  kiRegelwerk?: string;
   /**
    * `outline` = Grobgerüst (centralArcs + title/kernsatz only).
    * `full` = Feingerüst (detail pass; resumes thin chapters).
@@ -406,9 +622,7 @@ export async function suggestKapitelGeruestFromCoAutor(input: {
   }
 
   const weave = hasFilledKapitelGeruest(input.existingGeruest);
-  const { rolle, model: baseModel } = await resolveRomanKiRolle(
-    "schreib_coach",
-  );
+  const { rolle, model: baseModel } = await resolveRomanKiRolle("co_autor");
   // Structured JSON: keep thinking light — high thinking + many chapter calls
   // often yields empty STOP (thought tokens only).
   const jsonEffort = lowestReasoningEffortForScoring(baseModel.modelSlug);
@@ -419,7 +633,6 @@ export async function suggestKapitelGeruestFromCoAutor(input: {
   const kapitelZiel = suggestedChapterCount(input.editorial.zielWortzahlRoman);
   const minChapters = Math.max(4, kapitelZiel - 2);
   const maxChapters = Math.min(MAX_CHAPTERS, kapitelZiel + 2);
-  const rechercheDossier = input.editorial.rechercheDossier ?? "";
   const tonalitaet = (input.tonalitaet ?? "").trim();
 
   const resumeOutline = kapitelGeruestNeedsDetailResume(
@@ -458,10 +671,9 @@ export async function suggestKapitelGeruestFromCoAutor(input: {
 
   const staticPrefix = buildStaticBookPrefix({
     ...input,
-    rechercheDossier,
     tonalitaet,
   });
-  // Override critique-oriented role defaults (Stärken→Risiken / Bullet-Listen).
+  // Override free-prose role defaults — JSON only; dramaturgy from full canon.
   const systemBase = `${rolle.systemPrompt}
 
 ${ROMAN_EXCELLENCE_MANDATE}
@@ -471,24 +683,30 @@ ${KAPITELGERUEST_SYSTEM_ADDENDUM}
 AUSGABEFORMAT (überschreibt Rollen-Standardantwort): ausschließlich ein JSON-Objekt gemäß Schema.
 VERBOTEN: Markdown, Bullet-Listen („- Kernsatz:“), Lektoratsprosa, Stärken/Risiken-Struktur, Code-Fences.
 
-Zusatz: Wissensgraph und Recherche/Tonalität sind verbindlich — keine Widersprüche zu hardInvariants.
-Skizzenhafte offene Fäden sind erlaubt und erwünscht; harte Canon-Widersprüche nicht.`;
+Basis = Gesamt-Kanon aus Regeln & Grenzen, Fundament (Figuren + Welt), Exposé und Wissensgraph.
+Nutze Figuren-Antriebe, Weltregeln, Exposé-Bogen und Wissensgraph-Knoten/Relationen/hardInvariants gemeinsam, um eine kausal lückenlose Kapitelkette (Setup→Peak→Payoff) hochzuziehen.
+Keine Widersprüche zu hardInvariants oder Regeln & Grenzen; offene Fäden im Gerüst sind erlaubt.`;
 
   if (resumeOutline) {
     const prev = input.editorial.kapitelGeruestStructured!;
-    skeleton = prev.chapters.slice(0, maxChapters).map((ch) => ({
-      number: ch.number,
-      title: ch.title,
-      kernsatz: ch.kernsatz,
-      inhaltKurz: ch.inhaltKurz,
-      props: ch.props,
-      events: ch.events,
-      openThreads: ch.openThreads,
-      mustNotRepeat: ch.mustNotRepeat,
-      introduces: ch.introduces,
-      resolves: ch.resolves,
-      arcBeats: ch.arcBeats,
-    }));
+    skeleton = prev.chapters.slice(0, maxChapters).map((ch) => {
+      const plan = parseChapterPlan(ch);
+      return {
+        number: ch.number,
+        title: ch.title,
+        kernsatz: ch.kernsatz,
+        inhaltKurz: ch.inhaltKurz,
+        ...plan,
+        // Prefer already-parsed arrays when present; parseChapterPlan fills gaps.
+        props: ch.props ?? plan.props,
+        events: ch.events ?? plan.events,
+        openThreads: ch.openThreads ?? plan.openThreads,
+        mustNotRepeat: ch.mustNotRepeat ?? plan.mustNotRepeat,
+        introduces: ch.introduces ?? plan.introduces,
+        resolves: ch.resolves ?? plan.resolves,
+        arcBeats: ch.arcBeats?.length ? ch.arcBeats : plan.arcBeats,
+      };
+    });
     centralArcs = prev.centralArcs;
     for (const ch of skeleton) {
       if (!isThinKapitelGeruestChapter(ch)) {
@@ -506,9 +724,9 @@ Skizzenhafte offene Fäden sind erlaubt und erwünscht; harte Canon-Widersprüch
         title: input.title,
         genre: input.genre,
         ideeKurz: input.ideeKurz,
-        rechercheDossier,
         tonalitaet,
         grobRegeln: input.grobRegeln,
+        kiRegelwerk: input.kiRegelwerk,
         editorial: input.editorial,
         charaktere: input.charaktere,
         weltSchauplaetze: input.weltSchauplaetze,
@@ -520,26 +738,37 @@ Skizzenhafte offene Fäden sind erlaubt und erwünscht; harte Canon-Widersprüch
     await input.onProgress?.(
       "Kapitelgerüst · Outline & Spannungsbögen: Kapitelstruktur wird entworfen …",
     );
-    wissensGraph = await seedWissensGraphFromSources({
-      buchTyp: input.buchTyp,
-      title: input.title,
-      genre: input.genre,
+    // Prefer freigegebener Graph from the graph phase; only seed if missing.
+    if (!wissensGraph) {
+      wissensGraph = await seedWissensGraphFromSources({
+        buchTyp: input.buchTyp,
+        title: input.title,
+        genre: input.genre,
+        ideeKurz: input.ideeKurz,
+        tonalitaet,
+        grobRegeln: input.grobRegeln,
+        kiRegelwerk: input.kiRegelwerk,
+        editorial: input.editorial,
+        charaktere: input.charaktere,
+        weltSchauplaetze: input.weltSchauplaetze,
+        weltRegeln: input.weltRegeln,
+      });
+    }
+
+    const weaveBlock = weave
+      ? `Bestehendes Gerüst VERWEBEN/SCHÄRFEN — brauchbare Kapitel behalten, Lücken schließen, Widersprüche zum Gesamt-Kanon (Regeln, Figuren, Welt, Exposé, Graph) auflösen. KEINE Einzelszenen.`
+      : `Kapitelgerüst NEU aus dem Gesamt-Kanon (Regeln & Grenzen + Figuren + Welt + Exposé + Wissensgraph) aufbauen. KEINE Einzelszenen.`;
+
+    const dramaturgyLead = buildPlotDramaturgyLead({
+      expose,
       ideeKurz: input.ideeKurz,
-      rechercheDossier,
-      tonalitaet,
       grobRegeln: input.grobRegeln,
       editorial: input.editorial,
       charaktere: input.charaktere,
       weltSchauplaetze: input.weltSchauplaetze,
       weltRegeln: input.weltRegeln,
-    });
-
-    const weaveBlock = weave
-      ? `Bestehendes Gerüst VERWEBEN/SCHÄRFEN — brauchbare Kapitel behalten, Lücken schließen, Widersprüche zum Exposé auflösen. KEINE Einzelszenen.`
-      : `Kapitelgerüst NEU aus Exposé, Idee, Recherche, Figuren und Welt. KEINE Einzelszenen.`;
-
-    const graphBlock = formatWissensGraphForPrompt(wissensGraph, {
-      maxChars: CLIP.sharedContext,
+      kiRegelwerk: input.kiRegelwerk,
+      wissensGraph,
     });
 
     // --- Pass A: compact outline for the full book ---
@@ -547,7 +776,7 @@ Skizzenhafte offene Fäden sind erlaubt und erwünscht; harte Canon-Widersprüch
       model,
       systemInstruction: systemBase,
       cacheablePrefix: staticPrefix,
-      userText: `${graphBlock}
+      userText: `${dramaturgyLead}
 
 # Bisheriges Gerüst (Orientierung)
 ${weave ? input.existingGeruest.trim().slice(0, CLIP.kapitelgeruest) : "(leer — neu anlegen)"}
@@ -555,10 +784,12 @@ ${weave ? input.existingGeruest.trim().slice(0, CLIP.kapitelgeruest) : "(leer �
 ${weaveBlock}
 
 Auftrag — NUR Outline (noch keine inhaltKurz / Props / Events):
+- Baue centralArcs und Kapitel-Kernsätze konsistent aus dem Gesamt-Kanon (Exposé + Figuren-Antriebe + Weltregeln + Regeln & Grenzen + Wissensgraph) mit klarem Setup→Peak→Payoff.
 - GENAU ${kapitelZiel} Kapitel (mind. ${minChapters}, max. ${maxChapters}) — ALLE in chapters[].
 - centralArcs (2–4, PFLICHT): Reihenfolge = Priorität. Index 0 = Hauptbogen (A-Plot), danach Nebenbögen (B/C). Jeweils setupChapter / peakChapter / payoffChapter und parties.
-- Pro Kapitel NUR: number, title, kernsatz (eine Zeile).
-- Chronologisch, Exposé-Bogen abdecken. Feldtexte auf Deutsch.
+- Pro Kapitel NUR: number, title, kernsatz (eine Zeile Funktion im Bogen).
+- Chronologisch, Ursache→Wirkung über Kapitel. Feldtexte auf Deutsch.
+- Graph-Knoten/Attrs/hardInvariants sowie Regeln & Grenzen strikt einhalten.
 
 Schema:
 ${OUTLINE_SCHEMA_HINT}
@@ -585,7 +816,7 @@ Antwort = nur das JSON-Objekt, beginnend mit {. chapters[] MUSS ${kapitelZiel} E
         model,
         systemInstruction: systemBase,
         cacheablePrefix: staticPrefix,
-        userText: `${graphBlock}
+        userText: `${dramaturgyLead}
 
 # Bereits feststehende Kapitel (behalten)
 ${have || "(keine)"}
@@ -593,10 +824,11 @@ ${have || "(keine)"}
 # Central Arcs (behalten)
 ${JSON.stringify(centralArcs)}
 
-Auftrag — fehlende Kapitel NACHliefern:
+Auftrag — fehlende Kapitel NACHliefern (weiter den Exposé-Bogen):
 - Liefere chapters[] mit den nächsten ${needCount} Kapiteln (Nummern ab ${needFrom}, bis ca. ${kapitelZiel}).
 - Nur number, title, kernsatz. Keine Duplikate der bestehenden Nummern.
 - centralArcs weglassen oder unverändert lassen.
+- Kausal an die letzten Kernsätze anschließen.
 
 Schema:
 ${OUTLINE_SCHEMA_HINT}
@@ -626,6 +858,12 @@ Antwort = nur JSON.`,
       );
     }
     skeleton = skeleton.slice(0, maxChapters);
+    const sanitizedOutline = sanitizeCentralArcsAndBeats({
+      chapters: skeleton,
+      centralArcs,
+    });
+    skeleton = sanitizedOutline.chapters;
+    centralArcs = sanitizedOutline.centralArcs;
 
     await input.onProgress?.(
       mode === "outline"
@@ -648,8 +886,16 @@ Antwort = nur JSON.`,
     };
   }
 
-  const graphBlock = formatWissensGraphForPrompt(wissensGraph, {
-    maxChars: CLIP.sharedContext,
+  const dramaturgyLead = buildPlotDramaturgyLead({
+    expose,
+    ideeKurz: input.ideeKurz,
+    grobRegeln: input.grobRegeln,
+    editorial: input.editorial,
+    charaktere: input.charaktere,
+    weltSchauplaetze: input.weltSchauplaetze,
+    weltRegeln: input.weltRegeln,
+    kiRegelwerk: input.kiRegelwerk,
+    wissensGraph,
   });
   const arcsHint = centralArcs.length
     ? `# Central Arcs (verbindlich, Reihenfolge = Priorität: erstes = Hauptbogen)\n${JSON.stringify(centralArcs)}\n`
@@ -662,30 +908,76 @@ Antwort = nur JSON.`,
         return `${c.number}. ${c.title} — ${c.kernsatz}${mark}`;
       })
       .join("\n");
+    const prev = skeleton.find((c) => c.number === ch.number - 1);
+    const next = skeleton.find((c) => c.number === ch.number + 1);
+    const alreadyIntroduced = introducedLabelsBeforeChapter(
+      skeleton,
+      ch.number,
+    );
+    const lifecycleLedger =
+      alreadyIntroduced.length > 0
+        ? `# Lifecycle-Ledger (verbindlich — bereits eingeführt, NICHT erneut in introduces)
+${alreadyIntroduced.map((l) => `– ${l}`).join("\n")}
+Regeln: Diese Labels dürfen hier höchstens in props/events/mustNotRepeat stehen — niemals erneut in introduces. introduces nur für wirklich NEUE Motive in DIESEM Kapitel.`
+        : `# Lifecycle-Ledger
+(noch nichts eingeführt — introduces nur für Motive, die hier zum ersten Mal kanonisch auftauchen.)`;
+
+    const neighborBlock = `# Direkte Nachbarn (Ursache→Wirkung — inhaltKurz muss nahtlos anschließen)
+Vorher: ${
+      prev
+        ? `Kap. ${prev.number} „${prev.title}“ — ${prev.kernsatz}${
+            prev.inhaltKurz.trim() &&
+            prev.inhaltKurz.trim() !== prev.kernsatz.trim()
+              ? `\n  Skizze: ${prev.inhaltKurz.trim().slice(0, 500)}`
+              : ""
+          }`
+        : "(Bandanfang)"
+    }
+Nachher: ${
+      next
+        ? `Kap. ${next.number} „${next.title}“ — ${next.kernsatz}`
+        : "(Bandende)"
+    }`;
+
+    const cumulativeLedger = buildCumulativePlotLedgerBeforeChapter(
+      skeleton,
+      centralArcs,
+      ch.number,
+    );
 
     try {
       const detailRaw = await generateText({
         model,
         systemInstruction: systemBase,
         cacheablePrefix: staticPrefix,
-        userText: `${graphBlock}
+        userText: `${dramaturgyLead}
 
 ${arcsHint}
 # Gesamtes Kapitel-Outline
 ${outlineBlock}
 
+${neighborBlock}
+
+${cumulativeLedger ? `${cumulativeLedger}\n\n` : ""}${lifecycleLedger}
+
 # Dieses Kapitel — NUR Kap. ${ch.number} („${ch.title}“)
 Skizziere DIESES eine Kapitel — Gerüst-Niveau, kein vorweggenommenes Buch.
+Basis = Gesamt-Kanon (Exposé + Figuren + Welt + Regeln & Grenzen + Wissensgraph) + Outline-Kernsatz + bisherige Kapitel-Chronik.
 PFLICHT:
 - number: ${ch.number} (unverändert), title/kernsatz schärfen falls nötig.
-- inhaltKurz: 2–4 knappe Sätze (NICHT nur den kernsatz; NICHT 2 Absätze Prosa).
-- props und/oder events (mind. eines von beiden, wenn Handlung/Objekte vorkommen) — Stichworte, keine Szenen.
-- openThreads (mind. 1, außer letztes Kapitel schließt alles) — offen lassen ist gut.
-- arcBeats: für JEDEN centralArc, der hier aktiv ist (Setup-/Peak-/Payoff und Nachbarn) — tension 1–5, mustShow/delta kurz.
-- introduces / resolves / mustNotRepeat nach Lifecycle-Regeln.
+- inhaltKurz: 2–4 knappe Sätze als logische Folge der bisherigen Kapitel-Chronik und Vorbereitung des Nachher-Kernsatzes (NICHT nur den kernsatz; NICHT 2 Absätze Prosa).
+- props und/oder events (mind. eines von beiden, wenn Handlung/Objekte vorkommen) — Stichworte, keine Szenen; Graph-Labels nutzen.
+- openThreads (mind. 1, außer letztes Kapitel schließt alles) — bestehende offene Fäden zuspitzen oder neue Konsequenzen öffnen.
+- arcBeats: exakt die IDs aus \`centralArcs\` verwenden! Wenn Kap. ${ch.number} setupChapter, peakChapter (zwingend \`tension: 5\`) oder payoffChapter eines Bogens ist, MUSS dafür ein arcBeat gesetzt werden.
+- introduces: NUR Motive, die in DIESEM Kapitel zum ersten Mal im Buch auftauchen (nicht im Lifecycle-Ledger). Wenn ein Faden hier eröffnet und später aufgelöst wird, das Motiv prägnant in introduces benennen.
+- mustNotRepeat: Motive aus dem Ledger, die hier wieder vorkommen, aber nicht neu „eingeführt“ werden dürfen.
+- resolves: NUR für zuvor in introduces eingeführte Motive/Fäden, die in DIESEM Kapitel wirklich abgeschlossen werden (exaktes oder klares Label aus dem Ledger nutzen).
+- Who-did-X: Wenn hier eine Tat/Manipulation als Tatsache gilt, Akteur in events klar nennen.
+  Verdacht ≠ Tatsache. Dieselbe Tat darf buchweit nicht zwei Akteuren als Tatsache zugeschrieben werden (siehe Kanon-Fakten oben).
+  Optional explizit: „CLAIM: Name|Tat|Objekt“ in events.
 - KEINE Einzelszenen, KEINE Dialoge, KEINE Motivationessay. Feldtexte auf Deutsch.
 
-Schema (chapters[] mit genau diesem einen Kapitel):
+Schema (chapters[] mit genau diesem einem Kapitel):
 ${DETAIL_SCHEMA_HINT}
 
 Antwort = nur JSON.`,
@@ -697,13 +989,19 @@ Antwort = nur JSON.`,
 
       const details = await parseDetailChapterPayload(detailRaw, model);
       skeleton = mergeDetailIntoOutline(skeleton, details);
+      // Immediate ledger hygiene so the next chapter sees clean introduces/resolves/mustNotRepeat.
+      skeleton = sanitizeResolvesWithoutIntro(skeleton);
+      skeleton = dedupeGeruestChapterIntroduces(skeleton);
+      skeleton = seedMustNotRepeatFromPriorIntroduces(skeleton);
     } catch {
       // Fail-soft: keep outline stub; thin-retry pass may still fill it.
     }
   }
 
-  // --- Pass B: detail only thin / missing chapters ---
-  const toFill = skeleton.filter(isThinKapitelGeruestChapter);
+  // --- Pass B: detail only thin / missing chapters (ascending — ledger order) ---
+  const toFill = skeleton
+    .filter(isThinKapitelGeruestChapter)
+    .sort((a, b) => a.number - b.number);
   const total = skeleton.length;
   for (let i = 0; i < toFill.length; i += 1) {
     const ch = toFill[i]!;
@@ -716,7 +1014,9 @@ Antwort = nur JSON.`,
   }
 
   // Nachzug: still-thin after first detail pass.
-  const stillThin = skeleton.filter(isThinKapitelGeruestChapter);
+  const stillThin = skeleton
+    .filter(isThinKapitelGeruestChapter)
+    .sort((a, b) => a.number - b.number);
   for (const ch of stillThin) {
     const shortTitle = ch.title.slice(0, 40);
     await input.onProgress?.(
@@ -725,6 +1025,16 @@ Antwort = nur JSON.`,
     await fillDetailChapter(ch);
     await emitPartial("chapter", ch.number);
   }
+
+  // Final hard hygiene — even if the model ignored the ledger or arc rules.
+  const finalHygiene = hygieneKapitelGeruestLogik({
+    updatedAt: new Date().toISOString(),
+    modelLabel: model.label,
+    centralArcs,
+    chapters: skeleton,
+  });
+  skeleton = finalHygiene.structured.chapters;
+  centralArcs = finalHygiene.structured.centralArcs;
 
   await input.onProgress?.(
     "Kapitelgerüst · Wissensgraph: Kontinuität aus Outline & Kapiteln …",
@@ -738,8 +1048,23 @@ Antwort = nur JSON.`,
     // Fail-soft: keep seed / previous graph.
   }
 
+  // Deterministic Who-did-X CLAIMs from events/kernsatz → hardInvariants (preflight + Manuskript).
+  {
+    const claimInv = formatGeruestClaimsAsInvariants(
+      extractClaimsFromGeruestChapters(skeleton),
+    );
+    if (claimInv.length) {
+      wissensGraph = mergeWissensGraphs(wissensGraph, {
+        ...wissensGraph,
+        hardInvariants: claimInv,
+        nodes: [],
+        edges: [],
+      });
+    }
+  }
+
   const structured = buildStructured();
-  const parsed =
+  let parsed =
     parseRomanKapitelGeruestStructured(structured, {
       modelLabel: model.label,
       minChapters,
@@ -750,6 +1075,8 @@ Antwort = nur JSON.`,
       `Kapitelgerüst unvollständig nach Detail-Pass: ${parsed.chapters.length}/${minChapters} Kapitel.`,
     );
   }
+
+  parsed = hygieneKapitelGeruestLogik(parsed).structured;
 
   // Prefer parsed chapters for final persist.
   skeleton = parsed.chapters.map((ch) => ({
@@ -798,6 +1125,9 @@ export async function critiqueKapitelGeruestMitEntwicklungslektor(input: {
   const { rolle, model } = await resolveRomanKiRolle("entwicklungslektor");
   const expose = exposeTextFromEditorial(input.editorial);
   const rules = buildCritiqueRulesAndNeedsBlock(input.editorial);
+  const rawGraph = formatWissensGraphForPrompt(input.editorial.wissensGraph, {
+    maxChars: 6_000,
+  });
   const arcs =
     input.structured?.centralArcs
       ?.map(
@@ -812,7 +1142,7 @@ export async function critiqueKapitelGeruestMitEntwicklungslektor(input: {
 
 ${ROMAN_CRITIQUE_MANDATE}
 
-Du prüfst NUR das Kapitelgerüst (Dramaturgie, Bögen, Tempo, Kapitelrollen) — keine Einzelszenen-Handlungen, keine Prosa.`,
+Du prüfst NUR das Kapitelgerüst (Dramaturgie, Bögen, Tempo, Kapitelrollen, Kanon-Konsistenz) — keine Einzelszenen-Handlungen, keine Prosa.`,
     userText: `Buch: ${input.title} (${BUCHTYP_LABELS[input.buchTyp]}) · ${input.genre}
 
 # Idee
@@ -821,17 +1151,21 @@ ${input.ideeKurz.slice(0, CLIP.idee)}
 # Exposé
 ${expose.slice(0, CLIP.expose)}
 
-# Figuren
+# Figuren & Welt (Fundament)
+Figuren:
 ${formatCharaktere(input.charaktere).slice(0, CLIP.charaktere)}
+Welt — Schauplätze:
+${input.weltSchauplaetze.slice(0, CLIP.weltSchau) || "(leer)"}
+Welt — Regeln:
+${input.weltRegeln.slice(0, CLIP.weltRegeln) || "(leer)"}
 
-# Regeln / Needs
+# Regeln & Grenzen / Needs
 ${rules}
 
-${arcs ? `# Central Arcs\n${arcs}\n` : ""}
-# Kapitelgerüst
+${rawGraph ? `# Wissensgraph (Kanon & Invarianten)\n${rawGraph}\n\n` : ""}${arcs ? `# Central Arcs\n${arcs}\n` : ""}# Kapitelgerüst
 ${input.kapitelGeruest.slice(0, CLIP.kapitelgeruest)}
 
-Prüfe: Kapitelrollen, Tempo, centralArcs Setup/Peak/Payoff, Lifecycle (introduces/resolves), Abdeckung des Exposés.
+Prüfe: Kapitelrollen, Tempo, centralArcs Setup/Peak/Payoff, Lifecycle (introduces/resolves), sowie Konsistenz zum Gesamt-Kanon (Regeln & Grenzen, Figuren, Welt, Exposé, Wissensgraph).
 Auf Deutsch. Strukturierte Gegenlese.`,
     maxTokens: ROMAN_CRITIQUE_MAX_TOKENS,
     timeoutMs: 90_000,

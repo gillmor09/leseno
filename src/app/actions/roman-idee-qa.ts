@@ -16,6 +16,7 @@ import {
 } from "@/lib/roman/editorial";
 import {
   chatIdeeMitSchreibCoach,
+  proposeIdeeCoachQuestions,
   weaveIdeeKurz,
 } from "@/lib/roman/idea-qa";
 import {
@@ -32,7 +33,12 @@ const romanIdeeQaTurnSchema = z.object({
     .string()
     .trim()
     .min(1, { message: "Nachricht eingeben." })
-    .max(8000),
+    // Align with Idee-doc growth — short 8k cap caused „Eingabe ist zu lang.“
+    .max(20_000, { message: "Antwort ist zu lang (max. 20.000 Zeichen)." }),
+});
+
+const romanIdeeIdSchema = z.object({
+  romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
 });
 
 async function persistIdeeKurz(
@@ -148,6 +154,131 @@ export async function romanIdeeQaTurnAction(
         error instanceof Error
           ? error.message
           : "Ideen-Q&A fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Drop the open Coach question (trailing assistant message). IdeeKurz stays.
+ */
+export async function romanIdeeDiscardOpenQuestionsAction(
+  input: unknown,
+): Promise<ActionResult<{ messages: RomanIdeaChatMessage[] }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanIdeeIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Eingabe ungültig.",
+    };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) {
+      return { success: false, error: "Buch nicht gefunden." };
+    }
+
+    const history = roman.ideenChat ?? [];
+    if (history.length === 0) {
+      return { success: true, data: { messages: [] } };
+    }
+
+    const last = history[history.length - 1]!;
+    if (last.role !== "assistant") {
+      return {
+        success: false,
+        error: "Keine offene Coach-Frage zum Verwerfen.",
+      };
+    }
+
+    const nextChat = history.slice(0, -1);
+    await setRomanIdeenChat({ id: roman.id, messages: nextChat });
+    revalidateRomanAdmin(roman.id);
+    return { success: true, data: { messages: nextChat } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Fragen verwerfen fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Ask the Schreib-Coach for new open questions (no ideeKurz weave).
+ */
+export async function romanIdeeProposeQuestionsAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    messages: RomanIdeaChatMessage[];
+    reply: string;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = romanIdeeIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Eingabe ungültig.",
+    };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) {
+      return { success: false, error: "Buch nicht gefunden." };
+    }
+
+    const buchTyp = roman.editorial?.buchTyp ?? "unbekannt";
+    if (!isBuchTypSet(buchTyp as RomanBuchTyp)) {
+      return {
+        success: false,
+        error: "Zuerst Buchtyp wählen (Belletristik oder Sachbuch).",
+      };
+    }
+
+    const editorial = roman.editorial ?? emptyRomanEditorial();
+    const history = roman.ideenChat ?? [];
+    if (history.length > 0 && history[history.length - 1]!.role === "assistant") {
+      return {
+        success: false,
+        error: "Es gibt schon eine offene Frage — zuerst verwerfen oder beantworten.",
+      };
+    }
+
+    const coach = await proposeIdeeCoachQuestions({
+      buchTyp: buchTyp as RomanBuchTyp,
+      ideeKurz: editorial.ideeKurz ?? "",
+      history,
+      schreiberSpracheTonalitaet: roman.tonalitaet ?? "",
+    });
+
+    const nextChat: RomanIdeaChatMessage[] = [
+      ...history,
+      { role: "assistant" as const, content: coach.reply },
+    ].slice(-60);
+
+    await setRomanIdeenChat({ id: roman.id, messages: nextChat });
+    revalidateRomanAdmin(roman.id);
+    return {
+      success: true,
+      data: { messages: nextChat, reply: coach.reply },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Neue Fragen fehlgeschlagen.",
     };
   }
 }

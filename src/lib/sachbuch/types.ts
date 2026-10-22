@@ -33,13 +33,71 @@ export type SachbuchGroundingSource = {
 
 export type SachbuchPhaseStatus = "empty" | "in_progress" | "ready";
 
-/** Phase 1 — Mind-Extraction & UVP. */
+/** Guided wizard steps (Idee → freigeben → Typ → … → Schreiben). */
+export type SachbuchGuideStep =
+  | "concept"
+  | "refine"
+  | "book_type"
+  | "evidenz"
+  | "makro"
+  | "write";
+
+export const SACHBUCH_GUIDE_STEPS: readonly SachbuchGuideStep[] = [
+  "concept",
+  "refine",
+  "book_type",
+  "evidenz",
+  "makro",
+  "write",
+] as const;
+
+export const SACHBUCH_GUIDE_STEP_LABELS: Record<SachbuchGuideStep, string> = {
+  concept: "Rohkonzept",
+  refine: "Verfeinern",
+  book_type: "Buchtyp",
+  evidenz: "Recherche",
+  makro: "Makro",
+  write: "Schreiben",
+};
+
+/** Wizard cursor + HITL idea approval (stored inside idee JSON). */
+export type SachbuchGuide = {
+  currentStep: SachbuchGuideStep;
+  /** Set when user freigibt the agentic-refined dossier. Hard gate for later phases. */
+  ideaApprovedAt: string | null;
+};
+
+export type SachbuchIdeeRefineStatus =
+  | "idle"
+  | "running"
+  | "awaiting_approval"
+  | "approved";
+
+/** One Haiku↔Luna collab round during concept refine. */
+export type SachbuchIdeeRefineRound = {
+  round: number;
+  role: "haiku" | "luna";
+  content: string;
+  passed: boolean | null;
+  changeOrders: string[];
+  createdAt: string;
+};
+
+/** Phase 1 — Mind-Extraction, Agentic refine, UVP. */
 export type SachbuchIdee = {
   interviewMessages: SachbuchInterviewMessage[];
   briefing: string;
   unpopularOpinion: string;
   caseStudies: string[];
   status: SachbuchPhaseStatus;
+  /** Guided flow cursor + approval timestamp. */
+  guide: SachbuchGuide;
+  refineStatus: SachbuchIdeeRefineStatus;
+  refineLog: SachbuchIdeeRefineRound[];
+  /** Pending dossier after agentic refine (before HITL approve). */
+  refinedBriefing: string;
+  refinedOpinion: string;
+  refinedCaseStudies: string[];
 };
 
 export type SachbuchEvidenzClaim = {
@@ -90,6 +148,11 @@ export type SachbuchMakro = {
   status: SachbuchPhaseStatus;
   /** True after „Kapitel aus Makro“ at least once. */
   kapitelGenerated: boolean;
+  /**
+   * Kerngebiet / Sachbuchtyp id (see `book-types.ts`).
+   * Stored here until a dedicated column exists.
+   */
+  bookTypeId: string;
 };
 
 /** Phase 4 — per-chapter context graph. */

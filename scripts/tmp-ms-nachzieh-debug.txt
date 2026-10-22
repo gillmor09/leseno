@@ -1,0 +1,10 @@
+before hash 585135aecc6e2787 chars 484782
+seam: Seam/Payoff: Kap. 17, 18 nachgezogen (5 Befunde). patched=[17,18]
+after hash 82c22fc815b03b6d chars 480314 changed=true
+Kap 17 24603→23333
+  beforeHead: Am Freitag gab er die Anmeldung am Empfang ab, auf dem vorgedruckten Formular, mit dem eigenen Kugelschreiber und ohne Begleitschreiben. Die Dame hinter dem Tresen überflog das Blatt, suchte den Namen, setzte ein Häkchen
+  afterHead:  Am Freitag, dem 14. Februar, gab Hartmut seine Anmeldung kurz vor halb vier am Empfang ab, auf dem vorgedruckten Formular, mit dem eigenen Kugelschreiber und ohne Begleitschreiben. Die Dame hinter dem Tresen überflog das
+Kap 18 26247→23049
+  beforeHead: Am Montagmorgen, dem 17. Februar, saß Eva um halb neun am Esstisch, das Notebook aufgeklappt, der Kaffee neben der Tastatur. Den ersten Satz hatte sie fünfmal getippt, und jedes Mal war er ein Stück länger geworden, bis 
+  afterHead:  Um halb neun am Montag, dem 17. Februar, kam die Stimme des Vaters aus dem Telefonlautsprecher neben dem Notebook, und Eva brauchte einen Moment, bis sie sie als seine erkannte. Er klang, als sitze er nicht am Küchentisc
+freigabe refreshed findings=14

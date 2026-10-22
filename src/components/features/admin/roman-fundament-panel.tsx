@@ -363,8 +363,9 @@ export function RomanFundamentPanel({
                 })}
               </div>
               <p className="text-xs font-semibold text-zinc-500">
-                Wenn gesetzt: verbindliches Leserversprechen für Ton und
-                Buchverlauf (auch Marktanalyse).
+                Optional nach Idee: verbindliches Leserversprechen für Ton und
+                Buchverlauf (Priority-0 für Spec/Gerüst/Plot/Manuskript; auch
+                Marktanalyse).
               </p>
             </div>
           ) : null}
@@ -400,9 +401,10 @@ export function RomanFundamentPanel({
               }
             />
             <p className="text-xs font-semibold text-zinc-500">
-              Explizite Vorgabe für den Schreibstil — gilt für Ideen-Coach,
-              Spec und Manuskript. Optional mit Schreib-Coach im Dialog
-              schärfen (auch per Mikrofon).
+              Priority-0-MUSS nach Idee (Spec → Manuskript): Stimme, Humor
+              nur wenn hier verlangt. Wird aus der Idee abgeleitet, danach
+              editierbar. Hard-Gate Basics prüft den Ton. Optional mit
+              Schreib-Coach im Dialog schärfen (auch per Mikrofon).
             </p>
           </div>
 
@@ -581,6 +583,11 @@ export function RomanFundamentPanel({
               className={textareaClass}
               rows={8}
             />
+            <p className="mt-1.5 text-xs font-semibold text-zinc-500">
+              Priority-0-MUSS neben Tonalität: nach Idee abgeleitet, editierbar.
+              Verstöße dürfen Spec/Gerüst nicht weichzeichnen — Hard-Gate
+              Basics bzw. Auto-Repair.
+            </p>
           </label>
           <button
             type="button"

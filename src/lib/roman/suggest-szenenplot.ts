@@ -151,17 +151,17 @@ function buildStaticBookPrefix(input: {
   charaktere: RomanCharakter[];
   weltSchauplaetze: string;
   weltRegeln: string;
-  rechercheDossier?: string;
   tonalitaet?: string;
+  kiRegelwerk?: string;
 }): string {
   return `${buildRomanStaticBookPrefix({
     buchTyp: input.buchTyp,
     title: input.title,
     genre: input.genre,
     ideeKurz: input.ideeKurz,
-    rechercheDossier: input.rechercheDossier,
     tonalitaet: input.tonalitaet,
     grobRegeln: input.grobRegeln,
+    kiRegelwerk: input.kiRegelwerk,
     editorial: input.editorial,
     charaktere: input.charaktere,
     weltSchauplaetze: input.weltSchauplaetze,
@@ -182,7 +182,6 @@ function buildSharedContext(input: {
   weltSchauplaetze: string;
   weltRegeln: string;
   /** Background research dossier (Idee → Spec). */
-  rechercheDossier?: string;
   /** Explicit Schreiber Sprache & Tonalität. */
   tonalitaet?: string;
   /** Optional knowledge-graph block for continuity. */
@@ -298,7 +297,6 @@ export async function suggestSzenenplotFromCoAutor(input: {
   const weave = hasFilledSzenenplot(input.existingPlot);
   const { rolle, model } = await resolveRomanKiRolle("schreib_coach");
   const kapitelZiel = suggestedChapterCount(input.editorial.zielWortzahlRoman);
-  const rechercheDossier = input.editorial.rechercheDossier ?? "";
   const tonalitaet = (input.tonalitaet ?? "").trim();
 
   // Seed knowledge graph before skeleton so batches already see invariants.
@@ -307,7 +305,6 @@ export async function suggestSzenenplotFromCoAutor(input: {
     title: input.title,
     genre: input.genre,
     ideeKurz: input.ideeKurz,
-    rechercheDossier,
     tonalitaet,
     grobRegeln: input.grobRegeln,
     editorial: input.editorial,
@@ -318,7 +315,6 @@ export async function suggestSzenenplotFromCoAutor(input: {
 
   const staticPrefix = buildStaticBookPrefix({
     ...input,
-    rechercheDossier,
     tonalitaet,
   });
   const systemBase = `${rolle.systemPrompt}
@@ -448,6 +444,7 @@ Jede Szene: dramaturgy (inkl. outcome_value_change), information_flow, continuit
 scene_id fortlaufend SZ_01… innerhalb des Batches ok (werden später normalisiert).
 Continuity muss Wissensgraph fortschreiben (character_states_after mit Ort/Etage, prop_placements_after, next_scene_hook).
 Gerüst-Plan (props/events/introduces/resolves/arcBeats) aus dem Outline übernehmen und in Szenen umsetzen — keine Doppel-Einführung; Arc-mustShow in dramaturgy/Wertänderung spiegeln.
+Who-did-X: Canon-Täter/Handlung aus Gerüst-Events nicht umschreiben; Verdacht vs. Tatsache in information_flow/kept_secret klar halten.
 KONKRET: Farben, Kennzeichen, Hausnummern, Adressen, Uhrzeiten, Daten, Namen in Summary/schreibPrompt/props festhalten (kanonisch für Wissensgraph/Manuskript).
 Auf Deutsch. Felder kurz (1–2 Sätze).
 
@@ -547,7 +544,6 @@ Nur JSON.`,
       graph: wissensGraph,
       structured,
       ideeKurz: input.ideeKurz,
-      rechercheDossier,
       tonalitaet,
     });
   } catch {
@@ -710,7 +706,6 @@ export async function critiqueSzenenplotMitEntwicklungslektor(input: {
     charaktere: input.charaktere,
     weltSchauplaetze: input.weltSchauplaetze,
     weltRegeln: input.weltRegeln,
-    rechercheDossier: input.editorial.rechercheDossier ?? "",
     tonalitaet: input.tonalitaet ?? "",
   });
   const graphBlock = formatWissensGraphForPrompt(input.editorial.wissensGraph, {

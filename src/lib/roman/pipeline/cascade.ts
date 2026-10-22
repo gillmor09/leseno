@@ -1,10 +1,16 @@
 /**
  * Downstream invalidation for Roman pipeline stages.
- * Spec → Grobgerüst → Feingerüst → Grobplot → Feinplot → Manuskript;
- * never clears upstream.
+ * Spec → Graph → Plot → Szenen → Manuskript; never clears upstream.
+ * Soft upstream edits: {@link markDownstreamPhasesStale} (no wipe).
+ * Hard regen: {@link invalidateDownstreamEditorial} wipes content + marks stale.
  */
 
-import type { RomanEditorial } from "@/lib/roman/editorial";
+import type {
+  RomanEditorial,
+  StageGateKey,
+  StageGateOverrides,
+} from "@/lib/roman/editorial";
+import { markDownstreamPhasesStale } from "@/lib/roman/phase-state";
 import {
   normalizePipelineStage,
   stagesAfter,
@@ -16,59 +22,146 @@ import { clearReifegradeForStages } from "@/lib/roman/reifegrad-model";
 const STAGE_TO_FERTIG_TABS: Partial<
   Record<PipelineStage, Array<keyof NonNullable<RomanEditorial["pipelineFertig"]>>>
 > = {
+  idee: [
+    "idee",
+    "typ",
+    "rahmen",
+    "fundament",
+    "spec",
+    "graph",
+    "plot",
+    "szenen",
+    "feingeruest",
+    "feinplot",
+    "schreiben",
+    "export",
+    "roman",
+    "outline",
+    "szenenplot",
+    "grobgeruest",
+    "grobplot",
+  ],
+  rahmen: [
+    "rahmen",
+    "typ",
+    "fundament",
+    "spec",
+    "graph",
+    "plot",
+    "szenen",
+    "schreiben",
+    "export",
+  ],
+  fundament: [
+    "fundament",
+    "spec",
+    "graph",
+    "plot",
+    "szenen",
+    "schreiben",
+    "export",
+  ],
   expose: [
+    "spec",
+    "graph",
+    "plot",
+    "szenen",
+    "feingeruest",
+    "feinplot",
+    "schreiben",
+    "export",
+    "outline",
+    "szenenplot",
     "grobgeruest",
-    "feingeruest",
     "grobplot",
+  ],
+  graph: ["graph", "plot", "szenen", "schreiben", "export"],
+  plot: [
+    "plot",
+    "feingeruest",
+    "szenen",
     "feinplot",
     "schreiben",
     "export",
-    // Legacy tab ids
-    "outline",
     "szenenplot",
-  ],
-  grobgeruest: [
-    "grobgeruest",
-    "feingeruest",
     "grobplot",
-    "feinplot",
-    "schreiben",
-    "export",
-    "outline",
-    "szenenplot",
   ],
-  feingeruest: [
-    "feingeruest",
-    "grobplot",
-    "feinplot",
-    "schreiben",
-    "export",
-    "outline",
-    "szenenplot",
-  ],
-  grobplot: ["grobplot", "feinplot", "schreiben", "export", "szenenplot"],
-  feinplot: ["feinplot", "schreiben", "export", "szenenplot"],
+  szenen: ["szenen", "feinplot", "schreiben", "export", "szenenplot", "grobplot"],
+  feingeruest: ["plot", "feingeruest", "szenen", "feinplot", "schreiben", "export"],
+  feinplot: ["szenen", "feinplot", "schreiben", "export"],
   manuskript: ["schreiben", "export", "roman"],
 };
+
+const STAGE_TO_GATE_KEYS: Partial<Record<PipelineStage, StageGateKey[]>> = {
+  idee: [
+    "idee",
+    "basics",
+    "rahmen",
+    "fundament",
+    "spec",
+    "expose",
+    "graph",
+    "plot",
+    "szenen",
+    "feingeruest",
+    "feinplot",
+    "schreiben",
+  ],
+  rahmen: [
+    "basics",
+    "rahmen",
+    "fundament",
+    "spec",
+    "expose",
+    "graph",
+    "plot",
+    "szenen",
+    "schreiben",
+  ],
+  fundament: ["fundament", "spec", "expose", "graph", "plot", "szenen", "schreiben"],
+  expose: ["spec", "expose", "graph", "plot", "szenen", "schreiben"],
+  graph: ["graph", "plot", "szenen", "schreiben"],
+  plot: ["plot", "feingeruest", "szenen", "feinplot", "schreiben"],
+  szenen: ["szenen", "feinplot", "schreiben"],
+  feingeruest: ["plot", "feingeruest", "szenen", "feinplot", "schreiben"],
+  feinplot: ["szenen", "feinplot", "schreiben"],
+  manuskript: ["schreiben"],
+};
+
+function clearStageGateOverridesFor(
+  overrides: StageGateOverrides | undefined,
+  keys: StageGateKey[],
+): StageGateOverrides {
+  const next: StageGateOverrides = { ...(overrides ?? {}) };
+  for (const k of keys) delete next[k];
+  return next;
+}
 
 /**
  * Stages whose content + Reifegrad + Fertig flags become stale after `changed`.
  */
 export function cascadeStagesAfter(changed: PipelineStage): PipelineStage[] {
   const canonical = normalizePipelineStage(changed) ?? changed;
-  return stagesAfter(canonical).filter(
-    (s) =>
-      s === "grobgeruest" ||
-      s === "feingeruest" ||
-      s === "grobplot" ||
-      s === "feinplot" ||
-      s === "manuskript",
-  );
+  if (canonical === "idee") {
+    return stagesAfter("idee");
+  }
+  return stagesAfter(canonical as PipelineStage);
+}
+
+/**
+ * Soft impact: mark downstream phases stale without wiping artifacts.
+ */
+export function softInvalidateDownstream(
+  editorial: RomanEditorial,
+  changed: PipelineStage | string,
+  reason?: string,
+): RomanEditorial {
+  return markDownstreamPhasesStale(editorial, changed, reason);
 }
 
 /**
  * Clear Fertig flags, Reifegrad, and stage content downstream of `changed`.
- * Does not wipe the changed stage itself.
+ * Does not wipe the changed stage itself. Also marks phaseState stale.
  */
 export function invalidateDownstreamEditorial(
   editorial: RomanEditorial,
@@ -83,26 +176,46 @@ export function invalidateDownstreamEditorial(
 
   const downstream = cascadeStagesAfter(canonical);
   if (downstream.length === 0 && !STAGE_TO_FERTIG_TABS[canonical]) {
-    return editorial;
+    return markDownstreamPhasesStale(editorial, canonical);
   }
 
   let next: RomanEditorial = {
     ...editorial,
-    reifegrade: clearReifegradeForStages(editorial.reifegrade, downstream),
+    reifegrade: clearReifegradeForStages(editorial.reifegrade, [
+      ...downstream,
+      // legacy aliases
+      ...(downstream.includes("plot")
+        ? (["feingeruest", "kapitelgeruest", "grobgeruest"] as const)
+        : []),
+      ...(downstream.includes("szenen")
+        ? (["feinplot", "szenenplot", "grobplot"] as const)
+        : []),
+    ] as Parameters<typeof clearReifegradeForStages>[1]),
   };
 
-  const fertigTabs = new Set(
-    [
-      ...(STAGE_TO_FERTIG_TABS[canonical] ?? []),
-      ...downstream.flatMap((s) => STAGE_TO_FERTIG_TABS[s] ?? []),
-    ],
-  );
+  const fertigTabs = new Set([
+    ...(STAGE_TO_FERTIG_TABS[canonical] ?? []),
+    ...downstream.flatMap((s) => STAGE_TO_FERTIG_TABS[s] ?? []),
+  ]);
   if (fertigTabs.size > 0) {
     const pipelineFertig = { ...(next.pipelineFertig ?? {}) };
     for (const tab of fertigTabs) {
       delete pipelineFertig[tab];
     }
     next = { ...next, pipelineFertig };
+  }
+
+  const gateKeys = new Set<StageGateKey>([
+    ...(STAGE_TO_GATE_KEYS[canonical] ?? []),
+    ...downstream.flatMap((s) => STAGE_TO_GATE_KEYS[s] ?? []),
+  ]);
+  if (gateKeys.size > 0) {
+    next = {
+      ...next,
+      stageGateOverrides: clearStageGateOverridesFor(next.stageGateOverrides, [
+        ...gateKeys,
+      ]),
+    };
   }
 
   const improve = { ...(next.reifegradImprove ?? {}) };
@@ -112,9 +225,20 @@ export function invalidateDownstreamEditorial(
     delete improve[s];
     delete stageImprove[s];
     delete feedback[s];
-    // Legacy keys
-    if (s === "feingeruest") delete improve.kapitelgeruest;
-    if (s === "feinplot") delete improve.szenenplot;
+    if (s === "plot") {
+      delete improve.kapitelgeruest;
+      delete improve.feingeruest;
+      delete improve.grobgeruest;
+    }
+    if (s === "szenen") {
+      delete improve.szenenplot;
+      delete improve.feinplot;
+      delete improve.grobplot;
+    }
+    if (s === "fundament") {
+      delete improve.charaktere;
+      delete improve.welt;
+    }
   }
   next = {
     ...next,
@@ -123,19 +247,63 @@ export function invalidateDownstreamEditorial(
     leserFeedbackByStage: feedback,
   };
 
-  if (downstream.includes("feingeruest") || downstream.includes("grobgeruest")) {
+  if (
+    canonical === "idee" ||
+    downstream.includes("expose") ||
+    downstream.includes("fundament")
+  ) {
     next = {
       ...next,
-      kapitelGeruestStructured: null,
-      kapitelGeruestRaw: "",
+      rechercheDossier: canonical === "idee" ? "" : next.rechercheDossier,
+      rechercheChat: canonical === "idee" ? [] : next.rechercheChat,
+      rechercheSources: canonical === "idee" ? [] : next.rechercheSources,
+      handlungsArchitektur:
+        canonical === "idee" || downstream.includes("expose")
+          ? ""
+          : next.handlungsArchitektur,
+      weltBibel:
+        canonical === "idee" || downstream.includes("fundament")
+          ? ""
+          : next.weltBibel,
+      wissensGraph:
+        canonical === "idee" || downstream.includes("graph")
+          ? null
+          : next.wissensGraph,
+      reifegrade: clearReifegradeForStages(next.reifegrade, [
+        ...(canonical === "idee" ? (["idee", "expose"] as const) : []),
+        ...downstream,
+      ]),
     };
   }
-  if (downstream.includes("grobplot") || downstream.includes("feinplot")) {
+
+  if (
+    downstream.includes("graph") ||
+    downstream.includes("plot") ||
+    downstream.includes("szenen") ||
+    downstream.includes("feingeruest") ||
+    downstream.includes("feinplot")
+  ) {
+    const wipeGraph = downstream.includes("graph") || canonical === "idee";
+    const wipePlot =
+      downstream.includes("plot") ||
+      downstream.includes("feingeruest") ||
+      downstream.includes("szenen") ||
+      downstream.includes("feinplot");
+    const wipeSzenen =
+      downstream.includes("szenen") || downstream.includes("feinplot");
     next = {
       ...next,
-      szenenplotStructured: null,
+      ...(wipeGraph ? { wissensGraph: null } : {}),
+      ...(wipePlot
+        ? {
+            kapitelGeruestStructured: null,
+            kapitelGeruestRaw: "",
+          }
+        : {}),
+      ...(wipeSzenen ? { szenenplotStructured: null } : {}),
     };
   }
+
   if (downstream.includes("manuskript")) {
     const reifegrade = clearReifegradeForStages(next.reifegrade, [
       "manuskript",
@@ -158,14 +326,54 @@ export function invalidateDownstreamEditorial(
     };
   }
 
+  return markDownstreamPhasesStale(next, canonical, "Downstream nach Erzeugen/Wipe");
+}
+
+/**
+ * Idee-Neustart: wipe Spec→Manuskript while keeping Basics
+ * (grobRegeln, harteRegeln, richtungen, Alter, Lesestufe, Zielwortzahl, buchTyp).
+ * Tonalität / kiRegelwerk live on roman_kontext roots — caller must not wipe them.
+ */
+export function resetEditorialFromIdeeKeepingBasics(
+  editorial: RomanEditorial,
+): RomanEditorial {
+  let next = invalidateDownstreamEditorial(
+    {
+      ...editorial,
+      ideeKurz: "",
+      stageImprove: {},
+      reifegradImprove: {},
+    },
+    "idee",
+  );
+  next = {
+    ...next,
+    ideeKurz: "",
+    rechercheDossier: "",
+    rechercheChat: [],
+    rechercheSources: [],
+    handlungsArchitektur: "",
+    weltBibel: "",
+    kapitelGeruestStructured: null,
+    kapitelGeruestRaw: "",
+    szenenplotStructured: null,
+    wissensGraph: null,
+    stageGateOverrides: {},
+    phaseState: {},
+  };
   return next;
 }
 
 const PIPELINE_SAFE = [
   "idee",
+  "rahmen",
+  "fundament",
   "charaktere",
   "welt",
   "expose",
+  "graph",
+  "plot",
+  "szenen",
   "grobgeruest",
   "feingeruest",
   "grobplot",
@@ -229,7 +437,6 @@ export function hasGeruestContent(
 
 /**
  * Banner copy when regenerating a stage that will wipe downstream.
- * Call as `generateCascadeConfirm(editorial, stage)`.
  */
 export function generateCascadeConfirm(
   editorial: RomanEditorial,
@@ -238,33 +445,42 @@ export function generateCascadeConfirm(
   const stage = normalizePipelineStage(stageRaw) ?? stageRaw;
 
   if (
-    (stage === "expose" || stage === "grobgeruest") &&
-    (hasGeruestContent(editorial) || hasSzenenplotOrManuskriptContent(editorial))
+    (stage === "expose" || stage === "fundament") &&
+    (hasGeruestContent(editorial) ||
+      hasSzenenplotOrManuskriptContent(editorial) ||
+      editorial.wissensGraph?.nodes.length)
   ) {
     return {
       title: "Downstream verwerfen?",
       description:
-        "Gerüst, Plot und Manuskript können veraltet sein. Beim Erzeugen werden sie geleert und neu aufgebaut.",
+        "Wissensgraph, Plot, Szenen und Manuskript werden geleert und müssen danach Stufe für Stufe neu erzeugt und freigegeben werden.",
     };
   }
   if (
-    stage === "feingeruest" &&
-    hasSzenenplotOrManuskriptContent(editorial)
+    stage === "graph" &&
+    (hasGeruestContent(editorial) || hasSzenenplotOrManuskriptContent(editorial))
   ) {
     return {
-      title: "Plot & Manuskript verwerfen?",
+      title: "Plot & Szenen verwerfen?",
       description:
-        "Szenenplot und Manuskript können veraltet sein — Feingerüst geändert. Bitte Plot und Manuskript neu erzeugen oder prüfen.",
+        "Plot, Szenen und Manuskript werden verworfen. Danach neu erzeugen und freigeben.",
     };
   }
   if (
-    (stage === "grobplot" || stage === "feinplot") &&
-    hasManuskriptContent(editorial)
+    stage === "plot" &&
+    (hasSzenenplotOrManuskriptContent(editorial) || hasManuskriptContent(editorial))
   ) {
+    return {
+      title: "Szenen & Manuskript verwerfen?",
+      description:
+        "Szenen und Manuskript werden geleert. Nach freigegebenem Plot Szenen neu erzeugen.",
+    };
+  }
+  if (stage === "szenen" && hasManuskriptContent(editorial)) {
     return {
       title: "Manuskript verwerfen?",
       description:
-        "Manuskript kann veraltet sein — Plot geändert. Bitte Manuskript neu erzeugen oder prüfen.",
+        "Manuskript wird geleert. Nach freigegebenen Szenen Manuskript neu erzeugen.",
     };
   }
   return null;
@@ -276,14 +492,17 @@ export function downstreamStaleBanner(
   stageRaw: PipelineStage | string,
 ): string | null {
   const stage = normalizePipelineStage(stageRaw) ?? stageRaw;
-  const hasPlot = Boolean(editorial.szenenplotStructured?.chapters.length);
   const hasMs = hasManuskriptContent(editorial);
+  const hasSzenen = Boolean(editorial.szenenplotStructured?.chapters.length);
 
-  if (stage === "feingeruest" && (hasPlot || hasMs)) {
-    return "Szenenplot / Manuskript können veraltet sein — Gerüst geändert. Bitte Plot und Manuskript neu erzeugen oder prüfen.";
+  if (stage === "plot" && (hasSzenen || hasMs)) {
+    return "Szenen / Manuskript können veraltet sein — Plot geändert. Bitte Szenen und Manuskript neu erzeugen und freigeben.";
   }
-  if ((stage === "grobplot" || stage === "feinplot") && hasMs) {
-    return "Manuskript kann veraltet sein — Szenenplot geändert. Bitte Manuskript neu erzeugen oder prüfen.";
+  if (stage === "szenen" && hasMs) {
+    return "Manuskript kann veraltet sein — Szenen geändert. Bitte Manuskript neu erzeugen (Szenen-Hard-Gate + Freigabe).";
+  }
+  if (stage === "graph" && (hasGeruestContent(editorial) || hasSzenen || hasMs)) {
+    return "Plot / Szenen / Manuskript können veraltet sein — Wissensgraph geändert.";
   }
   return null;
 }

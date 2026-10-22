@@ -146,7 +146,7 @@ export function SachbuchMakroPanel({
   async function confirmClearMakro() {
     if (!canSave || pending) return;
     setPending(true);
-    const makro = emptySachbuchMakro(typ);
+    const makro = emptySachbuchMakro(typ, book.makro.bookTypeId);
     const result = await saveSachbuchAction({
       id: book.id,
       title: book.title,

@@ -65,11 +65,36 @@ function formatHistory(messages: RomanIdeaChatMessage[]): string {
     .join("\n\n");
 }
 
+/**
+ * Soft ceiling for ideeKurz — prefer sentence boundary over mid-word cuts.
+ */
+export function clipIdeeDoc(
+  text: string,
+  budget: number = CLIP.idee,
+): string {
+  const t = text.trim();
+  if (!t) return "";
+  if (t.length <= budget) return t;
+  const cut = t.slice(0, budget);
+  const lastBreak = Math.max(
+    cut.lastIndexOf(". "),
+    cut.lastIndexOf(".\n"),
+    cut.lastIndexOf("! "),
+    cut.lastIndexOf("?\n"),
+    cut.lastIndexOf("? "),
+    cut.lastIndexOf("!\n"),
+  );
+  if (lastBreak >= Math.floor(budget * 0.7)) {
+    return cut.slice(0, lastBreak + 1).trim();
+  }
+  return cut.trimEnd();
+}
+
 function ideeFromRecord(obj: Record<string, unknown>): string {
   const text = String(
     obj.ideeKurz ?? obj.idee_kurz ?? obj.idee ?? obj.text ?? "",
   ).trim();
-  return text.slice(0, CLIP.idee);
+  return clipIdeeDoc(text);
 }
 
 /**
@@ -152,7 +177,7 @@ function parseIdeeKurzJson(raw: string): string {
     /===IDEE(?:KURZ)?===\s*([\s\S]*?)(?:\s*===ENDE===|$)/i,
   );
   if (mark?.[1]?.trim()) {
-    return mark[1].trim().slice(0, CLIP.idee);
+    return clipIdeeDoc(mark[1].trim());
   }
 
   try {
@@ -184,7 +209,7 @@ function parseIdeeKurzJson(raw: string): string {
     "idee",
     "text",
   ]);
-  if (broken) return broken.slice(0, CLIP.idee);
+  if (broken) return clipIdeeDoc(broken);
 
   // Plain prose — reject obvious JSON scaffolding noise.
   if (
@@ -192,7 +217,7 @@ function parseIdeeKurzJson(raw: string): string {
     !/^\s*\{/.test(cleaned) &&
     !/"ideeKurz"\s*:/i.test(cleaned)
   ) {
-    return cleaned.slice(0, CLIP.idee);
+    return clipIdeeDoc(cleaned);
   }
 
   throw new Error(
@@ -223,8 +248,8 @@ ${typLabel}
 
 ${IDEE_SCOPE_MANDATE}
 
-# Sprache & Tonalität (Schreiber-Vorgabe)
-${ton || "(noch keine Vorgabe — bei Ton-Fragen nachfragen)"}
+# Sprache & Tonalität (Schreiber-Vorgabe, optional)
+${ton || "(noch keine feste Vorgabe — Idee zuerst; Ton wird später in Basics abgeleitet; bei Ton-Fragen nachfragen, aber nicht blockieren)"}
 
 # Bisherige Ideendokumentation (nur Kontext — du schreibst sie nicht um)
 ${input.ideeKurz.trim() || "(noch leer)"}
@@ -237,7 +262,7 @@ ${input.userMessage.trim()}
 
 Antworte als Schreibhilfe.
 Befehle der Autor:in (Umbenennen, Streichen, Ton, Fokus) zuerst bestätigen und für den Redakteur klar formulieren.
-Die Schreiber-Vorgabe zu Sprache/Tonalität ist verbindlich, sofern gesetzt.
+Die Schreiber-Vorgabe zu Sprache/Tonalität ist verbindlich, sofern gesetzt; fehlt sie, Idee ohne Ton-MUSS weiterentwickeln.
 Keine Kapitelpläne, keine Szenenfolgen — nur Konzeptfragen und Schärfung für die spätere Spec.`;
 
   const reply = (
@@ -253,6 +278,61 @@ ${IDEE_SCOPE_MANDATE}`,
 
   if (!reply) {
     throw new Error("Schreibhilfe hat keine Antwort geliefert.");
+  }
+  return { reply: reply.slice(0, 20_000), modelLabel: model.label };
+}
+
+/**
+ * Fresh coach questions without a user answer (after discard or when none open).
+ * Does not touch ideeKurz — only returns dialog text for the chat.
+ */
+export async function proposeIdeeCoachQuestions(input: {
+  buchTyp: RomanBuchTyp;
+  ideeKurz: string;
+  history: RomanIdeaChatMessage[];
+  schreiberSpracheTonalitaet?: string;
+}): Promise<{ reply: string; modelLabel: string }> {
+  const { rolle, model } = await resolveRomanKiRolle("schreib_coach");
+  const typLabel =
+    input.buchTyp === "unbekannt"
+      ? "noch offen"
+      : BUCHTYP_LABELS[input.buchTyp];
+  const ton = (input.schreiberSpracheTonalitaet ?? "").trim();
+
+  const userText = `# Buchtyp
+${typLabel}
+
+${IDEE_SCOPE_MANDATE}
+
+# Sprache & Tonalität (Schreiber-Vorgabe, optional)
+${ton || "(noch keine feste Vorgabe)"}
+
+# Bisherige Ideendokumentation (nur Kontext — du schreibst sie nicht um)
+${input.ideeKurz.trim() || "(noch leer)"}
+
+# Dialog bisher
+${formatHistory(input.history) || "(Beginn — noch kein Dialog)"}
+
+Auftrag:
+Die Autor:in will NEUE offene Fragen (z. B. nachdem sie die vorherigen verworfen hat).
+Stelle 2–3 gezielte Konzeptfragen, die die Idee für die Spec weiterbringen.
+Keine Wiederholung der zuletzt gestellten Fragen.
+Keine Kapitelpläne, keine Szenenfolgen, keine Meta-Floskeln.
+Antworte nur mit den Fragen (kurz einleiten erlaubt).`;
+
+  const reply = (
+    await generateText({
+      model,
+      systemInstruction: `${rolle.systemPrompt}
+
+${IDEE_SCOPE_MANDATE}`,
+      userText,
+      maxTokens: 2000,
+    })
+  ).trim();
+
+  if (!reply) {
+    throw new Error("Schreibhilfe hat keine neuen Fragen geliefert.");
   }
   return { reply: reply.slice(0, 20_000), modelLabel: model.label };
 }
@@ -280,8 +360,8 @@ ${typLabel}
 
 ${IDEE_SCOPE_MANDATE}
 
-# Sprache & Tonalität (Schreiber-Vorgabe)
-${ton || "(keine)"}
+# Sprache & Tonalität (Schreiber-Vorgabe, optional)
+${ton || "(keine — Idee ohne Ton-MUSS; feste Tonalität kommt später in Basics)"}
 
 # Bisherige Ideendokumentation
 ${input.ideeKurz.trim() || "(leer — aus diesem Turn neu aufbauen)"}
@@ -295,10 +375,12 @@ ${input.coachReply.trim()}
 
 Auftrag:
 Erzeuge die VOLLSTÄNDIGE verwobene Ideendokumentation (nicht nur Diff).
-Falls die bisherige Fassung Kapitel-/Szenenpläne enthält: streichen und auf Konzept-/Prämissen-Ebene verdichten.
+Neue Infos aus diesem Turn (Fakten, Setting, Konflikte, Figurenkerne) vollständig einweben — nichts Wichtiges weglassen zugunsten von Kürze.
+Die Dokumentation darf und soll wachsen; Sätze zu Ende führen, nie mitten im Satz abbrechen.
+Falls die bisherige Fassung Kapitel-/Szenenpläne enthält: nur die Kapitelstruktur streichen — Faktenstoff behalten und auf Konzept-Ebene belassen.
 Kein Kapitelgerüst, keine Szenenfolge.
 Befehle der Autor:in (z. B. Umbenennen einer Rolle/Person, Streichen, Tonwechsel) verbindlich und konsistent umsetzen.
-Die Schreiber-Vorgabe zu Sprache/Tonalität in der Dokumentation spiegeln (kurz, ohne Stil-Essay).
+Falls Schreiber-Vorgabe gesetzt: in der Dokumentation spiegeln (ohne Stil-Essay); sonst nicht erzwingen.
 
 ${IDEE_OUTPUT_HINT}`;
 
@@ -312,7 +394,7 @@ Für DIESE Antwort gilt NICHT {"ideeKurz":…}-JSON, sondern:
 ${IDEE_OUTPUT_HINT}`,
     userText,
     preferJson: false,
-    maxTokens: 8_000,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
   });
 
   const ideeKurz = parseIdeeKurzJson(raw);
@@ -349,12 +431,12 @@ ${compliance}
 ${IDEE_SCOPE_MANDATE}
 
 # Ideendokumentation
-${idee.slice(0, CLIP.idee)}
+${clipIdeeDoc(idee)}
 
 Auftrag:
 Gib eine ehrliche, kritische Entwicklungslektor-Meinung zur Idee — und konkrete Vorschläge, was anders gestaltet werden könnte (Konflikt, Figurenkerne, Setting, Ton, Leserversprechen, Lücken, Risiken, Vermeidung von austauschbarem Genre-Mittelmaß).
 
-Wenn die Dokumentation Kapitel-/Szenenpläne enthält: das als Fehlgriff der Stufe markieren und Streichen zugunsten der Spec-Vorbereitung vorschlagen.
+Wenn die Dokumentation Kapitel-/Szenenpläne enthält: das als Fehlgriff der Stufe markieren und Streichen der Kapitelstruktur zugunsten der Spec-Vorbereitung vorschlagen (Faktenstoff behalten).
 
 Form:
 1. Regel- & Logik-Check (knallhart: Regeln / Logik — je erfüllt/teilweise/fehlt)
@@ -434,14 +516,15 @@ ${comment}
 ${buildCommentedWeaveRules({ kind: "idee", hasExplicitComment })}
 
 # Bisherige Ideendokumentation
-${idee.slice(0, CLIP.idee)}
+${clipIdeeDoc(idee)}
 
 # Kritik und Gestaltungsvorschläge
 ${critique.slice(0, CLIP.critique)}
 
 Auftrag:
 Erzeuge die VOLLSTÄNDIGE neue Ideendokumentation.
-Falls Kapitel-/Szenenpläne vorhanden sind: entfernen und auf Konzept-Ebene verdichten (Spec-Vorbereitung).
+Brauchbare Fakten und Konzeptstoff behalten; neue sinnvolle Punkte einweben — Dokumentation darf wachsen, Sätze zu Ende führen.
+Falls Kapitel-/Szenenpläne vorhanden sind: nur die Kapitelstruktur entfernen (Spec-Vorbereitung), Faktenstoff behalten.
 Keine Chat-Floskeln, keine Meta-Kommentare.
 
 ${IDEE_OUTPUT_HINT}`;
@@ -460,7 +543,7 @@ ${buildWeaveSystemAddendum({
     systemInstruction: system,
     userText,
     preferJson: false,
-    maxTokens: 8_000,
+    maxTokens: ROMAN_PROSE_MAX_TOKENS,
   });
 
   const ideeKurz = parseIdeeKurzJson(raw);

@@ -19,6 +19,14 @@ export const SACHBUCH_WAIT_UVP = [
   "UVP-Dossier wird gespeichert …",
 ] as const;
 
+export const SACHBUCH_WAIT_IDEE_REFINE = [
+  "Haiku verdichtet das Konzept …",
+  "Luna prüft Schärfe und Lücken …",
+  "Haiku setzt Change-Orders um …",
+  "Luna bewertet erneut …",
+  "Dossier wird zur Freigabe vorbereitet …",
+] as const;
+
 export const SACHBUCH_WAIT_EVIDENZ = [
   "UVP wird gelesen …",
   "Google Search recherchiert …",

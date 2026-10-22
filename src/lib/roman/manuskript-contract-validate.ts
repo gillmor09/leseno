@@ -14,13 +14,296 @@ function normalizeHay(s: string): string {
     .trim();
 }
 
-/** Significant tokens from a secret / ban phrase (≥4 letters). */
-function significantTokens(phrase: string): string[] {
+/**
+ * German function words + contract meta-framing words ("verschweigt", "bleibt",
+ * "erwähnt", "unbekannt", "offen", ...) that appear inside `kept_secret` or
+ * `mustNotRepeat` phrasing but are NOT the secret payload itself.
+ */
+const CONTRACT_META_STOPWORDS = new Set([
+  "aber",
+  "alle",
+  "allem",
+  "allen",
+  "aller",
+  "alles",
+  "also",
+  "andere",
+  "anderen",
+  "anderer",
+  "auch",
+  "ausdrücklich",
+  "außerhalb",
+  "beide",
+  "beiden",
+  "beim",
+  "bereits",
+  "bleiben",
+  "bleibt",
+  "bisher",
+  "dabei",
+  "dadurch",
+  "dafür",
+  "dagegen",
+  "daher",
+  "damit",
+  "danach",
+  "dann",
+  "daran",
+  "darauf",
+  "daraus",
+  "darf",
+  "darin",
+  "darüber",
+  "darum",
+  "darunter",
+  "dass",
+  "dazu",
+  "dein",
+  "deine",
+  "demnach",
+  "denen",
+  "denn",
+  "jeweils",
+  "jedoch",
+  "jetzt",
+  "kaum",
+  "kein",
+  "keine",
+  "keinem",
+  "keinen",
+  "keiner",
+  "klar",
+  "konkret",
+  "konkrete",
+  "konkreten",
+  "konkreter",
+  "lässt",
+  "lassen",
+  "legt",
+  "lediglich",
+  "mehr",
+  "mein",
+  "meine",
+  "meinem",
+  "meinen",
+  "mitte",
+  "müssen",
+  "muss",
+  "nach",
+  "nachdem",
+  "nächste",
+  "nächsten",
+  "neben",
+  "nicht",
+  "nichts",
+  "noch",
+  "oder",
+  "offen",
+  "offenbart",
+  "ohne",
+  "preis",
+  "räumt",
+  "rund",
+  "sagt",
+  "schon",
+  "sein",
+  "seine",
+  "seinem",
+  "seinen",
+  "seiner",
+  "seit",
+  "selbst",
+  "sich",
+  "sieht",
+  "sind",
+  "sobald",
+  "soll",
+  "sollen",
+  "sondern",
+  "sowie",
+  "später",
+  "spätere",
+  "späteren",
+  "pricht",
+  "spricht",
+  "statt",
+  "steht",
+  "stellt",
+  "tatsächlich",
+  "trotz",
+  "über",
+  "überhaupt",
+  "unausgesprochen",
+  "unbekannt",
+  "unter",
+  "verbergen",
+  "verborgen",
+  "verheimlicht",
+  "verrät",
+  "verschweigen",
+  "verschweigt",
+  "verschwiegen",
+  "völlig",
+  "vollständig",
+  "vorab",
+  "orerst",
+  "vorerst",
+  "während",
+  "wann",
+  "warum",
+  "weder",
+  "wegen",
+  "weil",
+  "weiter",
+  "weitere",
+  "weiteren",
+  "weiterhin",
+  "welche",
+  "welchem",
+  "welchen",
+  "welcher",
+  "welches",
+  "wenn",
+  "wird",
+  "werden",
+  "wissen",
+  "weiß",
+  "wusste",
+  "wurde",
+  "wurden",
+  "zeigen",
+  "zeigt",
+  "zuerst",
+  "zunächst",
+  "zusammenhang",
+  "zwischen",
+  "erwähnt",
+  "erwähnen",
+  "erklärt",
+  "erklären",
+  "erfährt",
+  "erfahren",
+  "genannt",
+  "genaue",
+  "genauen",
+  "genauer",
+  "exakte",
+  "exakten",
+  "diesem",
+  "diesen",
+  "dieser",
+  "dieses",
+  "diese",
+  "durch",
+  "eigen",
+  "eigene",
+  "eigenen",
+  "eigener",
+  "einem",
+  "einen",
+  "einer",
+  "eines",
+  "einzelne",
+  "einzelnen",
+  "erst",
+  "folgt",
+  "folgetag",
+  "frühere",
+  "früheren",
+  "gegen",
+  "gegenüber",
+  "gehalten",
+  "geheim",
+  "geheimnis",
+  "genau",
+  "gerade",
+  "gespräch",
+  "getragen",
+  "gleiche",
+  "gleichen",
+  "haben",
+  "hatte",
+  "hatten",
+  "hier",
+  "hinter",
+  "hintergrund",
+  "höhe",
+  "ihre",
+  "ihrem",
+  "ihren",
+  "ihrer",
+  "immer",
+  "indem",
+  "innerhalb",
+  "intern",
+  "interne",
+  "internen",
+  "kapitel",
+  "kapiteln",
+  "moment",
+  "monat",
+  "monatliche",
+  "monatlichen",
+  "text",
+  "ausgelöst",
+  "ausgeloest",
+  "festlegt",
+  "festgelegt",
+  "gewichtung",
+]);
+
+/** Significant tokens from a secret / ban phrase (≥4 chars, excluding meta stopwords). */
+function significantTokens(
+  phrase: string,
+  allowedChapterTokens?: ReadonlySet<string>,
+): string[] {
   return phrase
     .split(/[^\p{L}\p{N}]+/u)
     .map((t) => t.toLowerCase())
-    .filter((t) => t.length >= 4)
-    .slice(0, 8);
+    .filter(
+      (t) =>
+        t.length >= 4 &&
+        !CONTRACT_META_STOPWORDS.has(t) &&
+        !/^sz_\d+$/i.test(t) &&
+        !(allowedChapterTokens && allowedChapterTokens.has(t)),
+    )
+    .slice(0, 10);
+}
+
+/**
+ * Build a set of tokens that are explicitly required/expected in the chapter
+ * (character names, locations, props, events, revealed facts, scene headings).
+ * Mentioning these in prose must never count as leaking a secret.
+ */
+function buildAllowedChapterTokenSet(
+  chapter: RomanSzenenplotChapterNode,
+): Set<string> {
+  const parts: string[] = [
+    chapter.title ?? "",
+    chapter.kernsatz ?? "",
+    ...(chapter.props ?? []),
+    ...(chapter.events ?? []),
+  ];
+  for (const s of chapter.scenes ?? []) {
+    parts.push(
+      s.heading ?? "",
+      s.summary ?? "",
+      ...(s.characters_present ?? []),
+      s.dramaturgy?.scene_goal ?? "",
+      s.dramaturgy?.obstacle_conflict ?? "",
+      s.dramaturgy?.outcome_value_change ?? "",
+      s.information_flow?.revealed_to_audience ?? "",
+      s.information_flow?.revealed_to_characters ?? "",
+    );
+  }
+  const tokens = new Set<string>();
+  for (const raw of parts) {
+    for (const tok of raw.split(/[^\p{L}\p{N}]+/u)) {
+      const lower = tok.toLowerCase();
+      if (lower.length >= 4) tokens.add(lower);
+    }
+  }
+  return tokens;
 }
 
 export type ManuskriptContractViolation = {
@@ -30,7 +313,9 @@ export type ManuskriptContractViolation = {
 
 /**
  * Heuristic validation of chapter prose against plot contracts.
- * False positives possible on short tokens — phrases need ≥10 chars / ≥2 tokens.
+ * Filters out chapter-expected tokens (characters, props, locations, revealed
+ * beats) and meta stopwords so `kept_secret` checks only fire when distinct
+ * secret-specific payload tokens actually leak into prose.
  */
 export function validateManuskriptChapterAgainstContracts(input: {
   prose: string;
@@ -42,10 +327,23 @@ export function validateManuskriptChapterAgainstContracts(input: {
     return { ok: true, violations: [] };
   }
 
+  const allowedPropHay = normalizeHay(
+    [...(input.chapter.props ?? []), ...(input.chapter.events ?? [])].join(" "),
+  );
+  const allowedChapterTokens = buildAllowedChapterTokenSet(input.chapter);
+
   for (const ban of input.chapter.mustNotRepeat ?? []) {
     const phrase = ban.trim();
     if (phrase.length < 10) continue;
+    // Prior-introduce guards ("Erst-Einführung von X nicht wiederholen...") or bans overlapping
+    // with active chapter props must not penalize mentioning an explicitly required prop.
+    if (/^(?:erst-einführung|bereits in früheren kapiteln)/i.test(phrase)) {
+      continue;
+    }
     const needle = normalizeHay(phrase);
+    if (needle.length >= 10 && allowedPropHay.includes(needle)) {
+      continue;
+    }
     if (needle.length >= 10 && hay.includes(needle)) {
       violations.push({
         code: "must_not_repeat",
@@ -53,8 +351,12 @@ export function validateManuskriptChapterAgainstContracts(input: {
       });
       continue;
     }
-    const tokens = significantTokens(phrase);
-    if (tokens.length >= 2 && tokens.every((t) => hay.includes(t))) {
+    const tokens = significantTokens(phrase, allowedChapterTokens);
+    if (
+      tokens.length >= 2 &&
+      !tokens.every((t) => allowedPropHay.includes(t)) &&
+      tokens.every((t) => hay.includes(t))
+    ) {
       violations.push({
         code: "must_not_repeat",
         message: `Verbotenes Motiv (Token-Treffer) „${phrase.slice(0, 80)}“.`,
@@ -74,8 +376,13 @@ export function validateManuskriptChapterAgainstContracts(input: {
       });
       continue;
     }
-    const tokens = significantTokens(secret);
-    if (tokens.length >= 3 && tokens.filter((t) => hay.includes(t)).length >= 3) {
+    // Only test distinct secret payload tokens that are NOT already part of
+    // this chapter's allowed characters/locations/props/revealed facts.
+    const secretOnlyTokens = significantTokens(secret, allowedChapterTokens);
+    if (
+      secretOnlyTokens.length >= 2 &&
+      secretOnlyTokens.every((t) => hay.includes(t))
+    ) {
       violations.push({
         code: "kept_secret_leak",
         message: `Geheimnis aus ${scene.scene_id} vermutlich geleakt („${secret.slice(0, 80)}“).`,

@@ -6,7 +6,10 @@
  * Core: logik (stored as regelnPct for JSON compat).
  */
 
-import type { PipelineStage } from "@/lib/roman/pipeline/stages";
+import {
+  normalizePipelineStage,
+  type PipelineStage,
+} from "@/lib/roman/pipeline/stages";
 import type {
   ReifegradAssessKey,
   StageReifegrad,
@@ -17,8 +20,9 @@ export const REIFEGRAD_CORE_DIMENSIONS = ["logik"] as const;
 /**
  * Wired model for the four dimension „Analysieren“ calls
  * (prompt still from Entwicklungslektor; apply uses Co-Autor).
+ * Structured critique, same class as the Roman assist model (Haiku 5.5), not prose.
  */
-export const REIFEGRAD_DIMENSION_ANALYZE_MODEL_SLUG = "gemini-3.8-flash";
+export const REIFEGRAD_DIMENSION_ANALYZE_MODEL_SLUG = "claude-haiku-5-5";
 
 export type ReifegradCoreDimension =
   (typeof REIFEGRAD_CORE_DIMENSIONS)[number];
@@ -27,7 +31,11 @@ export type ReifegradCraftSlot = "a" | "b" | "c";
 
 export type ReifegradCraftKey =
   | "schaerfe"
+  | "kernkonflikt"
+  | "tragfaehigkeit"
+  /** @deprecated Idee craft B is {@link kernkonflikt}; kept for legacy plans. */
   | "versprechen"
+  /** @deprecated Idee craft C is {@link tragfaehigkeit}; kept for legacy plans. */
   | "alleinstellung"
   | "motivation"
   | "konfliktkraft"
@@ -45,6 +53,8 @@ export type ReifegradCraftKey =
   | "abdeckung"
   | "konkretheit"
   | "uebergaenge"
+  /** Wissensgraph: edges + hardInvariants as continuity ledger. */
+  | "vernetzung"
   | "stil"
   | "dramaturgie"
   | "lesefluss";
@@ -73,6 +83,39 @@ Ignoriere Stil-Feinschliff und Marktanalyse-Bedürfnisse.`,
 ];
 
 /**
+ * Idee-only Logik (Konzept-Ebene) — used by {@link dimensionsForStage} for `idee`.
+ */
+export const IDEE_LOGIK_DEF: ReifegradDimensionDef = {
+  key: "logik",
+  label: "Logik",
+  hint: "Stimmen Prämisse, Figurenkern und Setting-Skizze zusammen — ohne Widerspruch, ohne magische Lösung ohne Regel?",
+  brief: `NUR innere Logik der Idee (Konzept-Ebene): Stimmen Prämisse, Figurenkerne und Setting-Skizze kausal zusammen?
+Keine Widersprüche, keine magischen Lösungen ohne Regel, kein „und dann passiert irgendwie …“.
+VERBOTEN zu bewerten: Kapitelpläne, Prosa-Stil, Markt-Pitch.
+Zu dünn = lose Versatzstücke ohne Ursache/Wirkung.`,
+};
+
+/**
+ * Weighted Gesamt for Idee (sums to 1).
+ * Keys listed in UI/priority order (desc): Spec-Saat first, Schärfe last.
+ */
+export const IDEE_REIFEGRAD_WEIGHTS = {
+  kernkonflikt: 0.3,
+  tragfaehigkeit: 0.3,
+  logik: 0.25,
+  schaerfe: 0.15,
+} as const;
+
+/**
+ * Idee axes in weight-priority order (same as {@link IDEE_REIFEGRAD_WEIGHTS} keys).
+ * Storage slots A/B/C stay Schärfe/Kernkonflikt/Tragfähigkeit — only display/improve order.
+ */
+export function ideeDimensionsByPriority(): ReifegradDimensionDef[] {
+  const [schaerfe, kernkonflikt, tragfaehigkeit] = STAGE_CRAFT_DIMENSIONS.idee;
+  return [kernkonflikt, tragfaehigkeit, IDEE_LOGIK_DEF, schaerfe];
+}
+
+/**
  * Stage-specific craft axes (slots A/B/C → stilPct / dramaturgiePct / leseflussPct).
  */
 export const STAGE_CRAFT_DIMENSIONS: Record<
@@ -84,25 +127,30 @@ export const STAGE_CRAFT_DIMENSIONS: Record<
       key: "schaerfe",
       label: "Schärfe",
       slot: "a",
-      hint: "Ist der Ideenkern klar, konkret und greifbar — ohne Wischiwaschi und ohne Kapitel-/Szenenplan?",
-      brief: `NUR Schärfe der Idee: Ist der Kern klar, konkret und greifbar — ohne Wischiwaschi und ohne Kapitel-/Szenenplan?
-Ignoriere Prosa-Stil, Spec-Details und Plot-Feinschliff. Kapitel gehören nicht in die Idee.`,
+      hint: "Kern in 1–2 Sätzen greifbar — konkret, ohne Wischiwaschi, ohne Kapitelplan.",
+      brief: `NUR Schärfe: Kann man den Ideenkern in 1–2 klaren Sätzen sagen — wer, was auf dem Spiel steht, worum es geht?
+Konkret, nicht „irgendwie Thriller mit Geheimnis“ oder Genre-Floskeln.
+VERBOTEN in der Idee: Kapitelgliederung, Beat-Sheets, Szenenfolgen, Spec-Steckbriefe.
+Ignoriere Prosa-Stil und Markt-Pitch. Zu dünn = unscharfe Lage ohne greifbaren Kern.`,
     },
     {
-      key: "versprechen",
-      label: "Versprechen",
+      key: "kernkonflikt",
+      label: "Kernkonflikt",
       slot: "b",
-      hint: "Leseversprechen: Warum die Zielgruppe dieses Buch wollen würde — altersgerecht und prinzipiell einlösbar.",
-      brief: `NUR das Leseversprechen (Anziehung): Warum würde die Zielgruppe dieses Buch wollen? Ist es altersgerecht und prinzipiell einlösbar?
-Ignoriere Thriller-Pacing, Weltbau-Details und Charakter-Steckbriefe.`,
+      hint: "Zentrale Spannung: Antrieb vs. Widerstand, warum es zählt — Saat für Spec.",
+      brief: `NUR Kernkonflikt: Greifbare zentrale Konfliktspannung oder These — Antrieb vs. Widerstand, persönlicher/dramatischer Einsatz.
+Das ist die Saat für Figuren/Welt/Exposé — kein Leseversprechen, kein Genre-Marketing, kein „Leser will X“.
+Zu dünn = abstrakte Lage ohne Gegenkraft oder ohne warum-es-zählt.`,
     },
     {
-      key: "alleinstellung",
-      label: "Alleinstellung",
+      key: "tragfaehigkeit",
+      label: "Tragfähigkeit",
       slot: "c",
-      hint: "Was die Idee im Genre/Altersband unverwechselbar macht — ohne Novelty um jeden Preis.",
-      brief: `NUR Alleinstellung: Was macht diese Idee unverwechselbar im Genre/Altersband — ohne Novelty um jeden Preis?
-Solide Genre-Ausführung mit klarer Differenz darf hoch scoren. Ignoriere reine Regel-Checklisten.`,
+      hint: "Reicht der Stoff für einen ganzen Roman (Steigerung/Mitte/Ende) — oder nur eine Episode?",
+      brief: `NUR Tragfähigkeit / Romanstoff: Trägt dieser Kern einen ganzen Roman — erkennbare Steigerung, Spielraum für Mitte und Ende — oder nur Kurzgeschichte/Episode?
+Downstream darf verdichten, aber nicht den dramatischen Kern erfinden müssen.
+Ignoriere Kapitelzahlen und fertige Plotchronologie; bewerte Stoff-Potenzial (Escalation/Midpoint-/Endgame-Seed).
+Zu dünn = eine Szene/Idee ohne Raum für Mehrakt-Druck.`,
     },
   ],
   charaktere: [
@@ -189,6 +237,56 @@ Fehlende Steigerung oder unklarer Schluss = kritisch (sonst erfindet Gerüst/Plo
 Ignoriere reine Steckbrief-Details und Atmosphäre-Lyrik.`,
     },
   ],
+  /** Filled after object — aliases to expose / plot / szenen craft. */
+  rahmen: null as unknown as [
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+  ],
+  fundament: null as unknown as [
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+  ],
+  graph: [
+    {
+      key: "abdeckung",
+      label: "Abdeckung",
+      slot: "a",
+      hint: "Handlungsrelevante Figuren, Orte, Props und Events aus Fundament+Exposé sind als Knoten da.",
+      brief: `NUR Abdeckung des Wissensgraphen: Sind handlungsrelevante Personen, Orte, Props und Events aus Fundament/Exposé als Knoten vorhanden?
+Fehlende zentrale Entities benennen. Mindestens Personen + Orte + handlungsrelevante Props/Events.
+Ignoriere Plot-Kapitel und Prosa — nur den Graph als Canon-Ledger.`,
+    },
+    {
+      key: "konkretheit",
+      label: "Konkretheit",
+      slot: "b",
+      hint: "Identitäts-Attrs gesetzt (Farbe, Kennzeichen, Adresse, Material, Datum/Uhrzeit) — keine dünnen Platzhalter.",
+      brief: `NUR Konkretheit der Knoten-attrs: Props/Orte/Events/Personen brauchen greifbare Identitäts-Details (farbe, kennzeichen, adresse/hausnummer, material, name, datum/uhrzeit, standort).
+Dünne Knoten ohne konkrete attrs = kritisch (Plot/Manuskript würde sonst neu erfinden).
+Bestehende konkrete attrs nicht still ändern — nur fehlende bewerten. Ignoriere Spannungsbögen und Szenenverträge.`,
+    },
+    {
+      key: "vernetzung",
+      label: "Vernetzung",
+      slot: "c",
+      hint: "Kanten und hardInvariants verbinden Entities zu einem belastbaren Canon-Netz.",
+      brief: `NUR Vernetzung: Sinnvolle Edges zwischen Personen/Orten/Props/Events und belastbare hardInvariants (Canon-Fakten, die Plot/Manuskript nicht widersprechen dürfen).
+Isolierte Knoten ohne Relationen oder leere Invarianten-Liste = zu schwach für Plot-Faktenverträge.
+Ignoriere Prosa-Stil und Kapitelreihenfolge.`,
+    },
+  ],
+  plot: null as unknown as [
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+  ],
+  szenen: null as unknown as [
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+  ],
   grobgeruest: [
     {
       key: "funktion",
@@ -223,14 +321,14 @@ Ignoriere Feingerüst-Details und Plot.`,
       hint: "Jedes Kapitel bringt den Plot voran oder erfüllt eine klare Story-Aufgabe — keine Füllkapitel.",
       brief: `NUR Kapitel-Nutzen/Funktion: Jedes Kapitel muss den Plot voranbringen oder eine klare Story-Aufgabe erfüllen (kein Füllkapitel).
 Skizzenhafte Kürze und offene Fäden sind OK — kein Mini-Manuskript verlangen.
-Ignoriere Einzelszenen, Prosa-Stil und Feinschliff — nur die Funktion im Feingerüst.`,
+Ignoriere Einzelszenen, Prosa-Stil und Feinschliff — nur die Funktion im Gerüst.`,
     },
     {
       key: "dramaturgie",
       label: "Dramaturgie",
       slot: "b",
       hint: "Reihenfolge, Tempo, Wendungen und Spannungsbögen auf Kapitelebene (Setup/Peak/Payoff).",
-      brief: `NUR Dramaturgie des Feingerüsts: Reihenfolge, Tempo, Wendungen, Spannungsbogen — altersgerecht.
+      brief: `NUR Dramaturgie des Gerüsts: Reihenfolge, Tempo, Wendungen, Spannungsbogen — altersgerecht.
 Prüfe zentrale Arcs (Setup/Peak/Payoff) und knappe Arc-Beats — fehlen Peak/Payoff oder driftet der Bogen?
 Nicht bestrafen: knappe mustShow, offene Threads, Raum für den Plot.
 Ignoriere Einzelszenen-Handlungen und Prosa.`,
@@ -239,8 +337,9 @@ Ignoriere Einzelszenen-Handlungen und Prosa.`,
       key: "abdeckung",
       label: "Abdeckung",
       slot: "c",
-      hint: "Deckt das Gerüst die zentralen Bögen, Wendungen und Versprechen aus Spec und Upstream ab?",
-      brief: `NUR Abdeckung: Deckt das Feingerüst die zentralen Bögen/Wendungen/Versprechen aus Exposé und Upstream? Fehlende oder verwaiste Stränge (ohne Kapitel-Anker / ohne Arc) benennen.
+      hint: "Deckt das Gerüst den Gesamt-Kanon (Regeln, Figuren, Welt, Exposé, Wissensgraph) ab?",
+      brief: `NUR Abdeckung: Deckt das Gerüst die zentralen Bögen, Figuren-Antriebe, Weltregeln, Leitplanken und Knoten aus dem Gesamt-Kanon (Regeln & Grenzen + Fundament + Exposé + Wissensgraph) ab? Fehlende oder verwaiste Stränge (ohne Kapitel-Anker / ohne Arc) benennen.
+Wenn das Exposé knapp ist, zählt die konsistente Ausfaltung aus Figuren, Welt, Regeln und Wissensgraph positiv — nicht als „Erfindung gegen das Exposé“ bestrafen.
 Nicht verlangen, dass jedes Motiv schon szenisch ausgearbeitet ist — Anker reichen.
 Ignoriere Stil und Detailprosa.`,
     },
@@ -285,7 +384,7 @@ Keine abstrakten Platzhalter. Ignoriere Prosa-Stil — nur den Szenenplot-Vertra
       label: "Übergänge",
       slot: "b",
       hint: "Ursache→Wirkung zwischen Szenen; Continuity und Hooks ohne Logiklücken.",
-      brief: `NUR Übergänge/Continuity im Feinplot: Ursache→Wirkung, next_scene_hook, character_states_after (Ort/Etage), prop_placements_after, Intro/Resolve.
+      brief: `NUR Übergänge/Continuity im Plot: Ursache→Wirkung, next_scene_hook, character_states_after (Ort/Etage), prop_placements_after, Intro/Resolve.
 Keine Handlungslöcher. Ignoriere Formulierungsstil.`,
     },
     {
@@ -297,53 +396,16 @@ Keine Handlungslöcher. Ignoriere Formulierungsstil.`,
 Fehlende Arc→Szene-Zuordnung benennen. Ignoriere Prosa.`,
     },
   ],
-  /** @deprecated Alias → Feingerüst craft axes */
-  kapitelgeruest: [
-    {
-      key: "funktion",
-      label: "Funktion",
-      slot: "a",
-      hint: "Jedes Kapitel bringt den Plot voran oder erfüllt eine klare Story-Aufgabe — keine Füllkapitel.",
-      brief: `NUR Kapitel-Nutzen/Funktion im Gerüst.`,
-    },
-    {
-      key: "dramaturgie",
-      label: "Dramaturgie",
-      slot: "b",
-      hint: "Reihenfolge, Tempo, Wendungen und Spannungsbögen auf Kapitelebene.",
-      brief: `NUR Dramaturgie des Gerüsts.`,
-    },
-    {
-      key: "abdeckung",
-      label: "Abdeckung",
-      slot: "c",
-      hint: "Deckt das Gerüst Spec-Versprechen ab?",
-      brief: `NUR Abdeckung des Gerüsts.`,
-    },
+  /** Filled below — same axes as feingeruest / feinplot. */
+  kapitelgeruest: null as unknown as [
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
   ],
-  /** @deprecated Alias → Feinplot craft axes */
-  szenenplot: [
-    {
-      key: "konkretheit",
-      label: "Konkretheit",
-      slot: "a",
-      hint: "Jede Szene hat greifbare Handlungen.",
-      brief: `NUR Konkretheit der Szenen.`,
-    },
-    {
-      key: "uebergaenge",
-      label: "Übergänge",
-      slot: "b",
-      hint: "Ursache→Wirkung zwischen Szenen.",
-      brief: `NUR Übergänge/Continuity.`,
-    },
-    {
-      key: "abdeckung",
-      label: "Abdeckung",
-      slot: "c",
-      hint: "Arc-Beats in Szenen abgedeckt.",
-      brief: `NUR Abdeckung im Szenenplot.`,
-    },
+  szenenplot: null as unknown as [
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
+    ReifegradDimensionDef,
   ],
   manuskript: [
     {
@@ -373,6 +435,18 @@ Ignoriere Motivations- und Regelthemen, außer sie brechen den Fluss.`,
   ],
 };
 
+// Canonical process stages + legacy aliases share craft axes.
+STAGE_CRAFT_DIMENSIONS.rahmen = STAGE_CRAFT_DIMENSIONS.expose;
+STAGE_CRAFT_DIMENSIONS.fundament = STAGE_CRAFT_DIMENSIONS.expose;
+// graph has own craft axes (Abdeckung / Konkretheit / Vernetzung) — do not alias.
+// Plot = Ereignisplan (Feingerüst craft); Szenen = Feinplot craft.
+STAGE_CRAFT_DIMENSIONS.plot = STAGE_CRAFT_DIMENSIONS.feingeruest;
+STAGE_CRAFT_DIMENSIONS.szenen = STAGE_CRAFT_DIMENSIONS.feinplot;
+STAGE_CRAFT_DIMENSIONS.kapitelgeruest = STAGE_CRAFT_DIMENSIONS.plot;
+STAGE_CRAFT_DIMENSIONS.grobgeruest = STAGE_CRAFT_DIMENSIONS.plot;
+STAGE_CRAFT_DIMENSIONS.szenenplot = STAGE_CRAFT_DIMENSIONS.szenen;
+STAGE_CRAFT_DIMENSIONS.grobplot = STAGE_CRAFT_DIMENSIONS.szenen;
+
 /**
  * Craft axes for assess keys — `roman` reuses Manuskript Stil/Dramaturgie/Lesefluss.
  */
@@ -380,31 +454,40 @@ export function craftDimensionsForAssessKey(
   key: ReifegradAssessKey,
 ): [ReifegradDimensionDef, ReifegradDimensionDef, ReifegradDimensionDef] {
   if (key === "roman") return STAGE_CRAFT_DIMENSIONS.manuskript;
-  return STAGE_CRAFT_DIMENSIONS[key];
+  const canonical = normalizePipelineStage(key) ?? key;
+  const craft =
+    STAGE_CRAFT_DIMENSIONS[canonical] ?? STAGE_CRAFT_DIMENSIONS[key];
+  if (!craft) {
+    throw new Error(`Keine Reifegrad-Craft-Achsen für Stufe „${key}“.`);
+  }
+  return craft;
 }
 
 /** Resolve PipelineStage craft lookup for assess keys (roman → manuskript axes). */
 export function pipelineStageForAssessKey(
   key: ReifegradAssessKey,
 ): PipelineStage {
-  return key === "roman" ? "manuskript" : key;
+  if (key === "roman") return "manuskript";
+  return normalizePipelineStage(key) ?? key;
 }
 
-/** All four dimension defs for a stage (Logik + craft). Used for assess. */
+/** All four dimension defs for a stage (Logik + craft). Used for assess/UI. */
 export function dimensionsForStage(
   stage: PipelineStage,
 ): ReifegradDimensionDef[] {
-  return [...REIFEGRAD_CORE_DEFS, ...STAGE_CRAFT_DIMENSIONS[stage]];
+  if (stage === "idee") return ideeDimensionsByPriority();
+  const canonical = normalizePipelineStage(stage) ?? stage;
+  const craft =
+    STAGE_CRAFT_DIMENSIONS[canonical] ?? STAGE_CRAFT_DIMENSIONS[stage];
+  return [REIFEGRAD_CORE_DEFS[0]!, ...craft];
 }
 
 /** Dimension defs for pipeline stages or post-polish `roman`. */
 export function dimensionsForAssessKey(
   key: ReifegradAssessKey,
 ): ReifegradDimensionDef[] {
-  return [
-    ...REIFEGRAD_CORE_DEFS,
-    ...craftDimensionsForAssessKey(key),
-  ];
+  if (key === "idee") return ideeDimensionsByPriority();
+  return [REIFEGRAD_CORE_DEFS[0]!, ...craftDimensionsForAssessKey(key)];
 }
 
 /**
@@ -421,6 +504,7 @@ export function improveDimensionsForStage(
  * Analyze/apply knobs for assess keys.
  * Roman (content-frozen polish): only Stil + Lesefluss — Logik/Dramaturgie
  * belong in the Manuskript draft, not a stil-pass rework.
+ * Idee: Kernkonflikt · Tragfähigkeit · Logik · Schärfe (Gewichtungs-Reihenfolge).
  */
 export function improveDimensionsForAssessKey(
   key: ReifegradAssessKey,
@@ -429,29 +513,73 @@ export function improveDimensionsForAssessKey(
     const [stil, , lesefluss] = STAGE_CRAFT_DIMENSIONS.manuskript;
     return [stil, lesefluss];
   }
+  if (key === "idee") return ideeDimensionsByPriority();
   return improveDimensionsForStage(key);
 }
 
 /**
- * How Gesamt is averaged for a stage (Logik + craft axes).
+ * How many axes enter Gesamt for a stage (Idee is weighted, still 4 axes).
  */
 export function reifegradGesamtDivisor(_stage: PipelineStage): number {
   void _stage;
   return 4;
 }
 
+/**
+ * Map legacy Idee craft keys onto current axes.
+ * „versprechen“ → Kernkonflikt, „alleinstellung“ → Tragfähigkeit.
+ */
+export function normalizeIdeeCraftDimensionKey(
+  key: string,
+): ReifegradDimension {
+  if (key === "versprechen") return "kernkonflikt";
+  if (key === "alleinstellung") return "tragfaehigkeit";
+  return key as ReifegradDimension;
+}
+
+/** Weighted Idee Gesamt (see {@link IDEE_REIFEGRAD_WEIGHTS}). */
+export function computeIdeeGesamtPct(input: {
+  logikPct: number;
+  schaerfePct: number;
+  kernkonfliktPct: number;
+  tragfaehigkeitPct: number;
+}): number {
+  const w = IDEE_REIFEGRAD_WEIGHTS;
+  return (
+    input.logikPct * w.logik +
+    input.schaerfePct * w.schaerfe +
+    input.kernkonfliktPct * w.kernkonflikt +
+    input.tragfaehigkeitPct * w.tragfaehigkeit
+  );
+}
+
 export function craftDimensionsForStage(
   stage: PipelineStage,
 ): [ReifegradDimensionDef, ReifegradDimensionDef, ReifegradDimensionDef] {
-  return STAGE_CRAFT_DIMENSIONS[stage];
+  return craftDimensionsForAssessKey(stage);
 }
 
 export function formatCraftScoresLineForAssessKey(
   key: ReifegradAssessKey,
   score: Pick<StageReifegrad, "stilPct" | "dramaturgiePct" | "leseflussPct">,
 ): string {
+  if (key === "idee") {
+    // Craft only, weight-priority (Logik comes from the caller prefix or
+    // {@link formatIdeeScoresLineByPriority}).
+    return `Kernkonflikt ${score.dramaturgiePct}% · Tragfähigkeit ${score.leseflussPct}% · Schärfe ${score.stilPct}%`;
+  }
   const [a, b, c] = craftDimensionsForAssessKey(key);
   return `${a.label} ${score.stilPct}% · ${b.label} ${score.dramaturgiePct}% · ${c.label} ${score.leseflussPct}%`;
+}
+
+/** Full Idee score line in weight-priority order. */
+export function formatIdeeScoresLineByPriority(
+  score: Pick<
+    StageReifegrad,
+    "regelnPct" | "stilPct" | "dramaturgiePct" | "leseflussPct"
+  >,
+): string {
+  return `Kernkonflikt ${score.dramaturgiePct}% · Tragfähigkeit ${score.leseflussPct}% · Logik ${score.regelnPct}% · Schärfe ${score.stilPct}%`;
 }
 
 export function findDimensionDef(
@@ -466,7 +594,10 @@ export function findDimensionDefForAssessKey(
   key: ReifegradAssessKey,
   dimKey: string,
 ): ReifegradDimensionDef | null {
-  const normalized = dimKey === "regeln" ? "logik" : dimKey;
+  let normalized = dimKey === "regeln" ? "logik" : dimKey;
+  if (key === "idee") {
+    normalized = normalizeIdeeCraftDimensionKey(normalized);
+  }
   return (
     improveDimensionsForAssessKey(key).find((d) => d.key === normalized) ??
     null
@@ -495,8 +626,10 @@ export const REIFEGRAD_DIMENSION_LABELS: Record<string, string> = {
   erfuelltes_beduerfnis: "Erfülltes Bedürfnis",
   vernachlaessigtes_beduerfnis: "Vernachlässigtes Bedürfnis",
   schaerfe: "Schärfe",
-  versprechen: "Versprechen",
-  alleinstellung: "Alleinstellung",
+  kernkonflikt: "Kernkonflikt",
+  tragfaehigkeit: "Tragfähigkeit",
+  versprechen: "Kernkonflikt", // legacy Idee craft B
+  alleinstellung: "Tragfähigkeit", // legacy Idee craft C
   motivation: "Motivation",
   konfliktkraft: "Konfliktkraft",
   altersstimme: "Altersstimme",
@@ -561,14 +694,15 @@ export function formatCraftScoresLine(
   stage: PipelineStage,
   score: Pick<StageReifegrad, "stilPct" | "dramaturgiePct" | "leseflussPct">,
 ): string {
-  const [a, b, c] = STAGE_CRAFT_DIMENSIONS[stage];
-  return `${a.label} ${score.stilPct}% · ${b.label} ${score.dramaturgiePct}% · ${c.label} ${score.leseflussPct}%`;
+  return formatCraftScoresLineForAssessKey(stage, score);
 }
 
 /** All craft keys (for Zod enums). */
 export const ALL_REIFEGRAD_DIMENSION_KEYS = [
   ...REIFEGRAD_CORE_DIMENSIONS,
   "schaerfe",
+  "kernkonflikt",
+  "tragfaehigkeit",
   "versprechen",
   "alleinstellung",
   "motivation",
@@ -587,6 +721,7 @@ export const ALL_REIFEGRAD_DIMENSION_KEYS = [
   "abdeckung",
   "konkretheit",
   "uebergaenge",
+  "vernetzung",
   "stil",
   "dramaturgie",
   "lesefluss",

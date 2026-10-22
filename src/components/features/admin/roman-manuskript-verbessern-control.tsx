@@ -19,7 +19,10 @@ import {
 import { romanPipelineReloadRomanAction } from "@/app/actions/roman-pipeline";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import type { RomanEditorial } from "@/lib/roman/editorial";
-import { isManuskriptFreigabeReadyForRoman } from "@/lib/roman/editorial";
+import {
+  hardManuskriptFreigabeFindings,
+  isManuskriptFreigabeReadyForRoman,
+} from "@/lib/roman/editorial";
 import { parsePlotChapters } from "@/lib/roman/plot-chapters";
 import { getManuskriptRomanVerbessernGate } from "@/lib/roman/roman-verbessern-preflight";
 import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
@@ -91,7 +94,10 @@ export function RomanManuskriptVerbessernControl({
   const gate = getManuskriptRomanVerbessernGate({ editorial });
   const gateBlocks = !gate.ok;
   const freigabeReady = isManuskriptFreigabeReadyForRoman(editorial);
-  const freigabeFindings = editorial.manuskriptFreigabe?.findings ?? [];
+  // Banner: only hard findings (Assist soft never blocks / flickers).
+  const freigabeFindings = hardManuskriptFreigabeFindings(
+    editorial.manuskriptFreigabe?.findings,
+  );
   const freigabeBlocks =
     !freigabeReady &&
     Boolean(gate.ok === false && gate.reason.includes("Freigabe"));
@@ -109,7 +115,10 @@ export function RomanManuskriptVerbessernControl({
         return;
       }
       onComplete?.(audit.data.roman);
-      if (audit.data.findings.length > 0 && !override) {
+      const hardLeft = hardManuskriptFreigabeFindings(
+        audit.data.findings,
+      ).length;
+      if (hardLeft > 0 && !override) {
         toast.message(audit.data.summary);
       } else {
         toast.success(audit.data.summary);
@@ -135,6 +144,27 @@ export function RomanManuskriptVerbessernControl({
         return;
       }
       onComplete?.(result.data.roman);
+      // Refresh display like „Erneut prüfen“, keep settled suppressions.
+      setPending("freigabe");
+      const audit = await auditManuskriptFreigabeAction({
+        romanId,
+        preserveSettled: true,
+      });
+      if (audit.success && audit.data) {
+        onComplete?.(audit.data.roman);
+        if (result.data.autoFreigegeben || audit.data.findings.length === 0) {
+          toast.success(
+            result.data.autoFreigegeben
+              ? result.data.summary
+              : audit.data.summary,
+          );
+        } else {
+          toast.message(
+            `${result.data.summary} · ${audit.data.summary}`,
+          );
+        }
+        return;
+      }
       if (result.data.autoFreigegeben) {
         toast.success(result.data.summary);
       } else {
@@ -298,7 +328,25 @@ export function RomanManuskriptVerbessernControl({
             <ul className="list-disc space-y-1 pl-5 text-xs font-semibold text-amber-900">
               {freigabeFindings.map((f, i) => (
                 <li key={`${f.source}-${i}-${f.chapterNumbers.join("-")}`}>
-                  [{f.source === "seam" ? (f.kind === "payoff" ? "Payoff" : "Naht") : "Emotion"}]
+                  [{f.source === "emotion"
+                    ? f.kind === "humor"
+                      ? "Humor"
+                      : "Emotion"
+                    : f.source === "canon"
+                      ? "Canon"
+                      : f.source === "timeline"
+                        ? "Timeline"
+                        : f.source === "plot_truth"
+                          ? "Plot-Wahrheit"
+                          : f.source === "ledger"
+                            ? "Ledger"
+                          : f.source === "style"
+                            ? "Stil"
+                            : f.kind === "payoff"
+                              ? "Payoff"
+                              : f.kind === "timeline"
+                                ? "Timeline"
+                                : "Naht"}]
                   {" "}
                   Kap. {f.chapterNumbers.join(", ")}: {f.summary}
                 </li>

@@ -1,38 +1,28 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { RomanAdminList } from "@/components/features/admin/roman-admin-list";
+import { RomanNovelList } from "@/components/features/admin/roman-novel-list";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
-import {
-  getRomanAdminModule,
-  matchesAdminModule,
-  type RomanAdminModuleId,
-} from "@/lib/roman/admin-module";
-import { listRomanKontexte } from "@/lib/roman/repository";
+import { listNovels } from "@/lib/novel/repository";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
 export const metadata: Metadata = {
   title: "Roman — Leseno Admin",
-  description: "Romanprojekte und KI-Rollen der Belletristik-Pipeline.",
+  description:
+    "Greenfield Roman: Zwei-Rollen-Orchestrator (Autor Luna · Lektor Haiku).",
 };
 
-const MODULE_ID: RomanAdminModuleId = "roman";
-
 /**
- * Admin index for the internal novel (Belletristik) writing pipeline.
+ * Admin index for the greenfield novel module (`leseno.novels`).
+ * Clever erzählt remains on `/admin/clever-erzaehlt` (legacy roman_kontext).
  */
 export default async function RomanAdminPage() {
-  const adminModule = getRomanAdminModule(MODULE_ID);
-  let romane: Awaited<ReturnType<typeof listRomanKontexte>> = [];
+  let novels: Awaited<ReturnType<typeof listNovels>> = [];
   let canSave = false;
   let readOnlyNotice: string | undefined =
-    "Vorschau: Romane konnten nicht geladen werden. Bitte Migration `20260911160000_roman_pipeline.sql` ausführen.";
+    "Vorschau: Romane konnten nicht geladen werden. Bitte Migration `20261016120000_leseno_novels_blueprint.sql` ausführen.";
 
   try {
-    const all = await listRomanKontexte();
-    romane = all.filter((r) =>
-      matchesAdminModule(r.editorial?.buchTyp, MODULE_ID),
-    );
+    novels = await listNovels();
     canSave = hasServiceRoleConfig();
     if (!canSave) {
       readOnlyNotice =
@@ -60,26 +50,18 @@ export default async function RomanAdminPage() {
             Admin
           </p>
           <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-zinc-950 sm:text-4xl">
-            {adminModule.label}
+            Roman
           </h1>
           <p className="mt-3 max-w-3xl text-base leading-relaxed text-zinc-600">
-            Internes Werkzeug für Belletristik. Buchtyp ist fest Belletristik —
-            KI-Rollen und Prompts verwaltest du hier im Modul.
+            Vollautomatisch von der Idee zum Manuskript. Autor (GPT-6 Luna)
+            schreibt, Lektor (Claude Haiku 5.5) prüft Styleguide, Logik und
+            Wissensgraph — asynchron im Hintergrund.
           </p>
-          <div className="mt-4">
-            <Link
-              href={`${adminModule.basePath}/rollen`}
-              className="text-sm font-bold text-orange-800 hover:underline"
-            >
-              KI-Rollen verwalten
-            </Link>
-          </div>
           <div className="mt-8">
-            <RomanAdminList
-              initialRomane={romane}
+            <RomanNovelList
+              novels={novels}
               canSave={canSave}
               readOnlyNotice={readOnlyNotice}
-              moduleId={MODULE_ID}
             />
           </div>
         </section>

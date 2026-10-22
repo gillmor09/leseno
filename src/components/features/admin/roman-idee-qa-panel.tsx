@@ -2,44 +2,60 @@
 
 /**
  * Idea Q&A layout: Verlauf, Coach Q&A (text + Deepgram STT), Ideendokumentation.
- * Critique / Verbessern runs via pipeline stage actions above the panel.
+ * No Erzeugen/Leser-Feedback here — Idee is dialog-only; Reifegrad sits above.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Mic, MicOff } from "lucide-react";
 import { toast } from "sonner";
-import { romanIdeeQaTurnAction } from "@/app/actions/roman-idee-qa";
+import {
+  romanIdeeDiscardOpenQuestionsAction,
+  romanIdeeProposeQuestionsAction,
+  romanIdeeQaTurnAction,
+} from "@/app/actions/roman-idee-qa";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { useDeepgramLiveStt } from "@/hooks/use-deepgram-live-stt";
 import { countWords, formatWordCount } from "@/lib/roman/editorial";
 import type { RomanIdeaChatMessage } from "@/lib/roman/types";
 import { cn } from "@/lib/utils";
 
 const STARTER_QUESTION =
-  "Womit soll die Idee starten? Genre, Kernkonflikt/These, Figurrolle oder Setting — ohne Kapitelplan, ohne feste Eigennamen.";
+  "Womit soll die Idee starten? Kernkonflikt/These, Figurrolle oder Setting — ohne Kapitelplan, ohne feste Eigennamen. Genre und Tonalität kommen danach in Basics.";
 
 const textareaClass =
-  "w-full min-h-[14rem] flex-1 resize-y rounded-2xl bg-gray-100 px-4 py-3 text-base font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700 font-sans";
+  "w-full min-h-[6.5rem] resize-y rounded-2xl bg-gray-100 px-4 py-3 text-base font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700 font-sans";
 
-function splitDialog(messages: RomanIdeaChatMessage[]): {
+function splitDialog(
+  messages: RomanIdeaChatMessage[],
+  hideStarter: boolean,
+): {
   history: RomanIdeaChatMessage[];
   /** Empty = no open Coach question. */
   openQuestion: string;
+  /** Trailing assistant in chat (not the synthetic starter). */
+  hasPersistedOpenQuestion: boolean;
 } {
   if (messages.length === 0) {
-    return { history: [], openQuestion: STARTER_QUESTION };
+    return {
+      history: [],
+      openQuestion: hideStarter ? "" : STARTER_QUESTION,
+      hasPersistedOpenQuestion: false,
+    };
   }
   const last = messages[messages.length - 1]!;
   if (last.role === "assistant") {
     return {
       history: messages.slice(0, -1),
       openQuestion: last.content.trim() || STARTER_QUESTION,
+      hasPersistedOpenQuestion: true,
     };
   }
   // Last turn answered — no pending Coach question.
   return {
     history: messages,
     openQuestion: "",
+    hasPersistedOpenQuestion: false,
   };
 }
 
@@ -88,7 +104,12 @@ export function RomanIdeeQaPanel({
 }) {
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
+  const [pendingKind, setPendingKind] = useState<
+    "turn" | "propose" | "discard" | null
+  >(null);
   const [verlaufOpen, setVerlaufOpen] = useState(false);
+  const [hideStarter, setHideStarter] = useState(false);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const {
     listening,
     liveTranscript,
@@ -97,13 +118,25 @@ export function RomanIdeeQaPanel({
     clearTranscript,
   } = useDeepgramLiveStt({ enabled: canSave && !disabled });
 
-  const { history, openQuestion } = useMemo(
-    () => splitDialog(messages),
-    [messages],
+  // New persisted open question → show it (clear local starter hide).
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (last?.role === "assistant") {
+      setHideStarter(false);
+    }
+  }, [messages]);
+
+  const { history, openQuestion, hasPersistedOpenQuestion } = useMemo(
+    () => splitDialog(messages, hideStarter),
+    [messages, hideStarter],
   );
   const pairs = useMemo(() => historyPairs(history), [history]);
   const verlaufCount = pairs.length;
   const busy = Boolean(disabled || pending);
+  const hasOpenQuestion = Boolean(openQuestion.trim());
+  const canDiscardQuestions =
+    canSave && !busy && (hasPersistedOpenQuestion || hasOpenQuestion);
+  const canProposeQuestions = canSave && !busy && !hasOpenQuestion;
 
   async function sendText(text: string) {
     if (!canSave || busy) return;
@@ -114,6 +147,7 @@ export function RomanIdeeQaPanel({
     }
     if (listening) stopListening();
     setPending(true);
+    setPendingKind("turn");
     try {
       const result = await romanIdeeQaTurnAction({
         romanId,
@@ -126,6 +160,7 @@ export function RomanIdeeQaPanel({
       setDraft("");
       clearTranscript();
       setVerlaufOpen(false);
+      setHideStarter(false);
       onTurnComplete({
         messages: result.data!.roman.ideenChat,
         ideeKurz: result.data!.ideeKurz,
@@ -133,6 +168,57 @@ export function RomanIdeeQaPanel({
       toast.success("Idee aktualisiert.");
     } finally {
       setPending(false);
+      setPendingKind(null);
+    }
+  }
+
+  async function confirmDiscardQuestions() {
+    if (!canDiscardQuestions) return;
+    setPending(true);
+    setPendingKind("discard");
+    try {
+      if (hasPersistedOpenQuestion) {
+        const result = await romanIdeeDiscardOpenQuestionsAction({ romanId });
+        if (!result.success) {
+          toast.error(result.error ?? "Fragen verwerfen fehlgeschlagen.");
+          return;
+        }
+        onTurnComplete({
+          messages: result.data!.messages,
+          ideeKurz,
+        });
+      } else {
+        // Synthetic starter only — no chat row to delete.
+        setHideStarter(true);
+      }
+      setDiscardConfirmOpen(false);
+      toast.success("Offene Fragen verworfen.");
+    } finally {
+      setPending(false);
+      setPendingKind(null);
+    }
+  }
+
+  async function proposeNewQuestions() {
+    if (!canProposeQuestions) return;
+    if (listening) stopListening();
+    setPending(true);
+    setPendingKind("propose");
+    try {
+      const result = await romanIdeeProposeQuestionsAction({ romanId });
+      if (!result.success) {
+        toast.error(result.error ?? "Neue Fragen fehlgeschlagen.");
+        return;
+      }
+      setHideStarter(false);
+      onTurnComplete({
+        messages: result.data!.messages,
+        ideeKurz,
+      });
+      toast.success("Neue Fragen vom Schreib-Coach.");
+    } finally {
+      setPending(false);
+      setPendingKind(null);
     }
   }
 
@@ -147,18 +233,39 @@ export function RomanIdeeQaPanel({
   return (
     <div className="space-y-5">
       <RomanSceneWaitDialog
-        open={pending}
+        open={pending && pendingKind !== "discard"}
         variant="idee"
         contextLabel="Idee · Dialogrunde"
-        title="Idee weiterentwickeln"
-        progressLabel="Schreib-Coach und Ideen-Redakteur arbeiten an dieser Runde …"
+        title={
+          pendingKind === "propose"
+            ? "Neue Fragen holen"
+            : "Idee weiterentwickeln"
+        }
+        progressLabel={
+          pendingKind === "propose"
+            ? "Schreib-Coach formuliert neue Konzeptfragen …"
+            : "Schreib-Coach und Ideen-Redakteur arbeiten an dieser Runde …"
+        }
+      />
+
+      <ConfirmDeleteDialog
+        open={discardConfirmOpen}
+        title="Offene Fragen verwerfen?"
+        description="Die aktuelle Coach-Frage verschwindet. Der Verlauf und die Ideendokumentation bleiben. Danach kannst du „Neue Fragen“ holen."
+        confirmLabel="Fragen verwerfen"
+        pending={pendingKind === "discard"}
+        onCancel={() => {
+          if (pendingKind !== "discard") setDiscardConfirmOpen(false);
+        }}
+        onConfirm={() => void confirmDiscardQuestions()}
       />
 
       <p className="text-sm font-semibold text-zinc-600">
         Offene Frage vom Schreib-Coach beantworten — tippen oder per Mikrofon
         (Deepgram). Nach dem Senden aktualisiert der Ideen-Redakteur die
-        Ideendokumentation — als Saat für die Spec, ohne Kapitel- oder
-        Szenenpläne.
+        Ideendokumentation (ohne Kapitelplan). Feste Tonalität ist hier noch
+        nicht nötig. Wenn die Dokumentation steht: oben Reifegrad messen bis
+        Hard-Gate grün — danach Basics Genre/Ton/Regeln ableiten.
       </p>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
@@ -223,19 +330,42 @@ export function RomanIdeeQaPanel({
           ) : null}
 
           <section className="flex min-h-[16rem] flex-col rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
-            <p className="text-[11px] font-extrabold tracking-wide text-zinc-500 uppercase">
-              Offene Frage · Schreib-Coach
-            </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="text-[11px] font-extrabold tracking-wide text-zinc-500 uppercase">
+                Offene Frage · Schreib-Coach
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {hasOpenQuestion ? (
+                  <button
+                    type="button"
+                    disabled={!canDiscardQuestions}
+                    onClick={() => setDiscardConfirmOpen(true)}
+                    className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-zinc-50 disabled:opacity-50"
+                  >
+                    Fragen verwerfen
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!canProposeQuestions}
+                    onClick={() => void proposeNewQuestions()}
+                    className="rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
+                  >
+                    {pendingKind === "propose" ? "Fragen …" : "Neue Fragen"}
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="mt-3 flex-1 overflow-y-auto rounded-2xl bg-zinc-50 px-4 py-4 ring-1 ring-zinc-950/5">
               <pre className="whitespace-pre-wrap font-sans text-base font-semibold leading-relaxed text-zinc-900">
                 {openQuestion ||
-                  "Keine offene Frage. Schreib dem Coach etwas Neues, oder nutze Verbessern oben."}
+                  "Keine offene Frage. „Neue Fragen“ holen oder dem Coach etwas Neues schreiben."}
               </pre>
             </div>
           </section>
 
-          <section className="flex min-h-[18rem] flex-col rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
-            <label className="flex min-h-0 flex-1 flex-col">
+          <section className="flex flex-col rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+            <label className="flex flex-col">
               <span className="text-[11px] font-extrabold tracking-wide text-zinc-500 uppercase">
                 Deine Antwort
               </span>
@@ -243,7 +373,8 @@ export function RomanIdeeQaPanel({
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 disabled={!canSave || busy}
-                rows={8}
+                rows={4}
+                maxLength={20_000}
                 className={cn(textareaClass, "mt-3")}
                 placeholder="Hier tippen oder per Mikrofon diktieren …"
                 onKeyDown={(e) => {
@@ -261,7 +392,7 @@ export function RomanIdeeQaPanel({
                 onClick={() => void sendText(draft)}
                 className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
               >
-                {pending
+                {pendingKind === "turn"
                   ? "An Schreib-Coach senden …"
                   : "An Schreib-Coach senden"}
               </button>

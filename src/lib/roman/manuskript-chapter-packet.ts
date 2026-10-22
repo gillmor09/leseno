@@ -21,6 +21,11 @@ import {
   buildDeterministicChapterContextBuffer,
   CONTINUITY_PREV_TAIL_CHARS,
 } from "@/lib/roman/manuskript-continuity";
+import { formatSceneBreakMandate } from "@/lib/roman/manuskript-scene-breaks";
+import {
+  formatPhraseBansForPacket,
+  scanManuskriptPhraseFrequency,
+} from "@/lib/roman/manuskript-phrase-freq";
 import {
   formatChapterHeading,
   type PlotChapter,
@@ -35,14 +40,81 @@ import {
   type RomanSzenenplotStructured,
 } from "@/lib/roman/szenenplot-structured";
 
-/** Max packet size passed to Sonnet userText (Flash / full deterministic). */
-export const CHAPTER_PACKET_MAX_CHARS = 5_500;
+const TIMELINE_CUE_RE =
+  /rückblick|flashback|zeitwechsel|zeitsprung|früher|damals|erinnerung|jahre\s+zuvor|wochen\s+zuvor|monate\s+zuvor|in\s+der\s+vergangenheit/i;
 
 /**
- * Frozen-contract packet cap. Raised so Gerüst-Plan + secrets + scenes fit;
- * fluff (long state/seam) yields first under priority join.
+ * When Gerüst/State marks a Zeitwechsel, force an explicit Zeitanker at chapter open.
  */
-export const CHAPTER_PACKET_FROZEN_MAX_CHARS = 5_500;
+export function formatTimelineFrameMandate(input: {
+  chapter: RomanSzenenplotChapterNode | null | undefined;
+  storyState?: RomanStoryState | null;
+  chapterTitle?: string;
+}): string {
+  const hay = [
+    input.chapterTitle ?? "",
+    input.chapter?.title ?? "",
+    input.chapter?.kernsatz ?? "",
+    input.storyState?.timeFrame ?? "",
+    ...(input.chapter?.scenes ?? []).flatMap((s) => [
+      s.heading,
+      s.summary ?? "",
+      s.schreibPrompt ?? "",
+    ]),
+    input.chapter?.mustNotRepeat?.join(" ") ?? "",
+    ...(input.chapter?.events ?? []),
+    ...(input.chapter?.props ?? []),
+  ].join("\n");
+  if (!TIMELINE_CUE_RE.test(hay)) return "";
+  return `## Zeitrahmen-MUSS (Timeline)
+Dieses Kapitel wechselt den Erzählrahmen (Rückblick/Zeitsprung o. Ä.).
+In den ERSTEN 1–3 Sätzen klarer Zeitanker (damals / Jahre zuvor / Erinnerung / …) — der Leser darf den Rahmen nicht raten. Am Ende Rückkehr in die Gegenwart markieren, falls vorgesehen.`;
+}
+
+function styleAndTimelinePacketSections(input: {
+  chapter: PlotChapter;
+  storyState: RomanStoryState | null;
+  szenenplotStructured?: RomanSzenenplotStructured | null;
+  priorProseText?: string | null;
+}): Array<{ priority: number; text: string }> {
+  const structuredCh = input.szenenplotStructured?.chapters.find(
+    (c) => c.number === input.chapter.number,
+  );
+  const timeline = formatTimelineFrameMandate({
+    chapter: structuredCh,
+    storyState: input.storyState,
+    chapterTitle: input.chapter.title,
+  });
+  const prior = (input.priorProseText ?? "").trim();
+  const phraseBlock =
+    prior.length >= 200
+      ? formatPhraseBansForPacket(
+          scanManuskriptPhraseFrequency(prior, {
+            minCount: 3,
+            minChapters: 2,
+            maxHits: 12,
+          }),
+          { excludeChapter: input.chapter.number, maxLines: 6 },
+        )
+      : "";
+  return [
+    { priority: 1, text: timeline },
+    { priority: 2, text: phraseBlock },
+    {
+      priority: 2,
+      text: formatSceneBreakMandate(structuredCh?.scenes.length ?? 0),
+    },
+  ];
+}
+
+/** Max packet size passed to Sonnet userText (Flash / full deterministic). */
+export const CHAPTER_PACKET_MAX_CHARS = 32_000;
+
+/**
+ * Frozen-contract packet cap. Sized so Gerüst-Plan + all scene contracts +
+ * spatial spine + invariants + continuity + seam fit without truncation.
+ */
+export const CHAPTER_PACKET_FROZEN_MAX_CHARS = 32_000;
 
 /** True when Szenenplot freigegeben and schreibPrompts are frozen. */
 export function hasFrozenSchreibPrompts(
@@ -148,6 +220,8 @@ export function buildDeterministicChapterPacket(input: {
   szenenplotStructured?: RomanSzenenplotStructured | null;
   pathBBlock?: string;
   autorBias?: string;
+  /** Already-written Manuskript prose (for Stil-Wiederholungs-Verbote). */
+  priorProseText?: string | null;
 }): string {
   const ch = input.szenenplotStructured?.chapters.find(
     (c) => c.number === input.chapter.number,
@@ -207,31 +281,32 @@ export function buildDeterministicChapterPacket(input: {
       },
       { priority: 1, text: hard.bans },
       { priority: 1, text: hard.plan },
-      { priority: 1, text: hard.spatial },
-      { priority: 2, text: hard.scenes },
-      { priority: 2, text: facts },
-      { priority: 3, text: arcs },
-      { priority: 3, text: lifecycle },
-      { priority: 4, text: graph ? graph.slice(0, 1_200) : "" },
+      { priority: 1, text: hard.scenes },
       {
-        priority: 5,
+        priority: 1,
         text: state ? `## Continuity-State\n${state}` : "",
       },
       {
-        priority: 6,
+        priority: 1,
+        text: `## Übergang-Hinweis\n${continuity.slice(0, 1_500)}`,
+      },
+      { priority: 2, text: hard.spatial },
+      ...styleAndTimelinePacketSections(input),
+      { priority: 2, text: facts },
+      { priority: 3, text: arcs },
+      { priority: 3, text: lifecycle },
+      { priority: 4, text: graph ? graph.slice(0, 1_600) : "" },
+      {
+        priority: 5,
         text: input.autorBias?.trim()
           ? `## Autor-Bias\n${input.autorBias.trim().slice(0, 700)}`
           : "",
       },
       {
-        priority: 6,
+        priority: 5,
         text: input.pathBBlock?.trim()
           ? `## Pfad B\n${input.pathBBlock.trim().slice(0, 500)}`
           : "",
-      },
-      {
-        priority: 6,
-        text: `## Übergang-Hinweis\n${continuity.slice(0, 900)}`,
       },
     ],
     CHAPTER_PACKET_MAX_CHARS,
@@ -249,6 +324,7 @@ export function buildFrozenContractChapterPacket(input: {
   lektorBriefSnippet?: string;
   wissensGraph?: RomanWissensGraph | null;
   szenenplotStructured?: RomanSzenenplotStructured | null;
+  priorProseText?: string | null;
 }): string {
   const ch = input.szenenplotStructured?.chapters.find(
     (c) => c.number === input.chapter.number,
@@ -317,23 +393,24 @@ export function buildFrozenContractChapterPacket(input: {
       },
       { priority: 1, text: hard.bans },
       { priority: 1, text: hard.plan },
-      { priority: 1, text: hard.spatial },
+      { priority: 1, text: hard.scenes },
       { priority: 1, text: invariantBlock },
-      { priority: 2, text: hard.scenes },
+      {
+        priority: 1,
+        text: state ? `## Continuity-State\n${state}` : "",
+      },
+      {
+        priority: 1,
+        text: `## Übergang\n${transition}`,
+      },
+      { priority: 2, text: hard.spatial },
+      ...styleAndTimelinePacketSections(input),
       {
         priority: 2,
         text: facts ? facts : "",
       },
-      { priority: 3, text: arcs ? arcs.slice(0, 800) : "" },
-      { priority: 3, text: lifecycle ? lifecycle.slice(0, 700) : "" },
-      {
-        priority: 5,
-        text: state ? `## Continuity-State\n${state}` : "",
-      },
-      {
-        priority: 6,
-        text: `## Übergang\n${transition}`,
-      },
+      { priority: 3, text: arcs ? arcs.slice(0, 1_200) : "" },
+      { priority: 3, text: lifecycle ? lifecycle.slice(0, 1_000) : "" },
     ],
     CHAPTER_PACKET_FROZEN_MAX_CHARS,
   );
@@ -354,6 +431,7 @@ export async function resolveManuskriptChapterPacket(input: {
   pathBBlock?: string;
   autorBias?: string;
   slimCanonSnippet?: string;
+  priorProseText?: string | null;
 }): Promise<{
   packet: string;
   modelLabel: string | null;
@@ -368,6 +446,7 @@ export async function resolveManuskriptChapterPacket(input: {
         lektorBriefSnippet: input.lektorBrief,
         wissensGraph: input.wissensGraph,
         szenenplotStructured: input.szenenplotStructured,
+        priorProseText: input.priorProseText,
       }),
       modelLabel: "frozen-contracts",
       frozen: true,
@@ -392,6 +471,7 @@ export async function assembleManuskriptChapterPacket(input: {
   pathBBlock?: string;
   autorBias?: string;
   slimCanonSnippet?: string;
+  priorProseText?: string | null;
 }): Promise<{ packet: string; modelLabel: string | null }> {
   const fallback = buildDeterministicChapterPacket({
     storyState: input.storyState,
@@ -402,6 +482,7 @@ export async function assembleManuskriptChapterPacket(input: {
     szenenplotStructured: input.szenenplotStructured,
     pathBBlock: input.pathBBlock,
     autorBias: input.autorBias,
+    priorProseText: input.priorProseText,
   });
 
   try {

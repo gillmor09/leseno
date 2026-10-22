@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { SachbuchAdminWorkspace } from "@/components/features/admin/sachbuch-admin-workspace";
 import { LandingFooter } from "@/components/features/landing/landing-footer";
 import { AppHeader } from "@/components/features/landing/app-header";
-import { listRomanRoleModelOptions } from "@/lib/roman/roles";
 import { getSachbuchKontext } from "@/lib/sachbuch/repository";
 import { hasServiceRoleConfig } from "@/lib/supabase/service";
 
@@ -25,11 +24,11 @@ export async function generateMetadata({
   }
 }
 
-/** Interview + Abschnitt pipeline can take a long time. */
+/** Idea interview can take a while. */
 export const maxDuration = 1800;
 
 /**
- * Sachbuch detail: Grundlagen, Agenten, Phasen 1–5.
+ * Sachbuch detail — greenfield: Idee zuerst, Pipeline folgt.
  */
 export default async function SachbuchAdminDetailPage({ params }: PageProps) {
   const { id } = await params;
@@ -43,8 +42,6 @@ export default async function SachbuchAdminDetailPage({ params }: PageProps) {
   }
   if (!book) notFound();
 
-  const modelOptions = listRomanRoleModelOptions();
-
   return (
     <div className="flex min-h-full flex-1 flex-col bg-gray-100">
       <AppHeader />
@@ -54,11 +51,7 @@ export default async function SachbuchAdminDetailPage({ params }: PageProps) {
             Admin · Sachbuch
           </p>
           <div className="mt-6">
-            <SachbuchAdminWorkspace
-              initialBook={book}
-              modelOptions={modelOptions}
-              canSave={canSave}
-            />
+            <SachbuchAdminWorkspace initialBook={book} canSave={canSave} />
           </div>
         </section>
       </main>

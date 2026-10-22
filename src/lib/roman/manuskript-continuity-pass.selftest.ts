@@ -8,6 +8,7 @@ import type { RomanWissensGraph } from "@/lib/roman/editorial";
 import {
   applyManuskriptContinuityFixes,
   formatGermanMeasure,
+  scanIdentityContinuityFixes,
   scanMetricContinuityFixes,
   scanNameFixesFromClusters,
 } from "@/lib/roman/manuskript-continuity-pass";
@@ -113,6 +114,152 @@ assert.ok(
 assert.ok(
   !/Frau Lindemann/.test(appliedName.manuskriptText),
   "old teacher gone",
+);
+
+const materialGraph: RomanWissensGraph = {
+  updatedAt: new Date().toISOString(),
+  modelLabel: "test",
+  seededFrom: ["manuskript"],
+  nodes: [
+    {
+      id: "prop_t14",
+      kind: "prop",
+      label: "t14",
+      summary: "Gerät",
+      attrs: { status: "active", material: "Aluminium" },
+      sinceChapter: 1,
+    },
+  ],
+  edges: [],
+  hardInvariants: ["t14 Material Aluminium — FROZEN"],
+};
+
+const materialMs = `Kapitel 1 — Keller
+
+Das t14 lag auf der Werkbank, Gehäuse aus Kunststoff.
+
+
+
+Kapitel 3 — Garage
+
+Wieder das t14 — diesmal klar als Kunststoff erkennbar.
+`;
+
+const materialFixes = scanIdentityContinuityFixes(materialMs, materialGraph);
+assert.ok(
+  materialFixes.some((f) => /kunststoff/i.test(f.find)),
+  "should flag Kunststoff vs Aluminium",
+);
+const appliedMat = applyManuskriptContinuityFixes({
+  manuskriptText: materialMs,
+  wissensGraph: materialGraph,
+  fixes: materialFixes,
+});
+assert.ok(
+  /Aluminium/i.test(appliedMat.manuskriptText),
+  "canon material applied",
+);
+
+// Compound material: „Glas“ in prose must not false-positive vs
+// FROZEN „Glas und Aluminiumrahmen“ (Wandterminal / AuraTab case).
+const compoundMatGraph: RomanWissensGraph = {
+  updatedAt: new Date().toISOString(),
+  modelLabel: "test",
+  seededFrom: ["manuskript"],
+  nodes: [
+    {
+      id: "prop_wand",
+      kind: "prop",
+      label: "Wandterminal Flur App. 204 (AuraTab 10 Pro)",
+      summary: "Terminal",
+      attrs: {
+        status: "active",
+        material: "Glas und Aluminiumrahmen",
+      },
+      sinceChapter: 1,
+    },
+  ],
+  edges: [],
+  hardInvariants: [],
+};
+const compoundMatMs = `Kapitel 12 — Flur
+
+Am Wandterminal Flur App. 204 (AuraTab 10 Pro) blinkt das Display hinter Glas.
+`;
+const compoundMatFixes = scanIdentityContinuityFixes(
+  compoundMatMs,
+  compoundMatGraph,
+);
+assert.equal(
+  compoundMatFixes.length,
+  0,
+  "Glas in prose must not flag against compound Glas+Aluminiumrahmen",
+);
+
+// Two vehicles with different plates must not flip-flop on Übernehmen.
+const plateGraph: RomanWissensGraph = {
+  updatedAt: new Date().toISOString(),
+  modelLabel: "test",
+  seededFrom: ["manuskript"],
+  nodes: [
+    {
+      id: "prop_stellplatz",
+      kind: "place",
+      label: "Stellplatz 14 Residenz",
+      summary: "Parkplatz",
+      attrs: { kennzeichen: "E-HS 1958" },
+      sinceChapter: 1,
+    },
+    {
+      id: "prop_passat",
+      kind: "prop",
+      label: "VW Passat Variant (Hartmut)",
+      summary: "Auto",
+      attrs: { kennzeichen: "E-HS 1412" },
+      sinceChapter: 1,
+    },
+  ],
+  edges: [],
+  hardInvariants: [],
+};
+
+const plateMs = `Kapitel 5 — Hof
+
+Am Stellplatz 14 Residenz stand der Wagen mit dem Kennzeichen E-HS 1412.
+
+
+
+Kapitel 15 — Parkplatz
+
+Hartmuts VW Passat Variant (Hartmut) trug E-HS 1958 am Heck.
+`;
+
+const plateFixes = scanIdentityContinuityFixes(plateMs, plateGraph);
+assert.ok(plateFixes.length >= 1, "plate drift found");
+const appliedPlate = applyManuskriptContinuityFixes({
+  manuskriptText: plateMs,
+  wissensGraph: plateGraph,
+  fixes: plateFixes,
+});
+assert.ok(appliedPlate.appliedCount >= 1, "plate apply");
+const plateAgain = scanIdentityContinuityFixes(
+  appliedPlate.manuskriptText,
+  plateGraph,
+);
+assert.equal(
+  plateAgain.length,
+  0,
+  "no Kennzeichen flip-flop after apply",
+);
+assert.ok(
+  /Stellplatz 14 Residenz[\s\S]{0,120}E-HS 1958/i.test(
+    appliedPlate.manuskriptText,
+  ),
+  "Stellplatz keeps/gets 1958",
+);
+assert.ok(
+  /Passat[\s\S]{0,80}E-HS 1412/i.test(appliedPlate.manuskriptText),
+  "Passat keeps/gets 1412",
 );
 
 console.log("manuskript-continuity-pass.selftest: ok");

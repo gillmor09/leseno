@@ -1,22 +1,28 @@
 "use client";
 
 /**
- * Book admin tab shell: Basics → Idee → Recherche → Spec → Grob/Fein Gerüst/Plot →
- * Manuskript → Roman → Export → Hörbuch. Clever: Basics → Unterthemen → Geschichten.
- * KI-Rollen live at `{basePath}/rollen` (Roman / Clever).
+ * Book admin tab shell (9-phase process):
+ * Idee → Rahmen → Fundament → Exposé → Graph → Plot → Szenen → Manuskript
+ * (+ Export / Hörbuch). Clever: Basics → Unterthemen → Geschichten.
+ * Freigabe (canon) is separate from Hard-Gates — see `roman-phase-freigabe-bar`.
  */
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Circle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { CheckCircle2, Circle, Loader2, X } from "lucide-react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
+import { romanDeriveBasicsFromIdeeAction } from "@/app/actions/roman-basics-from-idee";
 import { saveRomanKontextAction } from "@/app/actions/roman-admin";
 import {
   applyManuskriptFreigabeFixesAction,
   auditManuskriptFreigabeAction,
 } from "@/app/actions/roman-manuskript-freigabe";
-import type { ManuskriptFreigabeFinding } from "@/lib/roman/editorial";
+import {
+  hardManuskriptFreigabeFindings,
+  type ManuskriptFreigabeFinding,
+} from "@/lib/roman/editorial";
 import { enrichSzenenplotSpatialAction } from "@/app/actions/roman-szenenplot-spatial";
 import { ManuskriptFreigabeDialog } from "@/components/features/admin/manuskript-freigabe-dialog";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
@@ -63,7 +69,6 @@ import {
   type FundamentBasics,
 } from "@/components/features/admin/roman-fundament-panel";
 import { RomanIdeeQaPanel } from "@/components/features/admin/roman-idee-qa-panel";
-import { RomanRechercheQaPanel } from "@/components/features/admin/roman-recherche-qa-panel";
 import { RomanManuskriptPanel } from "@/components/features/admin/roman-manuskript-panel";
 import { RomanManuskriptChapterControl } from "@/components/features/admin/roman-manuskript-chapter-control";
 import { RomanManuskriptVerbessernControl } from "@/components/features/admin/roman-manuskript-verbessern-control";
@@ -72,6 +77,18 @@ import { RomanManuskriptContinuityControl } from "@/components/features/admin/ro
 import { RomanMarktanalysePanel } from "@/components/features/admin/roman-marktanalyse-panel";
 import { RomanPipelineHistoryPanel } from "@/components/features/admin/roman-pipeline-history-panel";
 import { RomanPipelineStageActions } from "@/components/features/admin/roman-pipeline-stage-actions";
+import {
+  gateKeyForPipelineTab,
+  prerequisiteGateKeyForTab,
+  RomanStageHardGateBanner,
+} from "@/components/features/admin/roman-stage-hard-gate-banner";
+import { RomanPhaseFreigabeBar } from "@/components/features/admin/roman-phase-freigabe-bar";
+import {
+  RomanProcessPhaseStrip,
+  type RomanNavStep,
+} from "@/components/features/admin/roman-process-phase-strip";
+import { evaluateStageHardGate } from "@/lib/roman/stage-hard-gates";
+import { migrateEditorialPhaseState } from "@/lib/roman/migrate-phase-state";
 import { RomanReifegradCard } from "@/components/features/admin/roman-reifegrad-card";
 import { RomanKapitelGeruestPanel } from "@/components/features/admin/roman-kapitelgeruest-panel";
 import { RomanSzenenplotPanel } from "@/components/features/admin/roman-szenenplot-panel";
@@ -87,26 +104,29 @@ import {
   RomanWeltPanel,
   type WeltBasics,
 } from "@/components/features/admin/roman-welt-panel";
-import { RomanStepFertigToggle } from "@/components/features/admin/roman-step-fertig-toggle";
 import {
   getRomanAdminModule,
   type RomanAdminModuleId,
 } from "@/lib/roman/admin-module";
 import {
   applyAlterPresetToEditorial,
+  basicsDerivationIsStale,
   emptyRomanEditorial,
   exposeTextFromEditorial,
-  isPipelineTabFertig,
   leserFeedbackForStage,
   tonalitaetFromRichtungen,
   withExposeText,
   withLeserFeedbackForStage,
-  withPipelineTabFertig,
-  withoutRomanKapitelFertig,
   withStageImprove,
   type RomanEditorial,
-  type RomanPipelineFertig,
 } from "@/lib/roman/editorial";
+import {
+  approveRomanPhaseAction,
+  importRomanIdeeTextAction,
+} from "@/app/actions/roman-phase-freigabe";
+import {
+  basicsLookEmptyForAutoDerive,
+} from "@/lib/roman/suggest-basics-from-idee";
 import { emptyCharakter, hasFilledCharaktere } from "@/lib/roman/fundament";
 import {
   normalizeManuskriptDocument,
@@ -135,18 +155,19 @@ import type { PipelineStage } from "@/lib/roman/pipeline/stages";
 import { cn } from "@/lib/utils";
 
 const PIPELINE_TABS = [
-  { id: "typ", label: "Basics" },
   { id: "idee", label: "Idee" },
-  { id: "recherche", label: "Recherche" },
-  { id: "spec", label: "Spec" },
-  /** Clever: Unterthemen. Belletristik uses grob/fein tabs instead. */
+  { id: "typ", label: "Rahmen" },
+  { id: "fundament", label: "Fundament" },
+  { id: "expose", label: "Exposé" },
+  { id: "graph", label: "Graph" },
+  { id: "plot", label: "Plot" },
+  { id: "szenen", label: "Szenen" },
+  /** Clever: Unterthemen. */
   { id: "outline", label: "Unterthemen" },
-  { id: "grobgeruest", label: "Grobgerüst" },
-  { id: "feingeruest", label: "Feingerüst" },
-  { id: "grobplot", label: "Grobplot" },
-  { id: "feinplot", label: "Feinplot" },
+  /** Legacy alias kept for Clever redirects / bookmarks. */
+  { id: "feinplot", label: "Plot" },
+  { id: "spec", label: "Spec" },
   { id: "schreiben", label: "Manuskript" },
-  { id: "roman", label: "Roman" },
   { id: "export", label: "Export" },
   { id: "hoerbuch", label: "Hörbuch" },
 ] as const;
@@ -156,14 +177,45 @@ type TabId = (typeof PIPELINE_TABS)[number]["id"];
 /** Map UI tab → pipeline origin_stage for KI-Historie filter. */
 const TAB_PIPELINE_STAGE: Partial<Record<TabId, string>> = {
   idee: "idee",
+  typ: "rahmen",
+  fundament: "fundament",
+  expose: "expose",
+  graph: "graph",
+  plot: "plot",
+  szenen: "szenen",
   spec: "expose",
-  outline: "feingeruest",
-  grobgeruest: "grobgeruest",
-  feingeruest: "feingeruest",
-  grobplot: "grobplot",
-  feinplot: "feinplot",
+  outline: "szenen",
+  feinplot: "szenen",
   schreiben: "manuskript",
-  roman: "manuskript",
+};
+
+const TAB_FOR_NAV_STEP: Partial<Record<RomanNavStep, TabId>> = {
+  idee: "idee",
+  rahmen: "typ",
+  fundament: "fundament",
+  expose: "expose",
+  graph: "graph",
+  plot: "plot",
+  szenen: "szenen",
+  manuskript: "schreiben",
+  /** Lektorat tools live on Manuskript. */
+  lektorat: "schreiben",
+  export: "export",
+};
+
+const NAV_STEP_FOR_TAB: Partial<Record<TabId, RomanNavStep>> = {
+  idee: "idee",
+  typ: "rahmen",
+  fundament: "fundament",
+  expose: "expose",
+  graph: "graph",
+  plot: "plot",
+  szenen: "szenen",
+  feinplot: "szenen",
+  spec: "expose",
+  schreiben: "manuskript",
+  export: "export",
+  hoerbuch: "export",
 };
 
 function romanToSavePayload(
@@ -219,9 +271,29 @@ export function RomanAdminWorkspace({
   }
 
   const [roman, setRoman] = useState(initialRoman);
-  const [editorial, setEditorial] = useState<RomanEditorial>(
-    withFixedTyp(initialRoman.editorial ?? emptyRomanEditorial()),
+  const [editorial, setEditorial] = useState<RomanEditorial>(() =>
+    withFixedTyp(
+      migrateEditorialPhaseState({
+        ...initialRoman,
+        editorial: initialRoman.editorial ?? emptyRomanEditorial(),
+      }),
+    ),
   );
+  const [ideeImportText, setIdeeImportText] = useState("");
+  const [ideeImportPending, startIdeeImportTransition] = useTransition();
+  const phaseMigratedRef = useRef(false);
+  useEffect(() => {
+    if (phaseMigratedRef.current || isCleverErzaehlt) return;
+    phaseMigratedRef.current = true;
+    const migrated = migrateEditorialPhaseState({
+      ...roman,
+      editorial,
+    });
+    if (JSON.stringify(migrated.phaseState) !== JSON.stringify(editorial.phaseState)) {
+      setEditorial(withFixedTyp(migrated));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot soft migration
+  }, []);
 
   /** Keep cover bytes when a save/pipeline payload omits them. */
   function keepCover(saved: RomanKontext, prev: RomanKontext): RomanKontext {
@@ -289,7 +361,14 @@ export function RomanAdminWorkspace({
     }
     return text;
   });
-  const [tab, setTab] = useState<TabId>("typ");
+  const [tab, setTab] = useState<TabId>(() => {
+    if (moduleId === "clever_erzaehlt") return "typ";
+    const ideeLen = (initialRoman.editorial?.ideeKurz ?? "").trim().length;
+    return ideeLen < 80 ? "idee" : "typ";
+  });
+  const [basicsDeriveConfirmOpen, setBasicsDeriveConfirmOpen] = useState(false);
+  const [basicsDerivePending, startBasicsDeriveTransition] = useTransition();
+  const autoBasicsDeriveKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Recover from stuck modal scroll-lock (dead Links / untouchable UI).
@@ -313,8 +392,7 @@ export function RomanAdminWorkspace({
   const [cleverStoryNumber, setCleverStoryNumber] = useState(1);
   /** Roman: which Manuskript chapter is shown in the editor. */
   const [manuskriptChapterNumber, setManuskriptChapterNumber] = useState(1);
-  /** Polished Roman tab: which chapter card is focused. */
-  const [romanChapterNumber, setRomanChapterNumber] = useState(1);
+  /** Stil-Pass output (`romanText`); updated via Verbessern / pipeline sync. */
   const [romanBook, setRomanBook] = useState(() => {
     const ed = initialRoman.editorial ?? emptyRomanEditorial();
     return normalizeManuskriptDocument(ed.romanText ?? "", {
@@ -326,39 +404,65 @@ export function RomanAdminWorkspace({
     if (isCleverErzaehlt) {
       return PIPELINE_TABS.filter(
         (t) =>
-          t.id !== "idee" &&
-          t.id !== "recherche" &&
-          t.id !== "spec" &&
-          t.id !== "grobgeruest" &&
-          t.id !== "feingeruest" &&
-          t.id !== "grobplot" &&
-          t.id !== "feinplot" &&
-          t.id !== "roman",
+          t.id === "typ" ||
+          t.id === "outline" ||
+          t.id === "schreiben" ||
+          t.id === "export" ||
+          t.id === "hoerbuch",
       ).map((t) =>
         t.id === "schreiben" ? { ...t, label: "Geschichten" } : t,
       );
     }
-    return PIPELINE_TABS.filter((t) => t.id !== "outline");
+    return PIPELINE_TABS.filter(
+      (t) =>
+        t.id !== "outline" &&
+        t.id !== "feinplot" &&
+        t.id !== "spec",
+    );
   }, [isCleverErzaehlt]);
 
+  /** Legacy tab ids from bookmarks / in-memory state before tab collapse. */
+  const legacyTab = tab as string;
   if (
     isCleverErzaehlt &&
     (tab === "idee" ||
-      tab === "recherche" ||
       tab === "spec" ||
-      tab === "grobgeruest" ||
-      tab === "feingeruest" ||
-      tab === "grobplot" ||
       tab === "feinplot" ||
-      tab === "roman")
+      tab === "fundament" ||
+      tab === "expose" ||
+      tab === "graph" ||
+      tab === "plot" ||
+      tab === "szenen")
   ) {
     setTab("typ");
   }
+  if (!isCleverErzaehlt && legacyTab === "spec") {
+    setTab("expose");
+  }
+  if (!isCleverErzaehlt && legacyTab === "feinplot") {
+    setTab("szenen");
+  }
   if (
     !isCleverErzaehlt &&
-    (tab === "outline" || tab === ("szenenplot" as TabId))
+    (legacyTab === "grobgeruest" ||
+      legacyTab === "kapitelgeruest" ||
+      legacyTab === "feingeruest")
   ) {
-    setTab("grobgeruest");
+    setTab("plot");
+  }
+  if (
+    !isCleverErzaehlt &&
+    (legacyTab === "grobplot" ||
+      legacyTab === "szenenplot" ||
+      legacyTab === "outline")
+  ) {
+    setTab("szenen");
+  }
+  if (legacyTab === "roman") {
+    setTab("schreiben");
+  }
+  if (!isCleverErzaehlt && legacyTab === "hoerbuch") {
+    setTab("export");
   }
 
   const hasExposeDoc =
@@ -393,19 +497,6 @@ export function RomanAdminWorkspace({
   ) {
     setManuskriptChapterNumber(romanPlotChapters[0]!.number);
   }
-  const romanBookChapters = useMemo(
-    () => (!isCleverErzaehlt ? parsePlotChapters(romanBook) : []),
-    [isCleverErzaehlt, romanBook],
-  );
-  const romanNavChapters =
-    romanBookChapters.length > 0 ? romanBookChapters : romanPlotChapters;
-  if (
-    !isCleverErzaehlt &&
-    romanNavChapters.length > 0 &&
-    !romanNavChapters.some((c) => c.number === romanChapterNumber)
-  ) {
-    setRomanChapterNumber(romanNavChapters[0]!.number);
-  }
 
   function reifegradFor(stage: PipelineStage) {
     return editorial.reifegrade?.[stage] ?? null;
@@ -413,26 +504,26 @@ export function RomanAdminWorkspace({
 
   /** Soft status: whether the tab already has usable content. */
   const tabFilled = useMemo((): Record<TabId, boolean> => {
+    const rahmenFilled =
+      fundament.genre.trim().length >= 2 &&
+      fundament.schreiberSpracheTonalitaet.trim().length >= 40 &&
+      fundament.grobRegeln.trim().length >= 40;
+    const fundamentFilled =
+      hasFilledCharaktere(charaktere) && hasFilledWelt(welt);
     return {
-      typ:
-        fundament.title.trim().length >= 2 ||
-          fundament.genre.trim().length >= 2 ||
-          fundament.grobRegeln.trim().length >= 20,
+      typ: rahmenFilled,
       idee: (editorial.ideeKurz ?? "").trim().length >= 40,
-      recherche: (editorial.rechercheDossier ?? "").trim().length >= 40,
-      spec:
-        hasFilledCharaktere(charaktere) &&
-        hasFilledWelt(welt) &&
-        hasFilledExpose(expose),
+      fundament: fundamentFilled,
+      expose: hasFilledExpose(expose),
+      graph: Boolean(editorial.wissensGraph?.nodes?.length),
+      plot: hasGeruestDoc,
+      szenen: hasSzenenplotDoc,
+      spec: fundamentFilled && hasFilledExpose(expose),
       outline: isCleverErzaehlt
         ? hasFilledCleverUnterthemen(editorial.cleverUnterthemen, editorial)
-        : hasGeruestDoc,
-      grobgeruest: hasGeruestDoc,
-      feingeruest: hasGeruestDoc,
-      grobplot: hasSzenenplotDoc,
-      feinplot: hasSzenenplotDoc,
+        : hasSzenenplotDoc,
+      feinplot: hasSzenenplotDoc || hasGeruestDoc,
       schreiben: hasFilledManuskript(manuskript),
-      roman: hasFilledManuskript(romanBook),
       export:
         Boolean(roman.coverImageDataUrl?.trim()) ||
         ((editorial.klappentext ?? "").trim().length >= 40 &&
@@ -441,8 +532,8 @@ export function RomanAdminWorkspace({
         hasFilledManuskript(manuskript) || hasFilledManuskript(romanBook),
     };
   }, [
-    fundament.title,
     fundament.genre,
+    fundament.schreiberSpracheTonalitaet,
     fundament.grobRegeln,
     editorial,
     isCleverErzaehlt,
@@ -455,6 +546,101 @@ export function RomanAdminWorkspace({
     romanBook,
     roman.coverImageDataUrl,
   ]);
+
+  const currentGateKey = gateKeyForPipelineTab(tab);
+  const currentStageGate = currentGateKey
+    ? evaluateStageHardGate({
+        stage: currentGateKey,
+        editorial,
+        tonalitaet: roman.tonalitaet,
+        genre: roman.genre,
+      })
+    : null;
+  const activeNavStep = NAV_STEP_FOR_TAB[tab] ?? null;
+  const prereqGateKey = prerequisiteGateKeyForTab(tab);
+  const prereqGate = prereqGateKey
+    ? evaluateStageHardGate({
+        stage: prereqGateKey,
+        editorial,
+        tonalitaet: roman.tonalitaet,
+        genre: roman.genre,
+      })
+    : null;
+  const hardGateBlocksErzeugen = Boolean(prereqGate && !prereqGate.ok);
+
+  const ideeStageGate = !isCleverErzaehlt
+    ? evaluateStageHardGate({
+        stage: "idee",
+        editorial,
+        tonalitaet: roman.tonalitaet,
+        genre: roman.genre,
+      })
+    : null;
+  const basicsStale = basicsDerivationIsStale(
+    editorial,
+    editorial.ideeKurz ?? "",
+  );
+  const basicsEmptyForAuto = basicsLookEmptyForAutoDerive({
+    genre: roman.genre,
+    tonalitaet: roman.tonalitaet,
+    editorial,
+  });
+
+  /** Once when Idee-Gate first green and Basics still empty — no overwrite of filled fields. */
+  useEffect(() => {
+    if (!canSave || isCleverErzaehlt || basicsDerivePending) return;
+    if (!ideeStageGate?.ok) return;
+    if (!basicsEmptyForAuto) return;
+    const key = `${roman.id}:${(editorial.ideeKurz ?? "").trim().slice(0, 80)}`;
+    if (autoBasicsDeriveKeyRef.current === key) return;
+    autoBasicsDeriveKeyRef.current = key;
+    startBasicsDeriveTransition(async () => {
+      const result = await romanDeriveBasicsFromIdeeAction({
+        romanId: roman.id,
+        force: false,
+      });
+      if (!result.success || !result.data) {
+        if (
+          result.error &&
+          !/schon gefüllt|Hard-Gate noch rot/i.test(result.error)
+        ) {
+          toast.error(result.error);
+        }
+        return;
+      }
+      syncFromPipelineRoman(result.data.roman);
+      toast.message("Basics aus Idee abgeleitet — bitte nachschärfen.");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- kick once per empty+green Idee
+  }, [
+    canSave,
+    isCleverErzaehlt,
+    ideeStageGate?.ok,
+    basicsEmptyForAuto,
+    roman.id,
+    editorial.ideeKurz,
+    basicsDerivePending,
+  ]);
+
+  function runBasicsDeriveFromIdee(force: boolean) {
+    startBasicsDeriveTransition(async () => {
+      const result = await romanDeriveBasicsFromIdeeAction({
+        romanId: roman.id,
+        force,
+      });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Basics-Ableitung fehlgeschlagen.");
+        return;
+      }
+      syncFromPipelineRoman(result.data.roman);
+      setBasicsDeriveConfirmOpen(false);
+      toast.message(
+        force
+          ? "Basics neu aus Idee abgeleitet."
+          : "Basics aus Idee abgeleitet.",
+      );
+    });
+  }
 
   /** Sync all local drafts after a stage KI run. */
   function syncFromPipelineRoman(saved: RomanKontext) {
@@ -745,112 +931,6 @@ export function RomanAdminWorkspace({
     );
   }
 
-  async function saveRomanBook() {
-    if (!canSave || savePending || isCleverErzaehlt) return;
-    const cleaned = normalizeManuskriptDocument(romanBook, {
-      requiredFromPlot: szenenplot,
-    });
-    if (cleaned !== romanBook) setRomanBook(cleaned);
-    const nextEditorial = {
-      ...editorial,
-      romanText: cleaned,
-    };
-    setEditorial(nextEditorial);
-    setSavePending(true);
-    const result = await saveRomanKontextAction(
-      romanToSavePayload(roman, nextEditorial, fixedBuchTyp),
-    );
-    setSavePending(false);
-    if (!result.success) {
-      toast.error(result.error ?? "Speichern fehlgeschlagen.");
-      return;
-    }
-    const saved = result.data!.roman;
-    setRomanKeepCover(saved);
-    const savedEd = saved.editorial ?? nextEditorial;
-    setEditorial(savedEd);
-    setRomanBook(savedEd.romanText ?? "");
-    toast.success("Roman gespeichert.");
-  }
-
-  async function clearRomanBook() {
-    if (!canSave || savePending || isCleverErzaehlt) return;
-    const reifegrade = { ...(editorial.reifegrade ?? {}) };
-    delete reifegrade.roman;
-    const nextEditorial = {
-      ...editorial,
-      romanText: "",
-      romanKapitelFertig: null,
-      reifegrade,
-    };
-    setEditorial(nextEditorial);
-    setRomanBook("");
-    setSavePending(true);
-    const result = await saveRomanKontextAction(
-      romanToSavePayload(roman, nextEditorial, fixedBuchTyp),
-    );
-    setSavePending(false);
-    if (!result.success) {
-      toast.error(result.error ?? "Leeren fehlgeschlagen.");
-      return;
-    }
-    const saved = result.data!.roman;
-    setRomanKeepCover(saved);
-    setEditorial(saved.editorial ?? nextEditorial);
-    setRomanBook(saved.editorial?.romanText ?? "");
-    toast.success("Roman geleert.");
-  }
-
-  /**
-   * Replace one Roman chapter body with the Manuskript chapter and clear
-   * its fertig flag so Autor Verbessern will process it again.
-   */
-  async function restoreRomanChapterFromManuskript() {
-    if (!canSave || savePending || isCleverErzaehlt) return;
-    const msBody =
-      parsePlotChapters(manuskript).find(
-        (c) => c.number === romanChapterNumber,
-      )?.body ?? "";
-    if (!msBody.trim()) {
-      toast.error(
-        `Manuskript-Kapitel ${romanChapterNumber} ist leer — nichts zum Wiederherstellen.`,
-      );
-      return;
-    }
-    const nextBook = replaceManuskriptChapterBody(
-      romanBook,
-      szenenplot || manuskript,
-      romanChapterNumber,
-      msBody,
-    );
-    const cleaned = normalizeManuskriptDocument(nextBook, {
-      requiredFromPlot: szenenplot,
-    });
-    let nextEditorial = withoutRomanKapitelFertig(
-      { ...editorial, romanText: cleaned },
-      romanChapterNumber,
-    );
-    setRomanBook(cleaned);
-    setEditorial(nextEditorial);
-    setSavePending(true);
-    const result = await saveRomanKontextAction(
-      romanToSavePayload(roman, nextEditorial, fixedBuchTyp),
-    );
-    setSavePending(false);
-    if (!result.success) {
-      toast.error(result.error ?? "Wiederherstellen fehlgeschlagen.");
-      return;
-    }
-    const saved = result.data!.roman;
-    setRomanKeepCover(saved);
-    const savedEd = saved.editorial ?? nextEditorial;
-    setEditorial(savedEd);
-    setRomanBook(savedEd.romanText ?? cleaned);
-    toast.success(
-      `Kapitel ${romanChapterNumber} aus Manuskript wiederhergestellt.`,
-    );
-  }
-
   async function clearKapitelGeruest() {
     if (!canSave || savePending) return;
     const improveMap = { ...(editorial.reifegradImprove ?? {}) };
@@ -877,19 +957,16 @@ export function RomanAdminWorkspace({
         ...editorial,
         kapitelGeruestRaw: "",
         kapitelGeruestStructured: null,
-        // Graph was seeded/grown for this Gerüst — reset with the structure.
+        // Graph was seeded/grown for this Plot — reset with the structure.
         wissensGraph: null,
         reifegradImprove: improveMap,
         reifegrade: reifegrade as typeof editorial.reifegrade,
       },
-      "feingeruest",
+      "feinplot",
       null,
     );
-    nextEditorial = withStageImprove(nextEditorial, "feingeruest", null);
-    nextEditorial = invalidateDownstreamEditorial(
-      nextEditorial,
-      "grobgeruest",
-    );
+    nextEditorial = withStageImprove(nextEditorial, "feinplot", null);
+    nextEditorial = invalidateDownstreamEditorial(nextEditorial, "feinplot");
     // Cascade clears szenenplotStructured + manuskript; also wipe plot markdown.
     setEditorial(nextEditorial);
     setKapitelGeruest("");
@@ -1051,164 +1128,62 @@ export function RomanAdminWorkspace({
     toast.success("Manuskript geleert (Export-Texte mit).");
   }
 
-  async function persistPipelineFertig(
-    tabId: keyof RomanPipelineFertig,
-    fertig: boolean,
-    prevEditorial: RomanEditorial,
-  ) {
-    let nextEditorial = withPipelineTabFertig(prevEditorial, tabId, fertig);
-    setEditorial(nextEditorial);
-    const result = await saveRomanKontextAction(
-      romanToSavePayload(roman, nextEditorial, fixedBuchTyp),
-    );
-    if (!result.success) {
-      toast.error(result.error ?? "Fertig-Status speichern fehlgeschlagen.");
-      setEditorial(prevEditorial);
-      return false;
-    }
-    const savedEd = result.data!.roman.editorial ?? nextEditorial;
-    setRomanKeepCover(result.data!.roman);
-    setEditorial({
-      ...savedEd,
-      pipelineFertig: {
-        ...(savedEd.pipelineFertig ?? {}),
-        ...(nextEditorial.pipelineFertig ?? {}),
-      },
-    });
-    return true;
-  }
-
-  async function savePipelineFertig(
-    tabId: keyof RomanPipelineFertig,
-    fertig: boolean,
-  ) {
+  /** Manuskript-Freigabe: Seam/Payoff-Audit, then phase approve (replaces Fertig). */
+  async function runManuskriptPhaseFreigabe(options?: { override?: boolean }) {
     if (!canSave || savePending) return;
-    const prevEditorial = editorial;
-
-    // Manuskript fertig: cheap Seam/Payoff + Emotion audit before Feinschliff.
-    if (
-      tabId === "schreiben" &&
-      fertig &&
-      !isCleverErzaehlt &&
-      hasFilledManuskript(manuskript)
-    ) {
-      setSavePending(true);
-      try {
-        const audit = await auditManuskriptFreigabeAction({
-          romanId: roman.id,
-        });
-        if (!audit.success || !audit.data) {
-          toast.error(audit.error ?? "Freigabe-Check fehlgeschlagen.");
-          return;
-        }
-        setRomanKeepCover(audit.data.roman);
-        setEditorial(audit.data.roman.editorial ?? prevEditorial);
-        if (audit.data.findings.length > 0) {
-          setFreigabeFindings(audit.data.findings);
-          toast.message(audit.data.summary);
-          return;
-        }
-        const withFreigabe = audit.data.roman.editorial ?? prevEditorial;
-        const ok = await persistPipelineFertig(tabId, true, withFreigabe);
-        if (ok) toast.success(audit.data.summary);
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Freigabe-Check fehlgeschlagen.",
-        );
-      } finally {
-        setSavePending(false);
-      }
-      return;
-    }
-
-    // Szenenplot Fertig: Raum-Continuity nachschärfen + schreibPrompts einfrieren.
-    if (
-      tabId === "szenenplot" &&
-      fertig &&
-      prevEditorial.szenenplotStructured?.chapters.length
-    ) {
-      setSavePending(true);
-      setEnrichSpatialMode("fertig");
-      setEnrichSpatialPending(true);
-      try {
-        const enrich = await enrichSzenenplotSpatialAction({
-          romanId: roman.id,
-          freeze: true,
-        });
-        if (!enrich.success) {
-          toast.error(enrich.error ?? "Szenenplot Fertig fehlgeschlagen.");
-          return;
-        }
-        const saved = enrich.data!.roman;
-        setRomanKeepCover(saved);
-        let nextEditorial = withPipelineTabFertig(
-          saved.editorial ?? prevEditorial,
-          tabId,
-          true,
-        );
-        const fertigSave = await saveRomanKontextAction(
-          romanToSavePayload(saved, nextEditorial, fixedBuchTyp),
-        );
-        if (!fertigSave.success) {
-          toast.error(
-            fertigSave.error ?? "Fertig-Status speichern fehlgeschlagen.",
-          );
-          setEditorial(prevEditorial);
-          return;
-        }
-        const savedEd = fertigSave.data!.roman.editorial ?? nextEditorial;
-        setEditorial(savedEd);
-        toast.success(
-          enrich.data!.enriched
-            ? "Szenenplot fertig · Raum-Continuity nachgeschärft · Verträge eingefroren."
-            : "Szenenplot fertig · Verträge eingefroren.",
-        );
-      } finally {
-        setEnrichSpatialPending(false);
-        setEnrichSpatialMode("manual");
-        setSavePending(false);
-      }
-      return;
-    }
-
     setSavePending(true);
+    if (options?.override) setFreigabePendingMode("freigeben");
     try {
-      await persistPipelineFertig(tabId, fertig, prevEditorial);
+      const audit = await auditManuskriptFreigabeAction({
+        romanId: roman.id,
+        override: options?.override === true,
+      });
+      if (!audit.success || !audit.data) {
+        toast.error(audit.error ?? "Freigabe-Check fehlgeschlagen.");
+        return;
+      }
+      setRomanKeepCover(audit.data.roman);
+      setEditorial(audit.data.roman.editorial ?? editorial);
+      setManuskript(audit.data.roman.editorial?.manuskriptText ?? manuskript);
+      // Soft Assist/Stil never blocks phase freigabe — only hard Canon/Ledger/Nahtdopp.
+      const hardFindings = hardManuskriptFreigabeFindings(
+        audit.data.findings,
+      );
+      if (!options?.override && hardFindings.length > 0) {
+        setFreigabeFindings(audit.data.findings);
+        toast.message(audit.data.summary);
+        return;
+      }
+      const approved = await approveRomanPhaseAction({
+        romanId: roman.id,
+        phase: "manuskript",
+      });
+      if (!approved.success || !approved.data) {
+        toast.error(approved.error ?? "Freigabe fehlgeschlagen.");
+        return;
+      }
+      syncFromPipelineRoman(approved.data.roman);
+      setFreigabeFindings(null);
+      toast.success(
+        options?.override
+          ? "Manuskript freigegeben trotz Hinweise — Stil-Pass ist freigeschaltet."
+          : audit.data.summary || "Manuskript freigegeben.",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Freigabe-Check fehlgeschlagen.",
+      );
     } finally {
       setSavePending(false);
+      setFreigabePendingMode(null);
     }
   }
 
   async function confirmFreigabeTrotzHinweise() {
     if (!freigabeFindings || savePending) return;
-    setSavePending(true);
-    setFreigabePendingMode("freigeben");
-    try {
-      const audit = await auditManuskriptFreigabeAction({
-        romanId: roman.id,
-        override: true,
-      });
-      if (!audit.success || !audit.data) {
-        toast.error(audit.error ?? "Freigabe fehlgeschlagen.");
-        return;
-      }
-      setRomanKeepCover(audit.data.roman);
-      const withFreigabe = audit.data.roman.editorial ?? editorial;
-      setEditorial(withFreigabe);
-      setManuskript(withFreigabe.manuskriptText ?? manuskript);
-      const ok = await persistPipelineFertig("schreiben", true, withFreigabe);
-      if (ok) {
-        setFreigabeFindings(null);
-        toast.success(
-          "Manuskript freigegeben trotz Hinweise — Stil-Pass ist freigeschaltet.",
-        );
-      }
-    } finally {
-      setSavePending(false);
-      setFreigabePendingMode(null);
-    }
+    await runManuskriptPhaseFreigabe({ override: true });
   }
 
   async function nachziehenFreigabeHinweise() {
@@ -1228,6 +1203,35 @@ export function RomanAdminWorkspace({
       const savedEd = saved.editorial ?? editorial;
       setEditorial(savedEd);
       setManuskript(savedEd.manuskriptText ?? "");
+
+      // Directly refresh like „Erneut prüfen“ (keep settled from Nachziehen).
+      const audit = await auditManuskriptFreigabeAction({
+        romanId: roman.id,
+        preserveSettled: true,
+      });
+      if (audit.success && audit.data) {
+        setRomanKeepCover(audit.data.roman);
+        setEditorial(audit.data.roman.editorial ?? savedEd);
+        setManuskript(
+          audit.data.roman.editorial?.manuskriptText ??
+            savedEd.manuskriptText ??
+            "",
+        );
+        const hard = (audit.data.findings ?? []).filter((f) => !f.soft);
+        if (result.data.autoFreigegeben || hard.length === 0) {
+          setFreigabeFindings(null);
+          toast.success(
+            result.data.autoFreigegeben
+              ? result.data.summary
+              : audit.data.summary,
+          );
+          return;
+        }
+        setFreigabeFindings(audit.data.findings);
+        toast.message(`${result.data.summary} · ${audit.data.summary}`);
+        return;
+      }
+
       if (result.data.autoFreigegeben) {
         setFreigabeFindings(null);
         toast.success(result.data.summary);
@@ -1276,85 +1280,164 @@ export function RomanAdminWorkspace({
         {roman.title.trim() || "Unbenanntes Buch"}
       </p>
 
-      <div
-        role="tablist"
-        aria-label={`${adminModule.label}-Pipeline`}
-        className="flex flex-wrap gap-2"
-      >
-        {visibleTabs.map((item, index) => {
-          const selected = tab === item.id;
-          const filled = tabFilled[item.id];
-          const fertig = isPipelineTabFertig(editorial, item.id);
-          const locked = false;
-          const StatusIcon = fertig || filled ? CheckCircle2 : Circle;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              aria-label={`${index + 1}. ${item.label}${
-                fertig
-                  ? " (fertig)"
-                  : filled
-                    ? " (Inhalt vorhanden)"
-                    : " (noch leer)"
-              }`}
-              disabled={locked}
-              onClick={() => {
-                forceUnlockBodyScroll();
-                setTab(item.id);
-              }}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold ring-1 transition",
-                selected && !fertig
-                  ? "bg-orange-700 text-white ring-orange-700"
-                  : selected && fertig
-                    ? "bg-emerald-700 text-white ring-emerald-700"
-                    : fertig
-                      ? "bg-emerald-50 text-emerald-900 ring-emerald-200 hover:bg-emerald-100/80"
-                      : "bg-white text-zinc-700 ring-zinc-950/10 hover:bg-zinc-50",
-                locked && "cursor-not-allowed opacity-50",
-              )}
-            >
-              <StatusIcon
-                aria-hidden
+      {!isCleverErzaehlt ? (
+        <RomanProcessPhaseStrip
+          roman={roman}
+          editorial={editorial}
+          activeStep={activeNavStep}
+          onSelectStep={(step) => {
+            const next = TAB_FOR_NAV_STEP[step];
+            if (next) {
+              forceUnlockBodyScroll();
+              setTab(next);
+            }
+          }}
+        />
+      ) : (
+        <div
+          role="tablist"
+          aria-label={`${adminModule.label}-Pipeline`}
+          className="flex flex-wrap gap-2"
+        >
+          {visibleTabs.map((item, index) => {
+            const selected = tab === item.id;
+            const filled = tabFilled[item.id];
+            const StatusIcon = filled ? CheckCircle2 : Circle;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-label={`${index + 1}. ${item.label}${
+                  filled ? " (Inhalt vorhanden)" : " (noch leer)"
+                }`}
+                onClick={() => {
+                  forceUnlockBodyScroll();
+                  setTab(item.id);
+                }}
                 className={cn(
-                  "size-3.5 shrink-0",
-                  fertig
-                    ? selected
-                      ? "text-emerald-100"
-                      : "text-emerald-600"
-                    : filled
+                  "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold ring-1 transition",
+                  selected
+                    ? "bg-orange-700 text-white ring-orange-700"
+                    : "bg-white text-zinc-700 ring-zinc-950/10 hover:bg-zinc-50",
+                )}
+              >
+                <StatusIcon
+                  aria-hidden
+                  className={cn(
+                    "size-3.5 shrink-0",
+                    filled
                       ? selected
                         ? "text-emerald-100"
                         : "text-emerald-500/70"
                       : selected
                         ? "text-white/45"
                         : "text-zinc-300",
-                )}
-              />
-              <span>
-                {index + 1}. {item.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+                  )}
+                />
+                <span>
+                  {index + 1}. {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div role="tabpanel" className="min-w-0 space-y-6">
         {tab === "typ" ? (
           <section className="space-y-8 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg font-extrabold text-zinc-950">Basics</h2>
-                <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, "typ")}
-                  disabled={!canSave}
-                  pending={savePending}
-                  onCheckedChange={(v) => void savePipelineFertig("typ", v)}
-                />
+                <h2 className="text-lg font-extrabold text-zinc-950">
+                  {isCleverErzaehlt ? "Basics" : "Rahmen"}
+                </h2>
               </div>
+              <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
+                Nach freigegebener Idee: Genre, Sprache &amp; Tonalität und
+                Basis-Regeln (editierbar) — Priority-0-Canon. Perspektive,
+                Zeitform, Umfang und Grenzen hier festziehen; dann freigeben.
+              </p>
+              {!isCleverErzaehlt &&
+              prereqGateKey === "idee" &&
+              prereqGate &&
+              !prereqGate.ok ? (
+                <RomanStageHardGateBanner
+                  romanId={roman.id}
+                  gateKey="idee"
+                  gate={prereqGate}
+                  canSave={canSave}
+                  onUpdated={syncFromPipelineRoman}
+                />
+              ) : null}
+              {!isCleverErzaehlt &&
+              (currentGateKey === "rahmen" || currentGateKey === "basics") &&
+              currentStageGate ? (
+                <RomanStageHardGateBanner
+                  romanId={roman.id}
+                  gateKey="rahmen"
+                  gate={currentStageGate}
+                  canSave={canSave}
+                  onUpdated={syncFromPipelineRoman}
+                />
+              ) : null}
+              {!isCleverErzaehlt ? (
+                <RomanPhaseFreigabeBar
+                  roman={roman}
+                  editorial={editorial}
+                  phase="rahmen"
+                  canSave={canSave}
+                  onUpdated={syncFromPipelineRoman}
+                />
+              ) : null}
+              {!isCleverErzaehlt &&
+              ideeStageGate?.ok &&
+              basicsStale &&
+              !basicsEmptyForAuto ? (
+                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+                  Idee hat sich geändert — Basics-Ableitung ist veraltet. Bitte
+                  „Neu aus Idee ableiten“ oder manuell nachschärfen.
+                </p>
+              ) : null}
+              {!isCleverErzaehlt && editorial.basicsDerivedBegruendung ? (
+                <p className="rounded-2xl bg-zinc-50 px-3 py-2 text-sm text-zinc-700 ring-1 ring-zinc-950/8">
+                  <span className="font-extrabold text-zinc-950">
+                    Ableitung:{" "}
+                  </span>
+                  {editorial.basicsDerivedBegruendung}
+                </p>
+              ) : null}
+              {!isCleverErzaehlt ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    disabled={
+                      !canSave ||
+                      basicsDerivePending ||
+                      !ideeStageGate?.ok ||
+                      (editorial.ideeKurz ?? "").trim().length < 80
+                    }
+                    className="inline-flex items-center rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+                    onClick={() => {
+                      if (!basicsEmptyForAuto) {
+                        setBasicsDeriveConfirmOpen(true);
+                        return;
+                      }
+                      runBasicsDeriveFromIdee(true);
+                    }}
+                  >
+                    {basicsDerivePending ? (
+                      <>
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Ableiten …
+                      </>
+                    ) : (
+                      "Neu aus Idee ableiten"
+                    )}
+                  </button>
+                </div>
+              ) : null}
             </div>
 
             <div className="space-y-4 border-t border-zinc-100 pt-8">
@@ -1364,7 +1447,7 @@ export function RomanAdminWorkspace({
                 value={fundament}
                 onChange={setFundament}
                 canSave={canSave}
-                disabled={savePending}
+                disabled={savePending || basicsDerivePending}
                 savePending={savePending}
                 onSave={() => void saveFundament()}
                 showRichtungen={!isCleverErzaehlt}
@@ -1444,34 +1527,79 @@ export function RomanAdminWorkspace({
             <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-lg font-extrabold text-zinc-950">Idee</h2>
-                <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, "idee")}
-                  disabled={!canSave}
-                  pending={savePending}
-                  onCheckedChange={(v) => void savePipelineFertig("idee", v)}
-                />
               </div>
+              <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
+                Erster Schritt: Freitext importieren oder Dialog mit dem
+                Schreib-Coach. Reifegrad bis Hard-Gate grün, dann Autoren-Freigabe
+                — erst danach ist die Idee Kanon für den Rahmen.
+              </p>
               {!typSet ? (
                 <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
                   Zuerst Buchtyp wählen.
                 </p>
               ) : (
                 <div className="space-y-5">
-                  <RomanPipelineStageActions
-                    romanId={roman.id}
-                    stage="idee"
+                  {currentGateKey === "idee" && currentStageGate ? (
+                    <RomanStageHardGateBanner
+                      romanId={roman.id}
+                      gateKey="idee"
+                      gate={currentStageGate}
+                      canSave={canSave}
+                      onUpdated={syncFromPipelineRoman}
+                    />
+                  ) : null}
+                  <RomanPhaseFreigabeBar
+                    roman={roman}
+                    editorial={editorial}
+                    phase="idee"
                     canSave={canSave}
-                    disabled={savePending || pipelineBusy}
-                    onComplete={syncFromPipelineRoman}
-                    reifegrade={editorial.reifegrade}
-                    leserFeedback={leserFeedbackForStage(editorial, "idee")}
-                    hasLeserArtifact={
-                      (editorial.ideeKurz ?? "").trim().length >= 40
-                    }
-                    showAssess
-                    displayLabel="Idee"
-                    rolesHref={rolesHref}
+                    onUpdated={syncFromPipelineRoman}
                   />
+                  <div className="space-y-2 rounded-2xl bg-zinc-50 p-4 ring-1 ring-zinc-950/8">
+                    <p className="text-sm font-extrabold text-zinc-950">
+                      Freitext importieren
+                    </p>
+                    <textarea
+                      value={ideeImportText}
+                      onChange={(e) => setIdeeImportText(e.target.value)}
+                      rows={5}
+                      disabled={!canSave || ideeImportPending}
+                      placeholder="Rohidee, Notizen, Pitch … (mind. 40 Zeichen)"
+                      className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
+                    />
+                    <button
+                      type="button"
+                      disabled={
+                        !canSave ||
+                        ideeImportPending ||
+                        ideeImportText.trim().length < 40
+                      }
+                      onClick={() => {
+                        startIdeeImportTransition(async () => {
+                          const result = await importRomanIdeeTextAction({
+                            romanId: roman.id,
+                            text: ideeImportText,
+                            replace: !(editorial.ideeKurz ?? "").trim(),
+                          });
+                          if (!result.success || !result.data) {
+                            toast.error(
+                              result.error ?? "Import fehlgeschlagen.",
+                            );
+                            return;
+                          }
+                          syncFromPipelineRoman(result.data.roman);
+                          setIdeeImportText("");
+                          toast.success("Idee importiert (Quelle hinterlegt).");
+                        });
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-extrabold text-white disabled:opacity-50"
+                    >
+                      {ideeImportPending ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : null}
+                      Importieren
+                    </button>
+                  </div>
                   <RomanIdeeQaPanel
                     romanId={roman.id}
                     messages={ideenChat}
@@ -1491,57 +1619,96 @@ export function RomanAdminWorkspace({
               )}
             </section>
           </div>
-        ) : tab === "recherche" ? (
+        ) : tab === "fundament" ? (
           <div className="space-y-4">
+            {typSet ? (
+              <RomanReifegradCard
+                value={reifegradFor("fundament")}
+                romanId={roman.id}
+                stage="fundament"
+                canSave={canSave}
+                disabled={savePending || pipelineBusy}
+                improvePlans={editorial.reifegradImprove?.fundament}
+                stageImprovePlan={editorial.stageImprove?.fundament ?? null}
+                onComplete={syncFromPipelineRoman}
+              />
+            ) : null}
             <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-lg font-extrabold text-zinc-950">
-                  Recherche
+                  Fundament
                 </h2>
-                <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, "recherche")}
-                  disabled={!canSave}
-                  pending={savePending}
-                  onCheckedChange={(v) =>
-                    void savePipelineFertig("recherche", v)
-                  }
-                />
               </div>
+              <p className="text-sm font-semibold text-zinc-600">
+                Handlungsrelevante Figuren und Welt — freigeben bevor Exposé.
+              </p>
               {!typSet ? (
                 <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
                   Zuerst Buchtyp wählen.
                 </p>
               ) : (
-                <RomanRechercheQaPanel
-                  romanId={roman.id}
-                  messages={editorial.rechercheChat ?? []}
-                  rechercheDossier={editorial.rechercheDossier ?? ""}
-                  sources={editorial.rechercheSources ?? []}
-                  canSave={canSave}
-                  disabled={savePending || pipelineBusy}
-                  hasIdee={(editorial.ideeKurz ?? "").trim().length >= 40}
-                  onTurnComplete={({ messages, rechercheDossier, sources }) => {
-                    setEditorial((prev) => ({
-                      ...prev,
-                      rechercheChat: messages,
-                      rechercheDossier,
-                      rechercheSources: sources,
-                    }));
-                    setRoman((prev) => ({
-                      ...prev,
-                      editorial: {
-                        ...prev.editorial,
-                        rechercheChat: messages,
-                        rechercheDossier,
-                        rechercheSources: sources,
-                      },
-                    }));
-                  }}
-                />
+                <div className="space-y-6">
+                  {prereqGate && !prereqGate.ok && prereqGateKey ? (
+                    <RomanStageHardGateBanner
+                      romanId={roman.id}
+                      gateKey={prereqGateKey}
+                      gate={prereqGate}
+                      canSave={canSave}
+                      onUpdated={syncFromPipelineRoman}
+                    />
+                  ) : null}
+                  {currentStageGate ? (
+                    <RomanStageHardGateBanner
+                      romanId={roman.id}
+                      gateKey="fundament"
+                      gate={currentStageGate}
+                      canSave={canSave}
+                      onUpdated={syncFromPipelineRoman}
+                    />
+                  ) : null}
+                  <RomanPhaseFreigabeBar
+                    roman={roman}
+                    editorial={editorial}
+                    phase="fundament"
+                    canSave={canSave}
+                    onUpdated={syncFromPipelineRoman}
+                  />
+                  <RomanPipelineStageActions
+                    romanId={roman.id}
+                    stage="fundament"
+                    canSave={canSave}
+                    disabled={
+                      savePending || pipelineBusy || hardGateBlocksErzeugen
+                    }
+                    onComplete={syncFromPipelineRoman}
+                    reifegrade={editorial.reifegrade}
+                    showAssess
+                    displayLabel="Fundament"
+                    rolesHref={rolesHref}
+                  />
+                  <RomanCharakterePanel
+                    ideeKurz={editorial.ideeKurz ?? ""}
+                    value={charaktere}
+                    onChange={setCharaktere}
+                    canSave={canSave}
+                    disabled={savePending || pipelineBusy}
+                    savePending={savePending}
+                    onSave={() => void saveCharaktere()}
+                  />
+                  <RomanWeltPanel
+                    ideeKurz={editorial.ideeKurz ?? ""}
+                    value={welt}
+                    onChange={setWelt}
+                    canSave={canSave}
+                    disabled={savePending || pipelineBusy}
+                    savePending={savePending}
+                    onSave={() => void saveWelt()}
+                  />
+                </div>
               )}
             </section>
           </div>
-        ) : tab === "spec" ? (
+        ) : tab === "expose" ? (
           <div className="space-y-4">
             {typSet ? (
               <RomanReifegradCard
@@ -1557,90 +1724,321 @@ export function RomanAdminWorkspace({
             ) : null}
             <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg font-extrabold text-zinc-950">Spec</h2>
-                <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, "spec")}
-                  disabled={!canSave}
-                  pending={savePending}
-                  onCheckedChange={(v) => void savePipelineFertig("spec", v)}
-                />
+                <h2 className="text-lg font-extrabold text-zinc-950">Exposé</h2>
               </div>
-              <p className="text-sm font-semibold text-zinc-600">
-                Figuren, Welt und Exposé als ein Brief. Erzeugen legt alle drei
-                an; Analyse und Reifegrad bewerten den gesamten Spec.
-                Dimensions-Einarbeiten greift je Achse Figuren, Welt oder Exposé.
-              </p>
               {!typSet ? (
                 <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
                   Zuerst Buchtyp wählen.
                 </p>
               ) : (
-                <div className="space-y-8">
-                  {(editorial.ideeKurz ?? "").trim().length >= 40 &&
-                  (editorial.rechercheDossier ?? "").trim().length < 40 ? (
-                    <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
-                      Optional: Im Schritt Recherche Hintergründe vertiefen —
-                      Spec nutzt das Dossier mit.
-                    </p>
+                <div className="space-y-5">
+                  {prereqGate && !prereqGate.ok && prereqGateKey ? (
+                    <RomanStageHardGateBanner
+                      romanId={roman.id}
+                      gateKey={prereqGateKey}
+                      gate={prereqGate}
+                      canSave={canSave}
+                      onUpdated={syncFromPipelineRoman}
+                    />
                   ) : null}
+                  {currentStageGate ? (
+                    <RomanStageHardGateBanner
+                      romanId={roman.id}
+                      gateKey="expose"
+                      gate={currentStageGate}
+                      canSave={canSave}
+                      onUpdated={syncFromPipelineRoman}
+                    />
+                  ) : null}
+                  <RomanPhaseFreigabeBar
+                    roman={roman}
+                    editorial={editorial}
+                    phase="expose"
+                    canSave={canSave}
+                    onUpdated={syncFromPipelineRoman}
+                  />
                   <RomanPipelineStageActions
                     romanId={roman.id}
                     stage="expose"
                     canSave={canSave}
-                    disabled={savePending || pipelineBusy}
+                    disabled={
+                      savePending || pipelineBusy || hardGateBlocksErzeugen
+                    }
                     onComplete={syncFromPipelineRoman}
                     reifegrade={editorial.reifegrade}
                     leserFeedback={leserFeedbackForStage(editorial, "expose")}
                     hasLeserArtifact={hasExposeDoc}
-                    generateMode="spec-chain"
                     showAssess
-                    displayLabel="Spec"
+                    displayLabel="Exposé"
                     rolesHref={rolesHref}
                   />
-                  <div className="space-y-3">
-                    <h3 className="text-base font-extrabold text-zinc-950">
-                      Charaktere
-                    </h3>
-                    <RomanCharakterePanel
-                      ideeKurz={editorial.ideeKurz ?? ""}
-                      value={charaktere}
-                      onChange={setCharaktere}
-                      canSave={canSave}
-                      disabled={savePending || pipelineBusy}
-                      savePending={savePending}
-                      onSave={() => void saveCharaktere()}
-                    />
-                  </div>
-                  <div className="space-y-3 border-t border-zinc-100 pt-6">
-                    <h3 className="text-base font-extrabold text-zinc-950">
-                      Welt
-                    </h3>
-                    <RomanWeltPanel
-                      ideeKurz={editorial.ideeKurz ?? ""}
-                      value={welt}
-                      onChange={setWelt}
-                      canSave={canSave}
-                      disabled={savePending || pipelineBusy}
-                      savePending={savePending}
-                      onSave={() => void saveWelt()}
-                    />
-                  </div>
-                  <div className="space-y-3 border-t border-zinc-100 pt-6">
-                    <h3 className="text-base font-extrabold text-zinc-950">
-                      Exposé
-                    </h3>
-                    <RomanExposePanel
-                      ideeKurz={editorial.ideeKurz ?? ""}
-                      value={expose}
-                      onChange={setExpose}
-                      canSave={canSave}
-                      disabled={savePending || pipelineBusy}
-                      savePending={savePending}
-                      onSave={() => void saveExpose()}
-                    />
-                  </div>
+                  <RomanExposePanel
+                    ideeKurz={editorial.ideeKurz ?? ""}
+                    value={expose}
+                    onChange={setExpose}
+                    canSave={canSave}
+                    disabled={savePending || pipelineBusy}
+                    savePending={savePending}
+                    onSave={() => void saveExpose()}
+                  />
                 </div>
               )}
+            </section>
+          </div>
+        ) : tab === "graph" ? (
+          <div className="space-y-4">
+            {typSet ? (
+              <RomanReifegradCard
+                value={reifegradFor("graph")}
+                romanId={roman.id}
+                stage="graph"
+                canSave={canSave}
+                disabled={savePending || pipelineBusy}
+                improvePlans={editorial.reifegradImprove?.graph}
+                stageImprovePlan={editorial.stageImprove?.graph ?? null}
+                onComplete={syncFromPipelineRoman}
+              />
+            ) : null}
+            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-extrabold text-zinc-950">
+                  Wissensgraph
+                </h2>
+              </div>
+              <p className="text-sm font-semibold text-zinc-600">
+                Seed aus freigegebenem Fundament+Exposé, dann Konkretisierung —
+                Reifegrad (Logik · Abdeckung · Konkretheit · Vernetzung), dann
+                Freigabe vor Plot.
+              </p>
+              <div className="space-y-5">
+                {prereqGate && !prereqGate.ok && prereqGateKey ? (
+                  <RomanStageHardGateBanner
+                    romanId={roman.id}
+                    gateKey={prereqGateKey}
+                    gate={prereqGate}
+                    canSave={canSave}
+                    onUpdated={syncFromPipelineRoman}
+                  />
+                ) : null}
+                {currentStageGate ? (
+                  <RomanStageHardGateBanner
+                    romanId={roman.id}
+                    gateKey="graph"
+                    gate={currentStageGate}
+                    canSave={canSave}
+                    onUpdated={syncFromPipelineRoman}
+                  />
+                ) : null}
+                <RomanPhaseFreigabeBar
+                  roman={roman}
+                  editorial={editorial}
+                  phase="graph"
+                  canSave={canSave}
+                  onUpdated={syncFromPipelineRoman}
+                />
+                <RomanPipelineStageActions
+                  romanId={roman.id}
+                  stage="graph"
+                  canSave={canSave}
+                  disabled={
+                    savePending || pipelineBusy || hardGateBlocksErzeugen
+                  }
+                  onComplete={syncFromPipelineRoman}
+                  reifegrade={editorial.reifegrade}
+                  showAssess
+                  displayLabel="Wissensgraph"
+                  rolesHref={rolesHref}
+                />
+                <RomanWissensgraphTrigger graph={editorial.wissensGraph} />
+              </div>
+            </section>
+          </div>
+        ) : tab === "plot" ? (
+          <div className="space-y-4">
+            {typSet ? (
+              <RomanReifegradCard
+                value={reifegradFor("plot")}
+                romanId={roman.id}
+                stage="plot"
+                canSave={canSave}
+                disabled={savePending || pipelineBusy}
+                improvePlans={editorial.reifegradImprove?.plot}
+                stageImprovePlan={editorial.stageImprove?.plot ?? null}
+                onComplete={syncFromPipelineRoman}
+              />
+            ) : null}
+            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-extrabold text-zinc-950">Plot</h2>
+              </div>
+              <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
+                Nur Ereignisplan / Kapitelgerüst aus freigegebenem Graph —
+                Szenen folgen in der nächsten Phase.
+              </p>
+              <div className="space-y-5">
+                {prereqGate && !prereqGate.ok && prereqGateKey ? (
+                  <RomanStageHardGateBanner
+                    romanId={roman.id}
+                    gateKey={prereqGateKey}
+                    gate={prereqGate}
+                    canSave={canSave}
+                    onUpdated={syncFromPipelineRoman}
+                  />
+                ) : null}
+                {currentStageGate ? (
+                  <RomanStageHardGateBanner
+                    romanId={roman.id}
+                    gateKey="plot"
+                    gate={currentStageGate}
+                    canSave={canSave}
+                    onUpdated={syncFromPipelineRoman}
+                  />
+                ) : null}
+                <RomanPhaseFreigabeBar
+                  roman={roman}
+                  editorial={editorial}
+                  phase="plot"
+                  canSave={canSave}
+                  onUpdated={syncFromPipelineRoman}
+                />
+                <RomanPipelineStageActions
+                  romanId={roman.id}
+                  stage="plot"
+                  canSave={canSave}
+                  disabled={
+                    savePending || pipelineBusy || hardGateBlocksErzeugen
+                  }
+                  onComplete={syncFromPipelineRoman}
+                  reifegrade={editorial.reifegrade}
+                  showAssess
+                  displayLabel="Plot"
+                  rolesHref={rolesHref}
+                  generateCascadeConfirm={generateCascadeConfirm(
+                    editorial,
+                    "plot",
+                  )}
+                />
+                <RomanKapitelGeruestPanel
+                  hasExpose={hasExposeDoc}
+                  value={kapitelGeruest}
+                  structured={editorial.kapitelGeruestStructured}
+                  disabled={savePending || pipelineBusy}
+                  onClear={() => clearKapitelGeruest()}
+                  clearPending={savePending}
+                  staleBanner={downstreamStaleBanner(editorial, "plot")}
+                />
+              </div>
+            </section>
+          </div>
+        ) : tab === "szenen" ? (
+          <div className="space-y-4">
+            {typSet ? (
+              <RomanReifegradCard
+                value={reifegradFor("szenen")}
+                romanId={roman.id}
+                stage="szenen"
+                canSave={canSave}
+                disabled={savePending || pipelineBusy}
+                improvePlans={editorial.reifegradImprove?.szenen}
+                stageImprovePlan={editorial.stageImprove?.szenen ?? null}
+                onComplete={syncFromPipelineRoman}
+              />
+            ) : null}
+            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-extrabold text-zinc-950">Szenen</h2>
+              </div>
+              <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
+                Szenenverträge aus freigegebenem Plot+Graph. MVP: wenige
+                Szenenkarten freigeben, dann eine Stimmprobe im Manuskript.
+              </p>
+              <div className="space-y-5">
+                {prereqGate && !prereqGate.ok && prereqGateKey ? (
+                  <RomanStageHardGateBanner
+                    romanId={roman.id}
+                    gateKey={prereqGateKey}
+                    gate={prereqGate}
+                    canSave={canSave}
+                    onUpdated={syncFromPipelineRoman}
+                  />
+                ) : null}
+                {currentStageGate ? (
+                  <RomanStageHardGateBanner
+                    romanId={roman.id}
+                    gateKey="szenen"
+                    gate={currentStageGate}
+                    canSave={canSave}
+                    onUpdated={syncFromPipelineRoman}
+                  />
+                ) : null}
+                <RomanPhaseFreigabeBar
+                  roman={roman}
+                  editorial={editorial}
+                  phase="szenen"
+                  canSave={canSave}
+                  onUpdated={syncFromPipelineRoman}
+                />
+                <RomanPipelineStageActions
+                  romanId={roman.id}
+                  stage="szenen"
+                  canSave={canSave}
+                  disabled={
+                    savePending || pipelineBusy || hardGateBlocksErzeugen
+                  }
+                  onComplete={syncFromPipelineRoman}
+                  reifegrade={editorial.reifegrade}
+                  showAssess
+                  displayLabel="Szenen"
+                  rolesHref={rolesHref}
+                  generateCascadeConfirm={generateCascadeConfirm(
+                    editorial,
+                    "szenen",
+                  )}
+                />
+                <RomanSzenenplotPanel
+                  hasGeruest={hasGeruestDoc}
+                  value={szenenplot}
+                  onChange={setSzenenplot}
+                  structured={editorial.szenenplotStructured}
+                  canSave={canSave}
+                  disabled={savePending || pipelineBusy || enrichSpatialPending}
+                  savePending={savePending}
+                  onSave={() => void saveSzenenplot()}
+                  onClear={() => clearSzenenplot()}
+                  clearPending={savePending}
+                  enrichSpatialPending={enrichSpatialPending}
+                  enrichSpatialMode={enrichSpatialMode}
+                  onEnrichSpatial={async () => {
+                    if (!canSave || enrichSpatialPending) return;
+                    setEnrichSpatialMode("manual");
+                    setEnrichSpatialPending(true);
+                    try {
+                      const result = await enrichSzenenplotSpatialAction({
+                        romanId: roman.id,
+                        force: true,
+                      });
+                      if (!result.success) {
+                        toast.error(
+                          result.error ??
+                            "Raum-Continuity nachschärfen fehlgeschlagen.",
+                        );
+                        return;
+                      }
+                      setRomanKeepCover(result.data!.roman);
+                      setEditorial(
+                        result.data!.roman.editorial ?? editorial,
+                      );
+                      toast.success(
+                        "Raum-Continuity (Ort/Etage/Props) nachgeschärft.",
+                      );
+                    } finally {
+                      setEnrichSpatialPending(false);
+                      setEnrichSpatialMode("manual");
+                    }
+                  }}
+                  staleBanner={downstreamStaleBanner(editorial, "szenen")}
+                />
+              </div>
             </section>
           </div>
         ) : tab === "outline" ? (
@@ -1650,14 +2048,6 @@ export function RomanAdminWorkspace({
                 <h2 className="text-lg font-extrabold text-zinc-950">
                   Unterthemen
                 </h2>
-                <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, "outline")}
-                  disabled={!canSave}
-                  pending={savePending}
-                  onCheckedChange={(v) =>
-                    void savePipelineFertig("outline", v)
-                  }
-                />
               </div>
               <CleverUnterthemenPanel
                 romanId={roman.id}
@@ -1686,190 +2076,8 @@ export function RomanAdminWorkspace({
               />
             </section>
           </div>
-        ) : tab === "grobgeruest" || tab === "feingeruest" ? (
-          <div className="space-y-4">
-            {typSet ? (
-              <RomanReifegradCard
-                value={reifegradFor(tab)}
-                romanId={roman.id}
-                stage={tab}
-                canSave={canSave}
-                disabled={savePending || pipelineBusy}
-                improvePlans={editorial.reifegradImprove?.[tab]}
-                stageImprovePlan={editorial.stageImprove?.[tab] ?? null}
-                onComplete={syncFromPipelineRoman}
-              />
-            ) : null}
-            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg font-extrabold text-zinc-950">
-                  {tab === "grobgeruest" ? "Grobgerüst" : "Feingerüst"}
-                </h2>
-                <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, tab)}
-                  disabled={!canSave}
-                  pending={savePending}
-                  onCheckedChange={(v) => void savePipelineFertig(tab, v)}
-                />
-              </div>
-              {!typSet ? (
-                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
-                  Zuerst Buchtyp wählen.
-                </p>
-              ) : (
-                <div className="space-y-5">
-                  <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
-                    {tab === "grobgeruest"
-                      ? "Outline: Kapitel + Kernsatz + zentrale Spannungsbögen. Keine Einzelszenen."
-                      : "Kapitel detaillieren: inhaltKurz, Props/Events, Arc-Beats. Szenen folgen im Grob-/Feinplot."}
-                  </p>
-                  <RomanPipelineStageActions
-                    romanId={roman.id}
-                    stage={tab}
-                    canSave={canSave}
-                    disabled={savePending || pipelineBusy}
-                    onComplete={syncFromPipelineRoman}
-                    reifegrade={editorial.reifegrade}
-                    showAssess
-                    displayLabel={
-                      tab === "grobgeruest" ? "Grobgerüst" : "Feingerüst"
-                    }
-                    rolesHref={rolesHref}
-                    generateCascadeConfirm={generateCascadeConfirm(
-                      editorial,
-                      tab,
-                    )}
-                  />
-                  <RomanWissensgraphTrigger graph={editorial.wissensGraph} />
-                  {!isCleverErzaehlt ? (
-                    <RomanManuskriptContinuityControl
-                      romanId={roman.id}
-                      target="kapitelgeruest"
-                      disabled={savePending || pipelineBusy}
-                      onComplete={syncFromPipelineRoman}
-                    />
-                  ) : null}
-                  <RomanKapitelGeruestPanel
-                    hasExpose={hasExposeDoc}
-                    value={kapitelGeruest}
-                    structured={editorial.kapitelGeruestStructured}
-                    disabled={savePending || pipelineBusy}
-                    onClear={() => clearKapitelGeruest()}
-                    clearPending={savePending}
-                    staleBanner={downstreamStaleBanner(editorial, tab)}
-                  />
-                </div>
-              )}
-            </section>
-          </div>
-        ) : tab === "grobplot" || tab === "feinplot" ? (
-          <div className="space-y-4">
-            {typSet ? (
-              <RomanReifegradCard
-                value={reifegradFor(tab)}
-                romanId={roman.id}
-                stage={tab}
-                canSave={canSave}
-                disabled={savePending || pipelineBusy}
-                improvePlans={editorial.reifegradImprove?.[tab]}
-                stageImprovePlan={editorial.stageImprove?.[tab] ?? null}
-                onComplete={syncFromPipelineRoman}
-              />
-            ) : null}
-            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg font-extrabold text-zinc-950">
-                  {tab === "grobplot" ? "Grobplot" : "Feinplot"}
-                </h2>
-                <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, tab)}
-                  disabled={!canSave}
-                  pending={savePending}
-                  onCheckedChange={(v) => void savePipelineFertig(tab, v)}
-                />
-              </div>
-              {!typSet ? (
-                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
-                  Zuerst Buchtyp wählen.
-                </p>
-              ) : (
-                <div className="space-y-5">
-                  <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
-                    {tab === "grobplot"
-                      ? "Szenen-Köpfe je Kapitel (Heading + Summary). Volle Verträge folgen im Feinplot."
-                      : "Volle Szenenverträge + Schreibprompt. „Fertig“ friert die Prompts ein — Manuskript schreibt nur noch Prosa."}
-                  </p>
-                  <RomanPipelineStageActions
-                    romanId={roman.id}
-                    stage={tab}
-                    canSave={canSave}
-                    disabled={savePending || pipelineBusy}
-                    onComplete={syncFromPipelineRoman}
-                    reifegrade={editorial.reifegrade}
-                    showAssess
-                    displayLabel={tab === "grobplot" ? "Grobplot" : "Feinplot"}
-                    rolesHref={rolesHref}
-                    generateCascadeConfirm={generateCascadeConfirm(
-                      editorial,
-                      tab,
-                    )}
-                  />
-                  <RomanWissensgraphTrigger graph={editorial.wissensGraph} />
-                  {!isCleverErzaehlt ? (
-                    <RomanManuskriptContinuityControl
-                      romanId={roman.id}
-                      target="szenenplot"
-                      disabled={savePending || pipelineBusy}
-                      onComplete={syncFromPipelineRoman}
-                    />
-                  ) : null}
-                  <RomanSzenenplotPanel
-                    hasGeruest={hasGeruestDoc}
-                    value={szenenplot}
-                    onChange={setSzenenplot}
-                    structured={editorial.szenenplotStructured}
-                    canSave={canSave}
-                    disabled={savePending || pipelineBusy || enrichSpatialPending}
-                    savePending={savePending}
-                    onSave={() => void saveSzenenplot()}
-                    onClear={() => clearSzenenplot()}
-                    clearPending={savePending}
-                    enrichSpatialPending={enrichSpatialPending}
-                    enrichSpatialMode={enrichSpatialMode}
-                    onEnrichSpatial={async () => {
-                      if (!canSave || enrichSpatialPending) return;
-                      setEnrichSpatialMode("manual");
-                      setEnrichSpatialPending(true);
-                      try {
-                        const result = await enrichSzenenplotSpatialAction({
-                          romanId: roman.id,
-                          force: true,
-                        });
-                        if (!result.success) {
-                          toast.error(
-                            result.error ??
-                              "Raum-Continuity nachschärfen fehlgeschlagen.",
-                          );
-                          return;
-                        }
-                        setRomanKeepCover(result.data!.roman);
-                        setEditorial(
-                          result.data!.roman.editorial ?? editorial,
-                        );
-                        toast.success(
-                          "Raum-Continuity (Ort/Etage/Props) nachgeschärft.",
-                        );
-                      } finally {
-                        setEnrichSpatialPending(false);
-                        setEnrichSpatialMode("manual");
-                      }
-                    }}
-                    staleBanner={downstreamStaleBanner(editorial, tab)}
-                  />
-                </div>
-              )}
-            </section>
-          </div>
+        ) : tab === "feinplot" || tab === "spec" ? (
+          <p className="text-sm font-semibold text-zinc-600">Weiterleitung …</p>
         ) : tab === "schreiben" ? (
           <div className="space-y-4">
             {typSet && !isCleverErzaehlt ? (
@@ -1889,15 +2097,6 @@ export function RomanAdminWorkspace({
                 <h2 className="text-lg font-extrabold text-zinc-950">
                   {isCleverErzaehlt ? "Kurzgeschichten" : "Manuskript"}
                 </h2>
-                <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, "schreiben")}
-                  disabled={!canSave}
-                  pending={savePending}
-                  pendingLabel="Prüfen …"
-                  onCheckedChange={(v) =>
-                    void savePipelineFertig("schreiben", v)
-                  }
-                />
               </div>
               {isCleverErzaehlt ? (
                 <p className="text-sm font-semibold text-zinc-600">
@@ -1913,21 +2112,50 @@ export function RomanAdminWorkspace({
                 </p>
               ) : (
                 <div className="space-y-5">
+                  {prereqGate && !prereqGate.ok && prereqGateKey ? (
+                    <RomanStageHardGateBanner
+                      romanId={roman.id}
+                      gateKey={prereqGateKey}
+                      gate={prereqGate}
+                      canSave={canSave}
+                      onUpdated={syncFromPipelineRoman}
+                    />
+                  ) : null}
+                  {currentGateKey === "schreiben" && currentStageGate ? (
+                    <RomanStageHardGateBanner
+                      romanId={roman.id}
+                      gateKey="schreiben"
+                      gate={currentStageGate}
+                      canSave={canSave}
+                      onUpdated={syncFromPipelineRoman}
+                    />
+                  ) : null}
                   {!isCleverErzaehlt ? (
                     <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
-                      Vor „Erzeugen“: Szenenplot fertig (Schreibprompts
-                      eingefroren) oder Logik/Dramaturgie ≥75%. Co-Autor schreibt
-                      kapitelweise Prosa. Beim „fertig“-Toggle: günstiger
-                      Seam/Payoff- und Emotion-Check als Hinweis vor dem
-                      Roman-Feinschliff. Oben Kapitel wählen — im Feld nur dieses
-                      Kapitel; Buch-Wortzahl bleibt sichtbar.
+                      Vor Volltext: Szenen freigegeben. Stimmprobe = ein Kapitel
+                      über Einzelkapitel erzeugen und freigeben, dann Lektorat.
+                      Hard-Gate und Freigabe sind kein gegenseitiger Bypass.
                     </p>
+                  ) : null}
+                  {!isCleverErzaehlt ? (
+                    <RomanPhaseFreigabeBar
+                      roman={roman}
+                      editorial={editorial}
+                      phase="manuskript"
+                      canSave={canSave}
+                      onUpdated={syncFromPipelineRoman}
+                      onApprove={() => runManuskriptPhaseFreigabe()}
+                    />
                   ) : null}
                   <RomanPipelineStageActions
                     romanId={roman.id}
                     stage="manuskript"
                     canSave={canSave}
-                    disabled={savePending || pipelineBusy}
+                    disabled={
+                      savePending ||
+                      pipelineBusy ||
+                      (!isCleverErzaehlt && hardGateBlocksErzeugen)
+                    }
                     onComplete={syncFromPipelineRoman}
                     reifegrade={editorial.reifegrade}
                     leserFeedback={leserFeedbackForStage(editorial, "manuskript")}
@@ -2100,175 +2328,36 @@ export function RomanAdminWorkspace({
                       }));
                     }}
                   />
-                </div>
-              )}
-            </section>
-          </div>
-        ) : tab === "roman" ? (
-          <div className="space-y-4">
-            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-lg font-extrabold text-zinc-950">Roman</h2>
-                <RomanStepFertigToggle
-                  checked={isPipelineTabFertig(editorial, "roman")}
-                  disabled={!canSave}
-                  pending={savePending}
-                  onCheckedChange={(v) => void savePipelineFertig("roman", v)}
-                />
-              </div>
-              {!typSet ? (
-                <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
-                  Zuerst Buchtyp wählen.
-                </p>
-              ) : (
-                <div className="space-y-5">
-                  <p className="rounded-2xl bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-950 ring-1 ring-sky-200/80">
-                    Feinschliff aus dem Manuskript (Autor · Luna): Lesefluss,
-                    Rechtschreibung, Grammatik — weiche Freeze-QA. Vorher:
-                    Manuskript-Reifegrad + Freigabe. Manuskript bleibt Entwurf.
-                  </p>
-                  {typSet && !isCleverErzaehlt ? (
-                    <RomanReifegradCard
-                      value={editorial.reifegrade?.roman ?? null}
+                  {!isCleverErzaehlt ? (
+                    <RomanManuskriptVerbessernControl
                       romanId={roman.id}
-                      stage="roman"
+                      editorial={editorial}
                       canSave={canSave}
                       disabled={savePending || pipelineBusy}
-                      improvePlans={editorial.reifegradImprove?.roman}
                       onComplete={syncFromPipelineRoman}
                     />
                   ) : null}
-                  <RomanManuskriptVerbessernControl
-                    romanId={roman.id}
-                    editorial={editorial}
-                    canSave={canSave}
-                    disabled={savePending || pipelineBusy}
-                    onComplete={syncFromPipelineRoman}
-                  />
-                  {romanNavChapters.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {romanNavChapters.map((ch) => {
-                        const filled = Boolean(
-                          parsePlotChapters(romanBook).find(
-                            (c) => c.number === ch.number,
-                          )?.body.trim(),
-                        );
-                        const fertig = Boolean(
-                          editorial.romanKapitelFertig?.[String(ch.number)],
-                        );
-                        const selected = ch.number === romanChapterNumber;
-                        return (
-                          <button
-                            key={ch.number}
-                            type="button"
-                            disabled={savePending || pipelineBusy}
-                            onClick={() => setRomanChapterNumber(ch.number)}
-                            className={cn(
-                              "rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition",
-                              selected
-                                ? "bg-amber-800 text-white ring-amber-800"
-                                : fertig
-                                  ? "bg-emerald-100 text-emerald-950 ring-emerald-300 hover:bg-emerald-200/80"
-                                  : filled
-                                    ? "bg-sky-50 text-sky-950 ring-sky-200 hover:bg-sky-100/80"
-                                    : "bg-white text-zinc-600 ring-zinc-950/10 hover:bg-zinc-50",
-                            )}
-                            title={
-                              fertig
-                                ? "Stil-Pass fertig — Verbessern überspringt dieses Kapitel"
-                                : filled
-                                  ? "Text vorhanden — noch nicht als fertig markiert"
-                                  : "Noch kein Roman-Text"
-                            }
-                          >
-                            Kap. {ch.number}
-                            {fertig
-                              ? " · fertig"
-                              : filled
-                                ? ""
-                                : " · leer"}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
-                      Zuerst ein Manuskript erzeugen — danach erscheint hier die
-                      Kapitelstruktur.
-                    </p>
-                  )}
-                  <RomanManuskriptPanel
-                    hasSzenenplot={hasSzenenplotDoc}
-                    value={
-                      parsePlotChapters(romanBook).find(
-                        (c) => c.number === romanChapterNumber,
-                      )?.body ?? ""
-                    }
-                    onChange={(next) => {
-                      setRomanBook(
-                        replaceManuskriptChapterBody(
-                          romanBook,
-                          szenenplot || manuskript,
-                          romanChapterNumber,
-                          next,
-                        ),
-                      );
-                    }}
-                    canSave={canSave}
-                    disabled={savePending || pipelineBusy}
-                    savePending={savePending}
-                    onSave={() => void saveRomanBook()}
-                    onClear={() => void clearRomanBook()}
-                    clearPending={savePending}
-                    onRestoreChapter={() =>
-                      void restoreRomanChapterFromManuskript()
-                    }
-                    restorePending={savePending}
-                    zielWortzahl={editorial.zielWortzahlRoman}
-                    mode="roman"
-                    bookMarkdown={romanBook}
-                    focusChapter={{
-                      number: romanChapterNumber,
-                      title:
-                        sanitizeChapterTitle(
-                          romanNavChapters.find(
-                            (c) => c.number === romanChapterNumber,
-                          )?.title ??
-                            parsePlotChapters(romanBook).find(
-                              (c) => c.number === romanChapterNumber,
-                            )?.title ??
-                            "",
-                          romanChapterNumber,
-                        ) || `Kapitel ${romanChapterNumber}`,
-                    }}
-                    clearDialog={{
-                      title: "Roman leeren?",
-                      description:
-                        "Nur der Feinschliff (Roman-Tab) wird gelöscht. Das Manuskript, der Szenenplot und Export-Texte bleiben erhalten.",
-                      confirmLabel: "Roman leeren",
-                    }}
-                    restoreDialog={{
-                      title: `Kapitel ${romanChapterNumber} aus Manuskript wiederherstellen?`,
-                      description:
-                        "Der Roman-Text dieses Kapitels wird durch den Manuskript-Text ersetzt. Das Fertig-Flag entfällt, damit Verbessern das Kapitel erneut anfasst. Andere Kapitel bleiben unverändert.",
-                      confirmLabel: "Aus Manuskript wiederherstellen",
-                    }}
-                  />
                 </div>
               )}
             </section>
           </div>
-        ) : tab === "export" ? (
+        ) : tab === "export" || tab === "hoerbuch" ? (
           <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-lg font-extrabold text-zinc-950">Export</h2>
-              <RomanStepFertigToggle
-                checked={isPipelineTabFertig(editorial, "export")}
-                disabled={!canSave}
-                pending={savePending}
-                onCheckedChange={(v) => void savePipelineFertig("export", v)}
-              />
             </div>
+            <p className="text-sm font-semibold text-zinc-600">
+              Cover, Marketing-Texte, PDF/EPUB und Hörbuch — ein Schritt.
+            </p>
+            {typSet ? (
+              <RomanPhaseFreigabeBar
+                roman={roman}
+                editorial={editorial}
+                phase="export"
+                canSave={canSave}
+                onUpdated={syncFromPipelineRoman}
+              />
+            ) : null}
             {!typSet ? (
               <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
                 Zuerst Buchtyp wählen.
@@ -2330,38 +2419,25 @@ export function RomanAdminWorkspace({
                     }}
                   />
                 </ExportPanelErrorBoundary>
+                <div className="space-y-4 border-t border-zinc-100 pt-8">
+                  <h3 className="text-base font-extrabold text-zinc-950">
+                    Hörbuch
+                  </h3>
+                  <ExportPanelErrorBoundary>
+                    <RomanHoerbuchPanel
+                      roman={roman}
+                      editorial={editorial}
+                      disabled={savePending}
+                      onHoerbuchPrefsSaved={(prefs) =>
+                        setEditorial((prev) => ({
+                          ...prev,
+                          hoerbuchPrefs: prefs,
+                        }))
+                      }
+                    />
+                  </ExportPanelErrorBoundary>
+                </div>
               </div>
-            )}
-          </section>
-        ) : tab === "hoerbuch" ? (
-          <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-extrabold text-zinc-950">Hörbuch</h2>
-              <RomanStepFertigToggle
-                checked={isPipelineTabFertig(editorial, "hoerbuch")}
-                disabled={!canSave}
-                pending={savePending}
-                onCheckedChange={(v) => void savePipelineFertig("hoerbuch", v)}
-              />
-            </div>
-            {!typSet ? (
-              <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
-                Zuerst Buchtyp wählen.
-              </p>
-            ) : (
-              <ExportPanelErrorBoundary>
-                <RomanHoerbuchPanel
-                  roman={roman}
-                  editorial={editorial}
-                  disabled={savePending}
-                  onHoerbuchPrefsSaved={(prefs) =>
-                    setEditorial((prev) => ({
-                      ...prev,
-                      hoerbuchPrefs: prefs,
-                    }))
-                  }
-                />
-              </ExportPanelErrorBoundary>
             )}
           </section>
         ) : (
@@ -2383,6 +2459,74 @@ export function RomanAdminWorkspace({
           />
         ) : null}
       </div>
+
+      {basicsDeriveConfirmOpen
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="basics-derive-confirm-title"
+              className="fixed inset-0 z-[110] flex items-center justify-center bg-zinc-950/55 p-4 backdrop-blur-sm"
+              onClick={() => {
+                if (!basicsDerivePending) setBasicsDeriveConfirmOpen(false);
+              }}
+            >
+              <div
+                className="w-full max-w-md rounded-[1.75rem] bg-white p-6 shadow-2xl ring-1 ring-zinc-950/10"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h2
+                    id="basics-derive-confirm-title"
+                    className="text-xl font-extrabold text-zinc-950"
+                  >
+                    Basics neu aus Idee ableiten?
+                  </h2>
+                  <button
+                    type="button"
+                    disabled={basicsDerivePending}
+                    className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-all duration-200 ease-in-out hover:bg-gray-100 hover:text-zinc-950 disabled:opacity-50"
+                    onClick={() => setBasicsDeriveConfirmOpen(false)}
+                    aria-label="Schließen"
+                  >
+                    <X className="size-5" />
+                  </button>
+                </div>
+                <p className="mt-2 text-sm text-zinc-600">
+                  Genre, Sprache &amp; Tonalität und Basis-Regeln (sowie
+                  Altersvorschlag) werden überschrieben. Manuelle Feinschliffe
+                  gehen verloren.
+                </p>
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={basicsDerivePending}
+                    className="inline-flex items-center rounded-full bg-zinc-100 px-4 py-2 text-sm font-bold text-zinc-800 transition hover:bg-zinc-200 disabled:opacity-50"
+                    onClick={() => setBasicsDeriveConfirmOpen(false)}
+                  >
+                    Abbrechen
+                  </button>
+                  <button
+                    type="button"
+                    disabled={basicsDerivePending}
+                    className="inline-flex items-center rounded-full bg-orange-700 px-4 py-2 text-sm font-extrabold text-white transition hover:bg-orange-800 disabled:opacity-50"
+                    onClick={() => runBasicsDeriveFromIdee(true)}
+                  >
+                    {basicsDerivePending ? (
+                      <>
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Ableiten …
+                      </>
+                    ) : (
+                      "Neu ableiten"
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

@@ -153,8 +153,8 @@ export function RomanSchreiberTonalitaetDialog({
               Sprache & Tonalität erarbeiten
             </h2>
             <p className="mt-1 text-sm font-semibold text-zinc-600">
-              Dialog mit dem Schreib-Coach — tippen oder Mikrofon. Jede Runde
-              schärft die Vorgabe.
+              Dialog mit dem Schreib-Coach — tippen oder Mikrofon. Typisch nach
+              der Ableitung aus der Idee; jede Runde schärft die Priority-0-Vorgabe.
             </p>
           </div>
           <button

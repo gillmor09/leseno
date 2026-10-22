@@ -3,6 +3,7 @@
  */
 
 import { defaultSachbuchAgents } from "@/lib/sachbuch/agent-defaults";
+import { getSachbuchBookType } from "@/lib/sachbuch/book-types";
 import {
   emptySachbuchEvidenz,
   emptySachbuchIdee,
@@ -86,20 +87,52 @@ export async function upsertSachbuchKontext(
   return saved;
 }
 
-/** Create a shell book (title + buchArt, default agents). */
-export async function createSachbuchKontext(
-  title: string,
-  buchArt: SachbuchMakroTyp = "journey",
-): Promise<SachbuchKontext> {
+/**
+ * Create a shell book: Idee first. Sachbuchtyp stays empty until suggested/confirmed.
+ * Optional `bookTypeId` only for legacy/admin overrides.
+ */
+export async function createSachbuchKontext(input: {
+  title: string;
+  buchArt?: SachbuchMakroTyp;
+  bookTypeId?: string;
+  /** ready = paste idea into briefing; interview = empty Idee for Q&A. */
+  ideaMode?: "ready" | "interview";
+  highConceptIdea?: string;
+}): Promise<SachbuchKontext> {
+  const confirmed = getSachbuchBookType(input.bookTypeId);
+  const buchArt = input.buchArt ?? confirmed?.makroTyp ?? "journey";
+  const idea = (input.highConceptIdea ?? "").trim();
+  const mode = input.ideaMode ?? "ready";
+  const idee =
+    mode === "ready" && idea.length >= 20
+      ? {
+          ...emptySachbuchIdee(),
+          briefing: idea,
+          unpopularOpinion: idea.split(/[.!?\n]/)[0]?.trim().slice(0, 280) ?? "",
+          status: "ready" as const,
+          guide: {
+            currentStep: "refine" as const,
+            ideaApprovedAt: null,
+          },
+        }
+      : {
+          ...emptySachbuchIdee(),
+          status: "in_progress" as const,
+          guide: {
+            currentStep: "concept" as const,
+            ideaApprovedAt: null,
+          },
+        };
+
   return upsertSachbuchKontext({
     id: null,
-    title,
+    title: input.title.trim() || "Unbenanntes Sachbuch",
     stilbibel: "",
     zielgruppe: "",
     agents: defaultSachbuchAgents(),
-    idee: emptySachbuchIdee(),
+    idee,
     evidenz: emptySachbuchEvidenz(),
-    makro: emptySachbuchMakro(buchArt),
+    makro: emptySachbuchMakro(buchArt, confirmed?.id ?? ""),
     kapitel: [],
   });
 }

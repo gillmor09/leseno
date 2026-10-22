@@ -1,108 +1,185 @@
 "use client";
 
 /**
- * Sachbuch workspace: Phasen 1–5 + Agenten.
- * Buchart (Journey / Erklärung) sits in Grundlagen and drives Idee + Makro.
+ * Guided Sachbuch wizard: Rohkonzept → Haiku/Luna-Verfeinerung → Freigabe →
+ * Buchtyp → Evidenz → Makro → Graph/Schreiben. Hard gates via idee.guide.
  */
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { saveSachbuchAction } from "@/app/actions/sachbuch-admin";
-import { SachbuchAgentsPanel } from "@/components/features/admin/sachbuch-agents-panel";
+import {
+  deleteSachbuchAction,
+  saveSachbuchAction,
+} from "@/app/actions/sachbuch-admin";
+import { setSachbuchGuideStepAction } from "@/app/actions/sachbuch-phases";
+import { SachbuchBookTypePanel } from "@/components/features/admin/sachbuch-book-type-panel";
 import { SachbuchEvidenzPanel } from "@/components/features/admin/sachbuch-evidenz-panel";
+import { SachbuchGuideStepper } from "@/components/features/admin/sachbuch-guide-stepper";
 import { SachbuchIdeePanel } from "@/components/features/admin/sachbuch-idee-panel";
+import { SachbuchIdeeRefinePanel } from "@/components/features/admin/sachbuch-idee-refine-panel";
 import { SachbuchMakroPanel } from "@/components/features/admin/sachbuch-makro-panel";
 import { SachbuchSchreibenPanel } from "@/components/features/admin/sachbuch-schreiben-panel";
-import type { SachbuchKontext, SachbuchMakroTyp } from "@/lib/sachbuch/types";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { getSachbuchBookType } from "@/lib/sachbuch/book-types";
 import {
-  SACHBUCH_MAKRO_TYP_HINTS,
-  SACHBUCH_MAKRO_TYP_LABELS,
-  SACHBUCH_MAKRO_TYP_OPTIONS,
-  emptyMakroStages,
-} from "@/lib/sachbuch/types";
-import { cn } from "@/lib/utils";
-
-type TabId =
-  | "grundlagen"
-  | "idee"
-  | "evidenz"
-  | "makro"
-  | "agenten"
-  | "schreiben";
-
-const TABS: Array<{ id: TabId; label: string }> = [
-  { id: "grundlagen", label: "Grundlagen" },
-  { id: "agenten", label: "Agenten" },
-  { id: "idee", label: "Idee" },
-  { id: "evidenz", label: "Evidenz" },
-  { id: "makro", label: "Makro" },
-  { id: "schreiben", label: "Schreiben" },
-];
+  canOpenSachbuchGuideStep,
+  effectiveSachbuchGuideStep,
+  hasUsableSachbuchConcept,
+  isSachbuchIdeaApproved,
+  nextSachbuchGuideStep,
+} from "@/lib/sachbuch/guide";
+import type { SachbuchGuideStep, SachbuchKontext } from "@/lib/sachbuch/types";
+import { SACHBUCH_GUIDE_STEP_LABELS } from "@/lib/sachbuch/types";
 
 export function SachbuchAdminWorkspace({
   initialBook,
-  modelOptions,
   canSave,
 }: {
   initialBook: SachbuchKontext;
-  modelOptions: Array<{ modelSlug: string; label: string }>;
+  /** Kept for page compatibility; unused until agents UI returns. */
+  modelOptions?: Array<{ modelSlug: string; label: string }>;
   canSave: boolean;
 }) {
+  const router = useRouter();
   const [book, setBook] = useState(initialBook);
-  const [tab, setTab] = useState<TabId>("grundlagen");
   const [title, setTitle] = useState(initialBook.title);
-  const [stilbibel, setStilbibel] = useState(initialBook.stilbibel);
-  const [zielgruppe, setZielgruppe] = useState(initialBook.zielgruppe);
-  const [buchArt, setBuchArt] = useState<SachbuchMakroTyp>(
-    initialBook.makro.typ ?? "journey",
-  );
-  const [pending, setPending] = useState(false);
+  const [titlePending, setTitlePending] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [stepPending, setStepPending] = useState(false);
 
-  async function saveGrundlagen() {
-    if (!canSave || pending) return;
+  const bookType = getSachbuchBookType(book.makro.bookTypeId);
+  const step = effectiveSachbuchGuideStep(book);
+  const ideaApproved = isSachbuchIdeaApproved(book);
+  const hasConcept = hasUsableSachbuchConcept(book);
+  const ideaInterviewing =
+    step === "concept" &&
+    (book.idee.status === "in_progress" ||
+      book.idee.status === "empty" ||
+      !hasConcept);
+
+  const next = nextSachbuchGuideStep(step);
+
+  async function saveTitle() {
+    if (!canSave || titlePending) return;
     const trimmed = title.trim();
     if (!trimmed) {
       toast.error("Titel angeben.");
       return;
     }
-    const typChanged = buchArt !== (book.makro.typ ?? "journey");
-    setPending(true);
-    const result = await saveSachbuchAction({
-      id: book.id,
-      title: trimmed,
-      stilbibel,
-      zielgruppe,
-      agents: book.agents,
-      idee: book.idee,
-      evidenz: book.evidenz,
-      makro: typChanged
-        ? {
-            typ: buchArt,
-            stages: emptyMakroStages(buchArt),
-            status: "empty",
-            kapitelGenerated: false,
-          }
-        : { ...book.makro, typ: buchArt },
-      kapitel: book.kapitel,
-    });
-    setPending(false);
-    if (!result.success) {
-      toast.error(result.error ?? "Speichern fehlgeschlagen.");
+    setTitlePending(true);
+    try {
+      const result = await saveSachbuchAction({
+        id: book.id,
+        title: trimmed,
+        stilbibel: book.stilbibel,
+        zielgruppe: book.zielgruppe,
+        agents: book.agents,
+        idee: book.idee,
+        evidenz: book.evidenz,
+        makro: book.makro,
+        kapitel: book.kapitel,
+      });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Titel speichern fehlgeschlagen.");
+        return;
+      }
+      setBook(result.data.book);
+      toast.success("Titel gespeichert.");
+    } finally {
+      setTitlePending(false);
+    }
+  }
+
+  async function goToStep(target: SachbuchGuideStep) {
+    if (!canSave || stepPending) return;
+    if (!canOpenSachbuchGuideStep(book, target)) {
+      toast.error("Dieser Schritt ist noch gesperrt.");
       return;
     }
-    setBook(result.data!.book);
-    setBuchArt(result.data!.book.makro.typ);
-    toast.success(
-      typChanged
-        ? "Grundlagen gespeichert — Makro-Stages an neue Buchart angepasst."
-        : "Grundlagen gespeichert.",
-    );
+    if (effectiveSachbuchGuideStep(book) === target) return;
+    setStepPending(true);
+    try {
+      const result = await setSachbuchGuideStepAction({
+        sachbuchId: book.id,
+        step: target,
+      });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Schritt wechseln fehlgeschlagen.");
+        return;
+      }
+      setBook(result.data.book);
+    } finally {
+      setStepPending(false);
+    }
+  }
+
+  async function advance() {
+    if (!next) return;
+    if (step === "makro" && book.kapitel.length === 0) {
+      toast.error("Zuerst Makro erzeugen und Kapitel anlegen.");
+      return;
+    }
+    await goToStep(next);
+  }
+
+  async function onDelete() {
+    if (!canSave || deletePending) return;
+    setDeletePending(true);
+    try {
+      const result = await deleteSachbuchAction({ id: book.id });
+      if (!result.success) {
+        toast.error(result.error ?? "Löschen fehlgeschlagen.");
+        return;
+      }
+      setDeleteOpen(false);
+      toast.success("Sachbuch gelöscht.");
+      router.push("/admin/sachbuch");
+      router.refresh();
+    } finally {
+      setDeletePending(false);
+    }
+  }
+
+  async function leaveInterviewToRefine() {
+    if (!canSave || titlePending || !hasConcept) return;
+    setTitlePending(true);
+    try {
+      const result = await saveSachbuchAction({
+        id: book.id,
+        title: book.title,
+        stilbibel: book.stilbibel,
+        zielgruppe: book.zielgruppe,
+        agents: book.agents,
+        idee: {
+          ...book.idee,
+          status: "ready",
+          guide: {
+            currentStep: "refine",
+            ideaApprovedAt: null,
+          },
+        },
+        evidenz: book.evidenz,
+        makro: book.makro,
+        kapitel: book.kapitel,
+      });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Speichern fehlgeschlagen.");
+        return;
+      }
+      setBook(result.data.book);
+      toast.success("Weiter zur Verfeinerung.");
+    } finally {
+      setTitlePending(false);
+    }
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link
             href="/admin/sachbuch"
@@ -114,147 +191,269 @@ export function SachbuchAdminWorkspace({
             {book.title}
           </h1>
           <p className="mt-1 text-xs font-semibold text-zinc-500">
-            Buchart: {SACHBUCH_MAKRO_TYP_LABELS[book.makro.typ ?? "journey"]}
+            {SACHBUCH_GUIDE_STEP_LABELS[step]}
+            {bookType ? ` · ${bookType.shortLabel}` : ""}
+            {ideaApproved ? " · Idee freigegeben" : " · Idee gesperrt bis Freigabe"}
           </p>
         </div>
+        <button
+          type="button"
+          disabled={!canSave || deletePending}
+          onClick={() => setDeleteOpen(true)}
+          className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-50"
+        >
+          <Trash2 className="size-4" aria-hidden />
+          Löschen
+        </button>
       </div>
 
-      <nav className="flex flex-wrap gap-2" aria-label="Sachbuch-Phasen">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "rounded-full px-4 py-2 text-sm font-bold transition",
-              tab === t.id
-                ? "bg-zinc-900 text-white"
-                : "bg-white text-zinc-700 ring-1 ring-zinc-950/10 hover:bg-gray-50",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      <SachbuchGuideStepper
+        book={book}
+        canSave={canSave}
+        pending={stepPending || titlePending}
+        onSelectStep={(s) => void goToStep(s)}
+      />
 
-      {tab === "grundlagen" ? (
-        <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10 sm:p-8">
-          <div>
-            <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-              Buchart
-            </span>
-            <div className="flex flex-wrap gap-2">
-              {SACHBUCH_MAKRO_TYP_OPTIONS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  disabled={!canSave || pending}
-                  onClick={() => setBuchArt(option)}
-                  className={cn(
-                    "rounded-full px-5 py-2.5 text-sm font-bold disabled:opacity-50",
-                    buchArt === option
-                      ? "bg-zinc-900 text-white"
-                      : "bg-white text-zinc-700 ring-1 ring-zinc-950/10",
-                  )}
-                >
-                  {SACHBUCH_MAKRO_TYP_LABELS[option]}
-                </button>
-              ))}
-            </div>
-            <p className="mt-2 text-xs font-semibold text-zinc-500">
-              {SACHBUCH_MAKRO_TYP_HINTS[buchArt]}
-              {buchArt !== (book.makro.typ ?? "journey")
-                ? " Wechsel setzt Makro-Stages zurück."
-                : ""}
-            </p>
-          </div>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-              Titel
-            </span>
+      {!ideaApproved && book.kapitel.some((k) => k.abschnitte.length > 0) ? (
+        <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
+          Vorhandene Abschnitte bleiben erhalten, sind aber gesperrt — zuerst
+          Idee verfeinern und freigeben.
+        </p>
+      ) : null}
+
+      <section className="space-y-3 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+            Titel
+          </span>
+          <div className="flex flex-wrap gap-2">
             <input
               value={title}
-              disabled={!canSave || pending}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
+              disabled={!canSave || titlePending}
+              className="min-w-[12rem] flex-1 rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
             />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-              Zielgruppe
-            </span>
-            <input
-              value={zielgruppe}
-              disabled={!canSave || pending}
-              onChange={(e) => setZielgruppe(e.target.value)}
-              placeholder="Für wen schreibst du?"
-              className="w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-              Stilbibel / Autor-DNA
-            </span>
-            <textarea
-              value={stilbibel}
-              disabled={!canSave || pending}
-              onChange={(e) => setStilbibel(e.target.value)}
-              rows={10}
-              placeholder="Ton, Satzlänge, Lieblingswendungen, Tabus …"
-              className="w-full resize-y rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold leading-relaxed outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-            />
-          </label>
+            <button
+              type="button"
+              disabled={!canSave || titlePending}
+              onClick={() => void saveTitle()}
+              className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {titlePending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : null}
+              Speichern
+            </button>
+          </div>
+        </label>
+      </section>
+
+      {step === "concept" ? (
+        <div className="space-y-3">
+          {hasConcept && !ideaInterviewing ? (
+            <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-zinc-950/10">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-extrabold text-zinc-950">
+                    Rohkonzept
+                  </h2>
+                  <p className="mt-1 text-xs font-semibold text-zinc-500">
+                    Ausgangspunkt für die agentische Verfeinerung.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={!canSave || titlePending}
+                  onClick={() => void leaveInterviewToRefine()}
+                  className="rounded-full bg-orange-700 px-4 py-2 text-xs font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+                >
+                  Weiter: Verfeinern
+                </button>
+              </div>
+              {book.idee.unpopularOpinion.trim() ? (
+                <p className="text-sm font-semibold text-zinc-900">
+                  {book.idee.unpopularOpinion}
+                </p>
+              ) : null}
+              <div className="max-h-[40vh] overflow-y-auto rounded-2xl bg-zinc-50 px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 ring-1 ring-zinc-950/5">
+                {book.idee.briefing.trim() || "—"}
+              </div>
+              <button
+                type="button"
+                disabled={!canSave || titlePending}
+                onClick={() => {
+                  void (async () => {
+                    setTitlePending(true);
+                    try {
+                      const result = await saveSachbuchAction({
+                        id: book.id,
+                        title: book.title,
+                        stilbibel: book.stilbibel,
+                        zielgruppe: book.zielgruppe,
+                        agents: book.agents,
+                        idee: {
+                          ...book.idee,
+                          status: "in_progress",
+                          guide: {
+                            ...book.idee.guide,
+                            currentStep: "concept",
+                            ideaApprovedAt: null,
+                          },
+                        },
+                        evidenz: book.evidenz,
+                        makro: book.makro,
+                        kapitel: book.kapitel,
+                      });
+                      if (!result.success || !result.data) {
+                        toast.error(
+                          result.error ?? "Speichern fehlgeschlagen.",
+                        );
+                        return;
+                      }
+                      setBook(result.data.book);
+                    } finally {
+                      setTitlePending(false);
+                    }
+                  })();
+                }}
+                className="text-sm font-bold text-orange-800 underline-offset-2 hover:underline disabled:opacity-50"
+              >
+                Im Interview nachschärfen
+              </button>
+            </section>
+          ) : (
+            <div className="space-y-3">
+              {hasConcept ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200/80">
+                  <p className="text-sm font-semibold text-amber-950">
+                    Interview läuft — Konzept reicht für den nächsten Schritt.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={!canSave || titlePending}
+                    onClick={() => void leaveInterviewToRefine()}
+                    className="rounded-full bg-white px-4 py-2 text-xs font-bold text-amber-950 ring-1 ring-amber-300/80 disabled:opacity-50"
+                  >
+                    Interview verlassen → Verfeinern
+                  </button>
+                </div>
+              ) : null}
+              <SachbuchIdeePanel
+                book={book}
+                canSave={canSave}
+                onBookUpdate={setBook}
+              />
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {step === "refine" ? (
+        <SachbuchIdeeRefinePanel
+          book={book}
+          canSave={canSave}
+          onBookUpdate={setBook}
+        />
+      ) : null}
+
+      {step === "book_type" ? (
+        ideaApproved ? (
+          <SachbuchBookTypePanel
+            book={book}
+            canSave={canSave}
+            onBookUpdate={setBook}
+          />
+        ) : (
+          <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
+            Zuerst Idee freigeben (Schritt Verfeinern).
+          </p>
+        )
+      ) : null}
+
+      {step === "evidenz" ? (
+        <div className="space-y-3">
+          <SachbuchEvidenzPanel
+            book={book}
+            canSave={canSave}
+            onBookUpdate={setBook}
+          />
           <button
             type="button"
-            disabled={!canSave || pending}
-            onClick={() => void saveGrundlagen()}
-            className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+            disabled={!canSave || stepPending || !ideaApproved || !bookType}
+            onClick={() => void advance()}
+            className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
           >
-            {pending ? "Speichern …" : "Speichern"}
+            Weiter: Makro
           </button>
-        </section>
+        </div>
       ) : null}
 
-      {tab === "idee" ? (
-        <SachbuchIdeePanel
-          book={book}
-          canSave={canSave}
-          onBookUpdate={setBook}
-        />
+      {step === "makro" ? (
+        <div className="space-y-3">
+          <SachbuchMakroPanel
+            book={book}
+            canSave={canSave}
+            onBookUpdate={setBook}
+          />
+          <button
+            type="button"
+            disabled={
+              !canSave ||
+              stepPending ||
+              !ideaApproved ||
+              !bookType ||
+              book.kapitel.length === 0
+            }
+            onClick={() => void advance()}
+            className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+          >
+            Weiter: Schreiben
+          </button>
+        </div>
       ) : null}
 
-      {tab === "evidenz" ? (
-        <SachbuchEvidenzPanel
-          book={book}
-          canSave={canSave}
-          onBookUpdate={setBook}
-        />
+      {step === "write" ? (
+        ideaApproved && bookType ? (
+          <SachbuchSchreibenPanel
+            book={book}
+            canSave={canSave}
+            onBookUpdate={setBook}
+          />
+        ) : (
+          <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
+            Schreiben gesperrt — Idee freigeben und Buchtyp wählen.
+          </p>
+        )
       ) : null}
 
-      {tab === "makro" ? (
-        <SachbuchMakroPanel
-          book={book}
-          canSave={canSave}
-          onBookUpdate={setBook}
-        />
+      {next &&
+      step !== "evidenz" &&
+      step !== "makro" &&
+      step !== "concept" &&
+      step !== "refine" &&
+      canOpenSachbuchGuideStep(book, next) ? (
+        <button
+          type="button"
+          disabled={!canSave || stepPending}
+          onClick={() => void advance()}
+          className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
+        >
+          Weiter: {SACHBUCH_GUIDE_STEP_LABELS[next]}
+        </button>
       ) : null}
 
-      {tab === "agenten" ? (
-        <SachbuchAgentsPanel
-          book={book}
-          modelOptions={modelOptions}
-          canSave={canSave}
-          onSaved={setBook}
-        />
-      ) : null}
-
-      {tab === "schreiben" ? (
-        <SachbuchSchreibenPanel
-          book={book}
-          canSave={canSave}
-          onBookUpdate={setBook}
-        />
-      ) : null}
+      <ConfirmDeleteDialog
+        open={deleteOpen}
+        title="Sachbuch löschen?"
+        description={`„${book.title}“ wird unwiderruflich gelöscht (Idee, Kapitel, Agenten).`}
+        confirmLabel="Löschen"
+        pending={deletePending}
+        onCancel={() => {
+          if (deletePending) return;
+          setDeleteOpen(false);
+        }}
+        onConfirm={() => void onDelete()}
+      />
     </div>
   );
 }

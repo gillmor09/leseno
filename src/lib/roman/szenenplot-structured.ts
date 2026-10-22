@@ -166,10 +166,10 @@ export function parseArcBeat(raw: unknown): RomanSzenenplotArcBeat | null {
     .slice(0, 64);
   const mustShow = String(r.mustShow ?? r.must_show ?? r.sichtbar ?? "")
     .trim()
-    .slice(0, 280);
+    .slice(0, 420);
   const delta = String(r.delta ?? r.bewegung ?? "")
     .trim()
-    .slice(0, 280);
+    .slice(0, 420);
   if (!arcId || mustShow.length < 4) return null;
   return {
     arcId,
@@ -279,7 +279,9 @@ export function formatChapterPlanBlock(
     );
   }
   if (plan.mustNotRepeat?.length) {
-    lines.push(`DARF NICHT: ${plan.mustNotRepeat.join("; ")}`);
+    lines.push(
+      `DARF NICHT erneut als Erst-Einführung / bereits erledigter Beat wiederholt werden: ${plan.mustNotRepeat.join("; ")}`,
+    );
   }
   if (plan.arcBeats?.length) {
     lines.push(
@@ -376,7 +378,7 @@ function asStringList(raw: unknown, max: number): string[] {
     .map((x) => String(x ?? "").trim())
     .filter((s) => s.length >= 1)
     .slice(0, max)
-    .map((s) => s.slice(0, 120));
+    .map((s) => s.slice(0, 280));
 }
 
 function asStringMap(raw: unknown, maxEntries: number): Record<string, string> {
@@ -414,10 +416,10 @@ function parseDramaturgy(raw: unknown): RomanSzenenplotDramaturgy | null {
     return null;
   }
   return {
-    scene_goal: scene_goal.slice(0, 400),
-    obstacle_conflict: obstacle_conflict.slice(0, 400),
-    turning_point: turning_point.slice(0, 400),
-    outcome_value_change: outcome_value_change.slice(0, 400),
+    scene_goal: scene_goal.slice(0, 750),
+    obstacle_conflict: obstacle_conflict.slice(0, 750),
+    turning_point: turning_point.slice(0, 750),
+    outcome_value_change: outcome_value_change.slice(0, 900),
   };
 }
 
@@ -433,15 +435,15 @@ function parseInformationFlow(
       d.revealed_to_audience ?? d.revealedToAudience ?? "",
     )
       .trim()
-      .slice(0, 400),
+      .slice(0, 750),
     revealed_to_characters: String(
       d.revealed_to_characters ?? d.revealedToCharacters ?? "",
     )
       .trim()
-      .slice(0, 400),
+      .slice(0, 750),
     kept_secret: String(d.kept_secret ?? d.keptSecret ?? "")
       .trim()
-      .slice(0, 400),
+      .slice(0, 600),
   };
 }
 
@@ -466,7 +468,7 @@ function parseContinuity(raw: unknown): RomanSzenenplotContinuity {
       d.next_scene_hook ?? d.nextSceneHook ?? "",
     )
       .trim()
-      .slice(0, 400),
+      .slice(0, 600),
   };
 }
 
@@ -506,8 +508,8 @@ function parseScene(raw: unknown, index: number): RomanSzenenplotScene | null {
     .slice(0, 2_400);
   return {
     scene_id: scene_id || `SZ_${String(index + 1).padStart(2, "0")}`,
-    heading: heading.slice(0, 160),
-    summary: summary.slice(0, 600),
+    heading: heading.slice(0, 200),
+    summary: summary.slice(0, 1_100),
     characters_present: asStringList(
       s.characters_present ?? s.charactersPresent ?? s.figuren,
       12,
@@ -526,12 +528,36 @@ function parseScene(raw: unknown, index: number): RomanSzenenplotScene | null {
  * Never return prose `schreibPrompt` alone — that dropped secrets/dramaturgy.
  * Binding law for Co-Autor: all MUSS beats on-page; secrets never paraphrased.
  */
+function stripCanonicalContractHeader(prompt: string): string {
+  const trimmed = prompt.trim();
+  if (!trimmed) return "";
+  const marker =
+    "Co-Autor-Auftrag (nur Ausformulieren — Ton/Emotion/SHOW; Plot steht oben):";
+  const lastIdx = trimmed.lastIndexOf(marker);
+  if (lastIdx >= 0) {
+    return trimmed.slice(lastIdx + marker.length).trim();
+  }
+  const fallbackMarker =
+    "Nur ausformulieren — keine neuen Handlungsstränge, Props oder Enthüllungen erfinden.";
+  if (
+    trimmed.startsWith("Szene ") &&
+    (trimmed.includes("GESETZ: Alle vier MUSS-Beats") ||
+      trimmed.includes("MUSS — Ziel:"))
+  ) {
+    const fbIdx = trimmed.lastIndexOf(fallbackMarker);
+    if (fbIdx >= 0) return "";
+    // Also strip if the header was truncated at 3200 chars before reaching the marker!
+    return "";
+  }
+  return trimmed;
+}
+
 export function formatCanonicalSceneContract(
   scene: Omit<RomanSzenenplotScene, "schreibPrompt"> & {
     schreibPrompt?: string;
   },
 ): string {
-  const prompt = scene.schreibPrompt?.trim() ?? "";
+  const prompt = stripCanonicalContractHeader(scene.schreibPrompt ?? "");
   const structured = [
     `Szene ${scene.scene_id} — ${scene.heading}`,
     "GESETZ: Alle vier MUSS-Beats sichtbar in der Prosa; DARF-NICHT weder Dialog noch Narration andeuten; keine Extra-Handlung.",
@@ -588,7 +614,15 @@ export function buildSchreibPromptFallback(
     schreibPrompt?: string;
   },
 ): string {
-  return formatCanonicalSceneContract(scene).slice(0, 3_200);
+  const existing = stripCanonicalContractHeader(scene.schreibPrompt ?? "");
+  if (existing && !existing.startsWith("Szene SZ_")) {
+    return existing.slice(0, 1_200);
+  }
+  const chars = scene.characters_present.join(", ") || "Protagonist";
+  const secret =
+    scene.information_flow.kept_secret ||
+    "keins — kein Geheimnis in dieser Szene";
+  return `Schreibe Szene ${scene.scene_id} (${scene.heading}) in der festgelegten Perspektive und Zeitform (Beteiligte: ${chars}). Halte Schauplatz, Uhrzeit aus dem Heading, Informationsgrenzen (Verschwiegen: ${secret}) und den exakten Übergang in die Folgeszene strikt ein.`;
 }
 
 /**
@@ -958,9 +992,9 @@ export function structuredSzenenplotToMarkdown(
       if (scene.continuity.next_scene_hook) {
         lines.push(`Hook: ${scene.continuity.next_scene_hook}`);
       }
-      const brief = buildSchreibPromptFallback(scene);
+      const brief = stripCanonicalContractHeader(scene.schreibPrompt ?? "");
       if (brief) {
-        lines.push(`Schreibprompt:\n${brief}`);
+        lines.push(`Schreibprompt: ${brief}`);
       }
       lines.push("");
     }
@@ -1119,13 +1153,16 @@ export const SZENENPLOT_SKELETON_SCHEMA_HINT = `{
   ]
 }`;
 
-export const KAPITELGERUEST_SYSTEM_ADDENDUM = `Du bist Entwicklungslektor:in und Dramaturg. Erstelle ein Kapitelgerüst — eine arbeitende SKIZZE, kein vorweggenommenes Buch.
+export const KAPITELGERUEST_SYSTEM_ADDENDUM = `Du bist Co-Autor:in und Dramaturg. Erstelle ein Kapitelgerüst — eine arbeitende SKIZZE, kein vorweggenommenes Buch.
+
+Leitstern: freigegebenes Exposé (Handlungsbogen, Motive, Wendungen). Wissensgraph = Faktenvertrag (Namen/Attrs/Invarianten) — kein Ersatz für den Bogen.
 
 Regeln:
 - Pro Kapitel: kernsatz (eine Zeile Rolle) + inhaltKurz (knapp: 2–4 Sätze / max. 1 kurzer Absatz — nicht nur den Kernsatz, aber auch kein Mini-Manuskript).
-- centralArcs (2–4): Reihenfolge = Priorität (erstes = Hauptbogen). Setup-/Peak-/Payoff-Kapitel; arcBeats pro Kapitel für aktive Arcs.
-- Props/Events-Lifecycle: introduces genau einmal; resolves nur bei Abschluss.
-- Props greifbar benennen (z. B. „silberner Golf AB-CD 123“) — aber nicht jede Szene ausbuchstabieren.
+- centralArcs (2–4): Reihenfolge = Priorität (erstes = Hauptbogen). Setup-/Peak-/Payoff-Kapitel; arcBeats pro Kapitel für aktive Arcs — aus dem Exposé, nicht aus dem Graph „ableiten“.
+- Ursache→Wirkung über Kapitel (Nachbar-Kernsätze / vorherige Skizze beachten).
+- Props/Events-Lifecycle: introduces genau einmal buchweit (erstes Kapitel behält das Label); resolves nur bei Abschluss.
+- Props greifbar benennen (Graph-Labels nutzen, z. B. „silberner Golf AB-CD 123“) — aber nicht jede Szene ausbuchstabieren.
 - Ecken & Kanten erwünscht: openThreads offen lassen, mustShow knapp, Raum für Szenenplot/Manuskript. Nicht glattbügeln, nicht „alles klären“.
 - Tragfähig = Arc-Logik + Kapitel-Funktion + Lifecycle. Nicht = jedes Detail, jeder Dialogbeat, jede Motivation ausgeschrieben.
 - Keine Szenen-Arrays, keine Dialoge, keine Manuskript-Prosa, keine Beat-für-Beat-Erzählung.

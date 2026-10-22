@@ -2,6 +2,7 @@
 
 /**
  * Per-pipeline-tab „Fertig“ toggle — soft-green tab chrome when on.
+ * Does **not** bypass hard stage gates (see stageGateOverrides / „Trotzdem weiter“).
  */
 
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -25,6 +26,7 @@ export function RomanStepFertigToggle({
 }) {
   return (
     <div
+      title="Nur Tab-Chrome (grün). Öffnet keine Hard-Gates — dafür braucht es grünes Gate oder „Trotzdem weiter“."
       className={cn(
         "inline-flex items-center gap-2 rounded-full bg-zinc-50 px-3 py-1.5 ring-1 ring-zinc-950/8",
         checked && "bg-emerald-50 ring-emerald-200",
@@ -42,7 +44,11 @@ export function RomanStepFertigToggle({
       <ToggleSwitch
         checked={checked}
         disabled={disabled || pending}
-        aria-label={checked ? "Schritt als fertig markiert" : "Schritt als fertig markieren"}
+        aria-label={
+          checked
+            ? "Schritt als fertig markiert (nur Chrome, kein Hard-Gate)"
+            : "Schritt als fertig markieren (nur Chrome, kein Hard-Gate)"
+        }
         onCheckedChange={onCheckedChange}
         className={checked ? "!bg-emerald-500 !ring-emerald-500" : undefined}
       />

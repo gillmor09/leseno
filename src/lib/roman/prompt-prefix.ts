@@ -1,7 +1,7 @@
 /**
  * Stable book prompt prefix for provider prompt-caching.
  * Keep byte-identical across Gerüst batches / Verbessern turns until
- * Idee, Recherche, Spec, or Tonalität change — then rebuild.
+ * Idee, Spec, or Tonalität change — then rebuild.
  *
  * Manuskript prose (Sonnet) should prefer {@link buildRomanSlimCanon} + chapter
  * packet — not the full bible — to cut input tokens.
@@ -36,9 +36,10 @@ export type RomanStaticBookPrefixInput = {
   title: string;
   genre: string;
   ideeKurz: string;
-  rechercheDossier?: string;
   tonalitaet?: string;
   grobRegeln?: string;
+  /** Verlags-/KI-Regelwerk from `roman_kontext.ki_regelwerk` — Priority-0 MUSS. */
+  kiRegelwerk?: string;
   editorial: RomanEditorial;
   charaktere: RomanCharakter[];
   weltSchauplaetze: string;
@@ -46,7 +47,7 @@ export type RomanStaticBookPrefixInput = {
 };
 
 /**
- * Fixed book bible block (Idee / Recherche / Spec / Ton).
+ * Fixed book bible block (Idee / Spec / Ton).
  * Do NOT append live graph slices or chapter deltas here — that breaks cache.
  */
 export function buildRomanStaticBookPrefix(
@@ -58,10 +59,18 @@ export function buildRomanStaticBookPrefix(
     input.editorial.zielWortzahlRoman != null
       ? String(input.editorial.zielWortzahlRoman)
       : "?";
-  const recherche = (input.rechercheDossier ?? input.editorial.rechercheDossier ?? "")
-    .trim();
   const ton = (input.tonalitaet ?? "").trim();
   const grob = (input.grobRegeln ?? input.editorial.grobRegeln ?? "").trim();
+  const ki = (input.kiRegelwerk ?? "").trim();
+  const harte = (input.editorial.harteRegeln ?? [])
+    .map((r) => String(r).trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  const priority0 = `# PRIORITY-0 MUSS — Basics Canon (Verstoß = Hard-Gate-Fehler, kein Weichzeichnen)
+Ton (Stimme/Humor nur wenn hier verlangt): ${ton.slice(0, CLIP.grob) || "(FEHLT — Basics setzen)"}
+Grob-Regeln: ${grob.slice(0, CLIP.grob) || "(leer)"}
+KI-Regelwerk: ${ki.slice(0, CLIP.grob) || "(leer)"}
+${harte.length ? `Harte Regeln:\n${harte.map((h) => `– ${h}`).join("\n")}` : ""}`.trim();
 
   return `# Buch (stabiler Kontext — Prompt-Cache)
 Titel: ${input.title.trim() || "(ohne)"}
@@ -74,17 +83,10 @@ Alter: ${
       : "?"
   } · Lesestufe: ${input.editorial.lesestufe || "—"}
 
+${priority0}
+
 # Ideendokumentation
 ${input.ideeKurz.trim().slice(0, CLIP.idee) || "(leer)"}
-
-# Hintergrundrecherche
-${recherche.slice(0, CLIP.recherche) || "(keine)"}
-
-# Sprache & Tonalität (Schreiber)
-${ton.slice(0, CLIP.grob) || "(keine)"}
-
-# Grob-Regeln / Basis-Regeln
-${grob.slice(0, CLIP.grob) || "(leer)"}
 
 # Exposé
 ${expose.slice(0, CLIP.expose) || "(leer)"}
@@ -99,7 +101,7 @@ Regeln: ${input.weltRegeln.trim().slice(0, CLIP.weltRegeln) || "(leer)"}`;
 
 /**
  * Compact canon for Manuskript Co-Autor (Sonnet): enough voice/rules,
- * not the full Recherche/Spec dump. Stable enough for light prompt-caching.
+ * not the full Spec dump. Stable enough for light prompt-caching.
  */
 export function buildRomanSlimCanon(
   input: RomanStaticBookPrefixInput & {
@@ -110,6 +112,7 @@ export function buildRomanSlimCanon(
   const chars = formatCharaktere(input.charaktere) || "(noch keine Steckbriefe)";
   const ton = (input.tonalitaet ?? "").trim();
   const grob = (input.grobRegeln ?? input.editorial.grobRegeln ?? "").trim();
+  const ki = (input.kiRegelwerk ?? "").trim();
   const invariants = (input.wissensGraph?.hardInvariants ?? [])
     .filter((h) => h.trim())
     .slice(0, 12)
@@ -125,14 +128,13 @@ Alter: ${
       : "?"
   } · Lesestufe: ${input.editorial.lesestufe || "—"}
 
+# PRIORITY-0 MUSS — Basics (Verstoß = Hard-Gate / Freigabe-Fehler)
+Ton (MUSS spürbar; Humor nur wenn Ton es verlangt): ${ton.slice(0, SLIM.ton) || "(FEHLT)"}
+Grob-Regeln: ${grob.slice(0, SLIM.grob) || "(leer)"}
+KI-Regelwerk: ${ki.slice(0, SLIM.grob) || "(leer)"}
+
 # Prämisse (kurz)
 ${input.ideeKurz.trim().slice(0, SLIM.idee) || "(leer)"}
-
-# Ton (MUSS spürbar)
-${ton.slice(0, SLIM.ton) || "(aus Spec ableiten)"}
-
-# Harte Regeln (MUSS einhalten)
-${grob.slice(0, SLIM.grob) || "(leer)"}
 
 # Exposé (Kern)
 ${expose.slice(0, SLIM.expose) || "(leer)"}

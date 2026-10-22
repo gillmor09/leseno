@@ -562,6 +562,7 @@ export async function generateManuskriptChapter(input: {
       szenenplotStructured: liveStructured,
       autorBias,
       slimCanonSnippet: brief.cacheablePrefix,
+      priorProseText: prevMd,
     });
 
     const { result: written, usage } = await runWithAiUsageCollector(() =>
@@ -584,6 +585,7 @@ export async function generateManuskriptChapter(input: {
         szenenplotStructured: liveStructured,
         wissensGraph: editorial.wissensGraph,
         storyState: storyStateBefore,
+        tonalitaet: roman.tonalitaet,
         expandMaterial: buildManuskriptExpandMaterial({
           editorial: {
             ...editorial,

@@ -11,8 +11,29 @@ import type { ManuskriptFreigabeFinding } from "@/lib/roman/editorial";
 import { lockBodyScroll } from "@/lib/ui/body-scroll-lock";
 
 function findingLabel(f: ManuskriptFreigabeFinding): string {
-  if (f.source === "emotion") return "Emotion";
-  return f.kind === "payoff" ? "Payoff" : "Naht";
+  const softTag = f.soft ? " · weich" : "";
+  if (f.source === "emotion") {
+    return f.kind === "humor"
+      ? f.soft
+        ? "Humor · weich"
+        : "Humor"
+      : `Emotion${softTag}`;
+  }
+  if (f.source === "canon") return "Canon";
+  if (f.source === "timeline") return `Timeline${softTag}`;
+  if (f.source === "plot_truth") return `Plot-Wahrheit${softTag}`;
+  if (f.source === "ledger") {
+    return f.kind === "money"
+      ? "Ledger · Geld"
+      : f.kind === "knowledge"
+        ? "Ledger · Wissensstand"
+        : "Ledger · Zeit";
+  }
+  if (f.source === "style") return "Stil · weich";
+  if (f.kind === "seam_dup") return "Nahtdopplung";
+  if (f.kind === "payoff") return `Payoff${softTag}`;
+  if (f.kind === "timeline") return `Timeline${softTag}`;
+  return `Naht${softTag}`;
 }
 
 export function ManuskriptFreigabeDialog({
@@ -86,8 +107,9 @@ export function ManuskriptFreigabeDialog({
           id="manuskript-freigabe-desc"
           className="mt-3 text-sm leading-relaxed text-zinc-600"
         >
-          Günstiger Assist-Check (kein Opus). Du kannst die Stellen jetzt mit
-          dem Co-Autor nachziehen lassen — oder trotzdem freigeben.
+          Harte Treffer (Canon, Ledger, Nahtdopplung) blockieren den Feinschliff.
+          Weiche Assist-/Stil-Hinweise sind nur Hinweise — Nachziehen wirkt auf
+          harte Treffer und Formulierungs-Wiederholungen.
         </p>
 
         <ol className="mt-4 max-h-[40vh] list-decimal space-y-2 overflow-y-auto pl-5 text-sm font-semibold text-zinc-800">

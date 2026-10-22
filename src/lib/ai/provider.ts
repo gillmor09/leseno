@@ -2,7 +2,7 @@
  * Routes AI calls by provider from `leseno.ai_models`.
  * Supported: Gemini, Claude, OpenAI (Astra / Luna), OpenAI-compatible (IONOS).
  *
- * Optional `cacheablePrefix`: stable book bible (Idee/Recherche/Spec/Ton).
+ * Optional `cacheablePrefix`: stable book bible (Idee/Spec/Ton).
  * Claude uses `cache_control`; OpenAI relies on automatic prefix caching;
  * Gemini uses explicit `cachedContents` when possible.
  */
@@ -30,6 +30,15 @@ export type GenerateTextInput = {
   timeoutMs?: number;
   /** Optional OpenAI reasoning_effort (overrides model.reasoningEffort). */
   reasoningEffort?: string | null;
+  /**
+   * Sampling temperature (Claude older models; Haiku/Sonnet/Opus 5.5 ignore —
+   * API forbids custom temperature).
+   */
+  temperature?: number | null;
+  /**
+   * Claude thinking override (`adaptive` | `disabled` | `between_tools` | `auto`).
+   */
+  thinkingMode?: "adaptive" | "disabled" | "between_tools" | "auto" | null;
   /**
    * Gemini only: enable Grounding with Google Search.
    * Forces text parsing (no JSON mime type).
@@ -120,6 +129,8 @@ export async function generateText(input: GenerateTextInput): Promise<string> {
         input.model.modelSlug,
         input.reasoningEffort ?? input.model.reasoningEffort ?? null,
       ),
+      temperature: input.temperature,
+      thinkingMode: input.thinkingMode,
     });
     return result.text;
   }

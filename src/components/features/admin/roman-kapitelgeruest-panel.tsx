@@ -57,7 +57,7 @@ export function RomanKapitelGeruestPanel({
       <ConfirmDeleteDialog
         open={confirmOpen}
         title="Kapitelgerüst leeren?"
-        description="Kapitelgerüst (Markdown + Struktur), Wissensgraph, Szenenplot, Manuskript und Export-Texte (Klappentext, Einzeiler, Keywords) werden gelöscht. Spec, Idee und Recherche bleiben. Fertig-Flags und Reifegrade für Gerüst/Plot/Manuskript/Export entfallen."
+        description="Kapitelgerüst (Markdown + Struktur), Wissensgraph, Szenenplot, Manuskript und Export-Texte (Klappentext, Einzeiler, Keywords) werden gelöscht. Spec und Idee bleiben. Fertig-Flags und Reifegrade für Gerüst/Plot/Manuskript/Export entfallen."
         confirmLabel="Kapitelgerüst leeren"
         pending={Boolean(clearPending)}
         onCancel={() => {

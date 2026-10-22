@@ -6,10 +6,15 @@ import type { SachbuchAgents, SachbuchAgentSlot } from "@/lib/sachbuch/types";
 
 export const SACHBUCH_MODEL_INTERVIEWER = "gpt-6-luna";
 export const SACHBUCH_MODEL_RESEARCHER = "gemini-3.8-flash";
-export const SACHBUCH_MODEL_ARCHITECT = "openai/gpt-oss-120b";
+export const SACHBUCH_MODEL_ARCHITECT = "gpt-6-luna";
 export const SACHBUCH_MODEL_WRITER = "gemini-3.8-flash";
-export const SACHBUCH_MODEL_CRITIC = "openai/gpt-oss-120b";
+export const SACHBUCH_MODEL_CRITIC = "gpt-6-luna";
 export const SACHBUCH_MODEL_STYLIST = "gpt-6-luna";
+
+/** Agentic Idee-Verfeinerung: Haiku verdichtet, Luna kritisiert. */
+export const SACHBUCH_MODEL_IDEE_DRAFTER = "claude-haiku-5-5";
+export const SACHBUCH_MODEL_IDEE_CRITIC = "gpt-6-luna";
+export const SACHBUCH_IDEE_REFINE_MAX_ROUNDS = 3;
 
 /** Soft volume targets for a full adult Sachbuch (~5 Makro-Kapitel). */
 export const SACHBUCH_BOOK_WORDS_TARGET = 40_000;

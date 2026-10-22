@@ -4,13 +4,23 @@
  */
 
 import { resolveGeminiCachedContent } from "@/lib/ai/gemini-cache";
-import { aiFetchSignal, mapAiFetchError } from "@/lib/ai/fetch-timeout";
+import {
+  aiFetchSignal,
+  GEMINI_4_ARGON_TIMEOUT_MS,
+  mapAiFetchError,
+} from "@/lib/ai/fetch-timeout";
 import { recordAiUsage } from "@/lib/ai/usage";
 
 const GEMINI_API_BASE =
   "https://generativelanguage.googleapis.com/v1beta/models";
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 16_384;
+
+/** True for Gemini 4 Argon family (no explicit `cachedContents`). */
+export function isGemini4ArgonModel(modelSlug: string): boolean {
+  const slug = modelSlug.trim().toLowerCase();
+  return slug === "gemini-4-argon" || slug.startsWith("gemini-4-argon-");
+}
 
 /**
  * Admin book pipeline often discusses conflict, trauma, crime — Gemini’s
@@ -174,10 +184,19 @@ export async function generateWithGemini(
 
   const cacheablePrefix = input.cacheablePrefix?.trim() ?? "";
   const systemInstruction = input.systemInstruction?.trim() ?? "";
+  const argon = isGemini4ArgonModel(input.modelSlug);
+  const effectiveTimeoutMs = argon
+    ? Math.max(input.timeoutMs ?? 0, GEMINI_4_ARGON_TIMEOUT_MS)
+    : input.timeoutMs;
 
   // Explicit Context Cache when prefix is large enough; else inline fallback.
+  // Gemini 4 Argon rejects `cachedContents` — always inline prefix.
   let cachedContentName: string | null = null;
-  if (cacheablePrefix.length >= 200 && !input.googleSearch) {
+  if (
+    !argon &&
+    cacheablePrefix.length >= 200 &&
+    !input.googleSearch
+  ) {
     cachedContentName = await resolveGeminiCachedContent({
       modelSlug: input.modelSlug,
       systemInstruction,
@@ -185,7 +204,9 @@ export async function generateWithGemini(
     });
   }
 
-  const level = (input.thinkingLevel ?? "").trim().toLowerCase();
+  let level = (input.thinkingLevel ?? "").trim().toLowerCase();
+  // Argon supports low|medium|high only (not minimal).
+  if (argon && level === "minimal") level = "low";
   const thinkingOk =
     level === "minimal" ||
     level === "low" ||
@@ -256,7 +277,7 @@ export async function generateWithGemini(
           "x-goog-api-key": apiKey,
         },
         body: JSON.stringify(body),
-        signal: aiFetchSignal(input.timeoutMs),
+        signal: aiFetchSignal(effectiveTimeoutMs),
       });
 
       const payload = (await response.json()) as GeminiResponse;
@@ -339,6 +360,6 @@ export async function generateWithGemini(
       }).${emptyResponseHint(lastFinish, lastThoughts)}`,
     );
   } catch (error) {
-    throw mapAiFetchError(error, "Gemini", input.timeoutMs);
+    throw mapAiFetchError(error, "Gemini", effectiveTimeoutMs);
   }
 }

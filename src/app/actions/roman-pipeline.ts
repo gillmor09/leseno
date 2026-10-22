@@ -40,8 +40,22 @@ import {
   savePipelineAufgabe,
   type RomanPipelineAufgabe,
 } from "@/lib/roman/pipeline/tasks";
-import { emptyRomanEditorial } from "@/lib/roman/editorial";
-import { getRomanKontext } from "@/lib/roman/repository";
+import {
+  emptyRomanEditorial,
+  withStageGateOverride,
+  type StageGateKey,
+} from "@/lib/roman/editorial";
+import {
+  historyEvent,
+  startPipelineHistoryRun,
+  updatePipelineHistoryRun,
+} from "@/lib/roman/pipeline/history";
+import { resetEditorialFromIdeeKeepingBasics } from "@/lib/roman/pipeline/cascade";
+import {
+  getRomanKontext,
+  setRomanEditorial,
+  upsertRomanKontext,
+} from "@/lib/roman/repository";
 import { ALL_REIFEGRAD_DIMENSION_KEYS } from "@/lib/roman/reifegrad-craft";
 import type { ActionResult } from "@/lib/types/actions";
 
@@ -119,6 +133,186 @@ export async function romanPipelineReloadRomanAction(
         error instanceof Error
           ? error.message
           : "Buch laden fehlgeschlagen.",
+    };
+  }
+}
+
+const stageGateKeySchema = z.enum([
+  "idee",
+  "basics",
+  "rahmen",
+  "fundament",
+  "spec",
+  "expose",
+  "graph",
+  "plot",
+  "szenen",
+  "feingeruest",
+  "feinplot",
+  "schreiben",
+]);
+
+/**
+ * Explicit hard-gate override („Trotzdem weiter“) — not the Fertig toggle.
+ * Logged in pipeline history.
+ */
+export async function setRomanStageGateOverrideAction(
+  input: unknown,
+): Promise<
+  ActionResult<{ roman: NonNullable<Awaited<ReturnType<typeof getRomanKontext>>> }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = z
+    .object({
+      romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
+      gateKey: stageGateKeySchema,
+      reason: z
+        .string()
+        .trim()
+        .min(8, { message: "Bitte einen kurzen Grund angeben." })
+        .max(280),
+    })
+    .safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstIssue(parsed.error) };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) return { success: false, error: "Buch nicht gefunden." };
+    const editorial = roman.editorial ?? emptyRomanEditorial();
+    const gateKey = parsed.data.gateKey as StageGateKey;
+    const nextEd = withStageGateOverride(editorial, gateKey, {
+      at: new Date().toISOString(),
+      reason: parsed.data.reason,
+    });
+    await setRomanEditorial(parsed.data.romanId, nextEd);
+
+    const originStage =
+      gateKey === "spec"
+        ? "expose"
+        : gateKey === "schreiben"
+          ? "manuskript"
+          : gateKey === "basics"
+            ? "idee"
+            : gateKey;
+    const overrideEvent = historyEvent({
+      type: "info",
+      stage: originStage,
+      summary: `Hard-Gate Override · ${gateKey}`,
+      detail: parsed.data.reason,
+    });
+    const runId = await startPipelineHistoryRun({
+      romanId: parsed.data.romanId,
+      trigger: "stage_gate_override",
+      originStage,
+      firstEvent: overrideEvent,
+    });
+    await updatePipelineHistoryRun({
+      runId,
+      status: "ok",
+      events: [overrideEvent],
+    });
+
+    revalidateBook(parsed.data.romanId);
+    const saved = await getRomanKontext(parsed.data.romanId, {
+      omitCover: true,
+    });
+    if (!saved) return { success: false, error: "Buch nicht gefunden." };
+    return { success: true, data: { roman: saved } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Override speichern fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Absicherung / Neustart: clear Idee + Spec→Manuskript; keep Basics
+ * (Tonalität / kiRegelwerk on roman roots; grobRegeln / Alter / … on editorial).
+ */
+export async function resetRomanPipelineFromIdeeAction(
+  input: unknown,
+): Promise<
+  ActionResult<{ roman: NonNullable<Awaited<ReturnType<typeof getRomanKontext>>> }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = z
+    .object({
+      romanId: z.string().uuid({ message: "Ungültige Buch-ID." }),
+    })
+    .safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstIssue(parsed.error) };
+  }
+
+  try {
+    const roman = await getRomanKontext(parsed.data.romanId);
+    if (!roman) return { success: false, error: "Buch nicht gefunden." };
+    const editorial = roman.editorial ?? emptyRomanEditorial();
+    const nextEd = resetEditorialFromIdeeKeepingBasics(editorial);
+    // Spec figures/world live on roman roots — clear with Idee restart.
+    // Basics tonalitaet + kiRegelwerk kept.
+    await upsertRomanKontext({
+      id: roman.id,
+      title: roman.title,
+      manuskriptRaw: "",
+      stilbibel: roman.stilbibel,
+      genre: roman.genre,
+      praemisse: roman.praemisse,
+      perspektive: roman.perspektive,
+      zeitform: roman.zeitform,
+      tonalitaet: roman.tonalitaet,
+      charaktere: [],
+      weltSchauplaetze: "",
+      weltRegeln: "",
+      szenenRaster: roman.szenenRaster,
+      kiRegelwerk: roman.kiRegelwerk,
+      fanPersonaName: roman.fanPersonaName,
+      fanPersonaProfil: roman.fanPersonaProfil,
+      editorial: nextEd,
+    });
+
+    const resetEvent = historyEvent({
+      type: "info",
+      stage: "idee",
+      summary: "Pipeline ab Idee neu (Basics behalten)",
+      detail:
+        "Spec→Manuskript geleert; Tonalität/Regeln/Alter unverändert. Nächste Schritte nur mit grünen Hard-Gates.",
+    });
+    const runId = await startPipelineHistoryRun({
+      romanId: parsed.data.romanId,
+      trigger: "pipeline_reset_idee",
+      originStage: "idee",
+      firstEvent: resetEvent,
+    });
+    await updatePipelineHistoryRun({
+      runId,
+      status: "ok",
+      events: [resetEvent],
+    });
+
+    revalidateBook(parsed.data.romanId);
+    const saved = await getRomanKontext(parsed.data.romanId, {
+      omitCover: true,
+    });
+    if (!saved) return { success: false, error: "Buch nicht gefunden." };
+    return { success: true, data: { roman: saved } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Neustart ab Idee fehlgeschlagen.",
     };
   }
 }
@@ -971,7 +1165,7 @@ export async function romanPipelineDimensionImproveAction(
 }
 
 /**
- * Measure Reifegrad on romanText (assess-only key, not a pipeline stage).
+ * Measure Reifegrad for any assess key (Idee … Manuskript / Roman).
  */
 export async function romanReifegradAssessAction(
   input: unknown,
@@ -1002,30 +1196,63 @@ export async function romanReifegradAssessAction(
       assessStageReifegrad,
       editorialWithReifegrad,
       formatAssessCoverageLabel,
+      getStageArtifactForAssess,
     } = await import("@/lib/roman/reifegrad");
-    const { formatCraftScoresLineForAssessKey } = await import(
-      "@/lib/roman/reifegrad-craft"
-    );
+    const {
+      formatCraftScoresLineForAssessKey,
+      formatIdeeScoresLineByPriority,
+    } = await import("@/lib/roman/reifegrad-craft");
     const { startPipelineHistoryRun, updatePipelineHistoryRun, historyEvent } =
       await import("@/lib/roman/pipeline/history");
 
-    const loaded = await getRomanKontext(parsed.data.romanId);
+    let loaded = await getRomanKontext(parsed.data.romanId);
     if (!loaded) {
       return { success: false, error: "Buch nicht gefunden." };
     }
     const stage = parsed.data.stage;
-    const editorial = loaded.editorial ?? emptyRomanEditorial();
-    const artifact =
-      stage === "roman"
-        ? (editorial.romanText ?? "").trim()
-        : (editorial.manuskriptText ?? "").trim();
-    if (artifact.length < 80) {
+    let editorial = loaded.editorial ?? emptyRomanEditorial();
+
+    const { isStructureStage } = await import("@/lib/roman/pipeline/stages");
+    if (isStructureStage(stage)) {
+      const { applyEditorialLogikHygiene } = await import(
+        "@/lib/roman/szenenplot-preflight"
+      );
+      const hygiene = applyEditorialLogikHygiene(editorial);
+      if (hygiene.changed) {
+        loaded = await upsertRomanKontext({
+          id: loaded.id,
+          title: loaded.title,
+          manuskriptRaw: loaded.manuskriptRaw,
+          stilbibel: loaded.stilbibel,
+          genre: loaded.genre,
+          praemisse: loaded.praemisse,
+          perspektive: loaded.perspektive,
+          zeitform: loaded.zeitform,
+          tonalitaet: loaded.tonalitaet,
+          charaktere: loaded.charaktere,
+          weltSchauplaetze: loaded.weltSchauplaetze,
+          weltRegeln: loaded.weltRegeln,
+          szenenRaster: loaded.szenenRaster,
+          kiRegelwerk: loaded.kiRegelwerk,
+          fanPersonaName: loaded.fanPersonaName,
+          fanPersonaProfil: loaded.fanPersonaProfil,
+          editorial: hygiene.editorial,
+        });
+        editorial = loaded.editorial ?? hygiene.editorial;
+      }
+    }
+
+    const { text: artifact } = getStageArtifactForAssess(loaded, stage);
+    const minLen = stage === "idee" ? 40 : 80;
+    if (artifact.trim().length < minLen) {
       return {
         success: false,
         error:
           stage === "roman"
             ? "Kein Roman-Text — zuerst Verbessern oder Manuskript übernehmen."
-            : "Kein Artefakt für die Bewertung.",
+            : stage === "idee"
+              ? "Idee zu dünn — zuerst im Dialog ausarbeiten."
+              : "Kein Artefakt für die Bewertung.",
       };
     }
 
@@ -1067,7 +1294,11 @@ export async function romanReifegradAssessAction(
       editorial: nextEd,
     });
 
-    const summary = `Reifegrad ${score.gesamtPct}% · Logik ${score.regelnPct}% · ${formatCraftScoresLineForAssessKey(stage, score)} · ${formatAssessCoverageLabel(coverage)}`;
+    const scoresLine =
+      stage === "idee"
+        ? formatIdeeScoresLineByPriority(score)
+        : `Logik ${score.regelnPct}% · ${formatCraftScoresLineForAssessKey(stage, score)}`;
+    const summary = `Reifegrad ${score.gesamtPct}% · ${scoresLine} · ${formatAssessCoverageLabel(coverage)}`;
     await updatePipelineHistoryRun({
       runId,
       status: "ok",

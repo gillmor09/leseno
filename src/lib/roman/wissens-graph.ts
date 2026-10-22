@@ -15,6 +15,7 @@ import {
   type RomanBuchTyp,
   type RomanEditorial,
   type RomanWissensGraph,
+  type RomanWissensGraphEdge,
   type RomanWissensGraphSeedSource,
 } from "@/lib/roman/editorial";
 import { formatCharaktere } from "@/lib/roman/fundament";
@@ -22,6 +23,7 @@ import { CLIP, ROMAN_PROSE_MAX_TOKENS } from "@/lib/roman/pipeline/quality-brief
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 import type { RomanSzenenplotStructured } from "@/lib/roman/szenenplot-structured";
 import type { RomanCharakter } from "@/lib/roman/types";
+import { protectFrozenKennzeichenAttrs } from "@/lib/roman/kennzeichen-canon";
 import {
   freezeMetricFactsFromChapters,
   protectFrozenMetricAttrs,
@@ -44,7 +46,47 @@ const MAX_INVARIANTS = 40;
 const MAX_NODES = 120;
 const MAX_EDGES = 180;
 
-/** Merge two graphs (incoming wins on same id). */
+function normalizeInvariantStem(s: string): string {
+  return s
+    .trim()
+    .replace(/\s*[—–-]\s*frozen\.?\s*$/i, "")
+    .replace(/[.;,!?\s]+$/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Ensures pre-Plot seed graphs do not confuse Exposé months/acts with chapter numbers
+ * or mix `status="planned"` with non-empty `resolvedChapter`.
+ */
+export function sanitizePrePlotSeedGraph(
+  graph: RomanWissensGraph,
+): RomanWissensGraph {
+  const nodes = graph.nodes.map((n) => {
+    const attrs = { ...n.attrs };
+    attrs.status = "planned";
+    attrs.introducedChapter = "0";
+    delete attrs.resolvedChapter;
+    return {
+      ...n,
+      sinceChapter: 0,
+      sceneId: undefined,
+      attrs,
+    };
+  });
+  const edges = graph.edges.map((e) => ({
+    ...e,
+    chapter: 0,
+    sceneId: undefined,
+  }));
+  return {
+    ...graph,
+    nodes,
+    edges,
+  };
+}
+
+/** Merge two graphs (incoming wins on same id; deduplicates edge triples & invariant stems). */
 export function mergeWissensGraphs(
   base: RomanWissensGraph | null | undefined,
   incoming: RomanWissensGraph | null | undefined,
@@ -52,13 +94,42 @@ export function mergeWissensGraphs(
   if (!incoming) return base ?? null;
   if (!base) return incoming;
   const nodesById = new Map(base.nodes.map((n) => [n.id, n]));
-  for (const n of incoming.nodes) nodesById.set(n.id, n);
-  const edgesById = new Map(base.edges.map((e) => [e.id, e]));
-  for (const e of incoming.edges) edgesById.set(e.id, e);
-  const inv = new Set<string>();
+  for (const n of incoming.nodes) {
+    const prev = nodesById.get(n.id);
+    nodesById.set(
+      n.id,
+      prev
+        ? {
+            ...prev,
+            ...n,
+            attrs: { ...prev.attrs, ...n.attrs },
+          }
+        : n,
+    );
+  }
+  const edgesByTriple = new Map<string, RomanWissensGraphEdge>();
+  for (const e of [...base.edges, ...incoming.edges]) {
+    const triple = `${e.from}|${e.rel.trim().toLowerCase()}|${e.to}`;
+    const prev = edgesByTriple.get(triple);
+    if (!prev || (e.note?.length ?? 0) >= (prev.note?.length ?? 0)) {
+      edgesByTriple.set(triple, e);
+    }
+  }
+  const invByStem = new Map<string, string>();
   for (const h of [...base.hardInvariants, ...incoming.hardInvariants]) {
-    if (h.trim()) inv.add(h.trim().slice(0, 280));
-    if (inv.size >= MAX_INVARIANTS) break;
+    const trimmed = h.trim().slice(0, 360);
+    if (!trimmed) continue;
+    const stem = normalizeInvariantStem(trimmed);
+    if (!stem) continue;
+    const prev = invByStem.get(stem);
+    if (
+      !prev ||
+      (/frozen/i.test(trimmed) && !/frozen/i.test(prev)) ||
+      trimmed.length > prev.length
+    ) {
+      invByStem.set(stem, trimmed);
+    }
+    if (invByStem.size >= MAX_INVARIANTS) break;
   }
   const seededFrom = Array.from(
     new Set([...base.seededFrom, ...incoming.seededFrom]),
@@ -68,23 +139,24 @@ export function mergeWissensGraphs(
     modelLabel: incoming.modelLabel || base.modelLabel,
     seededFrom,
     nodes: Array.from(nodesById.values()).slice(0, MAX_NODES),
-    edges: Array.from(edgesById.values()).slice(0, MAX_EDGES),
-    hardInvariants: Array.from(inv),
+    edges: Array.from(edgesByTriple.values()).slice(0, MAX_EDGES),
+    hardInvariants: Array.from(invByStem.values()).slice(0, MAX_INVARIANTS),
   };
 }
 
 /** Concrete identity attrs the graph must pin by Plot stage (canon for Manuskript). */
 export const WISSENS_CONCRETE_ATTR_HINT = `KONKRETE KANON-DETAILS (spätestens ab Szenenplot — Pflicht, nicht optional):
 Für person/place/prop/event/fact passende attrs setzen — wenn Quelle nichts sagt: kanonisch ERFINDEN und festhalten (einmal, dann FROZEN):
-- Fahrzeuge/Geräte: kennzeichen|nummernschild, farbe, modell|marke, besitzer
+- Fahrzeuge/Geräte: kennzeichen|nummernschild, farbe, modell|marke, material|werkstoff, besitzer
 - Orte/Gebäude: adresse|strasse, hausnummer, plz, ort|stadt, etage|zimmer (wenn relevant)
 - Zeiten/Termine: datum, uhrzeit|zeit, wochentag (wenn die Story Zeit braucht)
 - Personen: name|vorname|nachname, alter (wenn relevant), telefon|handy (nur wenn dramaturgisch genutzt)
-- Sonstige Props: farbe, standort, besitzer, zustand
+- Sonstige Props: farbe, material|werkstoff, standort, besitzer, zustand
+  material/werkstoff einmal wählen (z. B. Aluminium vs. Kunststoff) und FROZEN halten — kein stilles Wechseln zwischen Kapiteln
 - MESSWERTE (Raum/Objekt — sobald die Prosa eine Zahl nennt): abstand_cm|hoehe_cm|tiefe_cm|breite_cm|laenge_cm|mass_cm + mass_label/mass_kontext
   Beispiele: Auto hängt 11 cm über Carport → abstand_cm=11, mass_label="Auto über Carport"; Türspalt 2 cm → abstand_cm=2
   Zusätzlich hardInvariant: „MASS: Auto über Carport = 11 cm — FROZEN“. Erste Nennung gilt; stilles Ändern verboten.
-Jedes zentrale Prop/Ort/Fahrzeug OHNE solche Details = Lücke. hardInvariant für jedes feste Detail („Kennzeichen X gilt“, „Hausnr. Y“, „MASS: … = N cm“, „Termin Do 14:30“).`;
+Jedes zentrale Prop/Ort/Fahrzeug OHNE solche Details = Lücke. hardInvariant für jedes feste Detail („Kennzeichen X gilt“, „Material Aluminium“, „Hausnr. Y“, „MASS: … = N cm“, „Termin Do 14:30“).`;
 
 const GRAPH_JSON_HINT = `{
   "nodes": [
@@ -101,6 +173,7 @@ const GRAPH_JSON_HINT = `{
         "besitzer": "Name",
         "farbe": "silber",
         "modell": "Golf",
+        "material": "Aluminium",
         "abstand_cm": "11",
         "mass_label": "Auto über Carport",
         "hausnummer": "14",
@@ -167,28 +240,34 @@ ${GRAPH_JSON_HINT}`,
 }
 
 /**
- * Seed graph from Idee + Recherche + Spec + Tonalität (pre-Gerüst).
+ * Seed graph from Idee + Spec + Tonalität (pre-Gerüst).
  */
 export async function seedWissensGraphFromSources(input: {
   buchTyp: RomanBuchTyp;
   title: string;
   genre: string;
   ideeKurz: string;
-  rechercheDossier: string;
   tonalitaet: string;
   grobRegeln: string;
+  kiRegelwerk?: string;
   editorial: RomanEditorial;
   charaktere: RomanCharakter[];
   weltSchauplaetze: string;
   weltRegeln: string;
 }): Promise<RomanWissensGraph> {
   const expose = exposeTextFromEditorial(input.editorial);
+  const harteRegeln = (input.editorial.harteRegeln ?? [])
+    .map((r) => String(r).trim())
+    .filter(Boolean)
+    .slice(0, 16);
+  const kiRegelwerk = (input.kiRegelwerk ?? "").trim();
   const seededFrom: RomanWissensGraphSeedSource[] = [];
   if (input.ideeKurz.trim().length >= 40) seededFrom.push("idee");
-  if (input.rechercheDossier.trim().length >= 40) seededFrom.push("recherche");
   if (
     expose.trim().length >= 40 ||
-    formatCharaktere(input.charaktere).trim().length >= 40
+    formatCharaktere(input.charaktere).trim().length >= 40 ||
+    input.weltSchauplaetze.trim().length >= 40 ||
+    input.weltRegeln.trim().length >= 40
   ) {
     seededFrom.push("spec");
   }
@@ -196,47 +275,58 @@ export async function seedWissensGraphFromSources(input: {
 
   const graph = await runGraphJsonCall({
     system: `Du baust den Wissensgraphen für ein Buchprojekt VOR dem Kapitelgerüst.
-Ziel: keine Wissenslücken — alle Figuren, Orte, Fakten aus Idee/Recherche/Spec/Tonalität als Knoten + Relationen.
+Ziel: lückenloser, hochvernetzter Gesamt-Kanon aus ALLEN Upstream-Quellen (Idee, Regeln & Grenzen, Tonalität, Figuren, Welt, Exposé).
+PFLICHT-ABDECKUNG (mind. 30–45 Knoten, mind. 40–65 Kanten):
+1. Personen & Institutionen: Alle Figuren + rechtliche/institutionelle Gegenparteien (z. B. Betreibergesellschaft/Konzern, Aufsicht/Prüfstelle) als eigene Knoten.
+2. Schauplätze (kind=place): Alle wiederkehrenden Orte aus Welt & Exposé (Wohnungen, Büros, Gemeinschaftsräume, Flure, Außenorte) mit konkreten Adress-/Etagen-/Raum-attrs.
+3. Props, Verträge & Schnittstellen (kind=prop): Alle handlungsrelevanten Objekte, Verträge, Belege/Rügen, Apps, Terminals, Sensoren und technischen/kaufmännischen Schnittstellen (APIs/Protokolle) mit attrs.status=planned und konkreten Identitäts-attrs.
+4. Regeln, Konzepte & Fakten (kind=rule|concept|fact|secret): Jede zentrale Weltregel, technische/rechtliche Schwelle, mehrstufige Prüf-/Verfahrensschritte, Finanzierungs- und Vertragsmechanik als eigener Knoten.
+5. Events & Threads (kind=event|thread): Alle zentralen Wendepunkte (Auslöser, Eskalation, Rückbuchung/Mahnung, Offenlegung, Investorenbesuch, Referenzprüfung/Nachweisführung, Einigung/Fristen) und rote Fäden.
+6. Vernetzung (edges): KEINE halb-isolierten Nebenfiguren oder Regeln! Jede Figur (auch Verbündete und operative Puffer wie Hausleitung) braucht Kanten zu den Hauptfiguren, Konfliktereignissen, Regeln und Orten, mit denen sie interagiert. Technische Kausalketten (Sensor/Terminal → Protokoll/API → Abrechnung/Vertrag → Widerspruch/Referenzprüfung) explizit durch Kanten verbinden.
 sinceChapter=0 für alles aus dem Seed. Keine Kapitelplanung, keine Szenen.
-Zentrale Gegenstände/Verträge/Beweise als kind=prop|event mit attrs.status=planned.
 ${WISSENS_CONCRETE_ATTR_HINT}
-Schon im Seed konkrete attrs setzen, soweit aus Quellen ableitbar oder kanonisch erfunden.
-hardInvariants: 8–16 verbindliche Muss-Sätze (Stil/Tonalität, Recherche-Fakten, Spec-Logik, einmalige Einführungen, stabile Kennzeichen/Farben/Adressen/Zeiten).`,
+hardInvariants: 14–24 verbindliche, duplikatfreie Muss-Sätze (Regeln & Grenzen / harte Regeln / KI-Regelwerk, Tonalität, Figuren-Motivationen/Beziehungen, Welt-Mechaniken, Exposé-Bogen, einmalige Einführungen, stabile Kennzeichen/Farben/Adressen/Zeiten/Maße).`,
     userText: `# Buch
 Titel: ${input.title.trim() || "(ohne)"}
 Typ: ${BUCHTYP_LABELS[input.buchTyp]}
 Genre: ${input.genre.trim() || "—"}
+Alter: ${
+      input.editorial.zielAlterMin != null ||
+      input.editorial.zielAlterMax != null
+        ? `${input.editorial.zielAlterMin ?? "?"}-${input.editorial.zielAlterMax ?? "?"}`
+        : "?"
+    } · Lesestufe: ${input.editorial.lesestufe || "—"}
 
 # Idee
 ${input.ideeKurz.trim().slice(0, CLIP.idee) || "(leer)"}
 
-# Hintergrundrecherche
-${input.rechercheDossier.trim().slice(0, CLIP.recherche) || "(leer)"}
-
 # Sprache & Tonalität (Schreiber)
 ${input.tonalitaet.trim().slice(0, CLIP.grob) || "(leer)"}
 
-# Grob-Regeln
+# Regeln & Grenzen (Basis-Regeln, Harte Regeln, KI-Regelwerk)
+Basis-Regeln:
 ${input.grobRegeln.trim().slice(0, CLIP.grob) || "(leer)"}
+${harteRegeln.length ? `\nHarte Regeln:\n${harteRegeln.map((r) => `– ${r}`).join("\n")}` : ""}
+${kiRegelwerk ? `\nKI-Regelwerk:\n${kiRegelwerk.slice(0, CLIP.grob)}` : ""}
+
+# Fundament — Charaktere
+${formatCharaktere(input.charaktere).slice(0, CLIP.charaktere) || "(leer)"}
+
+# Fundament — Welt (Schauplätze & Weltregeln)
+Schauplätze: ${input.weltSchauplaetze.trim().slice(0, CLIP.weltSchau) || "(leer)"}
+Weltregeln: ${input.weltRegeln.trim().slice(0, CLIP.weltRegeln) || "(leer)"}
 
 # Exposé
 ${expose.slice(0, CLIP.expose) || "(leer)"}
 
-# Charaktere
-${formatCharaktere(input.charaktere).slice(0, CLIP.charaktere) || "(leer)"}
-
-# Welt
-Schauplätze: ${input.weltSchauplaetze.trim().slice(0, CLIP.weltSchau) || "(leer)"}
-Regeln: ${input.weltRegeln.trim().slice(0, CLIP.weltRegeln) || "(leer)"}
-
-Auftrag: VOLLSTÄNDIGER Seed-Graph (Personen, Orte, Props, Fakten, Secrets, Threads, Regeln, Tone-Knoten, Recherche-Konzepte).
-Relationen müssen Spec/Idee/Recherche verbinden. Lücken schließen, Widersprüche als hardInvariants markieren.`,
+Auftrag: VOLLSTÄNDIGER Seed-Graph (Personen, Orte, Props, Fakten, Secrets, Threads, Regeln, Tone-Knoten, Konzept-Knoten).
+Verbinde Regeln & Grenzen + Figuren + Welt + Idee + Exposé zu einem tragfähigen Kanon-Netz, aus dem sich direkt ein konsistenter Plot ableiten lässt. Lücken zwischen Exposé und Fundament/Regeln schließen; harte Grenzen als hardInvariants sichern.`,
   });
 
-  return {
+  return sanitizePrePlotSeedGraph({
     ...graph,
     seededFrom: seededFrom.length ? seededFrom : graph.seededFrom,
-  };
+  });
 }
 
 type SkeletonGrowChapter = {
@@ -287,7 +377,9 @@ ${WISSENS_CONCRETE_ATTR_HINT}
 Identifizierende Attrs beibehalten oder bei Wechsel explizit updaten + hardInvariant.
 sinceChapter = Kapitel der ersten Einführung.
 hardInvariants: jedes introduces genau einmal; resolved Items „nicht neu erfinden“;
-Doppel-Beats zwischen Kapiteln markieren; Kennzeichen/Farbe/Adresse/Uhrzeit nicht still ändern.`,
+Doppel-Beats zwischen Kapiteln markieren; Kennzeichen/Farbe/Adresse/Material/Uhrzeit nicht still ändern.
+Who-did-X: Wenn Events einer Tat einen Akteur zuschreiben → hardInvariant „CLAIM: Actor|Action|Object — Kap. N“.
+Dieselbe Tat darf NICHT zwei verschiedenen Akteuren als Tatsache zugeschrieben werden (Verdacht vs. Tatsache klar trennen).`,
     userText: `# Bisheriger Graph
 ${JSON.stringify({
   nodes: input.previous.nodes,
@@ -385,12 +477,11 @@ export async function closeWissensGraphGaps(input: {
   graph: RomanWissensGraph;
   structured: RomanSzenenplotStructured;
   ideeKurz: string;
-  rechercheDossier: string;
   tonalitaet: string;
 }): Promise<RomanWissensGraph> {
   const closed = await runGraphJsonCall({
     system: `Du schließt Lücken im Wissensgraphen nach dem fertigen Szenenplot.
-Prüfe: jede zentrale Figur/Ort aus Spec kommt vor; Recherche-Fakten als fact/concept;
+Prüfe: jede zentrale Figur/Ort aus Spec kommt vor; Idee-/Welt-Fakten als fact/concept;
 Tonalität als tone-Knoten mit Relationen; jede Szene hat Continuity-Anschluss im Graphen;
 jedes introduces hat genau einen Knoten mit introducedChapter; jedes resolves setzt status=resolved;
 keine offenen Threads ohne Knoten; hardInvariants vollständig und widerspruchsfrei.
@@ -405,9 +496,6 @@ ${JSON.stringify({
 
 # Idee (kurz)
 ${input.ideeKurz.trim().slice(0, 3_000)}
-
-# Recherche (kurz)
-${input.rechercheDossier.trim().slice(0, 4_000)}
 
 # Tonalität
 ${input.tonalitaet.trim().slice(0, 1_500)}
@@ -507,37 +595,47 @@ export function listThinConcreteNodes(
 }
 
 /**
- * Dedicated pass after Plot: invent & freeze concrete canon details
- * (colors, plates, house numbers, times, dates, names) so Manuskript
- * cannot reinvent them chapter by chapter.
+ * Invent & freeze concrete canon details (colors, plates, addresses, times)
+ * so Plot/Manuskript cannot reinvent them. Prefer szenenplot context when
+ * present; otherwise use Spec/Exposé text (graph phase before Plot).
  */
 export async function enrichWissensGraphConcreteDetails(input: {
   graph: RomanWissensGraph;
-  structured: RomanSzenenplotStructured;
+  structured?: RomanSzenenplotStructured | null;
+  /** Fallback when no szenenplot yet (Fundament+Exposé freigegeben). */
+  contextText?: string | null;
 }): Promise<RomanWissensGraph> {
   const thin = listThinConcreteNodes(input.graph);
-  const chapterBits = input.structured.chapters
-    .map((c) => {
-      const props = c.props?.length ? `props=${c.props.join(", ")}` : "";
-      const events = c.events?.length ? `events=${c.events.join(", ")}` : "";
-      const scenes = c.scenes
-        .slice(0, 4)
-        .map(
-          (s) =>
-            `${s.scene_id}:${s.heading} — ${s.summary.slice(0, 120)}`,
-        )
-        .join("; ");
-      return `Kap. ${c.number} ${c.title}: ${[props, events, scenes].filter(Boolean).join(" | ")}`;
-    })
-    .join("\n")
-    .slice(0, 8_000);
+  const chapterBits = input.structured?.chapters?.length
+    ? input.structured.chapters
+        .map((c) => {
+          const props = c.props?.length ? `props=${c.props.join(", ")}` : "";
+          const events = c.events?.length ? `events=${c.events.join(", ")}` : "";
+          const scenes = c.scenes
+            .slice(0, 4)
+            .map(
+              (s) =>
+                `${s.scene_id}:${s.heading} — ${s.summary.slice(0, 120)}`,
+            )
+            .join("; ");
+          return `Kap. ${c.number} ${c.title}: ${[props, events, scenes].filter(Boolean).join(" | ")}`;
+        })
+        .join("\n")
+        .slice(0, 8_000)
+    : (input.contextText ?? "").trim().slice(0, 8_000);
+
+  const seededFrom: RomanWissensGraphSeedSource[] =
+    input.structured?.chapters?.length ? ["szenenplot"] : ["spec"];
 
   const enriched = await runGraphJsonCall({
-    system: `Du reichst den Wissensgraphen mit KONKRETEN Kanon-Details an — letzter Pflicht-Schritt vor dem Manuskript.
+    system: `Du reichst den Wissensgraphen mit KONKRETEN Kanon-Details, fehlenden Entitäten aus dem Kontext und dichter Kausal-Vernetzung an — Pflicht vor Plot-Freigabe bzw. vor Manuskript.
 ${WISSENS_CONCRETE_ATTR_HINT}
-Bestehende konkrete attrs NIEMALS still ändern. Fehlende Details: aus Plot ableiten oder einmalig erfinden und als hardInvariant fixieren.
+Bestehende konkrete attrs NIEMALS still ändern. Fehlende Details: aus Kontext ableiten oder einmalig erfinden und als hardInvariant fixieren.
 Jeder prop/place/person/event/fact-Knoten, der in der Dünn-Liste steht, MUSS passende attrs bekommen.
-Fahrzeuge ohne Kennzeichen+Farbe, Orte ohne Adresse/Hausnr., Termine ohne Datum/Uhrzeit, Figuren ohne klaren Namens-Attr = unzulässig.
+Prüfe zusätzlich gegen den Kontext:
+- Fehlen zentrale Institutionen/Vertragsparteien, wiederkehrende Räume (z. B. Büro, Lounge), Verträge/Belege/Schreiben, Apps/Schnittstellen oder Prüfverfahren (z. B. zweistufige Referenzprüfung, Investorenbesuch)? Falls ja: als Knoten + Kanten ergänzen!
+- Haben alle Figuren (auch Nebenfiguren/Hausleitung/Verbündete) direkte Kanten zu ihren Konfliktpartnern und Schlüssel-Events?
+- Keine doppelten hardInvariants erzeugen (bestehende Sätze nicht leicht abgewandelt wiederholen).
 Liefere den VOLLSTÄNDIGEN Graphen.`,
     userText: `# Graph (Ist)
 ${JSON.stringify({
@@ -553,15 +651,64 @@ ${
     : "(keine — trotzdem prüfen und nachschärfen)"
 }
 
-# Plot-Kontext (Props/Events/Szenen)
-${chapterBits}
+# Kontext (Props/Events/Szenen oder Spec/Exposé)
+${chapterBits || "(leer)"}
 
 Liefere den vollständigen Graphen mit ausgefüllten konkreten attrs.`,
   });
 
-  return mergeWissensGraphs(input.graph, {
+  const merged = mergeWissensGraphs(input.graph, {
     ...enriched,
-    seededFrom: ["szenenplot"],
+    seededFrom,
+  })!;
+  return input.structured?.chapters?.length
+    ? merged
+    : sanitizePrePlotSeedGraph(merged);
+}
+
+/**
+ * Apply Verbessern / Dimensions-Patch briefs to the Wissensgraph itself
+ * (stage `graph` — not chapter-body grow).
+ */
+export async function patchWissensGraphFromKritik(input: {
+  graph: RomanWissensGraph;
+  patchBrief: string;
+  critiqueText?: string | null;
+  contextText?: string | null;
+}): Promise<RomanWissensGraph> {
+  const brief = input.patchBrief.trim();
+  if (!brief) return input.graph;
+
+  const patched = await runGraphJsonCall({
+    system: `Du arbeitest Verbesserungsaufträge in den Wissensgraphen ein (Canon-Ledger vor Plot).
+${WISSENS_CONCRETE_ATTR_HINT}
+Bestehende konkrete attrs und hardInvariants NIEMALS still ändern — nur per Auftrag nachschärfen, ergänzen oder mit sichtbarem Beat aktualisieren.
+Fehlende Knoten/Edges/Invarianten ergänzen; dünne Props/Orte/Events konkretisieren; Widersprüche als hardInvariant oder Edge auflösen (nicht still löschen).
+Liefere den VOLLSTÄNDIGEN Graphen.`,
+    userText: `# Bisheriger Graph
+${JSON.stringify({
+  nodes: input.graph.nodes,
+  edges: input.graph.edges,
+  hardInvariants: input.graph.hardInvariants,
+}).slice(0, 28_000)}
+
+# Gegenlese / Kritik
+${(input.critiqueText ?? "").trim().slice(0, 4_000) || "(keine)"}
+
+# Patch-Brief (verbindlich einarbeiten)
+${brief.slice(0, 4_000)}
+
+# Kontext (Fundament/Exposé, optional)
+${(input.contextText ?? "").trim().slice(0, 6_000) || "(leer)"}
+
+Liefere den vollständigen, verbesserten Graphen.`,
+  });
+
+  return mergeWissensGraphs(input.graph, {
+    ...patched,
+    seededFrom: Array.from(
+      new Set([...input.graph.seededFrom, "spec"]),
+    ) as RomanWissensGraphSeedSource[],
   })!;
 }
 
@@ -618,7 +765,10 @@ Liefere den VOLLSTÄNDIG aktualisierten Graphen.`,
     },
     grown,
   )!;
-  // First-seen measurements win; then pull any new cm/mm/m facts from chapter prose.
-  const protectedGraph = protectFrozenMetricAttrs(input.previous, merged);
+  // First-seen measurements + Kennzeichen win; then pull new cm/mm/m from prose.
+  const protectedGraph = protectFrozenKennzeichenAttrs(
+    input.previous,
+    protectFrozenMetricAttrs(input.previous, merged),
+  );
   return freezeMetricFactsFromChapters(protectedGraph, input.chapters);
 }

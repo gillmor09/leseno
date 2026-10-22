@@ -15,17 +15,17 @@ import {
 import { loadRomanKiRollenAction } from "@/app/actions/roman-roles-admin";
 import { RomanLeserFeedbackControl } from "@/components/features/admin/roman-leser-feedback-control";
 import {
-  KAPITELGERUEST_GENERATE_STEPS,
   MANUSKRIPT_GENERATE_STEPS,
+  PLOT_GENERATE_STEPS,
   RomanSceneWaitDialog,
   SPEC_GENERATE_STEPS,
-  SZENENPLOT_GENERATE_STEPS,
   waitModelLabelForRole,
   type WaitAgentInfo,
 } from "@/components/features/admin/roman-scene-wait-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
   cleverManuskriptSkipsReifegrad,
+  isPlotStage,
   PIPELINE_STAGE_LABELS,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
@@ -269,16 +269,27 @@ export function RomanPipelineStageActions({
       const byKey = new Map(rollen.map((r) => [r.key, r]));
       const rolleMap = new Map(rollen.map((r) => [r.key, r.label]));
       const assign = stageRoleAssignment(aufgaben, rolleMap, roleStage);
-      setDraftLabel(assign.draftLabel);
+      // Idee: Dialog (Schreib-Coach) is the real work; draft task is legacy.
+      const dialogTask = aufgaben.find(
+        (a) => a.stage === roleStage && a.kind === "dialog",
+      );
+      const displayRolleKey =
+        stage === "idee" && dialogTask?.rolleKey
+          ? dialogTask.rolleKey
+          : assign.draftRolleKey;
+      const displayLabel =
+        stage === "idee" && dialogTask
+          ? (rolleMap.get(dialogTask.rolleKey) ?? dialogTask.rolleKey)
+          : assign.draftLabel;
+      setDraftLabel(displayLabel);
       const draftProse =
         !cleverStories &&
         stage === "manuskript" &&
-        assign.draftRolleKey === "co_autor";
+        (displayRolleKey === "co_autor" || displayRolleKey === "autor");
       setDraftAgent(
         agentFromRolle(
-          assign.draftRolleKey
-            ? byKey.get(assign.draftRolleKey)
-            : undefined,
+          displayRolleKey ? byKey.get(displayRolleKey) : undefined,
+          // Explicit false for Spec/Gerüst Co-Autor → assist model (matches runtime).
           { allowProseModel: draftProse },
         ),
       );
@@ -578,35 +589,31 @@ export function RomanPipelineStageActions({
             ? cleverStories
               ? "Alle Geschichten erzeugen"
               : "Alles erzeugen"
-            : stage === "kapitelgeruest"
-              ? "Kapitelgerüst erzeugen"
-              : stage === "szenenplot"
-                ? "Szenenplot erzeugen"
-                : `${PIPELINE_STAGE_LABELS[stage]} erzeugen`
+            : isPlotStage(stage)
+              ? `${PIPELINE_STAGE_LABELS[stage]} erzeugen (+ Auto-Repair)`
+              : `${PIPELINE_STAGE_LABELS[stage]} erzeugen`
         }
         footer={
           cleverStories && stage === "manuskript"
             ? "Nur dieser Schritt: jede Kurzgeschichte einzeln — ohne Buch-Reifegrad. Tab offen lassen."
             : stage === "manuskript"
-              ? "Nur Manuskript-Erzeugen: eingefrorene Verträge, Kapitel nacheinander, Reifegrad danach. Tab offen lassen."
-              : stage === "kapitelgeruest"
-                ? "Nur Kapitelgerüst: Outline → Kapitel einzeln → Wissensgraph → Reifegrad. Tab offen lassen."
-                : stage === "szenenplot"
-                  ? "Nur Szenenplot: Kapitel in Batches → Schreibprompts → Wissensgraph → Reifegrad. Bei Abbruch: erneut Erzeugen setzt fort. Tab offen lassen."
+              ? "Manuskript-Erzeugen: Hard-Gate Plot muss grün sein. Kapitel nacheinander, Reifegrad danach. Tab offen lassen."
+              : isPlotStage(stage)
+                ? "Plot-Erzeugen: Gerüst → Szenen → Reifegrad → Auto-Repair Logik (bis Hard-Gate grün oder Fehler). Tab offen lassen."
+                : stage === "expose" || generateMode === "spec-chain"
+                  ? "Spec-Erzeugen: Figuren → Welt → Exposé → Reifegrad. Basics-Hard-Gate muss vorher grün sein. Tab offen lassen."
                   : `Nur ${PIPELINE_STAGE_LABELS[stage]} erzeugen. Tab offen lassen.`
         }
         progressLabel={progressLabel}
         activeStepIndex={activeStepIndex}
         steps={
-          stage === "kapitelgeruest"
-            ? KAPITELGERUEST_GENERATE_STEPS
-            : stage === "szenenplot"
-              ? SZENENPLOT_GENERATE_STEPS
-              : stage === "expose" || generateMode === "spec-chain"
-                ? SPEC_GENERATE_STEPS
-                : stage === "manuskript" && !cleverStories
-                  ? MANUSKRIPT_GENERATE_STEPS
-                  : null
+          isPlotStage(stage)
+            ? PLOT_GENERATE_STEPS
+            : stage === "expose" || generateMode === "spec-chain"
+              ? SPEC_GENERATE_STEPS
+              : stage === "manuskript" && !cleverStories
+                ? MANUSKRIPT_GENERATE_STEPS
+                : null
         }
         agentInfo={activeAgent}
       />
@@ -632,15 +639,15 @@ export function RomanPipelineStageActions({
         <p className="mt-2 text-xs font-semibold text-zinc-500">
           {cleverStories && stage === "manuskript"
             ? "Erzeugen = Erzähler schreibt jede Geschichte (+ Infografik). Verbessern je Geschichte läuft automatisch bis nur noch Nice-to-have oder nichts übrig ist, dann Fertig."
-            : stage === "kapitelgeruest"
-              ? "Erzeugen = Entwicklungslektor: Outline + Spannungsbögen, Kapitel einzeln (Inhalt/Lifecycle), Wissensgraph, Reifegrad. Analyse/Einarbeiten unter Reifegrad patcht die Gerüst-Struktur."
-              : stage === "szenenplot"
-                ? "Erzeugen = Entwicklungslektor: Szenen + Schreibprompts. Fertig friert Verträge ein. Analyse/Einarbeiten unter Reifegrad patcht die Szenenverträge."
-                : stage === "manuskript"
-                  ? "Erzeugen = Co-Autor (Prosa-Modell): kapitelweise aus eingefrorenen Szenenverträgen. Analyse/Einarbeiten unter Reifegrad; Feedback = Testleser."
-                  : stage === "expose"
-                    ? "Erzeugen = Co-Autor auf Gemini Flash (Figuren → Welt → Exposé). Analyse/Einarbeiten ebenfalls Flash — kein Sonnet. Feedback = Testleser."
-                    : "Eine Rolle pro Schritt (+ Reifegrad, Assist-Flash). Analyse/Einarbeiten unter Reifegrad. Feedback = Testleser (Idee/Spec/Manuskript)."}
+            : isPlotStage(stage)
+              ? "Erzeugen = Kapitel-Gerüst → Szenen + Schreibprompts + Reifegrad + Auto-Repair Logik bis Hard-Gate grün. Fertig-Toggle friert nur Schreibprompts ein — kein Gate-Bypass. Override nur über „Trotzdem weiter“."
+              : stage === "manuskript"
+                ? "Erzeugen = Co-Autor: kapitelweise aus eingefrorenen Szenenverträgen. Vorstufe Plot-Hard-Gate muss grün sein. Feedback = Testleser; optionaler Stil-Pass über Verbessern am Manuskript."
+                : stage === "expose" || generateMode === "spec-chain"
+                  ? "Erzeugen = Figuren → Welt → Exposé + Reifegrad. Vorstufe Basics-Hard-Gate muss grün sein (nach Idee abgeleitet). Feedback = Testleser."
+                  : stage === "idee"
+                    ? "Idee: Dialog mit Schreib-Coach → Dokumentation (ohne feste Tonalität). Danach Reifegrad; Basics werden aus der Idee abgeleitet; Folgestufen brauchen grünes Basics-Gate (nicht nur Fertig-Toggle)."
+                    : "Eine Rolle pro Schritt (+ Reifegrad). Fertig = Soft-Chrome; Hard-Gates steuern die Freigabe der nächsten Stufe."}
           {rolesHref ? (
             <>
               {" "}
@@ -688,22 +695,18 @@ export function RomanPipelineStageActions({
           ? cleverStories
             ? "Alle Geschichten = Kurzgeschichte + Infografik je Kapitel nacheinander. "
             : "Alles erzeugen = Kapitel strikt nacheinander mit Continuity (+ Reifegrad). "
-          : stage === "kapitelgeruest"
-            ? "Erzeugen = Outline + Bögen, dann Kapitel einzeln (+ Wissensgraph). "
-            : stage === "szenenplot"
-              ? "Erzeugen = Szenenplot aus Gerüst; Fertig = Schreibprompts einfrieren. "
-              : showAssess
-                ? "Erzeugen = Entwurf + Reifegrad. "
-                : generateMode === "spec-chain"
-                  ? "Erzeugen = Spec (Figuren + Welt + Exposé). "
-                  : "Erzeugen = Entwurf. "}
+          : isPlotStage(stage)
+            ? "Soll-Pfad: Erzeugen bis Hard-Gate grün (Auto-Repair). Fertig = Verträge einfrieren, nicht Gate überspringen. "
+            : showAssess
+              ? "Erzeugen = Entwurf + Reifegrad (Hard-Gate danach). "
+              : generateMode === "spec-chain"
+                ? "Erzeugen = Spec (Figuren + Welt + Exposé) + Reifegrad. "
+                : "Erzeugen = Entwurf. "}
         {cleverStories && stage === "manuskript"
           ? "Verbessern je Geschichte läuft automatisch: einarbeiten, solange kritisch oder wichtig, sonst Fertig."
-          : stage === "kapitelgeruest"
-            ? "Analyse/Einarbeiten unter Reifegrad: Gerüst-Struktur (Arcs, Lifecycle) prüfen und patchen."
-            : stage === "szenenplot"
-              ? "Analyse/Einarbeiten unter Reifegrad: Szenenverträge prüfen und patchen."
-              : "Analyse/Einarbeiten unter Reifegrad (Gesamt / Dimension)."}
+          : isPlotStage(stage)
+            ? "Optional unter Reifegrad: „Nur Logik“ / „Nur Craft“ / Dimensionen — zusätzlich zum Auto-Repair beim Erzeugen."
+            : "Analyse/Einarbeiten unter Reifegrad (Gesamt / Dimension) — optional nach Erzeugen."}
       </p>
     </div>
   );

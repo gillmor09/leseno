@@ -99,7 +99,6 @@ export async function applyRomanDimensionToRomanText(input: {
     title: input.roman.title,
     genre: input.roman.genre,
     ideeKurz: editorial.ideeKurz ?? "",
-    rechercheDossier: editorial.rechercheDossier ?? "",
     tonalitaet: input.roman.tonalitaet,
     grobRegeln: editorial.grobRegeln ?? "",
     editorial,

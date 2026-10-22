@@ -3,6 +3,7 @@
  */
 
 import { generateText } from "@/lib/ai/provider";
+import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import { emptySachbuchKapitel } from "@/lib/sachbuch/parse";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
 import {
@@ -57,8 +58,9 @@ export async function generateSachbuchMakro(
 ): Promise<SachbuchKontext> {
   const book = await getSachbuchKontext(sachbuchId);
   if (!book) throw new Error("Sachbuch nicht gefunden.");
+  assertSachbuchGuideAllows(book, "makro");
   if (!book.idee.unpopularOpinion.trim() && !book.idee.briefing.trim()) {
-    throw new Error("Zuerst UVP schärfen (Phase 1).");
+    throw new Error("Zuerst Idee freigeben (Verfeinerung).");
   }
 
   const typ = book.makro.typ ?? "journey";
@@ -136,6 +138,7 @@ Genau diese ${keys.length} Keys. Kein Markdown-Fence.`,
       stages,
       status: "ready",
       kapitelGenerated: book.makro.kapitelGenerated,
+      bookTypeId: book.makro.bookTypeId ?? "",
     },
   });
 }
@@ -149,6 +152,7 @@ export async function applyMakroToKapitel(
 ): Promise<SachbuchKontext> {
   const book = await getSachbuchKontext(sachbuchId);
   if (!book) throw new Error("Sachbuch nicht gefunden.");
+  assertSachbuchGuideAllows(book, "makro");
   if (book.makro.status === "empty") {
     throw new Error("Zuerst Makro erzeugen.");
   }

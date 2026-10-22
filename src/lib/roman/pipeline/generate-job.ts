@@ -9,10 +9,17 @@
  * Reifegrad is hardened: after a successful draft we verify the stage score
  * exists and retry assess if the in-draft `assessAfter` was skipped/failed
  * (common when long Gerüst jobs hit maxDuration during scoring).
+ *
+ * Gerüst/Plot: after draft+Reifegrad, internal Logik auto-repair
+ * (analyze→apply, max 3) until hard-gate green — no Verbessern dialog.
  */
 
-import { emptyRomanEditorial } from "@/lib/roman/editorial";
-import { getRomanKontext } from "@/lib/roman/repository";
+import {
+  emptyRomanEditorial,
+  withPipelineTabFertig,
+  type RomanPipelineFertig,
+} from "@/lib/roman/editorial";
+import { getRomanKontext, setRomanEditorial } from "@/lib/roman/repository";
 import { revalidateRomanAdmin } from "@/lib/roman/revalidate-admin";
 import {
   createGenerateChunkBudget,
@@ -39,10 +46,24 @@ import {
 } from "@/lib/roman/pipeline/runner";
 import {
   cleverManuskriptSkipsReifegrad,
+  isGeruestStage,
+  isPlotStage,
+  normalizePipelineStage,
   PIPELINE_STAGE_LABELS,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
 import { missingManuskriptChapterNumbers } from "@/lib/roman/plot-chapters";
+import {
+  analyzeStageVerbessern,
+  applyStageVerbessern,
+} from "@/lib/roman/stage-verbessern";
+import {
+  evaluateStageHardGate,
+  stageUsesAutoLogikRepair,
+} from "@/lib/roman/stage-hard-gates";
+
+/** Max internal Logik repair loops after Plot Erzeugen. */
+const AUTO_LOGIK_REPAIR_MAX = 3;
 
 export type RomanGenerateJobInput = {
   romanId: string;
@@ -98,6 +119,156 @@ function stageSkipsReifegrad(
   return cleverManuskriptSkipsReifegrad(romanBuchTyp, stage);
 }
 
+function fertigTabForStage(
+  stage: PipelineStage,
+): keyof RomanPipelineFertig | null {
+  const n = normalizePipelineStage(stage) ?? stage;
+  if (n === "idee") return "idee";
+  if (n === "rahmen") return "rahmen";
+  if (n === "fundament") return "fundament";
+  if (n === "expose") return "expose";
+  if (n === "graph") return "graph";
+  if (n === "plot" || isGeruestStage(stage)) return "plot";
+  if (n === "szenen" || isPlotStage(stage)) return "szenen";
+  if (n === "manuskript") return "schreiben";
+  return null;
+}
+
+/**
+ * After Gerüst/Plot draft: hard-gate check + up to N Logik analyze→apply cycles.
+ * Does not use Verbessern UI; failures finish the generate job as error.
+ */
+async function runAutoLogikRepairLoop(input: {
+  romanId: string;
+  stage: PipelineStage;
+  runId: string;
+  events: PipelineHistoryEvent[];
+}): Promise<{
+  ok: boolean;
+  events: PipelineHistoryEvent[];
+  error?: string;
+}> {
+  if (!stageUsesAutoLogikRepair(input.stage)) {
+    return { ok: true, events: input.events };
+  }
+  let events = input.events;
+  const repairStage: PipelineStage =
+    (normalizePipelineStage(input.stage) as PipelineStage | null) ??
+    input.stage;
+
+  for (let attempt = 0; attempt <= AUTO_LOGIK_REPAIR_MAX; attempt++) {
+    const roman = await getRomanKontext(input.romanId);
+    if (!roman) {
+      return { ok: false, events, error: "Buch nicht gefunden." };
+    }
+    const editorial = roman.editorial ?? emptyRomanEditorial();
+    const gate = evaluateStageHardGate({
+      stage: repairStage,
+      editorial,
+      tonalitaet: roman.tonalitaet,
+      genre: roman.genre,
+    });
+    if (gate.ok && !gate.viaOverride) {
+      const tab = fertigTabForStage(repairStage);
+      if (tab) {
+        const nextEd = withPipelineTabFertig(editorial, tab, true);
+        await setRomanEditorial(input.romanId, nextEd);
+      }
+      events.push(
+        historyEvent({
+          type: "info",
+          stage: input.stage,
+          summary: `Hard-Gate grün · ${PIPELINE_STAGE_LABELS[repairStage] ?? repairStage}`,
+          detail: gate.summary,
+        }),
+      );
+      return { ok: true, events };
+    }
+    if (gate.ok && gate.viaOverride) {
+      events.push(
+        historyEvent({
+          type: "info",
+          stage: input.stage,
+          summary: `Hard-Gate mit Override · ${PIPELINE_STAGE_LABELS[repairStage] ?? repairStage}`,
+          detail: gate.summary,
+        }),
+      );
+      return { ok: true, events };
+    }
+    if (attempt >= AUTO_LOGIK_REPAIR_MAX) {
+      const detail = gate.findings
+        .filter((f) => f.severity === "error")
+        .slice(0, 8)
+        .map((e) => `• ${e.message}`)
+        .join("\n");
+      return {
+        ok: false,
+        events,
+        error: `${gate.summary}\n${detail}\n\nAuto-Repair (${AUTO_LOGIK_REPAIR_MAX}× Logik) konnte das Gate nicht schließen.`,
+      };
+    }
+
+    events.push(
+      historyEvent({
+        type: "info",
+        stage: input.stage,
+        summary: `Auto-Repair Logik ${attempt + 1}/${AUTO_LOGIK_REPAIR_MAX} · ${PIPELINE_STAGE_LABELS[repairStage]}`,
+        detail: gate.findings
+          .filter((f) => f.severity === "error")
+          .slice(0, 4)
+          .map((e) => e.message)
+          .join(" · "),
+      }),
+    );
+    try {
+      await updatePipelineHistoryRun({
+        runId: input.runId,
+        status: "running",
+        events,
+      });
+    } catch {
+      /* fail-soft */
+    }
+
+    try {
+      await analyzeStageVerbessern({
+        romanId: input.romanId,
+        stage: repairStage,
+        focus: "logik",
+      });
+      await applyStageVerbessern({
+        romanId: input.romanId,
+        stage: repairStage,
+      });
+      const ensured = await ensureStageReifegrad({
+        romanId: input.romanId,
+        stage: repairStage,
+        runId: input.runId,
+        events,
+        changeSummary: `Nach Auto-Repair Logik ${attempt + 1}.`,
+        attempts: 1,
+      });
+      events = ensured.events;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Auto-Repair fehlgeschlagen.";
+      events.push(
+        historyEvent({
+          type: "info",
+          stage: input.stage,
+          summary: `Auto-Repair abgebrochen: ${message.slice(0, 200)}`,
+        }),
+      );
+      return { ok: false, events, error: message };
+    }
+  }
+
+  return {
+    ok: false,
+    events,
+    error: "Auto-Repair: unerwartetes Ende.",
+  };
+}
 /**
  * Ensure Reifegrad was measured in this Erzeugen run. Retries when the in-draft
  * `assessAfter` was skipped/failed so Gerüst/Plot never finish unscored.
@@ -399,6 +570,71 @@ export async function runRomanGenerateJob(
     }
 
     events = events.length ? events : await loadEvents(romanId, runId);
+
+    if (generateMode === "stage" && stageUsesAutoLogikRepair(stage)) {
+      const repaired = await runAutoLogikRepairLoop({
+        romanId,
+        stage,
+        runId,
+        events,
+      });
+      events = repaired.events;
+      if (!repaired.ok) {
+        await pipelineStepFinish({
+          romanId,
+          runId,
+          events,
+          ok: false,
+          error: repaired.error ?? "Hard-Gate / Auto-Repair fehlgeschlagen.",
+        });
+        revalidateRomanAdmin(romanId);
+        return { outcome: "error", message: repaired.error };
+      }
+    } else if (generateMode === "spec-chain") {
+      const roman = await getRomanKontext(romanId);
+      if (roman) {
+        const gate = evaluateStageHardGate({
+          stage: "spec",
+          editorial: roman.editorial ?? emptyRomanEditorial(),
+          tonalitaet: roman.tonalitaet,
+          genre: roman.genre,
+        });
+        if (!gate.ok) {
+          const detail = gate.findings
+            .filter((f) => f.severity === "error")
+            .slice(0, 6)
+            .map((e) => `• ${e.message}`)
+            .join("\n");
+          const error = `${gate.summary}\n${detail}`;
+          events.push(
+            historyEvent({
+              type: "info",
+              stage: "expose",
+              summary: "Spec-Hard-Gate rot",
+              detail: error.slice(0, 2_000),
+            }),
+          );
+          await pipelineStepFinish({
+            romanId,
+            runId,
+            events,
+            ok: false,
+            error,
+          });
+          revalidateRomanAdmin(romanId);
+          return { outcome: "error", message: error };
+        }
+        if (!gate.viaOverride) {
+          const ed = withPipelineTabFertig(
+            roman.editorial ?? emptyRomanEditorial(),
+            "spec",
+            true,
+          );
+          await setRomanEditorial(romanId, ed);
+        }
+      }
+    }
+
     await pipelineStepFinish({
       romanId,
       runId,
@@ -450,11 +686,11 @@ export async function runRomanGenerateJob(
           const roman = await getRomanKontext(romanId);
           const buchTyp = roman?.editorial?.buchTyp;
           const hasDraftArtifact =
-            stage === "kapitelgeruest"
+            isGeruestStage(stage)
               ? Boolean(
                   roman?.editorial?.kapitelGeruestStructured?.chapters.length,
                 )
-              : stage === "szenenplot"
+              : isPlotStage(stage)
                 ? Boolean(
                     roman?.editorial?.szenenplotStructured?.chapters.length,
                   )

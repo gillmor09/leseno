@@ -93,7 +93,6 @@ function typHints(buchTyp: RomanBuchTyp): string {
 export async function suggestExposeFromCoAutor(input: {
   buchTyp: RomanBuchTyp;
   ideeKurz: string;
-  rechercheDossier?: string;
   tonalitaet?: string;
   grobRegeln: string;
   charaktere: RomanCharakter[];
@@ -113,7 +112,6 @@ export async function suggestExposeFromCoAutor(input: {
     allowProseModel: false,
   });
   const chars = formatCharaktere(input.charaktere) || "(noch keine Steckbriefe)";
-  const recherche = (input.rechercheDossier ?? "").trim();
   const ton = (input.tonalitaet ?? "").trim();
 
   const weaveBlock = weave
@@ -125,9 +123,6 @@ ${BUCHTYP_LABELS[input.buchTyp]}
 
 # Ideendokumentation
 ${idee.slice(0, CLIP.idee)}
-
-# Hintergrundrecherche (Fakten/Kontext)
-${recherche.slice(0, CLIP.recherche) || "(keine)"}
 
 # Sprache & Tonalität (Schreiber)
 ${ton.slice(0, CLIP.grob) || "(keine)"}
@@ -169,7 +164,7 @@ ${ROMAN_EXCELLENCE_MANDATE}
 
 Zusatzauftrag Exposé:
 Du skizzierst die grobe Handlung (Anfang, Mitte, Ende) als editierbares Exposé.
-Quellen: Idee, Hintergrundrecherche, Regeln, Figuren, Welt.
+Quellen: Idee, Regeln, Figuren, Welt.
 Nur ${MARK_START} … ${MARK_ENDE}. Kein JSON.`;
 
   const raw = await generateText({

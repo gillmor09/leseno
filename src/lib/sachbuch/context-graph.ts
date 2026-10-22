@@ -4,6 +4,7 @@
 
 import { generateText } from "@/lib/ai/provider";
 import { SACHBUCH_KAPITEL_WORDS_TARGET } from "@/lib/sachbuch/agent-defaults";
+import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
 import {
   getSachbuchKontext,
@@ -17,6 +18,7 @@ export async function generateSachbuchContextGraph(input: {
 }): Promise<SachbuchKontext> {
   const book = await getSachbuchKontext(input.sachbuchId);
   if (!book) throw new Error("Sachbuch nicht gefunden.");
+  assertSachbuchGuideAllows(book, "write");
   const kapitel = book.kapitel.find((k) => k.id === input.kapitelId);
   if (!kapitel) throw new Error("Kapitel nicht gefunden.");
 

@@ -38,7 +38,17 @@ function normalizeGroundingText(s: string): string {
 }
 
 function isStructureStage(stage: PipelineStage | undefined): boolean {
-  return stage === "kapitelgeruest" || stage === "szenenplot";
+  if (!stage) return false;
+  return (
+    stage === "plot" ||
+    stage === "szenen" ||
+    stage === "kapitelgeruest" ||
+    stage === "szenenplot" ||
+    stage === "feingeruest" ||
+    stage === "feinplot" ||
+    stage === "grobgeruest" ||
+    stage === "grobplot"
+  );
 }
 
 /**

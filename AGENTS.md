@@ -2,9 +2,13 @@
 
 Product architecture (layers, pipeline, admin, world, bot guard): **[docs/architecture.md](docs/architecture.md)**.
 
+**Roman (greenfield):** `leseno.novels` + `src/lib/novel/` — **Top-Down** (Architekt/Auditor Luna `gpt-6-luna`, Draft/Stilist Haiku `claude-haiku-5-5`), async hop-job `/api/admin/roman/novel-job`. Pipeline: Akte → Struktur-Audit → Kapitel → Struktur-Audit → Manifeste → Struktur-Audit (+ Kapitel-Verbund) → Graph/`__pyramidGraph` → Freeze nur Struktur (`prose_pending`) → `compile_prose_briefs` → `scene_dispatch` Draft → Logik → Stil → Tic → State-Commit → `chapter_audit` → weiter. Pyramid + Ton-Vertrag. Plan: **[docs/roman-top-down-modul.md](docs/roman-top-down-modul.md)**. Clever: `/admin/clever-erzaehlt`.
+
+Legacy 9-phase checklist (Clever / old notes only): **[docs/roman-process-mvp.md](docs/roman-process-mvp.md)**.
+
 Android / Play / Fire shell: **[docs/android-stores.md](docs/android-stores.md)** (`mobile/`).
 
-Model A/B until Manuskript freigabe: **[docs/model-ab-freigabe.md](docs/model-ab-freigabe.md)**.
+Model A/B notes (legacy): **[docs/model-ab-freigabe.md](docs/model-ab-freigabe.md)**.
 
 Cursor rules: `.cursor/rules/`. Migrations: `supabase/migrations/`.
 

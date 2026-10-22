@@ -159,8 +159,6 @@ const JSON_SHAPE = `{
 export async function suggestCharaktereFromIdee(input: {
   buchTyp: RomanBuchTyp;
   ideeKurz: string;
-  /** Optional background research dossier (Idee → Spec). */
-  rechercheDossier?: string;
   /** Explicit Schreiber Sprache & Tonalität from Basics. */
   tonalitaet?: string;
   grobRegeln: string;
@@ -176,7 +174,6 @@ export async function suggestCharaktereFromIdee(input: {
   const existing = filterDraftChars(input.existing);
   const weave = hasFilledCharaktere(existing);
   const grob = input.grobRegeln.trim();
-  const recherche = (input.rechercheDossier ?? "").trim();
   const ton = (input.tonalitaet ?? "").trim();
 
   const { rolle, model } = await resolveRomanKiRolle("co_autor", {
@@ -198,9 +195,6 @@ ${BUCHTYP_LABELS[input.buchTyp]}
 # Ideendokumentation (Primärquelle für Figurenkerne)
 ${idee.slice(0, CLIP.idee)}
 
-# Hintergrundrecherche (Fakten/Kontext — keine Plot-Erfindung)
-${recherche.slice(0, CLIP.recherche) || "(keine — nur Idee + Grob-Regeln)"}
-
 # Sprache & Tonalität (Schreiber — verbindlich für Dialog/Innenstimme)
 ${ton.slice(0, CLIP.grob) || "(keine — aus Idee/Grob-Regeln ableiten)"}
 
@@ -221,7 +215,7 @@ Feldregeln:
 - Keine Eigennamen erfinden, wenn Idee/Grob-Regeln keine nennen — rolle füllen, name darf leer bleiben (Verfeinern-Lauf folgt).
 - Belletristik: dramaturgisch tragfähige Besetzung. Sachbuch: ggf. Stimmen/Perspektiven statt Handlungsfiguren.
 - Jede Figur braucht erkennbare Eigenwilligkeit — kein austauschbares Genre-Mittelmaß.
-- Recherche nutzen für glaubwürdige Berufe/Hintergründe — nicht als Figurenliste missverstehen.`;
+- Berufe/Hintergründe aus der Idee glaubwürdig ableiten — nicht erfinden, wo die Idee nichts hergibt.`;
 
   const system = `${rolle.systemPrompt}
 
@@ -229,7 +223,7 @@ ${ROMAN_EXCELLENCE_MANDATE}
 
 Zusatzauftrag Charakter-Steckbriefe:
 Du erstellst oder verwebst editierbare Figuren-Steckbriefe für dieses Buch.
-Quellen: Ideendokumentation + Hintergrundrecherche + Grob-Regeln${weave ? " + bestehende Steckbriefe" : ""}.
+Quellen: Ideendokumentation + Grob-Regeln${weave ? " + bestehende Steckbriefe" : ""}.
 ${weave ? "Verweben/Aufwerten/Hinzufügen/Entfernen — nicht blind überschreiben." : "Neu anlegen."}
 Antwort NUR als JSON mit Key "charaktere" (Array). Keine Markdown-Codeblöcke.`;
 

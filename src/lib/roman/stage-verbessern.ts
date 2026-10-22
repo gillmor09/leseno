@@ -32,6 +32,7 @@ import {
 
 export type { StageVerbessernFocus };
 export { STAGE_VERBESSERN_FOCUS_LABELS };
+import { formatGeruestPlotClaimCritiqueBlock } from "@/lib/roman/geruest-plot-claims";
 import { resolveRomanSchreibModel } from "@/lib/roman/model";
 import { applyRouteTarget } from "@/lib/roman/pipeline/apply";
 import {
@@ -42,6 +43,8 @@ import {
 } from "@/lib/roman/pipeline/history";
 import {
   PIPELINE_STAGE_LABELS,
+  isGeruestStage,
+  isPlotStage,
   romanApplyRoleKey,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
@@ -67,6 +70,8 @@ import {
   assessStageReifegrad,
   editorialWithReifegrad,
   formatAssessCoverageLabel,
+  formatManuskriptCanonReferenceBlock,
+  formatStructureCanonReferenceBlock,
   getStageArtifactText,
 } from "@/lib/roman/reifegrad";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
@@ -84,13 +89,15 @@ function improveChapterDoc(
 ): string {
   const ed = roman.editorial ?? emptyRomanEditorial();
   if (stage === "manuskript") return ed.manuskriptText ?? "";
-  if (stage === "kapitelgeruest") {
+  // Plot family (canonical `plot` + legacy gerüst ids).
+  if (isGeruestStage(stage)) {
     if (ed.kapitelGeruestStructured?.chapters.length) {
       return structuredKapitelGeruestToMarkdown(ed.kapitelGeruestStructured);
     }
     return ed.kapitelGeruestRaw ?? "";
   }
-  if (stage === "szenenplot") {
+  // Szenen family (canonical `szenen` + legacy szenenplot ids).
+  if (isPlotStage(stage)) {
     if (ed.szenenplotStructured?.chapters.length) {
       return structuredSzenenplotToMarkdown(ed.szenenplotStructured);
     }
@@ -128,8 +135,8 @@ aenderungsPrompts: Spec-Stoff und Bogen nachschärfen, nicht Prosa schreiben.${s
 Vorrang: Lücken, die einen ganzen Roman nicht tragen (zu dünner Stoff, fehlende Escalation, widersprüchlicher Canon).${specPolicy}`;
   }
 
-  // Structured Szenenplot: Logik/Craft map onto contracts, not prose.
-  if (stage === "szenenplot") {
+  // Structured Szenen: Logik/Craft map onto contracts, not prose.
+  if (stage && isPlotStage(stage)) {
     const plotPolicy = structureStageAnalyzePolicy("szenenplot");
     if (focus === "logik") {
       return `FOKUS DIESES LAUFS: NUR Logik der Szenenverträge.
@@ -148,21 +155,22 @@ Härteste Logikbrüche (Continuity/Info-Fluss) vor Craft (Konkretheit/Spannung/s
   }
 
   const stagePolicy =
-    stage === "kapitelgeruest"
+    stage && isGeruestStage(stage)
       ? structureStageAnalyzePolicy("kapitelgeruest")
       : stage === "manuskript"
-        ? `\nSTUFEN-POLITIK: Primär Stil/Lesefluss. Plot-Löcher nur soft melden — echte Plot-Fixes gehören in den Szenenplot.`
+        ? `\nSTUFEN-POLITIK: Primär Stil/Lesefluss. Plot-Löcher nur soft melden — echte Plot-Fixes gehören in den Szenen.`
         : "";
 
   if (focus === "logik") {
     return `FOKUS DIESES LAUFS: NUR Logik / Kontinuität / Canon / Props / Widersprüche / Motiv-Verbote.
 Ignoriere Stil, Lesefluss und reine Spannungs-Feinschliffe — außer sie sind direkte Logikfolgen.
-Kritisch: Fakten, Doppelungen, gestrichene Motive die zurückkommen, Timeline, Besitz/Kennzeichen.
+Kritisch: Fakten, Doppelungen, gestrichene Motive die zurückkommen, Timeline, Besitz/Kennzeichen/Material,
+Who-did-X (dieselbe Tat nicht zwei Akteuren als Tatsache), Verdacht vs. Enthüllung klar trennen.
 aenderungsPrompts müssen Logik reparieren (streichen/ersetzen/verbieten), keine Stilpolitur.${stagePolicy}`;
   }
   if (focus === "craft") {
     const craftActions =
-      stage === "kapitelgeruest"
+      stage && isGeruestStage(stage)
         ? "aenderungsPrompts: Kapitel-Funktion, Arc Peak/Payoff, Lifecycle schärfen — Skizze bleiben lassen, kein Mini-Buch, keine Dialog-/Prosa-Politur."
         : "aenderungsPrompts: Beats schärfen, Tempo, Dialog-Druck — ohne Canon neu zu erfinden.";
     return `FOKUS DIESES LAUFS: NUR Dramaturgie / Spannung / Szenenwenden / Lesefluss / Straffen.
@@ -363,8 +371,8 @@ export async function analyzeStageVerbessern(input: {
     }
     const alter = altergruppeLabel(editorial);
     const chapterStages =
-      input.stage === "kapitelgeruest" ||
-      input.stage === "szenenplot" ||
+      isGeruestStage(input.stage) ||
+      isPlotStage(input.stage) ||
       input.stage === "manuskript";
     const previousScore = editorial.reifegrade?.[input.stage] ?? null;
     const highBand = highBandLastGapsMandate({
@@ -386,8 +394,29 @@ export async function analyzeStageVerbessern(input: {
       ),
     };
 
-    const userText = `${compliance}
+    const geruestClaimBlock =
+      (isGeruestStage(input.stage) || isPlotStage(input.stage)) &&
+      (focus === "logik" || focus === "gesamt")
+        ? formatGeruestPlotClaimCritiqueBlock(
+            isGeruestStage(input.stage)
+              ? (editorial.kapitelGeruestStructured?.chapters ?? [])
+              : (editorial.szenenplotStructured?.chapters ?? []),
+          )
+        : "";
 
+    const canonRefBlock =
+      isGeruestStage(input.stage) ||
+      isPlotStage(input.stage) ||
+      input.stage === "graph"
+        ? formatStructureCanonReferenceBlock(roman, {
+            includeGraph: input.stage !== "graph",
+          })
+        : input.stage === "manuskript"
+          ? formatManuskriptCanonReferenceBlock(roman)
+          : "";
+
+    const userText = `${compliance}
+${canonRefBlock ? `\n${canonRefBlock}\n` : ""}
 # Altersklasse
 ${alter}
 lesestufe: ${editorial.lesestufe?.trim() || "—"}
@@ -396,9 +425,9 @@ lesestufe: ${editorial.lesestufe?.trim() || "—"}
 ${stageLabel} (${input.stage})${
   input.stage === "expose"
     ? "\nSpec = Charaktere + Welt + Exposé als ein Brief (Artefakt unten).\nPrüfe ausdrücklich, ob dieses Spec einen ganzen Roman tragen kann — Lücken hier später teuer."
-    : input.stage === "kapitelgeruest"
-      ? "\nArtefakt = STRUCTURED Kapitelgerüst (Spiegel aus JSON: centralArcs + Kapitel mit Lifecycle/arcBeats). Bewerte genau diese Felder."
-      : input.stage === "szenenplot"
+    : isGeruestStage(input.stage)
+      ? "\nArtefakt = STRUCTURED Kapitelgerüst / Plot-Ereignisplan (Spiegel aus JSON: centralArcs + Kapitel mit Lifecycle/arcBeats). Bewerte genau diese Felder."
+      : isPlotStage(input.stage)
         ? "\nArtefakt = STRUCTURED Szenenplot (Spiegel aus JSON: Arcs, Lifecycle, Szenenverträge inkl. schreibPrompt)."
         : ""
 }
@@ -414,6 +443,8 @@ ${highBand}
 
 # Artefakt
 ${artifact}
+
+${geruestClaimBlock}
 
 ${focusAnalyzeAddendum(focus, input.stage)}
 
@@ -628,8 +659,8 @@ export async function applyStageVerbessern(input: {
 
     if (
       input.stage === "manuskript" ||
-      input.stage === "szenenplot" ||
-      input.stage === "kapitelgeruest"
+      isPlotStage(input.stage) ||
+      isGeruestStage(input.stage)
     ) {
       const chapterPlan = resolveReifegradImproveChapters(chapterDoc, plan);
       if (chapterPlan.chapterNumbers.length === 0) {
@@ -724,7 +755,7 @@ export async function applyStageVerbessern(input: {
       const score = assessed.score;
       const coverageLabel = formatAssessCoverageLabel(assessed.coverage);
 
-      if (reifegradGesamtRegressed(previous, score)) {
+      if (reifegradGesamtRegressed(previous, score, input.stage)) {
         roman = await persistEditorial(
           { ...roman, ...snapshotRoots },
           snapshotEditorial,

@@ -47,7 +47,7 @@ Antwort NUR als JSON:
 ${spine.slice(0, 3_500)}
 
 # Kapitel-Prosa
-${input.prose.slice(0, 14_000)}
+${input.prose.slice(0, 32_000)}
 
 Prüfe nur Raum/Etage/Prop-Ablage.`,
         preferJson: true,

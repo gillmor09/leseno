@@ -40,7 +40,7 @@ Pro Fehler: kurzes Zitat + korrekte Form.
 Antwort NUR als JSON:
 {"violations":[{"message":"„…“ → besser: „…“ (Grund kurz)"}]}`,
         userText: `# Kapitel-Prosa
-${input.prose.slice(0, 14_000)}
+${input.prose.slice(0, 32_000)}
 
 Nur klare Grammatik-/Rektionsfehler melden (max. 5).`,
         preferJson: true,

@@ -25,6 +25,21 @@ export type ReifegradFreigabe =
   | "freigabe_bedenken"
   | "freigabe";
 
+/** Which score axis a Beleg belongs to (`a`/`b`/`c` = craft slots). */
+export type ReifegradBelegAchse = "logik" | "a" | "b" | "c";
+
+/**
+ * One grounded piece of evidence behind a score (chapter numbers + short
+ * finding). Without Belege a Manuskript score is unverifiable; see
+ * `assessStageReifegrad` which demands 3–5 per axis.
+ */
+export type ReifegradBeleg = {
+  achse: ReifegradBelegAchse;
+  /** Chapter numbers (empty for non-chapter stages). */
+  kapitel: number[];
+  text: string;
+};
+
 export type StageReifegrad = {
   /** Logik / Kontinuität 0–100 (legacy key name `regelnPct`). */
   regelnPct: number;
@@ -50,7 +65,41 @@ export type StageReifegrad = {
   freigabe: ReifegradFreigabe;
   assessedAt: string;
   modelLabel: string;
+  /** Evidence per axis (optional — legacy rows and fallback scoring have none). */
+  belege?: ReifegradBeleg[];
 };
+
+const BELEG_MAX = 24;
+const BELEG_TEXT_MAX = 400;
+
+/** Tolerant parse of a stored / model-emitted Beleg list. */
+export function parseReifegradBelege(raw: unknown): ReifegradBeleg[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ReifegradBeleg[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const r = item as Record<string, unknown>;
+    const achseRaw = String(r.achse ?? "").trim().toLowerCase();
+    const achse: ReifegradBelegAchse | null =
+      achseRaw === "logik" || achseRaw === "a" || achseRaw === "b" || achseRaw === "c"
+        ? achseRaw
+        : null;
+    const text = String(r.text ?? "").trim().slice(0, BELEG_TEXT_MAX);
+    if (!achse || !text) continue;
+    const kapitelRaw = Array.isArray(r.kapitel) ? r.kapitel : [];
+    const kapitel = [
+      ...new Set(
+        kapitelRaw
+          .map((n) => Number(n))
+          .filter((n) => Number.isFinite(n) && n >= 1)
+          .map((n) => Math.floor(n)),
+      ),
+    ].sort((a, b) => a - b);
+    out.push({ achse, kapitel, text });
+    if (out.length >= BELEG_MAX) break;
+  }
+  return out;
+}
 
 /**
  * Pipeline stage scores plus optional `roman` (post-Verbessern polish).
@@ -94,7 +143,17 @@ export function formatReifegradeForRouter(
       lines.push(`- ${stage}: noch nicht bewertet`);
       continue;
     }
-    const [a, b, c] = STAGE_CRAFT_DIMENSIONS[stage];
+    if (stage === "idee") {
+      // Weight-priority order: Kernkonflikt 30 · Tragfähigkeit 30 · Logik 25 · Schärfe 15.
+      lines.push(
+        `- ${PIPELINE_STAGE_LABELS[stage]} (${stage}): Gesamt ${s.gesamtPct}% (${REIFEGRAD_FREIGABE_LABEL[s.freigabe]}) · Kernkonflikt ${s.dramaturgiePct}% · Tragfähigkeit ${s.leseflussPct}% · Logik ${s.regelnPct}% · Schärfe ${s.stilPct}%`,
+      );
+      continue;
+    }
+    const craft =
+      STAGE_CRAFT_DIMENSIONS[stage] ??
+      STAGE_CRAFT_DIMENSIONS.manuskript;
+    const [a, b, c] = craft;
     lines.push(
       `- ${PIPELINE_STAGE_LABELS[stage]} (${stage}): Gesamt ${s.gesamtPct}% (${REIFEGRAD_FREIGABE_LABEL[s.freigabe]}) · Logik ${s.regelnPct}% · ${a.label} ${s.stilPct}% · ${b.label} ${s.dramaturgiePct}% · ${c.label} ${s.leseflussPct}%`,
     );
@@ -178,7 +237,9 @@ export function freigabeFromPct(pct: number): ReifegradFreigabe {
 }
 
 /**
- * Overall = unweighted mean of Logik + three craft axes.
+ * Overall maturity %.
+ * Idee: weighted Logik 25% · Schärfe 15% · Kernkonflikt 30% · Tragfähigkeit 30%.
+ * Other stages: unweighted mean of Logik + three craft (4).
  * Bedürfnis-Felder werden ignoriert (Marktanalyse wird separat überarbeitet).
  */
 export function computeGesamtPct(input: {
@@ -190,9 +251,18 @@ export function computeGesamtPct(input: {
   erfuelltesBeduerfnisPct?: number;
   /** @deprecated ignored */
   vernachlaessigtesBeduerfnisPct?: number;
-  /** When set, reserved for future stage-specific averaging; currently always 4. */
+  /** Idee uses weighted mix; others equal /4. */
   stage?: PipelineStage;
 }): number {
+  if (input.stage === "idee") {
+    // Inline weights (same as IDEE_REIFEGRAD_WEIGHTS) to avoid circular import.
+    const raw =
+      input.regelnPct * 0.25 +
+      input.stilPct * 0.15 +
+      input.dramaturgiePct * 0.3 +
+      input.leseflussPct * 0.3;
+    return clampPct(raw);
+  }
   const raw =
     (input.regelnPct +
       input.stilPct +
@@ -212,6 +282,7 @@ export function buildStageReifegrad(input: {
   modelLabel: string;
   assessedAt?: string;
   stage?: PipelineStage;
+  belege?: ReifegradBeleg[];
 }): StageReifegrad {
   const regelnPct = clampPct(input.regelnPct);
   const erfuelltesBeduerfnisPct = clampPct(input.erfuelltesBeduerfnisPct);
@@ -247,6 +318,7 @@ export function buildStageReifegrad(input: {
     freigabe: freigabeFromPct(gesamtPct),
     assessedAt: input.assessedAt ?? new Date().toISOString(),
     modelLabel: input.modelLabel.slice(0, 120),
+    ...(input.belege?.length ? { belege: input.belege.slice(0, BELEG_MAX) } : {}),
   };
 }
 
@@ -278,6 +350,7 @@ function parseOneReifegrad(raw: unknown): StageReifegrad | null {
       typeof row.assessedAt === "string" && row.assessedAt.trim()
         ? row.assessedAt
         : new Date().toISOString(),
+    belege: parseReifegradBelege(row.belege),
   });
 }
 
@@ -288,6 +361,25 @@ export function parseRomanReifegrade(raw: unknown): RomanReifegrade {
   for (const stage of PIPELINE_STAGES) {
     const parsed = parseOneReifegrad(row[stage]);
     if (parsed) out[stage] = parsed;
+  }
+  /** Soft-promote legacy scores onto Plot / Szenen when canonical key missing. */
+  const promote: Array<[string, (typeof PIPELINE_STAGES)[number]]> = [
+    ["kapitelgeruest", "plot"],
+    ["grobgeruest", "plot"],
+    ["feingeruest", "plot"],
+    ["szenenplot", "szenen"],
+    ["grobplot", "szenen"],
+    ["feinplot", "szenen"],
+    ["charaktere", "fundament"],
+    ["welt", "fundament"],
+    ["basics", "rahmen"],
+    ["typ", "rahmen"],
+    ["spec", "expose"],
+  ];
+  for (const [legacy, canonical] of promote) {
+    if (out[canonical]) continue;
+    const parsed = parseOneReifegrad(row[legacy]);
+    if (parsed) out[canonical] = parsed;
   }
   const romanScore = parseOneReifegrad(row.roman);
   if (romanScore) out.roman = romanScore;

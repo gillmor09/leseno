@@ -28,7 +28,11 @@ export type PipelineHistoryTrigger =
   | "stage_verbessern_apply"
   | "canon_logic_plan"
   | "canon_logic_apply"
-  | "manuskript_chapter";
+  | "manuskript_chapter"
+  | "stage_gate_override"
+  | "phase_freigabe"
+  | "pipeline_reset_idee"
+  | "basics_from_idee";
 
 export type PipelineHistoryEvent = {
   at: string;

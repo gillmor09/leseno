@@ -52,6 +52,7 @@ ${draft}
 
 Gib ein parsebares Objekt gemäß Schema zurück (bei Truncation: unvollständige Trailing-Szene weglassen).`,
     maxTokens: input.maxTokens ?? 12_000,
+    // Prefer caller budget; default follows raised global AI timeout.
     timeoutMs: input.timeoutMs ?? AI_FETCH_TIMEOUT_MS,
   });
 

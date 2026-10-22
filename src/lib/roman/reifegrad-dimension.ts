@@ -39,13 +39,15 @@ import {
 } from "@/lib/roman/pipeline/history";
 import {
   PIPELINE_STAGE_LABELS,
+  isGeruestStage,
+  isPlotStage,
   romanApplyRoleKey,
   type PipelineStage,
 } from "@/lib/roman/pipeline/stages";
 import { filterAenderungsPromptsByGrounding } from "@/lib/roman/critique-grounding";
 import {
   formatReifegradRegressionSummary,
-  reifegradGesamtRegressed,
+  reifegradDimensionApplyRegressed,
 } from "@/lib/roman/improve-apply-guard";
 import {
   ROMAN_CRITIQUE_FOCUS_MANDATE,
@@ -67,6 +69,8 @@ import {
   assessStageReifegrad,
   editorialWithReifegrad,
   formatAssessCoverageLabel,
+  formatManuskriptCanonReferenceBlock,
+  formatStructureCanonReferenceBlock,
   getStageArtifactText,
 } from "@/lib/roman/reifegrad";
 import type { ReifegradAssessKey } from "@/lib/roman/reifegrad-model";
@@ -91,13 +95,13 @@ function improveChapterDoc(
   const ed = roman.editorial ?? emptyRomanEditorial();
   if (stage === "roman") return ed.romanText ?? "";
   if (stage === "manuskript") return ed.manuskriptText ?? "";
-  if (stage === "kapitelgeruest") {
+  if (isGeruestStage(stage)) {
     if (ed.kapitelGeruestStructured?.chapters.length) {
       return structuredKapitelGeruestToMarkdown(ed.kapitelGeruestStructured);
     }
     return ed.kapitelGeruestRaw ?? "";
   }
-  if (stage === "szenenplot") {
+  if (isPlotStage(stage)) {
     if (ed.szenenplotStructured?.chapters.length) {
       return structuredSzenenplotToMarkdown(ed.szenenplotStructured);
     }
@@ -358,8 +362,8 @@ export async function analyzeReifegradDimension(input: {
     const artifact = getStageArtifactText(roman, input.stage);
     const alter = altergruppeLabel(editorial);
     const chapterStages =
-      input.stage === "kapitelgeruest" ||
-      input.stage === "szenenplot" ||
+      isGeruestStage(input.stage) ||
+      isPlotStage(input.stage) ||
       input.stage === "manuskript" ||
       input.stage === "roman";
     const previousScore = editorial.reifegrade?.[input.stage] ?? null;
@@ -388,8 +392,21 @@ export async function analyzeReifegradDimension(input: {
       ),
     };
 
-    const userText = `${compliance}
+    // Same canon the Bewerter sees — Manuskript/Roman Logik is judged against
+    // the Szenenplot Soll (who knows what when, timeline, state-after).
+    const canonRefBlock =
+      isGeruestStage(input.stage) ||
+      isPlotStage(input.stage) ||
+      input.stage === "graph"
+        ? formatStructureCanonReferenceBlock(roman, {
+            includeGraph: input.stage !== "graph",
+          })
+        : input.stage === "manuskript" || input.stage === "roman"
+          ? formatManuskriptCanonReferenceBlock(roman)
+          : "";
 
+    const userText = `${compliance}
+${canonRefBlock ? `\n${canonRefBlock}\n` : ""}
 # Altersklasse
 ${alter}
 lesestufe: ${editorial.lesestufe?.trim() || "—"}
@@ -398,9 +415,9 @@ lesestufe: ${editorial.lesestufe?.trim() || "—"}
 ${stageLabel} (${input.stage})${
   input.stage === "expose"
     ? "\nSpec = Charaktere + Welt + Exposé als ein Brief (Artefakt unten).\nRoman-Tragfähigkeit: Diese Dimension gegen „reicht für einen ganzen Roman?“ prüfen."
-    : input.stage === "kapitelgeruest"
-      ? "\nArtefakt = STRUCTURED Kapitelgerüst (JSON-Spiegel: centralArcs + Kapitel-Lifecycle/arcBeats)."
-      : input.stage === "szenenplot"
+    : isGeruestStage(input.stage)
+      ? "\nArtefakt = STRUCTURED Kapitelgerüst / Plot-Ereignisplan (JSON-Spiegel: centralArcs + Kapitel-Lifecycle/arcBeats)."
+      : isPlotStage(input.stage)
         ? "\nArtefakt = STRUCTURED Szenenplot (JSON-Spiegel: Arcs, Szenenverträge, schreibPrompt)."
         : input.stage === "roman"
           ? "\nArtefakt = Roman-Prosa (romanText) nach Stil-Pass. Content frozen: Nur Stil/Lesefluss vorschlagen — keine neuen Beats/Fakten."
@@ -688,8 +705,8 @@ export async function applyReifegradDimensionPlan(input: {
       );
     } else if (
       input.stage === "manuskript" ||
-      input.stage === "szenenplot" ||
-      input.stage === "kapitelgeruest"
+      isPlotStage(input.stage) ||
+      isGeruestStage(input.stage)
     ) {
       const chapterPlan = resolveReifegradImproveChapters(chapterDoc, plan);
       if (chapterPlan.chapterNumbers.length === 0) {
@@ -789,15 +806,31 @@ export async function applyReifegradDimensionPlan(input: {
       const score = assessed.score;
       const coverageLabel = formatAssessCoverageLabel(assessed.coverage);
 
-      if (reifegradGesamtRegressed(previous, score)) {
+      if (
+        reifegradDimensionApplyRegressed(previous, score, {
+          stage: input.stage,
+          dimension: input.dimension,
+        })
+      ) {
         roman = await persistEditorial(
           { ...roman, ...snapshotRoots },
           snapshotEditorial,
+        );
+        const dimDef = findDimensionDefForAssessKey(
+          input.stage,
+          input.dimension,
         );
         const regression = formatReifegradRegressionSummary({
           label: dimLabel,
           previousPct: previous!.gesamtPct,
           nextPct: score.gesamtPct,
+          ...(dimDef
+            ? {
+                axisLabel: dimDef.label,
+                axisPreviousPct: pctForDimension(previous!, dimDef),
+                axisNextPct: pctForDimension(score, dimDef),
+              }
+            : {}),
         });
         events.push(
           historyEvent({

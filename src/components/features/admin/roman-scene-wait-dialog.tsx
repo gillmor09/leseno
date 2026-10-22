@@ -13,15 +13,16 @@ import { loadRomanKiRollenAction } from "@/app/actions/roman-roles-admin";
 import { findWiredAiEndpoint, isImageAiProvider } from "@/lib/ai/wired-models";
 import {
   ROMAN_ASSIST_MODEL_SLUG,
-  ROMAN_PROSE_ROLE_KEY,
+  isRomanProseRoleKey,
 } from "@/lib/roman/assist-model";
 import { lockBodyScroll } from "@/lib/ui/body-scroll-lock";
 
 export type WaitAgentInfo = { roleLabel: string; modelLabel: string };
 
 /**
- * Model label as runtime resolves it (not raw DB slug).
- * Only `co_autor` Manuskript-Prosa keeps Sonnet etc.; everything else → Assist-Flash.
+ * Model label matching {@link resolveRomanKiRolle}: Admin `modelSlug` by default.
+ * Prose roles (`co_autor` / `autor`) without `allowProseModel: true` → assist model
+ * (Haiku 5.5; same gate as Spec-Entwurf ohne teure Prosa).
  */
 export function waitModelLabelForRole(
   roleKey: string,
@@ -29,16 +30,15 @@ export function waitModelLabelForRole(
   opts?: { allowProseModel?: boolean },
 ): string {
   const key = roleKey.trim();
-  if (key.startsWith("clever_")) {
-    return findWiredAiEndpoint(modelSlug)?.label ?? modelSlug;
-  }
   const wired = findWiredAiEndpoint(modelSlug);
   if (wired && isImageAiProvider(wired.provider)) {
     return wired.label;
   }
-  const prose =
-    key === ROMAN_PROSE_ROLE_KEY && opts?.allowProseModel === true;
-  const slug = prose ? modelSlug : ROMAN_ASSIST_MODEL_SLUG;
+  const forceAssist =
+    !key.startsWith("clever_") &&
+    isRomanProseRoleKey(key) &&
+    opts?.allowProseModel === false;
+  const slug = forceAssist ? ROMAN_ASSIST_MODEL_SLUG : modelSlug;
   return findWiredAiEndpoint(slug)?.label ?? slug;
 }
 
@@ -48,13 +48,6 @@ const IDEE_QA_STEPS = [
   "Coach formuliert Rückfragen und Impulse",
   "Ideen-Redakteur verwebt die Runde",
   "Idee und Dialog werden gespeichert",
-] as const;
-
-const RECHERCHE_QA_STEPS = [
-  "Recherche-Coach liest Idee und Nachfrage",
-  "Google Search recherchiert Hintergründe",
-  "Recherche-Redakteur verwebt das Dossier",
-  "Recherche und Quellen werden gespeichert",
 ] as const;
 
 const MARKTANALYSE_STEPS = [
@@ -103,28 +96,31 @@ export const SPEC_GENERATE_STEPS = [
   "Figuren stecken",
   "Welt / Schauplätze",
   "Exposé schreiben",
-  "Reifegrad bewerten",
+  "Reifegrad / Hard-Gate",
 ] as const;
 
-/** Checklist when Erzeugen runs on Kapitelgerüst. */
+/** @deprecated Use {@link PLOT_GENERATE_STEPS} — Gerüst is internal to Plot. */
 export const KAPITELGERUEST_GENERATE_STEPS = [
   "Outline & Spannungsbögen",
   "Kapitel einzeln detaillieren",
   "Wissensgraph aktualisieren",
-  "Reifegrad bewerten",
+  "Reifegrad + Auto-Repair Logik",
 ] as const;
 
-/** Checklist when Erzeugen runs on Szenenplot. */
-export const SZENENPLOT_GENERATE_STEPS = [
-  "Gerüst lesen & Szenen planen",
-  "Szenen + Schreibprompts schreiben",
+/** Checklist when Erzeugen runs on unified Plot (Gerüst → Szenen). */
+export const PLOT_GENERATE_STEPS = [
+  "Kapitel-Gerüst & Arcs",
+  "Szenen + Schreibprompts",
   "Wissensgraph aktualisieren",
-  "Reifegrad bewerten",
+  "Reifegrad + Auto-Repair Logik",
 ] as const;
+
+/** @deprecated Alias → {@link PLOT_GENERATE_STEPS} */
+export const SZENENPLOT_GENERATE_STEPS = PLOT_GENERATE_STEPS;
 
 /** Checklist when Alles erzeugen runs on Manuskript. */
 export const MANUSKRIPT_GENERATE_STEPS = [
-  "Arbeitsbrief / Verträge einfrieren",
+  "Plot-Hard-Gate prüfen",
   "Kapitel nacheinander schreiben",
   "Qualität / Continuity je Kapitel",
   "Reifegrad bewerten",
@@ -235,7 +231,6 @@ const VEREINFACHEN_STEPS = [
 
 type WaitVariant =
   | "idee"
-  | "recherche"
   | "marktanalyse"
   | "clever-unterthemen"
   | "clever-faktencheck"
@@ -301,8 +296,6 @@ function roleKeysForVariant(variant: WaitVariant): string[] {
   switch (variant) {
     case "idee":
       return ["schreib_coach", "ideen_redakteur"];
-    case "recherche":
-      return ["recherche_coach", "recherche_redakteur"];
     case "marktanalyse":
       return ["marktanalyst"];
     case "clever-unterthemen":
@@ -368,7 +361,7 @@ function agentInfoFromRoleKeys(
   const roleLabel = picked.map((r) => r.label).join(" → ");
   const models = picked.map((r) =>
     waitModelLabelForRole(r.key, r.modelSlug, {
-      allowProseModel: allowProse && r.key === ROMAN_PROSE_ROLE_KEY,
+      allowProseModel: allowProse && isRomanProseRoleKey(r.key),
     }),
   );
   const modelLabel =
@@ -382,8 +375,6 @@ function stepsForVariant(variant: WaitVariant) {
   switch (variant) {
     case "idee":
       return IDEE_QA_STEPS;
-    case "recherche":
-      return RECHERCHE_QA_STEPS;
     case "marktanalyse":
       return MARKTANALYSE_STEPS;
     case "clever-unterthemen":
@@ -436,8 +427,6 @@ function contextForVariant(variant: WaitVariant): string {
   switch (variant) {
     case "idee":
       return "Idee · Dialog";
-    case "recherche":
-      return "Recherche · Dialog";
     case "marktanalyse":
       return "Basics · Marktanalyse";
     case "clever-unterthemen":
@@ -490,8 +479,6 @@ function titleForVariant(variant: WaitVariant) {
   switch (variant) {
     case "idee":
       return "Idee wird weiterentwickelt";
-    case "recherche":
-      return "Recherche läuft";
     case "marktanalyse":
       return "Marktanalyse läuft";
     case "clever-unterthemen":

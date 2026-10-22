@@ -1,11 +1,12 @@
 /**
  * Hard gate before Roman Verbessern (Gemini Lesefluss-Pass).
  * Blocks polish of a weak draft: Manuskript must clear Logik + Dramaturgie +
- * Stil/Lesefluss floors, and Idee Versprechen/Alleinstellung must hold —
+ * Stil/Lesefluss floors, and Idee Kernkonflikt + Tragfähigkeit must hold —
  * unless Roman tab is marked fertig.
  */
 
 import {
+  hardManuskriptFreigabeFindings,
   isManuskriptFreigabeReadyForRoman,
   isPipelineTabFertig,
   type RomanEditorial,
@@ -18,11 +19,15 @@ export const MANUSKRIPT_ROMAN_AXIS_MIN_PCT = 70;
 /** Min Manuskript Stil / Lesefluss % — floor so stil-pass does not cement a broken register. */
 export const MANUSKRIPT_ROMAN_STIL_MIN_PCT = 60;
 
-/** Min Idee-Versprechen % (craft B → dramaturgiePct) before Roman Verbessern. */
-export const IDEE_VERSPRECHEN_MIN_PCT = 70;
+/** Min Idee-Kernkonflikt % (craft B → dramaturgiePct) before Roman Verbessern. */
+export const IDEE_KERNKONFLIKT_MIN_PCT = 70;
+/** @deprecated Use {@link IDEE_KERNKONFLIKT_MIN_PCT}. */
+export const IDEE_VERSPRECHEN_MIN_PCT = IDEE_KERNKONFLIKT_MIN_PCT;
 
-/** Min Idee-Alleinstellung % (craft C → leseflussPct). */
-export const IDEE_ALLEINSTELLUNG_MIN_PCT = 40;
+/** Min Idee-Tragfähigkeit % (craft C → leseflussPct) before Roman Verbessern. */
+export const IDEE_TRAGFAEHIGKEIT_MIN_PCT = 65;
+/** @deprecated Use {@link IDEE_TRAGFAEHIGKEIT_MIN_PCT}. */
+export const IDEE_ALLEINSTELLUNG_MIN_PCT = IDEE_TRAGFAEHIGKEIT_MIN_PCT;
 
 export type RomanVerbessernGate =
   | { ok: true }
@@ -71,7 +76,7 @@ export function getManuskriptRomanVerbessernGate(input: {
   if (!ms) {
     return {
       ok: false,
-      reason: `Manuskript-Reifegrad fehlt — bitte zuerst Manuskript messen (Logik und Dramaturgie je ≥${MANUSKRIPT_ROMAN_AXIS_MIN_PCT}%, Stil und Lesefluss je ≥${MANUSKRIPT_ROMAN_STIL_MIN_PCT}%), bevor der Roman-Feinschliff startet. Oder „Roman fertig“ setzen.`,
+      reason: `Manuskript-Reifegrad fehlt — bitte zuerst Manuskript messen (Logik und Dramaturgie je ≥${MANUSKRIPT_ROMAN_AXIS_MIN_PCT}%, Stil und Lesefluss je ≥${MANUSKRIPT_ROMAN_STIL_MIN_PCT}%), bevor der Roman-Feinschliff startet. Notfall: Tab „Roman“ → Fertig (expliziter Feinschliff-Override).`,
     };
   }
 
@@ -83,7 +88,7 @@ export function getManuskriptRomanVerbessernGate(input: {
   ) {
     return {
       ok: false,
-      reason: `Manuskript noch nicht freigabefähig für Roman-Verbessern (Logik ${logik}%, Dramaturgie ${drama}% — Ziel je ≥${MANUSKRIPT_ROMAN_AXIS_MIN_PCT}%). Bitte Manuskript Verbessern / Dimensionen nachziehen oder „Roman fertig“ setzen.`,
+      reason: `Manuskript noch nicht freigabefähig für Roman-Verbessern (Logik ${logik}%, Dramaturgie ${drama}% — Ziel je ≥${MANUSKRIPT_ROMAN_AXIS_MIN_PCT}%). Bitte Manuskript Verbessern / Dimensionen nachziehen (Notfall: Roman-Fertig als Override).`,
     };
   }
 
@@ -95,7 +100,7 @@ export function getManuskriptRomanVerbessernGate(input: {
   ) {
     return {
       ok: false,
-      reason: `Manuskript-Stil noch zu schwach als Anker für Roman-Verbessern (Stil ${stil}%, Lesefluss ${lesefluss}% — Ziel je ≥${MANUSKRIPT_ROMAN_STIL_MIN_PCT}%). Bitte Stil/Lesefluss nachziehen oder „Roman fertig“ setzen.`,
+      reason: `Manuskript-Stil noch zu schwach als Anker für Roman-Verbessern (Stil ${stil}%, Lesefluss ${lesefluss}% — Ziel je ≥${MANUSKRIPT_ROMAN_STIL_MIN_PCT}%). Bitte Stil/Lesefluss nachziehen (Notfall: Roman-Fertig als Override).`,
     };
   }
 
@@ -103,40 +108,40 @@ export function getManuskriptRomanVerbessernGate(input: {
   if (!idee) {
     return {
       ok: false,
-      reason: `Idee-Reifegrad fehlt — Versprechen muss gemessen sein (Versprechen ≥${IDEE_VERSPRECHEN_MIN_PCT}%), bevor der Roman-Feinschliff startet. Tab „Idee“ → Reifegrad messen, oder „Roman fertig“ setzen.`,
+      reason: `Idee-Reifegrad fehlt — Kernkonflikt (≥${IDEE_KERNKONFLIKT_MIN_PCT}%) und Tragfähigkeit (≥${IDEE_TRAGFAEHIGKEIT_MIN_PCT}%) müssen gemessen sein, bevor der Roman-Feinschliff startet. Tab „Idee“ → Reifegrad messen (Notfall: Roman-Fertig).`,
     };
   }
-  /** Idee craft B = Versprechen (stored as dramaturgiePct). */
-  const versprechen = idee.dramaturgiePct;
-  if (versprechen < IDEE_VERSPRECHEN_MIN_PCT) {
+  /** Idee craft B = Kernkonflikt (stored as dramaturgiePct). */
+  const kernkonflikt = idee.dramaturgiePct;
+  if (kernkonflikt < IDEE_KERNKONFLIKT_MIN_PCT) {
     return {
       ok: false,
-      reason: `Leseversprechen zu schwach für Roman-Verbessern (Idee · Versprechen ${versprechen}% — Ziel ≥${IDEE_VERSPRECHEN_MIN_PCT}%). Bitte Idee nachschärfen oder „Roman fertig“ setzen.`,
+      reason: `Idee-Kernkonflikt zu schwach für Roman-Verbessern (Kernkonflikt ${kernkonflikt}% — Ziel ≥${IDEE_KERNKONFLIKT_MIN_PCT}%). Bitte Idee nachschärfen (Notfall: Roman-Fertig).`,
     };
   }
-  /** Idee craft C = Alleinstellung (stored as leseflussPct). */
-  const alleinstellung = idee.leseflussPct;
-  if (alleinstellung < IDEE_ALLEINSTELLUNG_MIN_PCT) {
+  /** Idee craft C = Tragfähigkeit (stored as leseflussPct). */
+  const tragfaehigkeit = idee.leseflussPct;
+  if (tragfaehigkeit < IDEE_TRAGFAEHIGKEIT_MIN_PCT) {
     return {
       ok: false,
-      reason: `Idee-Alleinstellung zu schwach für Roman-Verbessern (Alleinstellung ${alleinstellung}% — Ziel ≥${IDEE_ALLEINSTELLUNG_MIN_PCT}%). Bitte Idee schärfen oder „Roman fertig“ setzen.`,
+      reason: `Idee-Tragfähigkeit zu schwach für Roman-Verbessern (Tragfähigkeit ${tragfaehigkeit}% — Ziel ≥${IDEE_TRAGFAEHIGKEIT_MIN_PCT}%). Bitte Idee nachschärfen (Notfall: Roman-Fertig).`,
     };
   }
 
   if (!isManuskriptFreigabeReadyForRoman(editorial)) {
     const freigabe = editorial.manuskriptFreigabe;
-    const n = freigabe?.findings.length ?? 0;
+    const n = hardManuskriptFreigabeFindings(freigabe?.findings).length;
     if (!freigabe?.checkedAt) {
       return {
         ok: false,
         reason:
-          "Zuerst Manuskript „fertig“ setzen — dort läuft der günstige Seam/Payoff-Check. Ohne Freigabe startet der Roman-Feinschliff nicht.",
+          "Zuerst im Tab Manuskript „fertig“ setzen — dort läuft der Seam/Payoff-/Canon-Check (Schreiben-Hard-Gate). Ohne Freigabe startet der Roman-Feinschliff nicht.",
       };
     }
     if (n > 0 && !freigabe.overrideAt) {
       return {
         ok: false,
-        reason: `Manuskript-Freigabe: noch ${n} Hinweis${n === 1 ? "" : "e"} (Nähte/Payoffs/Emotion). Bitte im Manuskript nachziehen oder dort „Trotzdem freigeben“ — sonst kein Roman-Feinschliff.`,
+        reason: `Manuskript-Freigabe: noch ${n} harte Hinweis${n === 1 ? "" : "e"} (Canon/Timeline/Plot-Wahrheit/Nähte). Bitte im Manuskript nachziehen oder dort „Trotzdem freigeben“ — sonst kein Roman-Feinschliff.`,
       };
     }
     return {
@@ -150,7 +155,7 @@ export function getManuskriptRomanVerbessernGate(input: {
 }
 
 /**
- * Block Roman Verbessern unless Manuskript Reifegrad and Idee-Versprechen
+ * Block Roman Verbessern unless Manuskript Reifegrad and Idee-Kernkonflikt
  * clear thresholds — or Roman fertig (override).
  */
 export function assertManuskriptReadyForRoman(input: {

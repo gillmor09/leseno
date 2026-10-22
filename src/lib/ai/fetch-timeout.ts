@@ -4,17 +4,21 @@
  * under Next.js / undici on long Claude / OpenAI prose runs).
  */
 
-/** Default hard cap per AI request. */
-export const AI_FETCH_TIMEOUT_MS = 90_000;
+/** Default hard cap per AI request (OpenAI / Claude). */
+export const AI_FETCH_TIMEOUT_MS = 300_000;
 
 /**
  * Absolute max when a caller opts into a longer budget
- * (Manuskript-Prosa / Reifegrad on full artifacts).
+ * (Manuskript-Prosa / greenfield Novel draft / Reifegrad / Gemini 4 Argon).
+ * Google recommends ≥20 min wall-clock for `gemini-4-argon`.
  */
-export const AI_FETCH_TIMEOUT_MAX_MS = 600_000;
+export const AI_FETCH_TIMEOUT_MAX_MS = 1_200_000;
 
-/** Recommended budget for long chapter prose (OpenAI / Co-Autor). */
-export const AI_LONG_PROSE_TIMEOUT_MS = 300_000;
+/** Recommended budget for long chapter prose (OpenAI / Co-Autor / Novel-Autor). */
+export const AI_LONG_PROSE_TIMEOUT_MS = 480_000;
+
+/** Default wall-clock for Gemini 4 Argon (explicit cache off, long decode). */
+export const GEMINI_4_ARGON_TIMEOUT_MS = 1_200_000;
 
 /**
  * Clamp a caller budget into [1s, max]. Invalid / missing → default.

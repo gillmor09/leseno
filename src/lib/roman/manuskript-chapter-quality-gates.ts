@@ -1,11 +1,11 @@
 /**
  * Sequential post-draft quality gates for Manuskript chapters.
- * Order: Verbote/Geheimnisse → Abdeckung → Raum → Maße → Sprache → Verify.
+ * Order: Verbote/Geheimnisse → Abdeckung → Raum → Maße → Plot-Truth → Humor → Szenentrenner → Sprache → Verify.
  * One rewrite per failing phase so later fixes do not undo earlier ones;
  * final verify re-checks Raum+Maße+Sprache once.
  */
 
-import type { RomanWissensGraph } from "@/lib/roman/editorial";
+import type { RomanStoryState, RomanWissensGraph } from "@/lib/roman/editorial";
 import {
   formatContractViolationRewriteBrief,
   validateManuskriptChapterAgainstContracts,
@@ -19,9 +19,21 @@ import {
   validateManuskriptChapterGrammar,
 } from "@/lib/roman/manuskript-grammar-validate";
 import {
+  formatHumorPresenceRewriteBrief,
+  validateManuskriptChapterHumorPresence,
+} from "@/lib/roman/manuskript-humor-presence";
+import {
+  formatPlotTruthRewriteBrief,
+  validateChapterAgainstPriorClaims,
+} from "@/lib/roman/manuskript-plot-truth";
+import {
   formatSpatialViolationRewriteBrief,
   validateManuskriptChapterSpatial,
 } from "@/lib/roman/manuskript-spatial-validate";
+import {
+  chapterMissingSceneBreaks,
+  formatSceneBreakRewriteBrief,
+} from "@/lib/roman/manuskript-scene-breaks";
 import type { RomanSzenenplotChapterNode } from "@/lib/roman/szenenplot-structured";
 import {
   formatMetricViolationRewriteBrief,
@@ -47,6 +59,9 @@ export async function runManuskriptPostDraftQualityGates(input: {
   factContractsBlock?: string;
   /** For deterministic cm/mm continuity vs frozen MASS facts. */
   wissensGraph?: RomanWissensGraph | null;
+  storyState?: RomanStoryState | null;
+  /** Basics tonalitaet — humor presence soft gate. */
+  tonalitaet?: string | null;
   extractBody: (markdown: string, chapterNumber: number) => string | null;
   wordCountOf: (body: string) => number;
   rewrite: (patchedPacket: string) => Promise<ManuskriptGateWritten>;
@@ -144,7 +159,54 @@ export async function runManuskriptPostDraftQualityGates(input: {
     }
   }
 
-  // 4) Grammar last (after plot/space/metrics stable)
+  // 4) Plot-truth vs prior CLAIM ledger (Who-did-X)
+  {
+    const body = currentBody();
+    if (body) {
+      const truth = validateChapterAgainstPriorClaims({
+        prose: body,
+        chapterNumber: input.chapterNumber,
+        storyState: input.storyState,
+        wissensGraph: input.wissensGraph,
+      });
+      if (!truth.ok) {
+        await doRewrite(
+          formatPlotTruthRewriteBrief(truth.violations),
+          "Plot-Wahrheit",
+        );
+      }
+    }
+  }
+
+  // 4b) Humor presence vs Tonalität (soft rewrite when comedy expected)
+  {
+    const body = currentBody();
+    if (body) {
+      const humor = validateManuskriptChapterHumorPresence({
+        prose: body,
+        tonalitaet: input.tonalitaet,
+      });
+      if (!humor.ok) {
+        await doRewrite(
+          formatHumorPresenceRewriteBrief(humor.message),
+          "Humor-Präsenz",
+        );
+      }
+    }
+  }
+
+  // 4c) Missing print-style scene breaks (`* * *`)
+  {
+    const body = currentBody();
+    if (body && ch && chapterMissingSceneBreaks(body, ch.scenes.length)) {
+      await doRewrite(
+        formatSceneBreakRewriteBrief(ch.scenes),
+        "Szenentrenner",
+      );
+    }
+  }
+
+  // 5) Grammar last (after plot/space/metrics/tone stable)
   {
     const body = currentBody();
     if (body) {
@@ -158,7 +220,7 @@ export async function runManuskriptPostDraftQualityGates(input: {
     }
   }
 
-  // 5) Verify: Raum + Maße + Sprache once more (catch tear-apart from last rewrite)
+  // 6) Verify: Raum + Maße + Sprache once more (catch tear-apart from last rewrite)
   {
     const body = currentBody();
     if (!body || rewrites >= MAX_REWRITES) return written;

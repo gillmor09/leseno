@@ -128,7 +128,7 @@ Antwort NUR als JSON:
 ${numbered}
 
 # Kapitel-Prosa
-${input.prose.slice(0, 14_000)}
+${input.prose.slice(0, 32_000)}
 
 Welche Pflichten fehlen klar? Max. 6. Wenn alles abgedeckt: leeres Array.`,
         preferJson: true,

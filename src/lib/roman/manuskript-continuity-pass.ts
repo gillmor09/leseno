@@ -11,12 +11,14 @@ import type {
   RomanEditorial,
   RomanWissensGraph,
 } from "@/lib/roman/editorial";
+import { retainApprovedStructureFingerprints } from "@/lib/roman/phase-fingerprints";
 import {
   parsePlotChapters,
   serializeManuskriptChapters,
   serializePlotChapters,
 } from "@/lib/roman/plot-chapters";
 import type { RomanCharakter } from "@/lib/roman/types";
+import { canonicalizeKennzeichenInText } from "@/lib/roman/kennzeichen-canon";
 import {
   extractMetricMentions,
   freezeMetricFactsFromChapters,
@@ -68,10 +70,92 @@ const IDENTITY_KEYS = [
   "model",
   "marke",
   "brand",
+  "material",
+  "werkstoff",
+  "materialien",
   "hausnummer",
   "strasse",
   "adresse",
 ] as const;
+
+/** Closed-set rivals for prop material / werkstoff (Absicherung: Alu vs. Kunststoff). */
+const MATERIAL_TOKENS = [
+  "aluminium",
+  "aluminum",
+  "alu",
+  "kunststoff",
+  "plastik",
+  "plastic",
+  "metall",
+  "stahl",
+  "blech",
+  "holz",
+  "eiche",
+  "gummi",
+  "glas",
+  "titan",
+  "titanium",
+  "carbon",
+  "karbon",
+] as const;
+
+const COLOR_TOKENS = [
+  "schwarz",
+  "weiß",
+  "weiss",
+  "silber",
+  "grau",
+  "blau",
+  "rot",
+  "grün",
+  "gruen",
+  "gelb",
+  "braun",
+  "orange",
+  "beige",
+  "gold",
+] as const;
+
+function normalizeMaterialToken(raw: string): string {
+  const t = raw.toLowerCase().trim();
+  if (t === "alu" || t === "aluminum") return "aluminium";
+  if (t === "plastik" || t === "plastic") return "kunststoff";
+  if (t === "karbon") return "carbon";
+  if (t === "titanium") return "titan";
+  if (t === "weiss") return "weiß";
+  if (t === "gruen") return "grün";
+  return t;
+}
+
+/**
+ * True when a closed-set rival is already covered by the frozen attr.
+ * Compound canons like „Glas und Aluminiumrahmen“ must not flag „Glas“
+ * or „Aluminium“ as drift (that looped forever on Freigabe/Kontinuität).
+ */
+function rivalMatchesFrozenCanon(canon: string, rivalNorm: string): boolean {
+  const whole = normalizeMaterialToken(canon);
+  if (whole === rivalNorm) return true;
+  const parts = canon
+    .toLowerCase()
+    .split(/[^a-zäöüß0-9]+/i)
+    .map((p) => normalizeMaterialToken(p))
+    .filter((p) => p.length >= 2);
+  for (const p of parts) {
+    if (p === rivalNorm) return true;
+    // Compound nouns: Aluminiumrahmen ↔ aluminium / alu
+    if (rivalNorm.length >= 3 && p.startsWith(rivalNorm)) return true;
+    if (p.length >= 3 && rivalNorm.startsWith(p)) return true;
+  }
+  return false;
+}
+
+function isMaterialKey(key: string): boolean {
+  return key === "material" || key === "werkstoff" || key === "materialien";
+}
+
+function isColorKey(key: string): boolean {
+  return key === "farbe" || key === "color";
+}
 
 const PLATE_RE =
   /\b[A-ZÄÖÜ]{1,3}-[A-ZÄÖÜ]{1,2}\s*\d{1,4}[A-Z]?\b/g;
@@ -341,6 +425,69 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/**
+ * Nearest prop-label distance to a plate hit (chars). Loose Wagen/Auto
+ * matching caused flip-flops between two vehicles' Kennzeichen.
+ */
+const PLATE_PROP_WINDOW = 140;
+
+function plateAttrCanon(node: {
+  attrs: Record<string, string>;
+}): string | null {
+  for (const key of ["kennzeichen", "nummernschild", "plate"] as const) {
+    const v = node.attrs[key]?.trim();
+    if (v && v.length >= 2) return v.replace(/\s+/g, " ").trim();
+  }
+  return null;
+}
+
+/** Label / distinct tokens of a prop for proximity anchoring. */
+function propAnchorNeedles(label: string): string[] {
+  const labelLc = label.toLowerCase().trim();
+  const tokens = labelLc
+    .split(/[^a-zäöüß0-9]+/i)
+    .filter(
+      (t) =>
+        t.length >= 4 &&
+        ![
+          "sowie",
+          "unter",
+          "durch",
+          "neben",
+          "hinter",
+          "variant",
+          "residenz",
+        ].includes(t),
+    );
+  return [labelLc, ...tokens.slice(0, 4)].filter(Boolean);
+}
+
+function nearestAnchorDistance(
+  bodyLc: string,
+  plateIdx: number,
+  plateLen: number,
+  needles: string[],
+): number {
+  let best = Number.POSITIVE_INFINITY;
+  for (const needle of needles) {
+    if (!needle) continue;
+    let pos = bodyLc.indexOf(needle);
+    while (pos >= 0) {
+      const plateEnd = plateIdx + plateLen;
+      const needleEnd = pos + needle.length;
+      const dist =
+        plateIdx >= needleEnd
+          ? plateIdx - needleEnd
+          : pos >= plateEnd
+            ? pos - plateEnd
+            : 0;
+      if (dist < best) best = dist;
+      pos = bodyLc.indexOf(needle, pos + needle.length);
+    }
+  }
+  return best;
+}
+
 /** Scan Prop identity attrs (plates etc.) against prose. */
 export function scanIdentityContinuityFixes(
   manuskriptText: string,
@@ -352,12 +499,66 @@ export function scanIdentityContinuityFixes(
   const seen = new Set<string>();
 
   const props = graph.nodes.filter(
-    (n) =>
-      n.kind === "prop" ||
-      n.kind === "place" ||
-      n.kind === "person" ||
-      n.kind === "fact",
+    (n) => n.kind === "prop" || n.kind === "place",
   );
+
+  const plateProps = props
+    .map((n) => {
+      const canon = plateAttrCanon(n);
+      if (!canon) return null;
+      return {
+        node: n,
+        canon,
+        needles: propAnchorNeedles(n.label),
+      };
+    })
+    .filter((x): x is NonNullable<typeof x> => Boolean(x));
+
+  // Assign each plate occurrence to the nearest Kennzeichen-prop by label.
+  // Prevents Stellplatz↔Passat Kennzeichen flip-flops on Übernehmen.
+  if (plateProps.length > 0) {
+    for (const ch of chapters) {
+      const body = ch.body;
+      const bodyLc = body.toLowerCase();
+      PLATE_RE.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = PLATE_RE.exec(body)) !== null) {
+        const plate = m[0].replace(/\s+/g, " ").trim();
+        const plateIdx = m.index;
+        let best: {
+          label: string;
+          canon: string;
+          dist: number;
+        } | null = null;
+        for (const pp of plateProps) {
+          const dist = nearestAnchorDistance(
+            bodyLc,
+            plateIdx,
+            m[0].length,
+            pp.needles,
+          );
+          if (dist > PLATE_PROP_WINDOW) continue;
+          if (!best || dist < best.dist) {
+            best = { label: pp.node.label, canon: pp.canon, dist };
+          }
+        }
+        if (!best) continue;
+        if (plate === best.canon) continue;
+        const id = `id:plate:${ch.number}:${plateIdx}:${plate}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        fixes.push({
+          id,
+          kind: "identity",
+          chapter: ch.number,
+          find: plate,
+          replace: best.canon,
+          reason: `${best.label}: Kennzeichen FROZEN „${best.canon}“, Text hat „${plate}“.`,
+          nearHint: best.label,
+        });
+      }
+    }
+  }
 
   for (const node of props) {
     for (const key of IDENTITY_KEYS) {
@@ -365,42 +566,98 @@ export function scanIdentityContinuityFixes(
       if (!canon || canon.length < 2) continue;
 
       if (key === "kennzeichen" || key === "nummernschild" || key === "plate") {
-        const plates = new Set<string>();
-        PLATE_RE.lastIndex = 0;
-        let m: RegExpExecArray | null;
-        while ((m = PLATE_RE.exec(manuskriptText)) !== null) {
-          plates.add(m[0].replace(/\s+/g, " ").trim());
-        }
-        const canonNorm = canon.replace(/\s+/g, " ").trim();
-        for (const plate of plates) {
-          if (plate.replace(/\s+/g, " ") === canonNorm) continue;
-          // Only flag if chapter also mentions this prop label / vehicle words
-          for (const ch of chapters) {
-            if (!ch.body.includes(plate)) continue;
-            const nearProp =
-              ch.body.toLowerCase().includes(node.label.toLowerCase()) ||
-              /kennzeichen|nummernschild|iX|BMW|Wagen|Auto/i.test(ch.body);
-            if (!nearProp) continue;
-            const id = `id:plate:${ch.number}:${plate}`;
+        // Handled above via nearest-prop assignment.
+        continue;
+      }
+
+      // Closed-set attrs (material, farbe): rival token near prop label → surgical replace.
+      // CRITICAL: Only match within ±60 chars of the full prop label (or ≥5-char distinct
+      // prop noun) and NEVER replace inside compound words or globally across a chapter!
+      if (isMaterialKey(key) || isColorKey(key)) {
+        const rivals = isMaterialKey(key) ? MATERIAL_TOKENS : COLOR_TOKENS;
+        const labelLc = node.label.toLowerCase();
+        const distinctTokens = labelLc
+          .split(/[^a-zäöüß0-9]+/i)
+          .filter(
+            (t) =>
+              t.length >= 5 &&
+              !["sowie", "unter", "durch", "neben", "hinter", "wohnung", "apartment"].includes(t),
+          )
+          .slice(0, 3);
+
+        for (const ch of chapters) {
+          const bodyLc = ch.body.toLowerCase();
+          // Find actual anchor positions of the prop in this chapter
+          const anchorIndices: number[] = [];
+          let pos = bodyLc.indexOf(labelLc);
+          while (pos >= 0) {
+            anchorIndices.push(pos);
+            pos = bodyLc.indexOf(labelLc, pos + labelLc.length);
+          }
+          if (!anchorIndices.length && distinctTokens.length >= 2) {
+            const firstTok = distinctTokens[0]!;
+            let tPos = bodyLc.indexOf(firstTok);
+            while (tPos >= 0) {
+              const win = bodyLc.slice(Math.max(0, tPos - 40), tPos + 80);
+              if (distinctTokens.every((dt) => win.includes(dt))) {
+                anchorIndices.push(tPos);
+              }
+              tPos = bodyLc.indexOf(firstTok, tPos + firstTok.length);
+            }
+          }
+          if (!anchorIndices.length) continue;
+
+          for (const rival of rivals) {
+            const rivalNorm = normalizeMaterialToken(rival);
+            if (rivalMatchesFrozenCanon(canon, rivalNorm)) continue;
+            // Strict word boundary match ONLY inside a narrow ±50 char window around an anchor
+            const rivalRe = new RegExp(
+              `(?<![\\p{L}\\p{N}])${escapeRegExp(rival)}(?![\\p{L}\\p{N}])`,
+              "giu",
+            );
+            let matchedContextSnippet: string | null = null;
+            let matchedRivalWord: string | null = null;
+            for (const anchorIdx of anchorIndices) {
+              const winStart = Math.max(0, anchorIdx - 45);
+              const winEnd = Math.min(ch.body.length, anchorIdx + labelLc.length + 45);
+              const snippet = ch.body.slice(winStart, winEnd);
+              rivalRe.lastIndex = 0;
+              const hit = rivalRe.exec(snippet);
+              if (hit?.[0]) {
+                matchedContextSnippet = snippet;
+                matchedRivalWord = hit[0];
+                break;
+              }
+            }
+            if (!matchedContextSnippet || !matchedRivalWord) continue;
+            const id = `id:${key}:${ch.number}:${node.id}:${rivalNorm}`;
             if (seen.has(id)) continue;
             seen.add(id);
+            const replacedSnippet = matchedContextSnippet.replace(
+              new RegExp(
+                `(?<![\\p{L}\\p{N}])${escapeRegExp(matchedRivalWord)}(?![\\p{L}\\p{N}])`,
+                "u",
+              ),
+              canon.trim(),
+            );
+            if (replacedSnippet === matchedContextSnippet) continue;
             fixes.push({
               id,
               kind: "identity",
               chapter: ch.number,
-              find: plate,
-              replace: canonNorm,
-              reason: `${node.label}: Kennzeichen FROZEN „${canonNorm}“, Text hat „${plate}“.`,
+              find: matchedContextSnippet,
+              replace: replacedSnippet,
+              reason: `${node.label}: ${key} FROZEN „${canon.trim()}“, Text hat „${matchedRivalWord}“.`,
               nearHint: node.label,
             });
+            if (fixes.length >= 30) return fixes;
           }
         }
         continue;
       }
 
-      // Generic: if canon never appears but a close wrong form does — skip (too risky).
-      // Only suggest when hardInvariant explicitly pins the value and a conflicting
-      // short token appears near the label.
+      // modell / marke / adresse: only when canon string never appears in chapter
+      // that names the prop, but a short conflicting token is too risky — skip.
       void key;
     }
   }
@@ -693,17 +950,21 @@ function applyFixInChapterBody(
     return { body: next, applied };
   }
 
-  if (fix.kind === "mass" && fix.nearHint) {
+  if ((fix.kind === "mass" || fix.kind === "identity") && fix.nearHint) {
     // Prefer replace inside a window that contains nearHint tokens
+    // (Kennzeichen: only rewrite the plate near Stellplatz/Passat, not both).
     const tokens = fix.nearHint.split(/\s+/).filter(Boolean);
     const idx = body.indexOf(fix.find);
     if (idx < 0) return { body, applied: false };
-    // Find occurrence whose ±80 chars overlap tokens
+    const windowPad = fix.kind === "identity" ? PLATE_PROP_WINDOW : 80;
     let searchFrom = 0;
     while (searchFrom < body.length) {
       const i = body.indexOf(fix.find, searchFrom);
       if (i < 0) break;
-      const win = body.slice(Math.max(0, i - 80), i + fix.find.length + 80);
+      const win = body.slice(
+        Math.max(0, i - windowPad),
+        i + fix.find.length + windowPad,
+      );
       const hit =
         tokens.length === 0 ||
         tokens.some((t) => win.toLowerCase().includes(t.toLowerCase()));
@@ -863,9 +1124,10 @@ function finalizeApply(
     };
   }
 
+  const canonText = canonicalizeKennzeichenInText(text, nextGraph);
   return {
-    text,
-    manuskriptText: text,
+    text: canonText,
+    manuskriptText: canonText,
     wissensGraph: nextGraph,
     appliedCount: appliedIds.length,
     appliedIds,
@@ -890,12 +1152,13 @@ export function editorialAfterContinuityApply(
           input.appliedFixes,
         ) as typeof editorial.kapitelGeruestStructured)
       : editorial.kapitelGeruestStructured;
-    return {
+    // Author-approved surgical fixes: refresh fingerprints, keep freigabe.
+    return retainApprovedStructureFingerprints({
       ...editorial,
       kapitelGeruestRaw: input.text,
       kapitelGeruestStructured: structured,
       wissensGraph: graph,
-    };
+    });
   }
   if (input.target === "szenenplot") {
     const structured = editorial.szenenplotStructured
@@ -904,17 +1167,17 @@ export function editorialAfterContinuityApply(
           input.appliedFixes,
         ) as typeof editorial.szenenplotStructured)
       : editorial.szenenplotStructured;
-    return {
+    return retainApprovedStructureFingerprints({
       ...editorial,
       szenenplotStructured: structured,
       wissensGraph: graph,
-    };
+    });
   }
-  return {
+  return retainApprovedStructureFingerprints({
     ...editorial,
     manuskriptText: input.text,
     wissensGraph: graph,
-  };
+  });
 }
 
 /** Resolve stage markdown for a continuity target from a loaded roman. */

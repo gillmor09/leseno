@@ -21,7 +21,7 @@ Admin: **KI-Modelle** → Modell anlegen (Slug wählen) → in **Roman KI-Rollen
 
 1. Buch wählen, dessen Manuskript-Pipeline du kennst (oder frisch erzeugen).
 2. **Branch / Notiz:** pro Lauf Modell + Datum + Tokenkosten (Pipeline-Historie).
-3. Pro Kandidat: **dieselbe** Ausgangslage (Idee/Recherche/Spec/Gerüst/Plot möglichst eingefroren).
+3. Pro Kandidat: **dieselbe** Ausgangslage (Idee/Spec/Gerüst/Plot möglichst eingefroren).
 4. Ideal: **zwei parallele Bücher** (Kopie) oder nacheinander mit Snapshot — nie mitten im Lauf das Modell wechseln.
 5. Effort/Thinking: Baseline `medium`; Haiku `medium`; Qwen/Llama Defaults.
 
@@ -31,9 +31,8 @@ Nur Schritte, die bei euch typischerweise Flash fressen:
 
 | # | Stufe | Was prüfen |
 | --- | --- | --- |
-| A | Idee / Recherche (kurz) | Brauchbare Struktur, kein Halluzinations-Müll |
-| B | Grob-/Feingerüst | Kapitelanzahl, Arc-Logik, keine Doppel-Intros |
-| C | Grob-/Feinplot / Szenenplot | MUSS/DARF-NICHT, Raum/Props, Schreibbarkeit |
+| A | Idee (kurz) | Brauchbare Struktur, kein Halluzinations-Müll |
+| B | Plot | Kapitel/Arcs + Szenenverträge, Who-did-X, Raum/Props |
 | D | Manuskript Erzeugen (mind. Kap. 1, 2, Mitte, Ende) | Stimme, Alter, Kontinuität |
 | E | Freigabe-Check (Seam/Payoff + Emotion) | Sinnvolle vs. Soft-Falschbefunde |
 | F | Hinweise nachziehen (optional 1×) | Patch verbessert wirklich oder zerlegt |

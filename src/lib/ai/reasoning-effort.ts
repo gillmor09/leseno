@@ -237,16 +237,16 @@ export function resolveReasoningEffort(
 }
 
 /**
- * Lowest supported effort for structured JSON scoring (Reifegrad).
- * OpenAI Luna: `none`. Gemini: `minimal` or `low` (never raw `none`).
- * Claude Sonnet 5.5: `low`.
+ * Light effort for structured JSON scoring (Reifegrad) and chapter JSON passes.
+ * Prefers `low` so the model can verify facts/dates across large prompts before
+ * emitting the JSON token, without burning heavy reasoning budgets.
  */
 export function lowestReasoningEffortForScoring(
   modelSlug: string,
 ): string | null {
   const options = reasoningEffortOptionsForModel(modelSlug);
   if (options.length === 0) return null;
-  for (const preferred of ["none", "minimal", "low"] as const) {
+  for (const preferred of ["low", "minimal", "none"] as const) {
     if (options.some((o) => o.value === preferred)) return preferred;
   }
   return options[0]?.value ?? null;
