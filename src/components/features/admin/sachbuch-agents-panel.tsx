@@ -1,13 +1,23 @@
 "use client";
 
 /**
- * Per-book agent matrix: model, Google Search (writer), system prompts.
+ * Per-book agent matrix: system prompts (+ Google Search where allowed).
+ * Models are hard-wired at runtime — UI shows the effective slug, not stale
+ * values from `agents.*.modelSlug`.
  */
 
 import { useState } from "react";
 import { toast } from "sonner";
 import { saveSachbuchAction } from "@/app/actions/sachbuch-admin";
-import type { SachbuchAgentKey, SachbuchAgents, SachbuchKontext } from "@/lib/sachbuch/types";
+import {
+  SACHBUCH_RUNTIME_MODEL_BY_AGENT,
+} from "@/lib/sachbuch/agent-defaults";
+import type {
+  SachbuchAgentKey,
+  SachbuchAgents,
+  SachbuchKontext,
+} from "@/lib/sachbuch/types";
+import { sachbuchModelLabel } from "@/lib/sachbuch/wait-presets";
 import { cn } from "@/lib/utils";
 
 const ROLE_META: Array<{
@@ -25,16 +35,26 @@ const ROLE_META: Array<{
 
 export function SachbuchAgentsPanel({
   book,
-  modelOptions,
   canSave,
   onSaved,
 }: {
   book: SachbuchKontext;
-  modelOptions: Array<{ modelSlug: string; label: string }>;
+  /** @deprecated Models are hard-wired; kept optional for call-site compat. */
+  modelOptions?: Array<{ modelSlug: string; label: string }>;
   canSave: boolean;
   onSaved: (book: SachbuchKontext) => void;
 }) {
-  const [agents, setAgents] = useState<SachbuchAgents>(book.agents);
+  const [agents, setAgents] = useState<SachbuchAgents>(() => {
+    // Keep prompts/flags from book; sync modelSlug to runtime for saves.
+    const next = { ...book.agents };
+    for (const key of Object.keys(SACHBUCH_RUNTIME_MODEL_BY_AGENT) as SachbuchAgentKey[]) {
+      next[key] = {
+        ...next[key],
+        modelSlug: SACHBUCH_RUNTIME_MODEL_BY_AGENT[key],
+      };
+    }
+    return next;
+  });
   const [pending, setPending] = useState(false);
 
   function patchSlot(
@@ -43,19 +63,31 @@ export function SachbuchAgentsPanel({
   ) {
     setAgents((prev) => ({
       ...prev,
-      [key]: { ...prev[key], ...patch },
+      [key]: {
+        ...prev[key],
+        ...patch,
+        // Never let UI overwrite the hard-wired runtime model.
+        modelSlug: SACHBUCH_RUNTIME_MODEL_BY_AGENT[key],
+      },
     }));
   }
 
   async function handleSave() {
     if (!canSave || pending) return;
     setPending(true);
+    const synced: SachbuchAgents = { ...agents };
+    for (const key of Object.keys(SACHBUCH_RUNTIME_MODEL_BY_AGENT) as SachbuchAgentKey[]) {
+      synced[key] = {
+        ...synced[key],
+        modelSlug: SACHBUCH_RUNTIME_MODEL_BY_AGENT[key],
+      };
+    }
     const result = await saveSachbuchAction({
       id: book.id,
       title: book.title,
       stilbibel: book.stilbibel,
       zielgruppe: book.zielgruppe,
-      agents,
+      agents: synced,
       idee: book.idee,
       evidenz: book.evidenz,
       makro: book.makro,
@@ -73,12 +105,13 @@ export function SachbuchAgentsPanel({
   return (
     <div className="space-y-6">
       <p className="text-sm font-semibold text-zinc-600">
-        Modelle und System-Prompts gelten nur für dieses Buch — unabhängig von
-        Roman / Clever.
+        Modelle sind fest verdrahtet (Anzeige = Laufzeit). System-Prompts und
+        Google-Search gelten pro Buch — unabhängig von Roman / Clever.
       </p>
       <div className="space-y-4">
         {ROLE_META.map((role) => {
           const slot = agents[role.key];
+          const runtimeSlug = SACHBUCH_RUNTIME_MODEL_BY_AGENT[role.key];
           return (
             <section
               key={role.key}
@@ -87,28 +120,17 @@ export function SachbuchAgentsPanel({
               <h3 className="text-base font-extrabold text-zinc-950">
                 {role.label}
               </h3>
-              <label className="block">
+              <div>
                 <span className="mb-1.5 block text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-                  Modell
+                  Modell (Laufzeit)
                 </span>
-                <select
-                  value={slot.modelSlug}
-                  disabled={!canSave || pending}
-                  onChange={(e) =>
-                    patchSlot(role.key, { modelSlug: e.target.value })
-                  }
-                  className="w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold text-zinc-950 outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-                >
-                  {!modelOptions.some((m) => m.modelSlug === slot.modelSlug) ? (
-                    <option value={slot.modelSlug}>{slot.modelSlug}</option>
-                  ) : null}
-                  {modelOptions.map((m) => (
-                    <option key={m.modelSlug} value={m.modelSlug}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <p className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm font-semibold text-zinc-950 ring-1 ring-zinc-950/10">
+                  {sachbuchModelLabel(runtimeSlug)}
+                  <span className="mt-0.5 block text-xs font-semibold text-zinc-500">
+                    {runtimeSlug}
+                  </span>
+                </p>
+              </div>
               {role.allowSearch ? (
                 <label className="flex items-center gap-3 text-sm font-semibold text-zinc-700">
                   <input

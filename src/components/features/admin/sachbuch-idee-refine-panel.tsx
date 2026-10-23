@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Agentic Idee-Verfeinerung (Haiku ↔ Luna) + HITL Freigabe.
+ * Agentic Idee-Verfeinerung (Gemini 4 Argon ↔ Argon) + HITL Freigabe.
  */
 
 import { useState } from "react";
@@ -10,15 +10,26 @@ import { toast } from "sonner";
 import {
   approveSachbuchIdeeRefineAction,
   rejectSachbuchIdeeRefineAction,
+  reopenSachbuchIdeeRefineAction,
   runSachbuchIdeeRefineAction,
 } from "@/app/actions/sachbuch-phases";
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
+import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { isSachbuchIdeaApproved } from "@/lib/sachbuch/guide";
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 import {
-  SACHBUCH_WAIT_IDEE_REFINE,
-  sachbuchWaitAgent,
+  SACHBUCH_IDEE_REFINE_PASS_SCORE,
+  SACHBUCH_MODEL_IDEE_DRAFTER,
+} from "@/lib/sachbuch/agent-defaults";
+import {
+  sachbuchModelLabel,
+  sachbuchWaitAgentIdeeRefine,
+  sachbuchWaitIdeeRefineSteps,
 } from "@/lib/sachbuch/wait-presets";
 import { cn } from "@/lib/utils";
+
+const IDEE_REFINE_MODEL_LABEL = sachbuchModelLabel(SACHBUCH_MODEL_IDEE_DRAFTER);
+const IDEE_REFINE_WAIT_STEPS = sachbuchWaitIdeeRefineSteps();
 
 export function SachbuchIdeeRefinePanel({
   book,
@@ -31,8 +42,18 @@ export function SachbuchIdeeRefinePanel({
 }) {
   const [pending, setPending] = useState(false);
   const [waitOpen, setWaitOpen] = useState(false);
+  const [reopenConfirmOpen, setReopenConfirmOpen] = useState(false);
   const awaiting = book.idee.refineStatus === "awaiting_approval";
-  const approved = book.idee.refineStatus === "approved";
+  const approved =
+    isSachbuchIdeaApproved(book) || book.idee.refineStatus === "approved";
+  const hasDownstream =
+    Boolean(book.makro.bookTypeId?.trim()) ||
+    book.evidenz.claims.length > 0 ||
+    book.evidenz.queries.length > 0 ||
+    book.makro.status !== "empty" ||
+    book.kapitel.length > 0;
+  /** Show reopen when freigegeben or leftover pipeline after Idee. */
+  const showReopen = approved || hasDownstream;
   const hasLog = book.idee.refineLog.length > 0;
   const dossierBriefing =
     book.idee.refinedBriefing.trim() || book.idee.briefing.trim();
@@ -89,15 +110,35 @@ export function SachbuchIdeeRefinePanel({
     }
   }
 
+  async function confirmReopenRefine() {
+    if (!canSave || pending) return;
+    setPending(true);
+    try {
+      const result = await reopenSachbuchIdeeRefineAction({ id: book.id });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Öffnen fehlgeschlagen.");
+        return;
+      }
+      onBookUpdate(result.data.book);
+      setReopenConfirmOpen(false);
+      toast.success(
+        "Verfeinerung offen — Buchtyp, Evidenz, Makro und Kapitel zurückgesetzt.",
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
       <div>
         <h2 className="text-lg font-extrabold text-zinc-950">
-          Idee verfeinern (Haiku + Luna)
+          Idee verfeinern ({IDEE_REFINE_MODEL_LABEL})
         </h2>
         <p className="mt-1 text-sm font-semibold text-zinc-600">
-          Bis zu drei automatische Runden: Haiku verdichtet das Konzept, Luna
-          kritisiert. Danach Freigabe — erst dann Recherche und Schreiben.
+          Bis zu drei Runden: {IDEE_REFINE_MODEL_LABEL} setzt Change-Orders um
+          und bewertet mit Rubrik und Vor-Runden-Vergleich. Agenten-Pass ab
+          Score {SACHBUCH_IDEE_REFINE_PASS_SCORE}/10 — danach deine Freigabe.
         </p>
       </div>
 
@@ -115,17 +156,29 @@ export function SachbuchIdeeRefinePanel({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={!canSave || pending || approved}
-          onClick={() => void runRefine()}
-          className="inline-flex items-center gap-2 rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
-        >
-          {pending && waitOpen ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-          ) : null}
-          {hasLog ? "Nochmal verfeinern" : "Verfeinerung starten"}
-        </button>
+        {showReopen ? (
+          <button
+            type="button"
+            disabled={!canSave || pending}
+            onClick={() => setReopenConfirmOpen(true)}
+            className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+          >
+            Verfeinerung wieder öffnen
+          </button>
+        ) : null}
+        {!approved ? (
+          <button
+            type="button"
+            disabled={!canSave || pending}
+            onClick={() => void runRefine()}
+            className="inline-flex items-center gap-2 rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+          >
+            {pending && waitOpen ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : null}
+            {hasLog ? "Nochmal verfeinern" : "Verfeinerung starten"}
+          </button>
+        ) : null}
         {awaiting ? (
           <button
             type="button"
@@ -165,7 +218,10 @@ export function SachbuchIdeeRefinePanel({
                 )}
               >
                 <p className="font-extrabold text-zinc-900">
-                  Runde {r.round} · {r.role === "haiku" ? "Haiku" : "Luna"}
+                  Runde {r.round} ·{" "}
+                  {r.role === "haiku"
+                    ? `${IDEE_REFINE_MODEL_LABEL} Entwurf`
+                    : `${IDEE_REFINE_MODEL_LABEL} Kritik`}
                   {r.passed === true
                     ? " · bestanden"
                     : r.passed === false
@@ -189,6 +245,13 @@ export function SachbuchIdeeRefinePanel({
         </div>
       ) : null}
 
+      {approved ? (
+        <p className="text-xs font-semibold text-zinc-500">
+          Wieder öffnen setzt Buchtyp, Evidenz, Makro und alle Kapitel hart
+          zurück. Das freigegebene Konzept bleibt Basis für den nächsten Lauf.
+        </p>
+      ) : null}
+
       {(awaiting || approved) && dossierBriefing ? (
         <div className="space-y-2 rounded-2xl bg-emerald-50/80 px-4 py-3 ring-1 ring-emerald-200/70">
           <p className="text-xs font-extrabold tracking-wide text-emerald-900 uppercase">
@@ -203,11 +266,22 @@ export function SachbuchIdeeRefinePanel({
         </div>
       ) : null}
 
+      <ConfirmDeleteDialog
+        open={reopenConfirmOpen}
+        title="Verfeinerung wieder öffnen?"
+        description="Freigabe wird zurückgenommen. Buchtyp, Evidenz, Makro und alle Kapitel/Abschnitte werden unwiderruflich gelöscht. Das aktuelle Ideen-Konzept bleibt als Basis erhalten."
+        confirmLabel="Zurücksetzen und öffnen"
+        pending={pending}
+        onCancel={() => {
+          if (!pending) setReopenConfirmOpen(false);
+        }}
+        onConfirm={() => void confirmReopenRefine()}
+      />
       <SachbuchWaitDialog
         open={waitOpen}
         title="Idee wird verfeinert"
-        steps={SACHBUCH_WAIT_IDEE_REFINE}
-        agentInfo={sachbuchWaitAgent(book.agents, "architect")}
+        steps={IDEE_REFINE_WAIT_STEPS}
+        agentInfo={sachbuchWaitAgentIdeeRefine()}
       />
     </section>
   );

@@ -92,18 +92,26 @@ export function SachbuchAbschnittRevisionDialog({
             </section>
           ) : null}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <section className="space-y-2">
-              <h3 className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-                Vorher
-              </h3>
-              <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-zinc-50 px-4 py-3 text-xs font-semibold leading-relaxed text-zinc-700 ring-1 ring-zinc-950/5">
-                {revision.beforeText || "—"}
-              </pre>
-            </section>
+          <div
+            className={
+              revision.beforeText.trim()
+                ? "grid gap-4 sm:grid-cols-2"
+                : "grid gap-4"
+            }
+          >
+            {revision.beforeText.trim() ? (
+              <section className="space-y-2">
+                <h3 className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Vorher
+                </h3>
+                <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-zinc-50 px-4 py-3 text-xs font-semibold leading-relaxed text-zinc-700 ring-1 ring-zinc-950/5">
+                  {revision.beforeText}
+                </pre>
+              </section>
+            ) : null}
             <section className="space-y-2">
               <h3 className="text-xs font-extrabold tracking-wide text-emerald-800 uppercase">
-                Nachher
+                {revision.beforeText.trim() ? "Nachher" : "Text nach diesem Schritt"}
               </h3>
               <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-2xl bg-emerald-50/70 px-4 py-3 text-xs font-semibold leading-relaxed text-zinc-900 ring-1 ring-emerald-200/80">
                 {revision.afterText || "—"}

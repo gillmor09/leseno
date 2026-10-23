@@ -3,7 +3,10 @@
  */
 
 import { generateText } from "@/lib/ai/provider";
-import { SACHBUCH_KAPITEL_WORDS_TARGET } from "@/lib/sachbuch/agent-defaults";
+import {
+  SACHBUCH_KAPITEL_WORDS_TARGET,
+  SACHBUCH_MODEL_ARCHITECT,
+} from "@/lib/sachbuch/agent-defaults";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
 import {
@@ -30,7 +33,11 @@ export async function generateSachbuchContextGraph(input: {
     .map((c) => c.claim)
     .join("; ");
 
-  const slot = book.agents.architect;
+  // Context Graph always Gemini 4 Argon (same as Makro architect).
+  const slot = {
+    ...book.agents.architect,
+    modelSlug: SACHBUCH_MODEL_ARCHITECT,
+  };
   const model = await resolveSachbuchAgentModel(slot);
   const raw = await generateText({
     model,
@@ -52,6 +59,10 @@ Erzeuge Context Graph als JSON:
   "dependsOnKapitelIds": []
 }
 claimsToProve: 8–14 konkrete Behauptungen (genug Stoff für ein volles Kapitel à ca. ${SACHBUCH_KAPITEL_WORDS_TARGET} Wörter).
+Leseversprechen — ohne Artikel-Schlacht:
+- In readerKnowledge, establishedTerms und claimsToProve KEINE Artikel-/Paragraphen-Nummern (nicht „Art. 6 DSGVO“, „Art. 5 Abs. 1 lit. a“, „§ 26 BDSG“ usw.).
+- Rechtliche Inhalte als Prinzipien und Pflichten in Alltagssprache (Zweckbindung, Einwilligung, Auskunft, Löschung, …).
+- Gesetze/Normen dürfen thematisiert werden, aber nie als 1:1-Artikelkatalog.
 dependsOnKapitelIds nur aus: ${prev.map((k) => k.id).join(", ") || "(leer)"}.
 Kein Markdown-Fence.`,
     preferJson: true,

@@ -35,13 +35,14 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     provider: "gemini",
     label: "Gemini 4 Argon",
     usage:
-      "Text: Flagship-Reasoning (Google) — angebunden, noch keiner Aufgabe zugeordnet",
+      "Text: Sachbuch Refine + Evidenz + Makro + Context Graph + Critic (Google)",
   },
   {
     modelSlug: "gemini-3.8-flash",
     provider: "gemini",
     label: "Gemini 3.8 Flash",
-    usage: "Text: Fakten, Geschichten, Social (Caption + Bildszene)",
+    usage:
+      "Text: Sachbuch Writer + Stylist; Fakten, Geschichten, Social (Caption + Bildszene)",
   },
   {
     modelSlug: "gemini-3.5-flash-lite",

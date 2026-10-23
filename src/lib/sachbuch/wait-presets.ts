@@ -1,10 +1,18 @@
 /**
  * Wait-dialog step lists + agent labels for Sachbuch KI actions.
+ * Model labels always come from hard-wired runtime slugs (not stored agent slots).
  */
 
 import { findWiredAiEndpoint } from "@/lib/ai/wired-models";
 import type { SachbuchWaitAgentInfo } from "@/components/features/admin/sachbuch-wait-dialog";
-import type { SachbuchAgentKey, SachbuchAgents } from "@/lib/sachbuch/types";
+import {
+  SACHBUCH_COVER_MODEL_SLUG,
+  SACHBUCH_MODEL_IDEE_CRITIC,
+  SACHBUCH_MODEL_IDEE_DRAFTER,
+  SACHBUCH_MODEL_MARKETING,
+  sachbuchRuntimeModelSlug,
+} from "@/lib/sachbuch/agent-defaults";
+import type { SachbuchAgentKey } from "@/lib/sachbuch/types";
 
 export const SACHBUCH_WAIT_IDEE_TURN = [
   "Interviewer liest deine Antwort …",
@@ -19,13 +27,17 @@ export const SACHBUCH_WAIT_UVP = [
   "UVP-Dossier wird gespeichert …",
 ] as const;
 
-export const SACHBUCH_WAIT_IDEE_REFINE = [
-  "Haiku verdichtet das Konzept …",
-  "Luna prüft Schärfe und Lücken …",
-  "Haiku setzt Change-Orders um …",
-  "Luna bewertet erneut …",
-  "Dossier wird zur Freigabe vorbereitet …",
-] as const;
+/** Built from runtime Idee-Refine model label so UI never shows a stale name. */
+export function sachbuchWaitIdeeRefineSteps(): readonly string[] {
+  const m = sachbuchModelLabel(SACHBUCH_MODEL_IDEE_DRAFTER);
+  return [
+    `${m} verdichtet das Konzept …`,
+    `${m} prüft Schärfe und Lücken …`,
+    `${m} setzt Change-Orders um …`,
+    `${m} bewertet erneut …`,
+    "Dossier wird zur Freigabe vorbereitet …",
+  ];
+}
 
 export const SACHBUCH_WAIT_EVIDENZ = [
   "UVP wird gelesen …",
@@ -65,6 +77,15 @@ export const SACHBUCH_WAIT_ABSCHNITT = [
   "Abschnitt wird gespeichert …",
 ] as const;
 
+/** Soft checklist while batch-filling a chapter (progressLabel carries the index). */
+export const SACHBUCH_WAIT_ABSCHNITTE_BATCH = [
+  "Nächster Abschnitt wird geplant …",
+  "Writer + Checkpoint + Recherche …",
+  "Critic und Style laufen …",
+  "Abschnitt wird gespeichert …",
+  "Weiter zum nächsten Abschnitt …",
+] as const;
+
 export const SACHBUCH_WAIT_CHECKPOINT_REVISE = [
   "Autor-Antwort wird gelesen …",
   "Writer überarbeitet den Abschnitt …",
@@ -78,6 +99,22 @@ export const SACHBUCH_WAIT_LEKTORAT = [
   "Lektorat wird gespeichert …",
 ] as const;
 
+export const SACHBUCH_WAIT_EXPORT_META = [
+  "Manuskript und UVP werden gelesen …",
+  "Titel und Untertitel …",
+  "Klappentext und Schlagwörter …",
+  "Titelei wird vorbereitet …",
+  "Marketing-Texte werden gespeichert …",
+] as const;
+
+export const SACHBUCH_WAIT_EXPORT_COVER = [
+  "Klappentext wird gelesen …",
+  "Cover-Prompt wird gebaut …",
+  "Cover-Bild wird generiert …",
+  "1600×2400 @ 300 ppi wird gesichert …",
+  "Cover wird gespeichert …",
+] as const;
+
 const ROLE_LABELS: Record<SachbuchAgentKey, string> = {
   interviewer: "Interviewer",
   researcher: "Researcher",
@@ -87,14 +124,62 @@ const ROLE_LABELS: Record<SachbuchAgentKey, string> = {
   stylist: "Style Matcher",
 };
 
+/** Human label for a wired model slug (fallback: slug). */
+export function sachbuchModelLabel(modelSlug: string): string {
+  const wired = findWiredAiEndpoint(modelSlug);
+  return wired?.label ?? modelSlug;
+}
+
+/** Wait-dialog agent line from a hard-wired runtime role (ignores stored slots). */
 export function sachbuchWaitAgent(
-  agents: SachbuchAgents,
   key: SachbuchAgentKey,
 ): SachbuchWaitAgentInfo {
-  const slot = agents[key];
-  const wired = findWiredAiEndpoint(slot.modelSlug);
   return {
     roleLabel: ROLE_LABELS[key],
-    modelLabel: wired?.label ?? slot.modelSlug,
+    modelLabel: sachbuchModelLabel(sachbuchRuntimeModelSlug(key)),
   };
+}
+
+/** Wait-dialog line for a custom role + hard-wired slug. */
+export function sachbuchWaitAgentForSlug(
+  roleLabel: string,
+  modelSlug: string,
+): SachbuchWaitAgentInfo {
+  return {
+    roleLabel,
+    modelLabel: sachbuchModelLabel(modelSlug),
+  };
+}
+
+/** Multi-role pipeline (e.g. Writer → Critic → Style). */
+export function sachbuchWaitAgentPipeline(
+  keys: readonly SachbuchAgentKey[],
+): SachbuchWaitAgentInfo {
+  return {
+    roleLabel: keys.map((k) => ROLE_LABELS[k]).join(" → "),
+    modelLabel: keys
+      .map((k) => sachbuchModelLabel(sachbuchRuntimeModelSlug(k)))
+      .join(" · "),
+  };
+}
+
+/** Idee-Refine: Drafter + Critic (both Argon today). */
+export function sachbuchWaitAgentIdeeRefine(): SachbuchWaitAgentInfo {
+  const drafter = sachbuchModelLabel(SACHBUCH_MODEL_IDEE_DRAFTER);
+  const critic = sachbuchModelLabel(SACHBUCH_MODEL_IDEE_CRITIC);
+  return {
+    roleLabel: "Idee-Refine",
+    modelLabel:
+      drafter === critic ? drafter : `${drafter} → ${critic}`,
+  };
+}
+
+/** Export marketing / Titelei. */
+export function sachbuchWaitAgentMarketing(): SachbuchWaitAgentInfo {
+  return sachbuchWaitAgentForSlug("Marketing", SACHBUCH_MODEL_MARKETING);
+}
+
+/** Export cover image. */
+export function sachbuchWaitAgentCover(): SachbuchWaitAgentInfo {
+  return sachbuchWaitAgentForSlug("Cover", SACHBUCH_COVER_MODEL_SLUG);
 }

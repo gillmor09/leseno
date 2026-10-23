@@ -289,13 +289,13 @@ export function SachbuchIdeePanel({
         open={waitKind === "turn"}
         title="Interviewer antwortet"
         steps={SACHBUCH_WAIT_IDEE_TURN}
-        agentInfo={sachbuchWaitAgent(book.agents, "interviewer")}
+        agentInfo={sachbuchWaitAgent("interviewer")}
       />
       <SachbuchWaitDialog
         open={waitKind === "uvp"}
         title="UVP wird geschärft"
         steps={SACHBUCH_WAIT_UVP}
-        agentInfo={sachbuchWaitAgent(book.agents, "interviewer")}
+        agentInfo={sachbuchWaitAgent("interviewer")}
       />
     </div>
   );

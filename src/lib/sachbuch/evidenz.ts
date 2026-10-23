@@ -4,6 +4,7 @@
 
 import { generateWithGemini } from "@/lib/ai/gemini";
 import { generateText } from "@/lib/ai/provider";
+import { SACHBUCH_MODEL_RESEARCHER } from "@/lib/sachbuch/agent-defaults";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
 import {
@@ -35,7 +36,11 @@ export async function runSachbuchEvidenz(
     throw new Error("Zuerst Idee freigeben (Verfeinerung).");
   }
 
-  const slot = book.agents.researcher;
+  // Phase 2 always Gemini 4 Argon (prompt/search flags from book agent slot).
+  const slot = {
+    ...book.agents.researcher,
+    modelSlug: SACHBUCH_MODEL_RESEARCHER,
+  };
   const model = await resolveSachbuchAgentModel(slot);
   const userText = `Buch: ${book.title}
 Zielgruppe: ${book.zielgruppe.trim() || "—"}

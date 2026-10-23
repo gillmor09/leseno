@@ -11,6 +11,7 @@ import {
   mapSachbuchRow,
 } from "@/lib/sachbuch/parse";
 import type {
+  SachbuchExport,
   SachbuchKontext,
   SachbuchKontextSummary,
   SachbuchMakroTyp,
@@ -28,6 +29,14 @@ type Row = {
   idee?: unknown;
   evidenz?: unknown;
   makro?: unknown;
+  suggested_title?: unknown;
+  subtitle?: unknown;
+  summary?: unknown;
+  keywords?: unknown;
+  autor_name?: unknown;
+  vorsatz?: unknown;
+  cover_image_data_url?: unknown;
+  cover_prompt?: unknown;
   kapitel_count?: number;
   created_at: string;
   updated_at: string;
@@ -177,6 +186,44 @@ export async function patchSachbuchBook(
     makro: patch.makro ?? book.makro,
     kapitel: patch.kapitel ?? book.kapitel,
   });
+}
+
+/**
+ * Patch marketing / cover / optional title without rewriting kapitel JSON.
+ * Nullish fields are left unchanged in the DB (RPC coalesce).
+ */
+export async function upsertSachbuchExport(input: {
+  id: string;
+  suggestedTitle?: string | null;
+  subtitle?: string | null;
+  summary?: string | null;
+  keywords?: string[] | null;
+  autorName?: string | null;
+  vorsatz?: SachbuchExport["vorsatz"] | null;
+  coverImageDataUrl?: string | null;
+  coverPrompt?: string | null;
+  /** When set, updates the book title (e.g. apply suggested title). */
+  title?: string | null;
+}): Promise<SachbuchKontext> {
+  const supabase = createServiceClient(null);
+  const { error } = await supabase.rpc("admin_upsert_sachbuch_export", {
+    p_id: input.id,
+    p_suggested_title: input.suggestedTitle ?? null,
+    p_subtitle: input.subtitle ?? null,
+    p_summary: input.summary ?? null,
+    p_keywords: input.keywords ?? null,
+    p_autor_name: input.autorName ?? null,
+    p_vorsatz: input.vorsatz ?? null,
+    p_cover_image_data_url: input.coverImageDataUrl ?? null,
+    p_cover_prompt: input.coverPrompt ?? null,
+    p_title: input.title ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const saved = await getSachbuchKontext(input.id);
+  if (!saved) {
+    throw new Error("Sachbuch nach Export-Update nicht gefunden.");
+  }
+  return saved;
 }
 
 /** Replace one kapitel inside a book and persist. */

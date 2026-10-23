@@ -3,6 +3,11 @@
  */
 
 import { defaultSachbuchAgents } from "@/lib/sachbuch/agent-defaults";
+import {
+  emptyVorsatz,
+  parseVorsatzJson,
+  ROMAN_DEFAULT_AUTHOR,
+} from "@/lib/roman/front-matter";
 import type {
   SachbuchAbschnitt,
   SachbuchAbschnittRevision,
@@ -14,6 +19,7 @@ import type {
   SachbuchContextGraph,
   SachbuchEvidenz,
   SachbuchEvidenzClaim,
+  SachbuchExport,
   SachbuchGroundingSource,
   SachbuchIdee,
   SachbuchInterviewMessage,
@@ -28,6 +34,8 @@ import type {
 } from "@/lib/sachbuch/types";
 import {
   SACHBUCH_ABSCHNITT_REVISION_KIND_LABELS,
+  SACHBUCH_GUIDE_STEPS,
+  SACHBUCH_KEYWORD_COUNT,
   SACHBUCH_MAKRO_STAGE_KEYS,
   SACHBUCH_MAKRO_STAGE_LABELS,
   emptyMakroStages,
@@ -188,16 +196,54 @@ export function emptySachbuchIdee(): SachbuchIdee {
 
 function parseGuideStep(raw: unknown): SachbuchIdee["guide"]["currentStep"] {
   if (
-    raw === "concept" ||
-    raw === "refine" ||
-    raw === "book_type" ||
-    raw === "evidenz" ||
-    raw === "makro" ||
-    raw === "write"
+    typeof raw === "string" &&
+    (SACHBUCH_GUIDE_STEPS as readonly string[]).includes(raw)
   ) {
-    return raw;
+    return raw as SachbuchIdee["guide"]["currentStep"];
   }
   return "concept";
+}
+
+export function emptySachbuchExport(): SachbuchExport {
+  return {
+    suggestedTitle: "",
+    subtitle: "",
+    summary: "",
+    keywords: [],
+    autorName: ROMAN_DEFAULT_AUTHOR,
+    vorsatz: emptyVorsatz(),
+    coverImageDataUrl: "",
+    coverPrompt: "",
+  };
+}
+
+export function parseSachbuchExport(row: {
+  suggested_title?: unknown;
+  subtitle?: unknown;
+  summary?: unknown;
+  keywords?: unknown;
+  autor_name?: unknown;
+  vorsatz?: unknown;
+  cover_image_data_url?: unknown;
+  cover_prompt?: unknown;
+}): SachbuchExport {
+  const base = emptySachbuchExport();
+  const keywordsRaw = Array.isArray(row.keywords) ? row.keywords : [];
+  const keywords = keywordsRaw
+    .map((k) => String(k).trim())
+    .filter(Boolean)
+    .slice(0, SACHBUCH_KEYWORD_COUNT);
+  return {
+    suggestedTitle: String(row.suggested_title ?? "").trim(),
+    subtitle: String(row.subtitle ?? "").trim(),
+    summary: String(row.summary ?? "").trim(),
+    keywords,
+    autorName:
+      String(row.autor_name ?? "").trim() || ROMAN_DEFAULT_AUTHOR,
+    vorsatz: parseVorsatzJson(row.vorsatz ?? {}),
+    coverImageDataUrl: String(row.cover_image_data_url ?? "").trim(),
+    coverPrompt: String(row.cover_prompt ?? "").trim(),
+  };
 }
 
 function parseRefineStatus(raw: unknown): SachbuchIdee["refineStatus"] {
@@ -553,6 +599,30 @@ export function countKapitelAbschnitteWords(
   );
 }
 
+/**
+ * Drop bulky revision before-snapshots for API/Action responses.
+ * Keeps draftText + afterText + summary; avoids RSC/JSON stream blow-ups
+ * once a book has many Abschnitte.
+ */
+export function slimSachbuchKontextForTransport(
+  book: SachbuchKontext,
+): SachbuchKontext {
+  return {
+    ...book,
+    export: book.export ?? emptySachbuchExport(),
+    kapitel: book.kapitel.map((k) => ({
+      ...k,
+      abschnitte: k.abschnitte.map((a) => ({
+        ...a,
+        revisions: (a.revisions ?? []).map((r) => ({
+          ...r,
+          beforeText: "",
+        })),
+      })),
+    })),
+  };
+}
+
 export function mapSachbuchRow(row: {
   id: string;
   title: string;
@@ -563,6 +633,14 @@ export function mapSachbuchRow(row: {
   idee?: unknown;
   evidenz?: unknown;
   makro?: unknown;
+  suggested_title?: unknown;
+  subtitle?: unknown;
+  summary?: unknown;
+  keywords?: unknown;
+  autor_name?: unknown;
+  vorsatz?: unknown;
+  cover_image_data_url?: unknown;
+  cover_prompt?: unknown;
   created_at: string;
   updated_at: string;
 }): SachbuchKontext {
@@ -576,6 +654,7 @@ export function mapSachbuchRow(row: {
     evidenz: parseSachbuchEvidenz(row.evidenz),
     makro: parseSachbuchMakro(row.makro),
     kapitel: parseSachbuchKapitelList(row.kapitel),
+    export: parseSachbuchExport(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

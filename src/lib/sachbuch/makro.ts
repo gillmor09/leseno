@@ -3,6 +3,7 @@
  */
 
 import { generateText } from "@/lib/ai/provider";
+import { SACHBUCH_MODEL_ARCHITECT } from "@/lib/sachbuch/agent-defaults";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import { emptySachbuchKapitel } from "@/lib/sachbuch/parse";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
@@ -65,7 +66,11 @@ export async function generateSachbuchMakro(
 
   const typ = book.makro.typ ?? "journey";
   const keys = makroStageKeysForTyp(typ);
-  const slot = book.agents.architect;
+  // Phase 3 always Gemini 4 Argon (prompt from book agent slot).
+  const slot = {
+    ...book.agents.architect,
+    modelSlug: SACHBUCH_MODEL_ARCHITECT,
+  };
   const model = await resolveSachbuchAgentModel(slot);
   const evidenzSummary = book.evidenz.claims
     .slice(0, 12)

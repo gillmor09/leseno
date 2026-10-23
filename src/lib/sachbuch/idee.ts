@@ -4,6 +4,7 @@
  */
 
 import { generateText } from "@/lib/ai/provider";
+import { SACHBUCH_MODEL_INTERVIEWER } from "@/lib/sachbuch/agent-defaults";
 import {
   formatBookTypeBauplanPrompt,
   getSachbuchBookType,
@@ -169,7 +170,10 @@ export async function runSachbuchIdeeTurn(input: {
   };
   const messages = [...book.idee.interviewMessages, userMsg];
 
-  const slot = book.agents.interviewer;
+  const slot = {
+    ...book.agents.interviewer,
+    modelSlug: SACHBUCH_MODEL_INTERVIEWER,
+  };
   const model = await resolveSachbuchAgentModel(slot);
   const reply = await generateText({
     model,
@@ -215,7 +219,10 @@ export async function sharpenSachbuchUvp(
   }
   const typ = bookArt(book);
 
-  const slot = book.agents.interviewer;
+  const slot = {
+    ...book.agents.interviewer,
+    modelSlug: SACHBUCH_MODEL_INTERVIEWER,
+  };
   const model = await resolveSachbuchAgentModel(slot);
   const raw = await generateText({
     model,

@@ -10,7 +10,6 @@ import { Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { saveSachbuchAction } from "@/app/actions/sachbuch-admin";
 import {
-  generateNextAbschnittAction,
   generateSachbuchContextGraphAction,
   replyAbschnittCheckpointAction,
 } from "@/app/actions/sachbuch-phases";
@@ -18,13 +17,16 @@ import { SachbuchAbschnittRevisionDialog } from "@/components/features/admin/sac
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import {
+  kapitelMeetsAbschnittVolumeTarget,
   recommendedMinAbschnitte,
+  SACHBUCH_ABSCHNITT_BATCH_MAX,
   SACHBUCH_ABSCHNITT_WORDS_MAX,
   SACHBUCH_ABSCHNITT_WORDS_MIN,
   SACHBUCH_ABSCHNITT_WORDS_TARGET,
   SACHBUCH_BOOK_WORDS_TARGET,
   SACHBUCH_KAPITEL_WORDS_TARGET,
 } from "@/lib/sachbuch/agent-defaults";
+import { requestGenerateNextAbschnitt } from "@/lib/sachbuch/generate-abschnitt-client";
 import {
   concatAbschnitteText,
   countKapitelAbschnitteWords,
@@ -37,14 +39,16 @@ import type {
 } from "@/lib/sachbuch/types";
 import {
   SACHBUCH_WAIT_ABSCHNITT,
+  SACHBUCH_WAIT_ABSCHNITTE_BATCH,
   SACHBUCH_WAIT_CHECKPOINT_REVISE,
   SACHBUCH_WAIT_GRAPH,
   sachbuchWaitAgent,
+  sachbuchWaitAgentPipeline,
 } from "@/lib/sachbuch/wait-presets";
 import { lockBodyScroll } from "@/lib/ui/body-scroll-lock";
 import { cn } from "@/lib/utils";
 
-type WaitKind = "graph" | "abschnitt" | "revise" | null;
+type WaitKind = "graph" | "abschnitt" | "abschnitte-batch" | "revise" | null;
 
 export function SachbuchSchreibenPanel({
   book,
@@ -62,6 +66,9 @@ export function SachbuchSchreibenPanel({
     book.kapitel.find((k) => k.id === selectedId) ?? book.kapitel[0] ?? null;
   const [pending, setPending] = useState(false);
   const [waitKind, setWaitKind] = useState<WaitKind>(null);
+  const [batchProgressLabel, setBatchProgressLabel] = useState<string | null>(
+    null,
+  );
   const [checkpointReply, setCheckpointReply] = useState("");
   const [readerKnowledge, setReaderKnowledge] = useState(
     selected?.contextGraph.readerKnowledge ?? "",
@@ -458,7 +465,7 @@ export function SachbuchSchreibenPanel({
     setPending(true);
     setWaitKind("abschnitt");
     try {
-      const result = await generateNextAbschnittAction({
+      const result = await requestGenerateNextAbschnitt({
         sachbuchId: book.id,
         kapitelId: selected.id,
       });
@@ -474,6 +481,102 @@ export function SachbuchSchreibenPanel({
       if (newest) setFocusedAbschnittId(newest.id);
       toast.success("Abschnitt fertig (Checkpoint + Critic + Style).");
     } finally {
+      setWaitKind(null);
+      setPending(false);
+    }
+  }
+
+  /**
+   * Keep calling generateNextAbschnitt until soft volume target (or safety cap).
+   * One JSON API call per Abschnitt (retries on network/stream errors).
+   */
+  async function fillKapitelAbschnitte() {
+    if (!canSave || pending || !selected) return;
+    if (openCheckpoint) {
+      toast.error("Zuerst den offenen Checkpoint beantworten.");
+      return;
+    }
+    if (selected.contextGraph.claimsToProve.length === 0) {
+      toast.message("Hinweis: Context Graph hat noch keine Claims.");
+    }
+
+    const kapitelId = selected.id;
+    const claimsCount = selected.contextGraph.claimsToProve.length;
+    const minTarget = recommendedMinAbschnitte(claimsCount);
+    if (
+      kapitelMeetsAbschnittVolumeTarget({
+        abschnitteCount: doneAbschnitte,
+        words: selectedKapitelWords,
+        claimsCount,
+      })
+    ) {
+      toast.message(
+        "Volumen-Empfehlung schon erreicht — „Nächsten Abschnitt“ für mehr.",
+      );
+      return;
+    }
+
+    setPending(true);
+    setWaitKind("abschnitte-batch");
+    let liveBook = book;
+    let produced = 0;
+    try {
+      while (produced < SACHBUCH_ABSCHNITT_BATCH_MAX) {
+        const kap =
+          liveBook.kapitel.find((k) => k.id === kapitelId) ?? null;
+        if (!kap) {
+          toast.error("Kapitel nicht gefunden.");
+          break;
+        }
+        if (kap.abschnitte.some((a) => a.status === "checkpoint")) {
+          toast.error("Offener Checkpoint — Batch gestoppt.");
+          break;
+        }
+
+        const done = kap.abschnitte.filter(
+          (a) => a.status === "accepted" || a.status === "revised",
+        ).length;
+        const words = countKapitelAbschnitteWords(kap.abschnitte);
+        if (
+          kapitelMeetsAbschnittVolumeTarget({
+            abschnitteCount: done,
+            words,
+            claimsCount: kap.contextGraph.claimsToProve.length,
+          })
+        ) {
+          break;
+        }
+
+        setBatchProgressLabel(
+          `Abschnitt ${done + 1} von ca. ${minTarget} (Ziel ~${SACHBUCH_KAPITEL_WORDS_TARGET.toLocaleString("de-DE")} Wörter) …`,
+        );
+
+        const result = await requestGenerateNextAbschnitt({
+          sachbuchId: liveBook.id,
+          kapitelId,
+        });
+        if (!result.success || !result.data) {
+          toast.error(result.error ?? "Abschnitt erzeugen fehlgeschlagen.");
+          break;
+        }
+        liveBook = result.data.book;
+        onBookUpdate(liveBook);
+        produced += 1;
+
+        const updated = liveBook.kapitel.find((k) => k.id === kapitelId);
+        const newest = updated?.abschnitte[updated.abschnitte.length - 1];
+        if (newest) setFocusedAbschnittId(newest.id);
+      }
+
+      if (produced > 0) {
+        const kap = liveBook.kapitel.find((k) => k.id === kapitelId);
+        const words = kap ? countKapitelAbschnitteWords(kap.abschnitte) : 0;
+        toast.success(
+          `${produced} Abschnitt${produced === 1 ? "" : "e"} erzeugt · ${words.toLocaleString("de-DE")} Wörter.`,
+        );
+      }
+    } finally {
+      setBatchProgressLabel(null);
       setWaitKind(null);
       setPending(false);
     }
@@ -699,6 +802,15 @@ export function SachbuchSchreibenPanel({
                     className="rounded-full bg-orange-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
                   >
                     Nächsten Abschnitt erzeugen
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canSave || pending || Boolean(openCheckpoint)}
+                    onClick={() => void fillKapitelAbschnitte()}
+                    className="rounded-full bg-emerald-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+                    title={`Schreibt Abschnitte nacheinander bis mind. ${minAbschnitte} Abschnitte und ca. ${SACHBUCH_KAPITEL_WORDS_TARGET.toLocaleString("de-DE")} Wörter.`}
+                  >
+                    Alle Abschnitte erzeugen
                   </button>
                 </div>
               </div>
@@ -992,19 +1104,35 @@ export function SachbuchSchreibenPanel({
         open={waitKind === "graph"}
         title="Context Graph wird erzeugt"
         steps={SACHBUCH_WAIT_GRAPH}
-        agentInfo={sachbuchWaitAgent(book.agents, "architect")}
+        agentInfo={sachbuchWaitAgent("architect")}
       />
       <SachbuchWaitDialog
         open={waitKind === "abschnitt"}
         title="Abschnitt wird erzeugt & verbessert"
         steps={SACHBUCH_WAIT_ABSCHNITT}
-        agentInfo={sachbuchWaitAgent(book.agents, "writer")}
+        agentInfo={sachbuchWaitAgentPipeline([
+          "writer",
+          "critic",
+          "stylist",
+        ])}
+      />
+      <SachbuchWaitDialog
+        open={waitKind === "abschnitte-batch"}
+        title="Alle Abschnitte werden erzeugt"
+        steps={SACHBUCH_WAIT_ABSCHNITTE_BATCH}
+        progressLabel={batchProgressLabel}
+        agentInfo={sachbuchWaitAgentPipeline([
+          "writer",
+          "critic",
+          "stylist",
+        ])}
+        footer="Fenster offen lassen — das Kapitel wird Abschnitt für Abschnitt gefüllt (kann länger dauern)."
       />
       <SachbuchWaitDialog
         open={waitKind === "revise"}
         title="Abschnitt wird überarbeitet"
         steps={SACHBUCH_WAIT_CHECKPOINT_REVISE}
-        agentInfo={sachbuchWaitAgent(book.agents, "writer")}
+        agentInfo={sachbuchWaitAgent("writer")}
       />
     </div>
   );

@@ -61,6 +61,7 @@ const guideStepSchema = z.enum([
   "evidenz",
   "makro",
   "write",
+  "export",
 ]);
 
 const refineRoundSchema = z.object({

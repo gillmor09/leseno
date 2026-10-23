@@ -4,6 +4,7 @@
  */
 
 import { generateText } from "@/lib/ai/provider";
+import { SACHBUCH_MODEL_ARCHITECT } from "@/lib/sachbuch/agent-defaults";
 import {
   formatSachbuchBookTypesCatalogForPrompt,
   getSachbuchBookType,
@@ -144,7 +145,10 @@ export async function suggestSachbuchBookType(
     );
   }
 
-  const slot = book.agents.architect;
+  const slot = {
+    ...book.agents.architect,
+    modelSlug: SACHBUCH_MODEL_ARCHITECT,
+  };
   const model = await resolveSachbuchAgentModel(slot);
 
   try {

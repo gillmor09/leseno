@@ -33,14 +33,15 @@ export type SachbuchGroundingSource = {
 
 export type SachbuchPhaseStatus = "empty" | "in_progress" | "ready";
 
-/** Guided wizard steps (Idee → freigeben → Typ → … → Schreiben). */
+/** Guided wizard steps (Idee → freigeben → Typ → … → Schreiben → Export). */
 export type SachbuchGuideStep =
   | "concept"
   | "refine"
   | "book_type"
   | "evidenz"
   | "makro"
-  | "write";
+  | "write"
+  | "export";
 
 export const SACHBUCH_GUIDE_STEPS: readonly SachbuchGuideStep[] = [
   "concept",
@@ -49,6 +50,7 @@ export const SACHBUCH_GUIDE_STEPS: readonly SachbuchGuideStep[] = [
   "evidenz",
   "makro",
   "write",
+  "export",
 ] as const;
 
 export const SACHBUCH_GUIDE_STEP_LABELS: Record<SachbuchGuideStep, string> = {
@@ -58,6 +60,40 @@ export const SACHBUCH_GUIDE_STEP_LABELS: Record<SachbuchGuideStep, string> = {
   evidenz: "Recherche",
   makro: "Makro",
   write: "Schreiben",
+  export: "Export",
+};
+
+/** Fixed count for Sachbuch marketing keywords (Amazon-style). */
+export const SACHBUCH_KEYWORD_COUNT = 6;
+
+/** Marketing / Titelei / Cover package (persisted on sachbuch_kontext). */
+export type SachbuchExport = {
+  /** KI-Vorschlag; book.title bleibt bis Übernahme unverändert. */
+  suggestedTitle: string;
+  subtitle: string;
+  /** Klappentext / Amazon-Blurb. */
+  summary: string;
+  keywords: string[];
+  autorName: string;
+  /** Front matter (Titelseite, Impressum, Motto). */
+  vorsatz: {
+    titelseite: {
+      titel: string;
+      untertitel: string;
+      autor: string;
+      imprint: string;
+    };
+    impressum: {
+      jahr: string;
+      rechteinhaber: string;
+      hinweis: string;
+      disclaimer: string;
+    };
+    widmung: string;
+    motto: string;
+  };
+  coverImageDataUrl: string;
+  coverPrompt: string;
 };
 
 /** Wizard cursor + HITL idea approval (stored inside idee JSON). */
@@ -251,6 +287,7 @@ export type SachbuchKontext = {
   evidenz: SachbuchEvidenz;
   makro: SachbuchMakro;
   kapitel: SachbuchKapitel[];
+  export: SachbuchExport;
   createdAt: string;
   updatedAt: string;
 };

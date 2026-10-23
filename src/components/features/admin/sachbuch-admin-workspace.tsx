@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Guided Sachbuch wizard: Rohkonzept → Haiku/Luna-Verfeinerung → Freigabe →
- * Buchtyp → Evidenz → Makro → Graph/Schreiben. Hard gates via idee.guide.
+ * Guided Sachbuch wizard: Rohkonzept → Argon-Verfeinerung → Freigabe →
+ * Buchtyp → Evidenz → Makro → Schreiben → Export. Hard gates via idee.guide.
  */
 
 import Link from "next/link";
@@ -17,6 +17,7 @@ import {
 import { setSachbuchGuideStepAction } from "@/app/actions/sachbuch-phases";
 import { SachbuchBookTypePanel } from "@/components/features/admin/sachbuch-book-type-panel";
 import { SachbuchEvidenzPanel } from "@/components/features/admin/sachbuch-evidenz-panel";
+import { SachbuchExportPanel } from "@/components/features/admin/sachbuch-export-panel";
 import { SachbuchGuideStepper } from "@/components/features/admin/sachbuch-guide-stepper";
 import { SachbuchIdeePanel } from "@/components/features/admin/sachbuch-idee-panel";
 import { SachbuchIdeeRefinePanel } from "@/components/features/admin/sachbuch-idee-refine-panel";
@@ -414,11 +415,23 @@ export function SachbuchAdminWorkspace({
 
       {step === "write" ? (
         ideaApproved && bookType ? (
-          <SachbuchSchreibenPanel
-            book={book}
-            canSave={canSave}
-            onBookUpdate={setBook}
-          />
+          <div className="space-y-3">
+            <SachbuchSchreibenPanel
+              book={book}
+              canSave={canSave}
+              onBookUpdate={setBook}
+            />
+            {next === "export" && canOpenSachbuchGuideStep(book, "export") ? (
+              <button
+                type="button"
+                disabled={!canSave || stepPending}
+                onClick={() => void advance()}
+                className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+              >
+                Weiter: Export
+              </button>
+            ) : null}
+          </div>
         ) : (
           <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
             Schreiben gesperrt — Idee freigeben und Buchtyp wählen.
@@ -426,9 +439,24 @@ export function SachbuchAdminWorkspace({
         )
       ) : null}
 
+      {step === "export" ? (
+        ideaApproved && bookType ? (
+          <SachbuchExportPanel
+            book={book}
+            canSave={canSave}
+            onBookUpdate={setBook}
+          />
+        ) : (
+          <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
+            Export gesperrt — Idee freigeben und Buchtyp wählen.
+          </p>
+        )
+      ) : null}
+
       {next &&
       step !== "evidenz" &&
       step !== "makro" &&
+      step !== "write" &&
       step !== "concept" &&
       step !== "refine" &&
       canOpenSachbuchGuideStep(book, next) ? (

@@ -284,13 +284,13 @@ export function SachbuchMakroPanel({
         open={waitKind === "makro"}
         title={`${SACHBUCH_MAKRO_TYP_LABELS[typ]} wird erzeugt`}
         steps={SACHBUCH_WAIT_MAKRO}
-        agentInfo={sachbuchWaitAgent(book.agents, "architect")}
+        agentInfo={sachbuchWaitAgent("architect")}
       />
       <SachbuchWaitDialog
         open={waitKind === "kapitel"}
         title="Kapitelgerüst wird angelegt"
         steps={SACHBUCH_WAIT_KAPITEL_FROM_MAKRO}
-        agentInfo={sachbuchWaitAgent(book.agents, "architect")}
+        agentInfo={sachbuchWaitAgent("architect")}
       />
     </div>
   );

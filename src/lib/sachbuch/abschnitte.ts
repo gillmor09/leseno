@@ -8,6 +8,11 @@ import { generateText } from "@/lib/ai/provider";
 import {
   SACHBUCH_ABSCHNITT_WORDS_MAX,
   SACHBUCH_ABSCHNITT_WORDS_MIN,
+  SACHBUCH_MODEL_CRITIC,
+  SACHBUCH_MODEL_INTERVIEWER,
+  SACHBUCH_MODEL_RESEARCHER,
+  SACHBUCH_MODEL_STYLIST,
+  SACHBUCH_MODEL_WRITER,
 } from "@/lib/sachbuch/agent-defaults";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import { concatAbschnitteText } from "@/lib/sachbuch/parse";
@@ -96,18 +101,20 @@ function parseRevisionBody(
 function makeRevision(input: {
   kind: SachbuchAbschnittRevisionKind;
   summary: string;
+  /** Ignored — full before-snapshots duplicate afterText and blow up JSON. */
   beforeText: string;
   afterText: string;
   meta?: string;
 }): SachbuchAbschnittRevision {
+  void input.beforeText;
   return {
     id: crypto.randomUUID(),
     kind: input.kind,
     label: SACHBUCH_ABSCHNITT_REVISION_KIND_LABELS[input.kind],
-    summary: input.summary.trim() || "Ãœberarbeitet.",
-    beforeText: input.beforeText,
+    summary: input.summary.trim() || "Überarbeitet.",
+    beforeText: "",
     afterText: input.afterText,
-    meta: (input.meta ?? "").trim(),
+    meta: (input.meta ?? "").trim().slice(0, 4_000),
     createdAt: new Date().toISOString(),
   };
 }
@@ -174,7 +181,11 @@ export async function generateNextAbschnitt(input: {
     );
   }
 
-  const writer = book.agents.writer;
+  // Writer = Flash 3.8; Critic = Argon (hard-wired, prompts from book slots).
+  const writer = {
+    ...book.agents.writer,
+    modelSlug: SACHBUCH_MODEL_WRITER,
+  };
   const writerModel = await resolveSachbuchAgentModel(writer);
   const prevText = concatAbschnitteText(
     kapitel.abschnitte.filter((a) => a.status !== "draft"),
@@ -211,7 +222,10 @@ ${ABSCHNITT_BOUNDARY_RULES}`,
     ).trim(),
   );
 
-  const interviewer = book.agents.interviewer;
+  const interviewer = {
+    ...book.agents.interviewer,
+    modelSlug: SACHBUCH_MODEL_INTERVIEWER,
+  };
   const interviewerModel = await resolveSachbuchAgentModel(interviewer);
   const checkpoint = (
     await generateText({
@@ -233,7 +247,10 @@ ${draftText}`,
   let currentText = draftText;
 
   // --- Checkpoint: research on the web + build into section ---
-  const researcher = book.agents.researcher;
+  const researcher = {
+    ...book.agents.researcher,
+    modelSlug: SACHBUCH_MODEL_RESEARCHER,
+  };
   const researcherModel = await resolveSachbuchAgentModel(researcher);
   const useResearcherSearch =
     researcher.googleSearch &&
@@ -301,7 +318,10 @@ ${ABSCHNITT_BOUNDARY_RULES}`,
   }
 
   // --- Critic ---
-  const critic = book.agents.critic;
+  const critic = {
+    ...book.agents.critic,
+    modelSlug: SACHBUCH_MODEL_CRITIC,
+  };
   const criticModel = await resolveSachbuchAgentModel(critic);
   const critique = (
     await generateText({
@@ -352,7 +372,10 @@ ${ABSCHNITT_BOUNDARY_RULES}`,
   currentText = criticParsed.text;
 
   // --- Style ---
-  const stylist = book.agents.stylist;
+  const stylist = {
+    ...book.agents.stylist,
+    modelSlug: SACHBUCH_MODEL_STYLIST,
+  };
   const stylistModel = await resolveSachbuchAgentModel(stylist);
   const styleRaw = (
     await generateText({
@@ -426,7 +449,10 @@ export async function replyAbschnittCheckpoint(input: {
   let draftText = abschnitt.draftText;
   let revisions = [...(abschnitt.revisions ?? [])];
   if (input.revise) {
-    const writer = book.agents.writer;
+    const writer = {
+      ...book.agents.writer,
+      modelSlug: SACHBUCH_MODEL_WRITER,
+    };
     const model = await resolveSachbuchAgentModel(writer);
     const userText = `Ãœberarbeite den Abschnitt anhand der Autor-Antwort.
 Stilbibel: ${book.stilbibel.trim() || "â€”"}

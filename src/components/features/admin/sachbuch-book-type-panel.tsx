@@ -261,7 +261,7 @@ export function SachbuchBookTypePanel({
         open={waitOpen}
         title="Buchtyp wird vorgeschlagen"
         steps={SACHBUCH_WAIT_UVP}
-        agentInfo={sachbuchWaitAgent(book.agents, "architect")}
+        agentInfo={sachbuchWaitAgent("architect")}
       />
     </section>
   );

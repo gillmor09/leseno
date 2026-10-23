@@ -1,15 +1,21 @@
 /**
- * Agentic Idee-Verfeinerung: Haiku 5.5 verdichtet, Luna 6 kritisiert (2–3 Runden).
+ * Agentic Idee-Verfeinerung: Gemini 4 Argon verdichtet und kritisiert (2–3 Runden).
  * HITL freigibt danach — siehe approveSachbuchIdeeRefine.
+ * Log roles remain `haiku`/`luna` for stored refineLog compatibility.
  */
 
 import { generateText } from "@/lib/ai/provider";
 import {
   SACHBUCH_IDEE_REFINE_MAX_ROUNDS,
+  SACHBUCH_IDEE_REFINE_PASS_SCORE,
   SACHBUCH_MODEL_IDEE_CRITIC,
   SACHBUCH_MODEL_IDEE_DRAFTER,
 } from "@/lib/sachbuch/agent-defaults";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
+import {
+  emptySachbuchEvidenz,
+  emptySachbuchMakro,
+} from "@/lib/sachbuch/parse";
 import { resolveRomanSchreibModel } from "@/lib/roman/model";
 import {
   getSachbuchKontext,
@@ -20,30 +26,43 @@ import type {
   SachbuchKontext,
 } from "@/lib/sachbuch/types";
 
-const DRAFTER_SYSTEM = `Du bist Konzept-Architekt für deutschsprachige Sachbücher (Haiku).
-Verdichte Rohkonzept und Interview zu einem scharfen Dossier.
-Kein Motivations-Fluff. Keine neuen Kernthesen erfinden, die nicht im Material liegen — schärfen und strukturieren.
+const DRAFTER_SYSTEM = `Du bist Konzept-Architekt für deutschsprachige Sachbücher (Gemini 4 Argon).
+Ziel: Das Dossier messbar besser machen (These schärfen, Versprechen, Abgrenzung, Cases).
+Kein Motivations-Fluff. Kernthese aus dem Material schärfen — keine fremde Parallel-These.
+Wenn Change-Orders vorliegen: JEDEN Punkt konkret umsetzen (nicht nur umformulieren).
 
 Antworte NUR als JSON ohne Markdown-Fence:
 {
   "unpopularOpinion": "eine klare These / UVP (1–3 Sätze)",
   "briefing": "Markdown: Blickwinkel, Leserversprechen, Abgrenzung, Ton, Kapitel-Hinweise",
   "caseStudies": ["kurze Fall-/Belegskizze", "..."],
-  "openRisks": ["offenes Risiko oder Lücke", "..."]
+  "openRisks": ["offenes Risiko oder Lücke", "..."],
+  "addressedOrders": ["welche Change-Order du wie gelöst hast", "..."]
 }`;
 
-const CRITIC_SYSTEM = `Du bist strenger Sachbuch-Lektor (Luna).
-Prüfe das Dossier auf Schärfe, Widersprüche, Fluff, fehlende Abgrenzung und Umsetzbarkeit.
-pass=true nur wenn These + Leserversprechen + Abgrenzung klar und belastbar sind.
+const CRITIC_SYSTEM = `Du bist strenger, aber fairer Sachbuch-Lektor (Gemini 4 Argon).
+Bewerte das Dossier mit einer festen Rubrik (Score 1–10):
+
+1–3: These unklar / austauschbar; kein Leserversprechen; viel Fluff.
+4–5: Richtung erkennbar, aber Abgrenzung oder Cases dünn; Widersprüche möglich.
+6–7: Brauchbar; These und Versprechen ok, noch Lücken bei Schärfe/Belegen/Abgrenzung.
+8–9: Veröffentlichungsreif als Konzept: klare Anti-Konsens-These, Versprechen, Abgrenzung, greifbare Cases.
+10: Exzellent — nichts Wesentliches offen.
+
+Regeln:
+- score muss zur Rubrik passen (nicht pauschal niedrig halten).
+- Wenn eine Vor-Runde mit score vorliegt: scoreImproved=true nur bei echter Verbesserung; score darf dann nicht sinken, außer das Dossier wurde klar schlechter.
+- pass=true NUR bei score >= ${SACHBUCH_IDEE_REFINE_PASS_SCORE}.
+- Bei pass=false: 2–5 konkrete changeOrders (umsetzbar, priorisiert).
 
 Antworte NUR als JSON ohne Markdown-Fence:
 {
-  "pass": true,
-  "score": 1,
-  "critique": "kurze Gesamtbewertung auf Deutsch",
+  "pass": false,
+  "score": 6,
+  "scoreImproved": true,
+  "critique": "kurze Gesamtbewertung auf Deutsch inkl. Vergleich zur Vor-Runde falls vorhanden",
   "changeOrders": ["konkrete Änderungsanweisung 1", "..."]
-}
-score 1–10. Bei pass=false mindestens eine changeOrder.`;
+}`;
 
 function transcript(book: SachbuchKontext): string {
   return book.idee.interviewMessages
@@ -89,9 +108,13 @@ function parseDossier(raw: string): {
   }
 }
 
-function parseCritique(raw: string): {
+function parseCritique(
+  raw: string,
+  previousScore: number | null,
+): {
   pass: boolean;
   score: number;
+  scoreImproved: boolean | null;
   critique: string;
   changeOrders: string[];
 } {
@@ -100,12 +123,24 @@ function parseCritique(raw: string): {
     const parsed = JSON.parse(cleaned) as {
       pass?: boolean;
       score?: number;
+      scoreImproved?: boolean;
       critique?: string;
       changeOrders?: unknown;
     };
+    let score = Math.max(1, Math.min(10, Math.round(Number(parsed.score) || 5)));
+    // Don't allow silent score drops vs previous round unless model insists + we clamp softly.
+    if (previousScore !== null && score < previousScore) {
+      // Trust model only if it explicitly marks not improved; still floor at prev-1 max drop of 1.
+      score = Math.max(score, previousScore - 1);
+    }
+    const scoreImproved =
+      previousScore === null
+        ? null
+        : parsed.scoreImproved === true || score > previousScore;
     return {
-      pass: Boolean(parsed.pass),
-      score: Math.max(1, Math.min(10, Number(parsed.score) || 5)),
+      pass: score >= SACHBUCH_IDEE_REFINE_PASS_SCORE,
+      score,
+      scoreImproved,
       critique: String(parsed.critique ?? "").trim() || raw.trim(),
       changeOrders: Array.isArray(parsed.changeOrders)
         ? parsed.changeOrders.map((c) => String(c).trim()).filter(Boolean)
@@ -114,7 +149,8 @@ function parseCritique(raw: string): {
   } catch {
     return {
       pass: false,
-      score: 4,
+      score: previousScore ?? 4,
+      scoreImproved: false,
       critique: raw.trim() || "Kritik nicht parsebar.",
       changeOrders: ["Dossier schärfen: These, Leserversprechen, Abgrenzung."],
     };
@@ -159,13 +195,14 @@ export async function runSachbuchIdeeRefine(
     openRisks: [] as string[],
   };
 
-  let passed = false;
+  let previousScore: number | null = null;
+  let previousCritique = "";
 
   for (let round = 1; round <= SACHBUCH_IDEE_REFINE_MAX_ROUNDS; round += 1) {
-    const changeHint =
-      log.length > 0
-        ? `\nLetzte Change-Orders:\n${log[log.length - 1]!.changeOrders.map((c) => `- ${c}`).join("\n")}`
-        : "";
+    const lastLuna = [...log].reverse().find((r) => r.role === "luna");
+    const changeHint = lastLuna?.changeOrders.length
+      ? `\nChange-Orders (verbindlich umsetzen):\n${lastLuna.changeOrders.map((c, i) => `${i + 1}. ${c}`).join("\n")}\nZiel: Score klar über ${previousScore ?? "Ausgang"} Richtung ≥ ${SACHBUCH_IDEE_REFINE_PASS_SCORE}/10.`
+      : `\nZiel dieser Runde: starkes Konzept-Dossier (Rubrik-Score ≥ ${SACHBUCH_IDEE_REFINE_PASS_SCORE}/10).`;
 
     const haikuRaw = await generateText({
       model: drafter,
@@ -173,14 +210,14 @@ export async function runSachbuchIdeeRefine(
       userText: `Buch: ${book.title}
 Zielgruppe: ${book.zielgruppe.trim() || "—"}
 
-Rohkonzept / bisheriges Dossier:
+Bisheriges Dossier:
 ${dossierBlock(dossier)}
 
 Interview (Auszug):
 ${transcript(book).slice(0, 8_000) || "—"}
 ${changeHint}
 
-Runde ${round}/${SACHBUCH_IDEE_REFINE_MAX_ROUNDS}: liefere das geschärfte Dossier.`,
+Runde ${round}/${SACHBUCH_IDEE_REFINE_MAX_ROUNDS}: liefere das verbesserte Dossier.`,
       preferJson: true,
       maxTokens: 5000,
       timeoutMs: 180_000,
@@ -196,6 +233,13 @@ Runde ${round}/${SACHBUCH_IDEE_REFINE_MAX_ROUNDS}: liefere das geschärfte Dossi
       createdAt: new Date().toISOString(),
     });
 
+    const priorBlock =
+      previousScore !== null
+        ? `\nVor-Runde: Score ${previousScore}/10
+Vorherige Kritik: ${previousCritique.slice(0, 800)}
+Bewerte relativ dazu: Ist das Dossier besser? scoreImproved und score entsprechend setzen (nicht künstlich niedrig halten).`
+        : `\nErste Bewertung — kalibriere an der Rubrik (6–7 = brauchbar, ${SACHBUCH_IDEE_REFINE_PASS_SCORE}+ = freigabefähig).`;
+
     const lunaRaw = await generateText({
       model: critic,
       systemInstruction: CRITIC_SYSTEM,
@@ -203,25 +247,37 @@ Runde ${round}/${SACHBUCH_IDEE_REFINE_MAX_ROUNDS}: liefere das geschärfte Dossi
 
 Dossier:
 ${dossierBlock(dossier)}
+${priorBlock}
 
-Runde ${round}/${SACHBUCH_IDEE_REFINE_MAX_ROUNDS}: bewerte und gib Change-Orders.`,
+Runde ${round}/${SACHBUCH_IDEE_REFINE_MAX_ROUNDS}: score + Kritik + Change-Orders.
+pass nur bei score ≥ ${SACHBUCH_IDEE_REFINE_PASS_SCORE}.`,
       preferJson: true,
       maxTokens: 3000,
       timeoutMs: 180_000,
     });
 
-    const critique = parseCritique(lunaRaw);
+    const critique = parseCritique(lunaRaw, previousScore);
+    // Hard gate: pass only by score threshold.
+    const passedRound = critique.score >= SACHBUCH_IDEE_REFINE_PASS_SCORE;
+    const improvedNote =
+      critique.scoreImproved === true
+        ? " · verbessert"
+        : critique.scoreImproved === false
+          ? " · nicht verbessert"
+          : "";
     log.push({
       round,
       role: "luna",
-      content: `${critique.critique}\n\nScore: ${critique.score}/10`,
-      passed: critique.pass,
-      changeOrders: critique.changeOrders,
+      content: `${critique.critique}\n\nScore: ${critique.score}/10 (Pass ab ${SACHBUCH_IDEE_REFINE_PASS_SCORE})${improvedNote}`,
+      passed: passedRound,
+      changeOrders: passedRound ? [] : critique.changeOrders,
       createdAt: new Date().toISOString(),
     });
 
-    if (critique.pass) {
-      passed = true;
+    previousScore = critique.score;
+    previousCritique = critique.critique;
+
+    if (passedRound) {
       break;
     }
   }
@@ -293,7 +349,7 @@ export async function approveSachbuchIdeeRefine(
   });
 }
 
-/** Reset refine for another agentic run (keeps Rohkonzept briefing). */
+/** Reset refine for another agentic run (keeps current briefing/These). */
 export async function rejectSachbuchIdeeRefine(
   sachbuchId: string,
 ): Promise<SachbuchKontext> {
@@ -312,6 +368,52 @@ export async function rejectSachbuchIdeeRefine(
         ideaApprovedAt: null,
       },
     },
+  });
+}
+
+/**
+ * Reopen refine: keep Konzept as baseline, hard-reset everything after Idee
+ * (Buchtyp, Evidenz, Makro, Kapitel). Allows reopen if approved OR if
+ * downstream artefacts exist (UI/status can desync on ideaApprovedAt).
+ */
+export async function reopenSachbuchIdeeRefine(
+  sachbuchId: string,
+): Promise<SachbuchKontext> {
+  const book = await getSachbuchKontext(sachbuchId);
+  if (!book) throw new Error("Sachbuch nicht gefunden.");
+
+  const wasApproved =
+    Boolean(book.idee.guide.ideaApprovedAt?.trim()) ||
+    book.idee.refineStatus === "approved";
+  const hasDownstream =
+    Boolean(book.makro.bookTypeId?.trim()) ||
+    book.evidenz.claims.length > 0 ||
+    book.evidenz.queries.length > 0 ||
+    book.makro.status !== "empty" ||
+    book.kapitel.length > 0;
+
+  if (!wasApproved && !hasDownstream) {
+    throw new Error(
+      "Verfeinerung ist bereits offen — bitte „Verfeinerung starten“ nutzen.",
+    );
+  }
+
+  return patchSachbuchBook(sachbuchId, {
+    idee: {
+      ...book.idee,
+      refineStatus: "idle",
+      refineLog: [],
+      refinedBriefing: "",
+      refinedOpinion: "",
+      refinedCaseStudies: [],
+      guide: {
+        currentStep: "refine",
+        ideaApprovedAt: null,
+      },
+    },
+    evidenz: emptySachbuchEvidenz(),
+    makro: emptySachbuchMakro("journey", ""),
+    kapitel: [],
   });
 }
 

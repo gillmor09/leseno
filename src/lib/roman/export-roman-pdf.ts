@@ -246,6 +246,23 @@ export type RomanExportInput = {
    * Adult + YA: normal glyph spacing; children / Clever: wider (~1.1×).
    */
   typography?: RomanExportTypographyHints;
+  /**
+   * Body/heading point sizes. `compact` = smaller text (Sachbuch PDF).
+   * Default keeps Roman trade sizes (14 / 16 pt).
+   */
+  printDensity?: "default" | "compact";
+};
+
+type PdfTypeScale = {
+  bodyPt: number;
+  headingPt: number;
+  bodyLineMm: number;
+  headingLineMm: number;
+  tocLineMm: number;
+  /** Front-matter title / subtitle / autor sizes. */
+  fmTitlePt: number;
+  fmSubtitlePt: number;
+  fmAutorPt: number;
 };
 
 /**
@@ -269,12 +286,44 @@ export function romanExportUsesWideCharSpacing(
 const PDF_BODY_PT = 14;
 const PDF_HEADING_PT = 16;
 const PDF_LINE_HEIGHT = 1.5;
+/** Inhaltsverzeichnis entry rhythm (2 × body size). */
+const PDF_TOC_LINE_HEIGHT = 2;
 /** Extra inter-glyph space for children's books only (~1.1× normal). */
 const PDF_CHAR_SCALE_WIDE = 1.1;
 const PT_TO_MM = 25.4 / 72;
 
 function pdfLineHeightMm(sizePt: number): number {
   return sizePt * PDF_LINE_HEIGHT * PT_TO_MM;
+}
+
+/** Resolve body/heading sizes for PDF (compact = Sachbuch). */
+function resolvePdfTypeScale(
+  density?: RomanExportInput["printDensity"],
+): PdfTypeScale {
+  if (density === "compact") {
+    const bodyPt = 11;
+    const headingPt = 13;
+    return {
+      bodyPt,
+      headingPt,
+      bodyLineMm: pdfLineHeightMm(bodyPt),
+      headingLineMm: pdfLineHeightMm(headingPt),
+      tocLineMm: bodyPt * PDF_TOC_LINE_HEIGHT * PT_TO_MM,
+      fmTitlePt: 16,
+      fmSubtitlePt: 11,
+      fmAutorPt: 12,
+    };
+  }
+  return {
+    bodyPt: PDF_BODY_PT,
+    headingPt: PDF_HEADING_PT,
+    bodyLineMm: pdfLineHeightMm(PDF_BODY_PT),
+    headingLineMm: pdfLineHeightMm(PDF_HEADING_PT),
+    tocLineMm: PDF_BODY_PT * PDF_TOC_LINE_HEIGHT * PT_TO_MM,
+    fmTitlePt: 19,
+    fmSubtitlePt: 12,
+    fmAutorPt: 13,
+  };
 }
 
 /** Wrap width shrunk when wide char-spacing is active so lines still fit. */
@@ -300,8 +349,6 @@ function clearPdfCharSpacing(pdf: jsPDF): void {
 
 const PDF_BODY_LINE_MM = pdfLineHeightMm(PDF_BODY_PT);
 const PDF_HEADING_LINE_MM = pdfLineHeightMm(PDF_HEADING_PT);
-/** Inhaltsverzeichnis entry rhythm (2 × body size). */
-const PDF_TOC_LINE_HEIGHT = 2;
 const PDF_TOC_LINE_MM = PDF_BODY_PT * PDF_TOC_LINE_HEIGHT * PT_TO_MM;
 
 /** Dark orange for „Abenteuer-Wissen“ title. */
@@ -790,16 +837,17 @@ function drawStoryPageNumber(
 function writeFrontMatterPdf(
   ctx: WriteCtx,
   vorsatz: RomanVorsatz,
-  options: { startOnFreshPage: boolean },
+  options: { startOnFreshPage: boolean; scale?: PdfTypeScale },
 ): void {
   if (!hasUsableVorsatz(vorsatz)) return;
+  const scale = options.scale ?? resolvePdfTypeScale("default");
 
   const t = vorsatz.titelseite;
   if (options.startOnFreshPage) {
     startNewPage(ctx);
   }
   ctx.y = ctx.pageHeight * 0.32;
-  setNunito(ctx.pdf, "extrabold", 19);
+  setNunito(ctx.pdf, "extrabold", scale.fmTitlePt);
   ctx.pdf.setTextColor(9, 9, 11);
   writeCenteredLines(
     ctx,
@@ -807,11 +855,11 @@ function writeFrontMatterPdf(
       t.titel.trim() || "Unbenannter Roman",
       ctx.contentWidth,
     ) as string[],
-    8,
+    scale.fmTitlePt === 19 ? 8 : 7,
   );
   if (t.untertitel.trim()) {
     ctx.y += 3;
-    setNunito(ctx.pdf, "semibold", 12);
+    setNunito(ctx.pdf, "semibold", scale.fmSubtitlePt);
     ctx.pdf.setTextColor(82, 82, 91);
     writeCenteredLines(
       ctx,
@@ -821,7 +869,7 @@ function writeFrontMatterPdf(
   }
   if (t.autor.trim()) {
     ctx.y += 8;
-    setNunito(ctx.pdf, "bold", 13);
+    setNunito(ctx.pdf, "bold", scale.fmAutorPt);
     ctx.pdf.setTextColor(24, 24, 27);
     writeCenteredLines(ctx, [t.autor.trim()], 6);
   }
@@ -1118,13 +1166,14 @@ function writeAbenteuerWissenCard(ctx: WriteCtx, fakten: string[]): void {
 function beginTocPdf(
   ctx: WriteCtx,
   chapterCount: number,
-  options: { startOnFreshPage: boolean },
+  options: { startOnFreshPage: boolean; scale?: PdfTypeScale },
 ): {
   tocStartPage: number;
   contentStartY: number;
 } {
-  const lineH = PDF_TOC_LINE_MM;
-  const headingBlock = 14;
+  const scale = options.scale ?? resolvePdfTypeScale("default");
+  const lineH = scale.tocLineMm;
+  const headingBlock = scale.bodyPt >= 14 ? 14 : 12;
   const usable =
     ctx.pageHeight - ctx.marginTop - ctx.marginBottom - headingBlock;
   const linesPerPage = Math.max(1, Math.floor(usable / lineH));
@@ -1136,7 +1185,7 @@ function beginTocPdf(
     ctx.y = ctx.marginTop;
   }
   const tocStartPage = ctx.pdf.getNumberOfPages();
-  setNunito(ctx.pdf, "extrabold", 17);
+  setNunito(ctx.pdf, "extrabold", scale.bodyPt >= 14 ? 17 : 14);
   ctx.pdf.setTextColor(9, 9, 11);
   ctx.pdf.text("Inhaltsverzeichnis", ctx.marginX, ctx.y + 2);
   ctx.y += headingBlock;
@@ -1157,9 +1206,10 @@ function fillTocPdfEntries(
   tocStartPage: number,
   contentStartY: number,
   storyStartPdfPage: number,
+  scale: PdfTypeScale = resolvePdfTypeScale("default"),
 ): void {
   const pdf = ctx.pdf;
-  const lineH = PDF_TOC_LINE_MM;
+  const lineH = scale.tocLineMm;
   const pageNumW = 10;
   const textW = ctx.contentWidth - pageNumW - 4;
 
@@ -1182,7 +1232,7 @@ function fillTocPdfEntries(
       y = ctx.marginTop;
     }
 
-    setNunito(pdf, "bold", PDF_BODY_PT);
+    setNunito(pdf, "bold", scale.bodyPt);
     pdf.setTextColor(154, 52, 18);
     const lines = pdf.splitTextToSize(label, textW) as string[];
     const first = lines[0] ?? label;
@@ -1233,6 +1283,7 @@ export async function buildRomanPdfBlob(
   const vorsatz = input.vorsatz ?? emptyVorsatz();
   const cover = (input.coverImageDataUrl ?? "").trim();
   const hasVorsatz = hasUsableVorsatz(vorsatz);
+  const scale = resolvePdfTypeScale(input.printDensity);
 
   const pageWidth = PAPERBACK_6X9_PAGE_MM.width;
   const pageHeight = PAPERBACK_6X9_PAGE_MM.height;
@@ -1277,13 +1328,17 @@ export async function buildRomanPdfBlob(
   }
 
   if (hasVorsatz) {
-    writeFrontMatterPdf(ctx, vorsatz, { startOnFreshPage: pageUsed });
+    writeFrontMatterPdf(ctx, vorsatz, {
+      startOnFreshPage: pageUsed,
+      scale,
+    });
     pageUsed = true;
   }
 
   // TOC on its own page(s); chapter loop always starts a new page afterward.
   const tocMeta = beginTocPdf(ctx, chapters.length, {
     startOnFreshPage: pageUsed,
+    scale,
   });
   pageUsed = true;
 
@@ -1309,32 +1364,32 @@ export async function buildRomanPdfBlob(
     }
     chapterStartPage.set(chapter.number, pdf.getNumberOfPages());
 
-    setNunito(pdf, "bold", PDF_HEADING_PT);
+    setNunito(pdf, "bold", scale.headingPt);
     applyPdfCharSpacing(pdf, charScale);
     pdf.setTextColor(9, 9, 11);
     const headingLines = pdf.splitTextToSize(
       chapterHeadingLabel(chapter),
       wrapW,
     ) as string[];
-    writeLines(ctx, headingLines, PDF_HEADING_LINE_MM);
+    writeLines(ctx, headingLines, scale.headingLineMm);
     // One blank line between Kapitelüberschrift and body.
-    ctx.y += PDF_BODY_LINE_MM;
+    ctx.y += scale.bodyLineMm;
     pageUsed = true;
 
-    setNunito(pdf, "normal", PDF_BODY_PT);
+    setNunito(pdf, "normal", scale.bodyPt);
     applyPdfCharSpacing(pdf, charScale);
     pdf.setTextColor(24, 24, 27);
 
     for (const para of paras) {
       if (isSceneBreakParagraph(para)) {
-        ctx.y += PDF_BODY_LINE_MM * 0.5;
-        writeCenteredLines(ctx, [SCENE_BREAK_MARKER], PDF_BODY_LINE_MM);
-        ctx.y += PDF_BODY_LINE_MM * 0.5;
+        ctx.y += scale.bodyLineMm * 0.5;
+        writeCenteredLines(ctx, [SCENE_BREAK_MARKER], scale.bodyLineMm);
+        ctx.y += scale.bodyLineMm * 0.5;
         continue;
       }
       const lines = pdf.splitTextToSize(para, wrapW) as string[];
-      writeLines(ctx, lines, PDF_BODY_LINE_MM);
-      ctx.y += PDF_BODY_LINE_MM * 0.4;
+      writeLines(ctx, lines, scale.bodyLineMm);
+      ctx.y += scale.bodyLineMm * 0.4;
     }
     clearPdfCharSpacing(pdf);
 
@@ -1357,6 +1412,7 @@ export async function buildRomanPdfBlob(
     tocMeta.tocStartPage,
     tocMeta.contentStartY,
     storyStartPdfPage,
+    scale,
   );
 
   if (storyStartPdfPage > 0) {

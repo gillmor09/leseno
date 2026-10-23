@@ -40,13 +40,14 @@ Personal mode: topic/cast resolved **server-side** from the selected `child_prof
 Route `/admin/sachbuch`: own table `leseno.sachbuch_kontext`. **Guided wizard** (`idee.guide`, hard gates in `guide.ts`):
 
 1. **Rohkonzept** — Paste oder Interview  
-2. **Verfeinern** — Agentic Haiku (`claude-haiku-5-5`) ↔ Luna (`gpt-6-luna`), 2–3 Auto-Runden → HITL Freigabe (`ideaApprovedAt`)  
+2. **Verfeinern** — Agentic Gemini 4 Argon (`gemini-4-argon`) Entwurf ↔ Kritik, 2–3 Auto-Runden; Rubrik + Vor-Runden-Vergleich, Pass ab Score ≥8 (`SACHBUCH_IDEE_REFINE_PASS_SCORE`) → HITL Freigabe (`ideaApprovedAt`)  
 3. **Buchtyp** — Vorschlag aus Konzept (Katalog), nicht beim Anlegen  
 4. **Evidenz** — Google Search claims map (no RAG)  
 5. **Makro** — Stages nach Typ → Kapitelgerüst  
 6. **Schreiben** — Context Graph + Abschnitte (400–700 Wörter); Ziel ca. 8.000 Wörter/Kapitel, ca. 40.000 Wörter/Buch  
+7. **Export** — Titelforschlag, Untertitel, Titelei, Klappentext, 6 Schlagwörter; Cover `gpt-image-2.5-sunburst` 1600×2400 @ 300 ppi; PDF (Cover + Titelei + Kapitel), ePub (Titelei, ohne Cover) — wie Roman
 
-Ohne Freigabe: Evidenz/Makro/Schreiben UI- und Server-gesperrt (bestehende Abschnitte bleiben lesbar). Agents: interviewer, researcher, architect, writer, critic, stylist. Defaults: Luna (Interviewer/Architect/Critic/Stylist), Gemini Flash (Researcher + Search, Writer); Refine: Haiku + Luna. Env: `DEEPGRAM_API_KEY`. Migrations `20260925150000_sachbuch_kontext.sql`, `20260925160000_sachbuch_phases.sql`.
+Ohne Freigabe: Evidenz/Makro/Schreiben UI- und Server-gesperrt (bestehende Abschnitte bleiben lesbar). Agents: interviewer, researcher, architect, writer, critic, stylist. Hard-wired (UI + Laufzeit aus `SACHBUCH_RUNTIME_MODEL_BY_AGENT` / Idee-Refine / Marketing / Cover): Refine + Evidenz + Makro + Context Graph + Critic = Gemini 4 Argon; Writer + Stylist = Gemini 3.8 Flash; Interviewer + Marketing = GPT-6 Luna; Cover = gpt-image-2.5-sunburst. Wait-Dialoge und Agents-Panel lesen nie gespeicherte `agents.*.modelSlug`. Env: `DEEPGRAM_API_KEY`. Migrations `20260925150000_sachbuch_kontext.sql`, `20260925160000_sachbuch_phases.sql`, `20261023100000_leseno_sachbuch_export.sql`.
 
 ## Buch (Admin) — Roman greenfield
 

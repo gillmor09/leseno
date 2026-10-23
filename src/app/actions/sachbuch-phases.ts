@@ -23,20 +23,31 @@ import {
   applyMakroToKapitel,
   generateSachbuchMakro,
 } from "@/lib/sachbuch/makro";
+import { slimSachbuchKontextForTransport } from "@/lib/sachbuch/parse";
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 import type { ActionResult } from "@/lib/types/actions";
+import { runSachbuchCoverGenerate } from "@/lib/sachbuch/export-cover";
+import {
+  applySachbuchSuggestedTitle,
+  runSachbuchMarketingGenerate,
+} from "@/lib/sachbuch/export-meta";
 import {
   approveSachbuchIdeeRefine,
   rejectSachbuchIdeeRefine,
+  reopenSachbuchIdeeRefine,
   runSachbuchIdeeRefine,
   setSachbuchGuideStep,
 } from "@/lib/sachbuch/idee-refine";
+import { upsertSachbuchExport } from "@/lib/sachbuch/repository";
 import {
   applySachbuchBookType,
   suggestSachbuchBookType,
   type SachbuchBookTypeSuggestResult,
 } from "@/lib/sachbuch/suggest-book-type";
-import type { SachbuchGuideStep } from "@/lib/sachbuch/types";
+import {
+  SACHBUCH_KEYWORD_COUNT,
+  type SachbuchGuideStep,
+} from "@/lib/sachbuch/types";
 import {
   firstSachbuchZodMessage,
   sachbuchAbschnittReplySchema,
@@ -178,6 +189,23 @@ export async function rejectSachbuchIdeeRefineAction(
   );
 }
 
+/** Revoke idea approval and reopen refine (keeps freigegebenes Konzept as basis). */
+export async function reopenSachbuchIdeeRefineAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => reopenSachbuchIdeeRefine(parsed.data.id),
+    "Verfeinerung öffnen fehlgeschlagen.",
+  );
+}
+
 const guideStepActionSchema = z.object({
   sachbuchId: z.string().uuid(),
   step: z.enum([
@@ -187,6 +215,7 @@ const guideStepActionSchema = z.object({
     "evidenz",
     "makro",
     "write",
+    "export",
   ]),
 });
 
@@ -329,11 +358,23 @@ export async function generateNextAbschnittAction(
   if (!parsed.success) {
     return { success: false, error: firstSachbuchZodMessage(parsed.error) };
   }
-  return wrap(
-    parsed.data.sachbuchId,
-    () => generateNextAbschnitt(parsed.data),
-    "Abschnitt erzeugen fehlgeschlagen.",
-  );
+  try {
+    const book = await generateNextAbschnitt(parsed.data);
+    revalidateSachbuchAdmin(book.id);
+    return {
+      success: true,
+      data: { book: slimSachbuchKontextForTransport(book) },
+    };
+  } catch (error) {
+    revalidateSachbuchAdmin(parsed.data.sachbuchId);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Abschnitt erzeugen fehlgeschlagen.",
+    };
+  }
 }
 
 export async function replyAbschnittCheckpointAction(
@@ -371,5 +412,114 @@ export async function runSachbuchLektoratAction(
         fromPass: parsed.data.fromPass,
       }),
     "Lektorat fehlgeschlagen.",
+  );
+}
+
+/** Generate Titel-Vorschlag, Untertitel, Klappentext, 6 Keywords + Titelei. */
+export async function generateSachbuchMarketingAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => runSachbuchMarketingGenerate(parsed.data.id),
+    "Marketing-Texte fehlgeschlagen.",
+  );
+}
+
+/** Cover via gpt-image-2.5-sunburst 1600×2400 JPEG. */
+export async function generateSachbuchCoverAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => runSachbuchCoverGenerate(parsed.data.id),
+    "Cover-Generierung fehlgeschlagen.",
+  );
+}
+
+/** Apply KI title suggestion to book.title. */
+export async function applySachbuchSuggestedTitleAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => applySachbuchSuggestedTitle(parsed.data.id),
+    "Titel übernehmen fehlgeschlagen.",
+  );
+}
+
+const saveSachbuchExportSchema = z.object({
+  id: z.string().uuid(),
+  suggestedTitle: z.string().max(200).optional(),
+  subtitle: z.string().max(500).optional(),
+  summary: z.string().max(20_000).optional(),
+  keywords: z.array(z.string().max(80)).max(SACHBUCH_KEYWORD_COUNT).optional(),
+  autorName: z.string().max(200).optional(),
+  motto: z.string().max(2_000).optional(),
+});
+
+/** Persist edited marketing fields (keeps cover). */
+export async function saveSachbuchExportAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = saveSachbuchExportSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    async () => {
+      const { getSachbuchKontext } = await import(
+        "@/lib/sachbuch/repository"
+      );
+      const book = await getSachbuchKontext(parsed.data.id);
+      if (!book) throw new Error("Sachbuch nicht gefunden.");
+      const subtitle = parsed.data.subtitle ?? book.export.subtitle;
+      const suggestedTitle =
+        parsed.data.suggestedTitle ?? book.export.suggestedTitle;
+      const autorName = parsed.data.autorName ?? book.export.autorName;
+      const motto =
+        parsed.data.motto ?? book.export.vorsatz.motto;
+      const vorsatz = {
+        ...book.export.vorsatz,
+        titelseite: {
+          ...book.export.vorsatz.titelseite,
+          titel: suggestedTitle.trim() || book.title,
+          untertitel: subtitle,
+          autor: autorName,
+        },
+        motto,
+      };
+      return upsertSachbuchExport({
+        id: parsed.data.id,
+        suggestedTitle,
+        subtitle,
+        summary: parsed.data.summary ?? book.export.summary,
+        keywords: parsed.data.keywords ?? book.export.keywords,
+        autorName,
+        vorsatz,
+      });
+    },
+    "Export speichern fehlgeschlagen.",
   );
 }

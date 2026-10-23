@@ -16,7 +16,8 @@ export type SachbuchGuideGatePhase =
   | "book_type"
   | "evidenz"
   | "makro"
-  | "write";
+  | "write"
+  | "export";
 
 export function emptySachbuchGuide(
   step: SachbuchGuideStep = "concept",
@@ -41,14 +42,14 @@ function stepIndex(step: SachbuchGuideStep): number {
 
 /**
  * Hard-gate floor: everything at/below this is unlocked.
- * After idea approval + book type, Evidenz/Makro/Schreiben are all open
+ * After idea approval + book type, Evidenz/Makro/Schreiben/Export are open
  * (Weiter without forcing research). Writing actions still need Kapitel.
  */
 export function resolveSachbuchGuideFloor(book: SachbuchKontext): SachbuchGuideStep {
   if (!hasUsableSachbuchConcept(book)) return "concept";
   if (!isSachbuchIdeaApproved(book)) return "refine";
   if (!hasConfirmedSachbuchBookType(book.makro.bookTypeId)) return "book_type";
-  return "write";
+  return "export";
 }
 
 /** Steps the user may open (all up to floor, plus current if valid). */
@@ -109,6 +110,8 @@ export function assertSachbuchGuideAllows(
   if (phase === "evidenz") return;
 
   if (phase === "makro") return;
+
+  if (phase === "export") return;
 
   // write: graph + abschnitte
   if (book.kapitel.length === 0) {

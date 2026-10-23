@@ -6,6 +6,9 @@
 import { generateWithGemini } from "@/lib/ai/gemini";
 import { generateText } from "@/lib/ai/provider";
 import {
+  SACHBUCH_MODEL_CRITIC,
+  SACHBUCH_MODEL_STYLIST,
+  SACHBUCH_MODEL_WRITER,
   SACHBUCH_TARGET_WORDS_MAX,
   SACHBUCH_TARGET_WORDS_MIN,
 } from "@/lib/sachbuch/agent-defaults";
@@ -92,7 +95,10 @@ export async function generateSachbuchKapitel(input: {
         status: "generating",
       });
 
-      const writer = book.agents.writer;
+      const writer = {
+        ...book.agents.writer,
+        modelSlug: SACHBUCH_MODEL_WRITER,
+      };
       const writerModel = await resolveSachbuchAgentModel(writer);
       const userText = `Kapitel-Titel: ${kapitel.title}
 UVP: ${book.idee.unpopularOpinion}
@@ -153,7 +159,10 @@ Schreibe einen konsistenten Erstentwurf / Rewrite (Ziel ca. ${SACHBUCH_TARGET_WO
         status: "generating",
       });
       book = (await getSachbuchKontext(input.sachbuchId))!;
-      const critic = book.agents.critic;
+      const critic = {
+        ...book.agents.critic,
+        modelSlug: SACHBUCH_MODEL_CRITIC,
+      };
       const criticModel = await resolveSachbuchAgentModel(critic);
       critiquePass2 = (
         await generateText({
@@ -186,7 +195,10 @@ Prüfe Logik, Argumente und Fakten. Liefere strukturierte Kritik.`,
       status: "generating",
     });
     book = (await getSachbuchKontext(input.sachbuchId))!;
-    const stylist = book.agents.stylist;
+    const stylist = {
+      ...book.agents.stylist,
+      modelSlug: SACHBUCH_MODEL_STYLIST,
+    };
     const stylistModel = await resolveSachbuchAgentModel(stylist);
     const finalText = (
       await generateText({

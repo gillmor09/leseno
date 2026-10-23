@@ -1,20 +1,56 @@
 /**
  * Default system prompts + model slugs for per-book Sachbuch agents (phases 1–6).
+ * Runtime model per role is hard-wired here — stored `agents.*.modelSlug` is
+ * ignored for generation (prompts/flags still come from the book slot).
  */
 
-import type { SachbuchAgents, SachbuchAgentSlot } from "@/lib/sachbuch/types";
+import type {
+  SachbuchAgentKey,
+  SachbuchAgents,
+  SachbuchAgentSlot,
+} from "@/lib/sachbuch/types";
 
 export const SACHBUCH_MODEL_INTERVIEWER = "gpt-6-luna";
-export const SACHBUCH_MODEL_RESEARCHER = "gemini-3.8-flash";
-export const SACHBUCH_MODEL_ARCHITECT = "gpt-6-luna";
+/** Phase 2 Evidenz (Google Search) + default researcher slot. */
+export const SACHBUCH_MODEL_RESEARCHER = "gemini-4-argon";
+/** Phase 3 Makro (stages) + default architect slot. */
+export const SACHBUCH_MODEL_ARCHITECT = "gemini-4-argon";
+/** Phase 5 Writer (+ Critic-Rewrite / Style-Rewrite via Writer). */
 export const SACHBUCH_MODEL_WRITER = "gemini-3.8-flash";
-export const SACHBUCH_MODEL_CRITIC = "gpt-6-luna";
-export const SACHBUCH_MODEL_STYLIST = "gpt-6-luna";
+/** Phase 5 Critic / Prüfen. */
+export const SACHBUCH_MODEL_CRITIC = "gemini-4-argon";
+/** Phase 5 Style Matcher — same class as Writer (polish, not deep critique). */
+export const SACHBUCH_MODEL_STYLIST = "gemini-3.8-flash";
 
-/** Agentic Idee-Verfeinerung: Haiku verdichtet, Luna kritisiert. */
-export const SACHBUCH_MODEL_IDEE_DRAFTER = "claude-haiku-5-5";
-export const SACHBUCH_MODEL_IDEE_CRITIC = "gpt-6-luna";
+/** Agentic Idee-Verfeinerung: Gemini 4 Argon verdichtet und kritisiert. */
+export const SACHBUCH_MODEL_IDEE_DRAFTER = "gemini-4-argon";
+export const SACHBUCH_MODEL_IDEE_CRITIC = "gemini-4-argon";
 export const SACHBUCH_IDEE_REFINE_MAX_ROUNDS = 3;
+/** Export Marketing / Titelei. */
+export const SACHBUCH_MODEL_MARKETING = "gpt-6-luna";
+/** Export Cover (OpenAI Images) — keep slug here so client UI never imports export-cover. */
+export const SACHBUCH_COVER_MODEL_SLUG = "gpt-image-2.5-sunburst";
+/** Luna pass only at/above this score (1–10). */
+export const SACHBUCH_IDEE_REFINE_PASS_SCORE = 8;
+
+/**
+ * Model slug actually used at runtime for each agent role (UI + wait dialogs).
+ * Do not read `book.agents[key].modelSlug` for display — it may be stale.
+ */
+export const SACHBUCH_RUNTIME_MODEL_BY_AGENT: Record<SachbuchAgentKey, string> =
+  {
+    interviewer: SACHBUCH_MODEL_INTERVIEWER,
+    researcher: SACHBUCH_MODEL_RESEARCHER,
+    architect: SACHBUCH_MODEL_ARCHITECT,
+    writer: SACHBUCH_MODEL_WRITER,
+    critic: SACHBUCH_MODEL_CRITIC,
+    stylist: SACHBUCH_MODEL_STYLIST,
+  };
+
+/** Runtime model slug for a Sachbuch agent role. */
+export function sachbuchRuntimeModelSlug(key: SachbuchAgentKey): string {
+  return SACHBUCH_RUNTIME_MODEL_BY_AGENT[key];
+}
 
 /** Soft volume targets for a full adult Sachbuch (~5 Makro-Kapitel). */
 export const SACHBUCH_BOOK_WORDS_TARGET = 40_000;
@@ -45,6 +81,22 @@ export function recommendedMinAbschnitte(claimsCount: number): number {
     SACHBUCH_KAPITEL_WORDS_TARGET / SACHBUCH_ABSCHNITT_WORDS_TARGET,
   );
   return Math.max(fromVolume, claimsCount, 10);
+}
+
+/** Safety cap for one „alle Abschnitte“ batch run (per chapter). */
+export const SACHBUCH_ABSCHNITT_BATCH_MAX = 24;
+
+/** True when soft volume recommendation for a chapter is met. */
+export function kapitelMeetsAbschnittVolumeTarget(input: {
+  abschnitteCount: number;
+  words: number;
+  claimsCount: number;
+}): boolean {
+  const min = recommendedMinAbschnitte(input.claimsCount);
+  return (
+    input.abschnitteCount >= min &&
+    input.words >= SACHBUCH_KAPITEL_WORDS_TARGET
+  );
 }
 
 const INTERVIEWER_PROMPT = `Du bist ein sokratischer Interviewer für deutschsprachige Sachbücher (Mind-Extraction & UVP).
@@ -91,6 +143,11 @@ Makro-Typ „erzaehlung“ (narratives Sachbuch / Fallgeschichte):
 
 Context Graph pro Kapitel: Leser-Wissensstand, etablierte Begriffe, zu beweisende Behauptungen, Abhängigkeiten.
 
+Leseversprechen (rechtlich / DSGVO u. a.):
+- Keine Artikelnummern 1:1 (nicht „Art. 6 DSGVO“, „Art. 5 Abs. 1“, „§ 26 BDSG“ o. Ä. in Terms oder Claims).
+- Stattdessen Alltagssprache und Prinzipien: Zweckbindung, Einwilligung, Auskunftsrecht, Löschung, …
+- Ziel: Leserführung ohne Artikel-Schlacht — Normen nur als verständliche Pflichten/Rechte, nie als Zitatkatalog.
+
 Regeln: Deutsch, konkret, editierbar kurz. Keine 10-Kapitel-Standardgliederung.`;
 
 const WRITER_PROMPT = `Du bist Writer für Sachbuch-Abschnitte (${SACHBUCH_ABSCHNITT_WORDS_MIN}–${SACHBUCH_ABSCHNITT_WORDS_MAX} Wörter).
@@ -102,6 +159,7 @@ Regeln:
 - Halte das Wortband ${SACHBUCH_ABSCHNITT_WORDS_MIN}–${SACHBUCH_ABSCHNITT_WORDS_MAX}; lieber Richtung ${SACHBUCH_ABSCHNITT_WORDS_MAX} als darunter.
 - Keine Meta-Kommentare.
 - Baue auf etablierte Begriffe; beweise fällige Claims.
+- Leseversprechen: keine DSGVO-/Gesetzes-Artikelnummern 1:1 — Prinzipien und Alltagssprache statt Artikel-Schlacht.
 - Jeder Abschnitt ist in sich geschlossen: Anfang = neuer vollständiger Satz; Ende = abgeschlossener Gedanke mit . ! oder ? — keine Satztrennung über Abschnittsgrenzen.
 - Wenn der Autor Recherche/Belege fordert („such im Internet“, „keine Ahnung“): recherchiere und arbeite belastbare Fakten ein — erfinde keine Studien oder Zahlen.`;
 
@@ -111,6 +169,7 @@ Aufgabe: Logik-, Argumentations-, Redundanz- und Faktenschwächen gnadenlos bene
 Regeln:
 - Deutsch.
 - Strukturiere: (1) Schwere Fehler, (2) schwache Argumente, (3) Redundanz, (4) fehlende Belege, (5) konkrete Fixes.
+- Flagge Artikelnummern (Art. … DSGVO/BDSG o. Ä.) als Verstoß gegen das Leseversprechen „ohne Artikel-Schlacht“.
 - Kein komplettes Umschreiben.`;
 
 const STYLIST_PROMPT = `Du bist Style Matcher für Sachbuch-Abschnitte.

@@ -218,7 +218,7 @@ export function SachbuchEvidenzPanel({
         open={waitOpen}
         title="Evidenz-Recherche läuft"
         steps={SACHBUCH_WAIT_EVIDENZ}
-        agentInfo={sachbuchWaitAgent(book.agents, "researcher")}
+        agentInfo={sachbuchWaitAgent("researcher")}
       />
     </div>
   );
