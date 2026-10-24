@@ -122,6 +122,7 @@ export async function createSachbuchKontext(input: {
           guide: {
             currentStep: "refine" as const,
             ideaApprovedAt: null,
+            writeApprovedAt: null,
           },
         }
       : {
@@ -130,6 +131,7 @@ export async function createSachbuchKontext(input: {
           guide: {
             currentStep: "concept" as const,
             ideaApprovedAt: null,
+            writeApprovedAt: null,
           },
         };
 

@@ -9,6 +9,7 @@ import {
   SACHBUCH_COVER_MODEL_SLUG,
   SACHBUCH_MODEL_IDEE_CRITIC,
   SACHBUCH_MODEL_IDEE_DRAFTER,
+  SACHBUCH_MODEL_MANUSCRIPT,
   SACHBUCH_MODEL_MARKETING,
   sachbuchRuntimeModelSlug,
 } from "@/lib/sachbuch/agent-defaults";
@@ -99,6 +100,35 @@ export const SACHBUCH_WAIT_LEKTORAT = [
   "Lektorat wird gespeichert …",
 ] as const;
 
+export const SACHBUCH_WAIT_MANUSCRIPT_SCORE = [
+  "Kapiteltext wird gelesen …",
+  "Verkaufsreife wird bewertet …",
+  "Change-Orders werden formuliert …",
+  "Score wird gespeichert …",
+] as const;
+
+export const SACHBUCH_WAIT_MANUSCRIPT_IMPROVE = [
+  "Rohentwurf und Kritik werden gelesen …",
+  "Argon überarbeitet das Kapitel …",
+  "Artikel-Schlacht und Wiederholungen …",
+  "Verkaufsreife wird neu bewertet …",
+  "Manuskript wird gespeichert …",
+] as const;
+
+export const SACHBUCH_WAIT_MANUSCRIPT_IMPROVE_ALL = [
+  "Kapitel werden der Reihe nach gelesen …",
+  "Argon lektoriert Kapitel für Kapitel …",
+  "Scores werden aktualisiert …",
+  "Gesamtmanuskript wird gespeichert …",
+] as const;
+
+export function sachbuchWaitAgentManuscript(): SachbuchWaitAgentInfo {
+  return sachbuchWaitAgentForSlug(
+    "Manuskript-Lektorat",
+    SACHBUCH_MODEL_MANUSCRIPT,
+  );
+}
+
 export const SACHBUCH_WAIT_EXPORT_META = [
   "Manuskript und UVP werden gelesen …",
   "Titel und Untertitel …",
@@ -111,6 +141,7 @@ export const SACHBUCH_WAIT_EXPORT_COVER = [
   "Klappentext wird gelesen …",
   "Cover-Prompt wird gebaut …",
   "Cover-Bild wird generiert …",
+  "Titel und Untertitel werden gesetzt …",
   "1600×2400 @ 300 ppi wird gesichert …",
   "Cover wird gespeichert …",
 ] as const;

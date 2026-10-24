@@ -2,7 +2,7 @@
 
 /**
  * Guided Sachbuch wizard: Rohkonzept → Argon-Verfeinerung → Freigabe →
- * Buchtyp → Evidenz → Makro → Schreiben → Export. Hard gates via idee.guide.
+ * Buchtyp → Evidenz → Makro → Schreiben (fixieren) → Manuskript → Export.
  */
 
 import Link from "next/link";
@@ -14,7 +14,10 @@ import {
   deleteSachbuchAction,
   saveSachbuchAction,
 } from "@/app/actions/sachbuch-admin";
-import { setSachbuchGuideStepAction } from "@/app/actions/sachbuch-phases";
+import {
+  approveSachbuchSchreibenAction,
+  setSachbuchGuideStepAction,
+} from "@/app/actions/sachbuch-phases";
 import { SachbuchBookTypePanel } from "@/components/features/admin/sachbuch-book-type-panel";
 import { SachbuchEvidenzPanel } from "@/components/features/admin/sachbuch-evidenz-panel";
 import { SachbuchExportPanel } from "@/components/features/admin/sachbuch-export-panel";
@@ -22,6 +25,7 @@ import { SachbuchGuideStepper } from "@/components/features/admin/sachbuch-guide
 import { SachbuchIdeePanel } from "@/components/features/admin/sachbuch-idee-panel";
 import { SachbuchIdeeRefinePanel } from "@/components/features/admin/sachbuch-idee-refine-panel";
 import { SachbuchMakroPanel } from "@/components/features/admin/sachbuch-makro-panel";
+import { SachbuchManuscriptPanel } from "@/components/features/admin/sachbuch-manuscript-panel";
 import { SachbuchSchreibenPanel } from "@/components/features/admin/sachbuch-schreiben-panel";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { getSachbuchBookType } from "@/lib/sachbuch/book-types";
@@ -30,7 +34,9 @@ import {
   effectiveSachbuchGuideStep,
   hasUsableSachbuchConcept,
   isSachbuchIdeaApproved,
+  isSachbuchWriteApproved,
   nextSachbuchGuideStep,
+  sachbuchSchreibenReadyToFreeze,
 } from "@/lib/sachbuch/guide";
 import type { SachbuchGuideStep, SachbuchKontext } from "@/lib/sachbuch/types";
 import { SACHBUCH_GUIDE_STEP_LABELS } from "@/lib/sachbuch/types";
@@ -55,6 +61,8 @@ export function SachbuchAdminWorkspace({
   const bookType = getSachbuchBookType(book.makro.bookTypeId);
   const step = effectiveSachbuchGuideStep(book);
   const ideaApproved = isSachbuchIdeaApproved(book);
+  const writeApproved = isSachbuchWriteApproved(book);
+  const writeReady = sachbuchSchreibenReadyToFreeze(book);
   const hasConcept = hasUsableSachbuchConcept(book);
   const ideaInterviewing =
     step === "concept" &&
@@ -194,7 +202,10 @@ export function SachbuchAdminWorkspace({
           <p className="mt-1 text-xs font-semibold text-zinc-500">
             {SACHBUCH_GUIDE_STEP_LABELS[step]}
             {bookType ? ` · ${bookType.shortLabel}` : ""}
-            {ideaApproved ? " · Idee freigegeben" : " · Idee gesperrt bis Freigabe"}
+            {ideaApproved
+              ? " · Idee freigegeben"
+              : " · Idee gesperrt bis Freigabe"}
+            {writeApproved ? " · Schreiben fixiert" : ""}
           </p>
         </div>
         <button
@@ -299,6 +310,7 @@ export function SachbuchAdminWorkspace({
                             ...book.idee.guide,
                             currentStep: "concept",
                             ideaApprovedAt: null,
+                            writeApprovedAt: null,
                           },
                         },
                         evidenz: book.evidenz,
@@ -416,21 +428,57 @@ export function SachbuchAdminWorkspace({
       {step === "write" ? (
         ideaApproved && bookType ? (
           <div className="space-y-3">
+            {writeApproved ? (
+              <p className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-950 ring-1 ring-emerald-200/80">
+                Schreiben ist fixiert — Abschnitte sind schreibgeschützt. Weiter
+                im Schritt Manuskript.
+              </p>
+            ) : null}
             <SachbuchSchreibenPanel
               book={book}
-              canSave={canSave}
+              canSave={canSave && !writeApproved}
               onBookUpdate={setBook}
             />
-            {next === "export" && canOpenSachbuchGuideStep(book, "export") ? (
+            {!writeApproved ? (
+              <button
+                type="button"
+                disabled={!canSave || stepPending || !writeReady.ok}
+                title={writeReady.ok ? undefined : writeReady.reason}
+                onClick={() => {
+                  void (async () => {
+                    if (!canSave || stepPending) return;
+                    setStepPending(true);
+                    try {
+                      const result = await approveSachbuchSchreibenAction({
+                        id: book.id,
+                      });
+                      if (!result.success || !result.data) {
+                        toast.error(
+                          result.error ?? "Schreiben freigeben fehlgeschlagen.",
+                        );
+                        return;
+                      }
+                      setBook(result.data.book);
+                      toast.success("Schreiben fixiert — weiter zum Manuskript.");
+                    } finally {
+                      setStepPending(false);
+                    }
+                  })();
+                }}
+                className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+              >
+                Schreiben freigeben → Manuskript
+              </button>
+            ) : (
               <button
                 type="button"
                 disabled={!canSave || stepPending}
-                onClick={() => void advance()}
+                onClick={() => void goToStep("manuscript")}
                 className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
               >
-                Weiter: Export
+                Weiter: Manuskript
               </button>
-            ) : null}
+            )}
           </div>
         ) : (
           <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
@@ -439,8 +487,34 @@ export function SachbuchAdminWorkspace({
         )
       ) : null}
 
+      {step === "manuscript" ? (
+        writeApproved ? (
+          <div className="space-y-3">
+            <SachbuchManuscriptPanel
+              book={book}
+              canSave={canSave}
+              onBookUpdate={setBook}
+            />
+            {canOpenSachbuchGuideStep(book, "export") ? (
+              <button
+                type="button"
+                disabled={!canSave || stepPending}
+                onClick={() => void goToStep("export")}
+                className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+              >
+                Weiter: Export
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
+            Manuskript gesperrt — zuerst Schreiben freigeben/fixieren.
+          </p>
+        )
+      ) : null}
+
       {step === "export" ? (
-        ideaApproved && bookType ? (
+        ideaApproved && bookType && writeApproved ? (
           <SachbuchExportPanel
             book={book}
             canSave={canSave}
@@ -448,7 +522,7 @@ export function SachbuchAdminWorkspace({
           />
         ) : (
           <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
-            Export gesperrt — Idee freigeben und Buchtyp wählen.
+            Export gesperrt — Schreiben fixieren und Manuskript abschließen.
           </p>
         )
       ) : null}
@@ -457,6 +531,7 @@ export function SachbuchAdminWorkspace({
       step !== "evidenz" &&
       step !== "makro" &&
       step !== "write" &&
+      step !== "manuscript" &&
       step !== "concept" &&
       step !== "refine" &&
       canOpenSachbuchGuideStep(book, next) ? (

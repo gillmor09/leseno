@@ -15,7 +15,10 @@ import {
   SACHBUCH_MODEL_WRITER,
 } from "@/lib/sachbuch/agent-defaults";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
-import { concatAbschnitteText } from "@/lib/sachbuch/parse";
+import {
+  concatAbschnitteText,
+  sanitizeSachbuchBookProse,
+} from "@/lib/sachbuch/parse";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
 import {
   getSachbuchKontext,
@@ -56,9 +59,10 @@ export function normalizeAbschnittOpening(text: string): string {
 }
 
 const ABSCHNITT_BOUNDARY_RULES = `Der Abschnitt muss in sich geschlossen sein:
-- Anfang: vollstÃ¤ndiger neuer Satz (GroÃŸbuchstabe) â€” nie mit Komma/Kleinbuchstaben mitten im Satz fortsetzen.
-- Ende: abgeschlossener Gedanke mit . ! oder ? â€” kein Satz, der erst im nÃ¤chsten Abschnitt weitergeht.
-- Inhaltlich an den bisherigen Text anknÃ¼pfen, aber satztechnisch eigenstÃ¤ndig (keine Satztrennung Ã¼ber Abschnittsgrenzen).
+- Anfang: vollständiger neuer Satz (Großbuchstabe) — nie mit Komma/Kleinbuchstaben mitten im Satz fortsetzen.
+- Ende: abgeschlossener Gedanke mit . ! oder ? — kein Satz, der erst im nächsten Abschnitt weitergeht.
+- Inhaltlich an den bisherigen Text anknüpfen, aber satztechnisch eigenständig (keine Satztrennung über Abschnittsgrenzen).
+- FORMAT: Kein Markdown (# ## ###, **, *, Backticks). Nur Absätze wie im gedruckten Buch.
 Keine Meta-Einleitung.`;
 
 const REVISION_OUTPUT_RULES = `Antworte streng in diesem Format (keine anderen Ãœberschriften):
@@ -84,17 +88,21 @@ function parseRevisionBody(
       .slice(0, idx)
       .replace(/^===Ã„NDERUNGEN===\s*/i, "")
       .trim();
-    const text = normalizeAbschnittBoundaries(
-      raw.slice(idx + marker.length).trim(),
+    const text = sanitizeSachbuchBookProse(
+      normalizeAbschnittBoundaries(raw.slice(idx + marker.length).trim()),
     );
     return {
-      summary: head || "Ãœberarbeitet.",
-      text: text || normalizeAbschnittBoundaries(fallbackText),
+      summary: head || "Überarbeitet.",
+      text:
+        text ||
+        sanitizeSachbuchBookProse(normalizeAbschnittBoundaries(fallbackText)),
     };
   }
   return {
-    summary: "Ãœberarbeitet.",
-    text: normalizeAbschnittBoundaries(raw.trim() || fallbackText),
+    summary: "Überarbeitet.",
+    text: sanitizeSachbuchBookProse(
+      normalizeAbschnittBoundaries(raw.trim() || fallbackText),
+    ),
   };
 }
 
@@ -408,11 +416,12 @@ ${ABSCHNITT_BOUNDARY_RULES}`,
   );
   currentText = styleParsed.text;
 
+  const cleanText = sanitizeSachbuchBookProse(currentText);
   const abschnitt: SachbuchAbschnitt = {
     id: crypto.randomUUID(),
     order,
     promptBrief: `Abschnitt ${order + 1}`,
-    draftText: currentText,
+    draftText: cleanText,
     authorCheckpoint: checkpoint,
     authorReply: "Automatische Checkpoint-Recherche (Internet).",
     status: "revised",
@@ -422,7 +431,7 @@ ${ABSCHNITT_BOUNDARY_RULES}`,
   const abschnitte = [...kapitel.abschnitte, abschnitt];
   return patchSachbuchKapitel(input.sachbuchId, input.kapitelId, {
     abschnitte,
-    finalText: concatAbschnitteText(abschnitte),
+    finalText: sanitizeSachbuchBookProse(concatAbschnitteText(abschnitte)),
     status: "writing",
   });
 }
@@ -501,7 +510,7 @@ ${ABSCHNITT_BOUNDARY_RULES}`;
     a.id === input.abschnittId
       ? {
           ...a,
-          draftText,
+          draftText: sanitizeSachbuchBookProse(draftText),
           authorReply: input.reply.trim(),
           status: (input.revise ? "revised" : "accepted") as
             | "revised"
@@ -513,7 +522,7 @@ ${ABSCHNITT_BOUNDARY_RULES}`;
 
   return patchSachbuchKapitel(input.sachbuchId, input.kapitelId, {
     abschnitte,
-    finalText: concatAbschnitteText(abschnitte),
+    finalText: sanitizeSachbuchBookProse(concatAbschnitteText(abschnitte)),
     status: "writing",
   });
 }

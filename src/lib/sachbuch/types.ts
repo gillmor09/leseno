@@ -33,7 +33,7 @@ export type SachbuchGroundingSource = {
 
 export type SachbuchPhaseStatus = "empty" | "in_progress" | "ready";
 
-/** Guided wizard steps (Idee → freigeben → Typ → … → Schreiben → Export). */
+/** Guided wizard steps (Idee → … → Schreiben freigeben → Manuskript → Export). */
 export type SachbuchGuideStep =
   | "concept"
   | "refine"
@@ -41,6 +41,7 @@ export type SachbuchGuideStep =
   | "evidenz"
   | "makro"
   | "write"
+  | "manuscript"
   | "export";
 
 export const SACHBUCH_GUIDE_STEPS: readonly SachbuchGuideStep[] = [
@@ -50,6 +51,7 @@ export const SACHBUCH_GUIDE_STEPS: readonly SachbuchGuideStep[] = [
   "evidenz",
   "makro",
   "write",
+  "manuscript",
   "export",
 ] as const;
 
@@ -60,6 +62,7 @@ export const SACHBUCH_GUIDE_STEP_LABELS: Record<SachbuchGuideStep, string> = {
   evidenz: "Recherche",
   makro: "Makro",
   write: "Schreiben",
+  manuscript: "Manuskript",
   export: "Export",
 };
 
@@ -96,11 +99,33 @@ export type SachbuchExport = {
   coverPrompt: string;
 };
 
-/** Wizard cursor + HITL idea approval (stored inside idee JSON). */
+/** Wizard cursor + HITL gates (stored inside idee JSON). */
 export type SachbuchGuide = {
   currentStep: SachbuchGuideStep;
   /** Set when user freigibt the agentic-refined dossier. Hard gate for later phases. */
   ideaApprovedAt: string | null;
+  /**
+   * Set when user freezes Phase 5 (Schreiben). Locks Abschnitte/Graph edits;
+   * unlocks Manuskript-Lektorat.
+   */
+  writeApprovedAt: string | null;
+};
+
+/** Phase 7 — per-chapter manuscript lektorat (sales readiness + rewrite). */
+export type SachbuchKapitelManuscript = {
+  /** Frozen Rohentwurf at write-approve (Abschnitte concat). */
+  draftText: string;
+  /** Lektorat-Rewrite; empty until improved. */
+  improvedText: string;
+  /** Verkaufsreife 1–10; null until scored. */
+  salesScore: number | null;
+  scoreSummary: string;
+  strengths: string[];
+  gaps: string[];
+  changeOrders: string[];
+  scoredAt: string | null;
+  improvedAt: string | null;
+  modelSlug: string;
 };
 
 export type SachbuchIdeeRefineStatus =
@@ -270,6 +295,8 @@ export type SachbuchKapitel = {
   critiquePass2: string;
   finalText: string;
   groundingSources: SachbuchGroundingSource[];
+  /** Phase 7 lektorat (score + improved prose). */
+  manuscript: SachbuchKapitelManuscript;
   status: SachbuchKapitelStatus;
   generationJobId: string | null;
   generationProgress: string | null;

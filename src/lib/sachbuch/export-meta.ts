@@ -9,7 +9,7 @@ import { generateText } from "@/lib/ai/provider";
 import { SACHBUCH_MODEL_MARKETING } from "@/lib/sachbuch/agent-defaults";
 import { getSachbuchBookType } from "@/lib/sachbuch/book-types";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
-import { concatAbschnitteText } from "@/lib/sachbuch/parse";
+import { sachbuchKapitelBodyText } from "@/lib/sachbuch/parse";
 import {
   getSachbuchKontext,
   upsertSachbuchExport,
@@ -39,8 +39,7 @@ export type SachbuchMarketingCopy = z.infer<typeof sachbuchMarketingSchema>;
 
 function manuscriptSample(book: SachbuchKontext, maxChars = 12_000): string {
   const parts = book.kapitel.map((k) => {
-    const body =
-      concatAbschnitteText(k.abschnitte).trim() || k.finalText.trim();
+    const body = sachbuchKapitelBodyText(k);
     if (!body) return "";
     return `## ${k.title}\n${body.slice(0, 2_500)}`;
   });
@@ -61,13 +60,23 @@ export async function generateSachbuchMarketingCopy(
     model,
     systemInstruction: `Du bist Lektor und Marketing-Texter für deutschsprachige Sachbücher.
 Antworte NUR als JSON ohne Markdown-Fence.`,
-    userText: `Erzeuge Marketing- und Titelei-Texte für dieses Sachbuch.
+    userText: `Erzeuge Marketing- und Titelei-Texte für dieses Sachbuch (Amazon/DACH Niche-Seller).
 
 Aktueller Arbeitstitel: ${book.title}
 Buchtyp: ${bookType?.shortLabel ?? bookType?.name ?? book.makro.typ}
-Zielgruppe: ${book.zielgruppe.trim() || "—"}
+Zielgruppe: ${
+      book.zielgruppe.trim() ||
+      "Ops/BizOps, Product Manager, digitale Teamleiter, mittelständische GF — nicht Juristen"
+    }
 UVP / These: ${book.idee.unpopularOpinion.trim() || "—"}
-Briefing (Auszug): ${(book.idee.briefing || "").trim().slice(0, 2_000) || "—"}
+Briefing (Auszug): ${(book.idee.briefing || book.idee.refinedBriefing || "").trim().slice(0, 2_000) || "—"}
+
+Regeln:
+- suggestedTitle: kurz, markenfähig; starker Arbeitstitel darf bleiben oder nur leicht geschärft werden.
+- subtitle: Kaufentscheidung in einer Zeile (Nutzen/Hebel), kein Rechtskommentar-Ton.
+- summary: Problem → These → 3 Outcomes → für wen / nicht für wen; 120–180 Wörter.
+- keywords: 6 Amazon-Suchintentionen (Prozesse/Lean/Business), keine Hashtags, keine Gesetzesnummern.
+- Kein Spoiler der Fallstudien-Auflösung.
 
 Antwort NUR als JSON:
 {"suggestedTitle":"prägnanter Markttitel (deutsch, ohne Untertitel)","subtitle":"kurzer Untertitel oder leer","summary":"Klappentext 120–180 Wörter, konkret, spoilerarm, für Amazon/Klappe","keywords":["genau","sechs","Schlagwörter","ohne","Hashtags","amazon"],"motto":"optionales Motto/Epigraph oder leer"}

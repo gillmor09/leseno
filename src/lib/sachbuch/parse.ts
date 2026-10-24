@@ -24,6 +24,7 @@ import type {
   SachbuchIdee,
   SachbuchInterviewMessage,
   SachbuchKapitel,
+  SachbuchKapitelManuscript,
   SachbuchKapitelStatus,
   SachbuchKontext,
   SachbuchMakro,
@@ -175,7 +176,57 @@ function parseStringList(raw: unknown): string[] {
 }
 
 function emptyGuide(): SachbuchIdee["guide"] {
-  return { currentStep: "concept", ideaApprovedAt: null };
+  return {
+    currentStep: "concept",
+    ideaApprovedAt: null,
+    writeApprovedAt: null,
+  };
+}
+
+export function emptySachbuchKapitelManuscript(): SachbuchKapitelManuscript {
+  return {
+    draftText: "",
+    improvedText: "",
+    salesScore: null,
+    scoreSummary: "",
+    strengths: [],
+    gaps: [],
+    changeOrders: [],
+    scoredAt: null,
+    improvedAt: null,
+    modelSlug: "",
+  };
+}
+
+function parseKapitelManuscript(raw: unknown): SachbuchKapitelManuscript {
+  const row = asRecord(raw);
+  const empty = emptySachbuchKapitelManuscript();
+  const scoreRaw = row.salesScore;
+  const salesScore =
+    typeof scoreRaw === "number" && Number.isFinite(scoreRaw)
+      ? Math.max(1, Math.min(10, Math.round(scoreRaw)))
+      : null;
+  return {
+    draftText: typeof row.draftText === "string" ? row.draftText : empty.draftText,
+    improvedText:
+      typeof row.improvedText === "string" ? row.improvedText : empty.improvedText,
+    salesScore,
+    scoreSummary:
+      typeof row.scoreSummary === "string" ? row.scoreSummary : empty.scoreSummary,
+    strengths: parseStringList(row.strengths),
+    gaps: parseStringList(row.gaps),
+    changeOrders: parseStringList(row.changeOrders),
+    scoredAt:
+      typeof row.scoredAt === "string" && row.scoredAt.trim()
+        ? row.scoredAt.trim()
+        : null,
+    improvedAt:
+      typeof row.improvedAt === "string" && row.improvedAt.trim()
+        ? row.improvedAt.trim()
+        : null,
+    modelSlug:
+      typeof row.modelSlug === "string" ? row.modelSlug.trim() : empty.modelSlug,
+  };
 }
 
 export function emptySachbuchIdee(): SachbuchIdee {
@@ -300,6 +351,11 @@ export function parseSachbuchIdee(raw: unknown): SachbuchIdee {
           : typeof row.ideaApprovedAt === "string" && row.ideaApprovedAt.trim()
             ? row.ideaApprovedAt.trim()
             : null,
+      writeApprovedAt:
+        typeof guideRaw.writeApprovedAt === "string" &&
+        guideRaw.writeApprovedAt.trim()
+          ? guideRaw.writeApprovedAt.trim()
+          : null,
     },
     refineStatus: parseRefineStatus(row.refineStatus),
     refineLog: logRaw
@@ -523,6 +579,7 @@ export function parseSachbuchKapitel(raw: unknown): SachbuchKapitel | null {
       typeof row.critiquePass2 === "string" ? row.critiquePass2 : "",
     finalText: typeof row.finalText === "string" ? row.finalText : "",
     groundingSources: parseSources(row.groundingSources),
+    manuscript: parseKapitelManuscript(row.manuscript),
     status: parseKapitelStatus(row.status),
     generationJobId:
       typeof row.generationJobId === "string" && row.generationJobId
@@ -564,6 +621,7 @@ export function emptySachbuchKapitel(
     critiquePass2: partial?.critiquePass2 ?? "",
     finalText: partial?.finalText ?? "",
     groundingSources: partial?.groundingSources ?? [],
+    manuscript: partial?.manuscript ?? emptySachbuchKapitelManuscript(),
     status: partial?.status ?? "draft",
     generationJobId: partial?.generationJobId ?? null,
     generationProgress: partial?.generationProgress ?? null,
@@ -582,6 +640,60 @@ export function concatAbschnitteText(abschnitte: SachbuchAbschnitt[]): string {
     .join("\n\n");
 }
 
+/**
+ * Strip Markdown/HTML artifacts so Manuskript/Export is book-ready prose.
+ * Removes # ## ###, **, *, backticks, list markers — keeps the words.
+ */
+export function sanitizeSachbuchBookProse(text: string): string {
+  let t = text.replace(/\r\n/g, "\n").trim();
+  // Fenced code blocks
+  t = t.replace(/```[\s\S]*?```/g, "");
+  t = t.replace(/^```(?:markdown|md|text)?\s*$/gim, "");
+  // ATX headings (## Title / ##Title / lone ###)
+  t = t.replace(/^#{1,6}\s*/gm, "");
+  // Bold / italic (repeat until stable for nested **a *b* c**)
+  for (let i = 0; i < 4; i++) {
+    const prev = t;
+    t = t.replace(/\*\*(.+?)\*\*/g, "$1");
+    t = t.replace(/__(.+?)__/g, "$1");
+    t = t.replace(/\*(.+?)\*/g, "$1");
+    t = t.replace(/_(.+?)_/g, "$1");
+    if (t === prev) break;
+  }
+  // Leftover emphasis / heading markers
+  t = t.replace(/\*{1,3}/g, "");
+  t = t.replace(/_{2,}/g, "");
+  t = t.replace(/#{1,6}/g, "");
+  // Inline code
+  t = t.replace(/`+/g, "");
+  // Markdown links → label
+  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  // HTML tags
+  t = t.replace(/<\/?[a-zA-Z][^>]*>/g, "");
+  // Markdown list markers at line start → keep text
+  t = t.replace(/^(\s*)[-*+]\s+/gm, "$1");
+  t = t.replace(/^(\s*)\d+\.\s+/gm, "$1");
+  // Collapse excess blank lines / spaces
+  t = t.replace(/[ \t]+\n/g, "\n");
+  t = t.replace(/\n{3,}/g, "\n\n");
+  return t.trim();
+}
+
+/**
+ * Best available chapter body for Manuskript/Export:
+ * improved lektorat → frozen draft → Abschnitte → legacy finalText.
+ * Always sanitized for print/ePub (no Markdown heading markers).
+ */
+export function sachbuchKapitelBodyText(kapitel: SachbuchKapitel): string {
+  const improved = kapitel.manuscript.improvedText.trim();
+  if (improved) return sanitizeSachbuchBookProse(improved);
+  const draft = kapitel.manuscript.draftText.trim();
+  if (draft) return sanitizeSachbuchBookProse(draft);
+  const abschnitte = concatAbschnitteText(kapitel.abschnitte).trim();
+  if (abschnitte) return sanitizeSachbuchBookProse(abschnitte);
+  return sanitizeSachbuchBookProse(kapitel.finalText.trim());
+}
+
 /** Whitespace-separated word count (German prose). */
 export function countSachbuchWords(text: string): number {
   const t = text.trim();
@@ -597,6 +709,29 @@ export function countKapitelAbschnitteWords(
     (sum, a) => sum + countSachbuchWords(a.draftText),
     0,
   );
+}
+
+/**
+ * Mean Verkaufsreife over scored chapters (null if none scored yet).
+ * Client-safe; used by Manuskript Gesamt-Score UI.
+ */
+export function sachbuchManuscriptOverallSalesScore(book: SachbuchKontext): {
+  average: number | null;
+  scoredCount: number;
+  chapterCount: number;
+} {
+  const scores = book.kapitel
+    .map((k) => k.manuscript.salesScore)
+    .filter((s): s is number => typeof s === "number" && Number.isFinite(s));
+  return {
+    average:
+      scores.length > 0
+        ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) /
+          10
+        : null,
+    scoredCount: scores.length,
+    chapterCount: book.kapitel.length,
+  };
 }
 
 /**

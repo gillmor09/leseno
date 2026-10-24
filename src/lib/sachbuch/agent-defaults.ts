@@ -26,10 +26,12 @@ export const SACHBUCH_MODEL_STYLIST = "gemini-3.8-flash";
 export const SACHBUCH_MODEL_IDEE_DRAFTER = "gemini-4-argon";
 export const SACHBUCH_MODEL_IDEE_CRITIC = "gemini-4-argon";
 export const SACHBUCH_IDEE_REFINE_MAX_ROUNDS = 3;
-/** Export Marketing / Titelei. */
-export const SACHBUCH_MODEL_MARKETING = "gpt-6-luna";
+/** Export Marketing / Titelei (Titel, Klappe, Keywords). */
+export const SACHBUCH_MODEL_MARKETING = "gemini-4-argon";
 /** Export Cover (OpenAI Images) — keep slug here so client UI never imports export-cover. */
 export const SACHBUCH_COVER_MODEL_SLUG = "gpt-image-2.5-sunburst";
+/** Phase 7 Manuskript-Lektorat (Verkaufsreife + Rewrite). */
+export const SACHBUCH_MODEL_MANUSCRIPT = "gemini-4-argon";
 /** Luna pass only at/above this score (1–10). */
 export const SACHBUCH_IDEE_REFINE_PASS_SCORE = 8;
 
@@ -160,6 +162,7 @@ Regeln:
 - Keine Meta-Kommentare.
 - Baue auf etablierte Begriffe; beweise fällige Claims.
 - Leseversprechen: keine DSGVO-/Gesetzes-Artikelnummern 1:1 — Prinzipien und Alltagssprache statt Artikel-Schlacht.
+- FORMAT: Nur Buchprosa (Absätze). VERBOTEN: Markdown (# ## ###, **, *, Backticks, - Listen). Zwischenüberschriften — wenn überhaupt — als Normalzeile ohne Sonderzeichen.
 - Jeder Abschnitt ist in sich geschlossen: Anfang = neuer vollständiger Satz; Ende = abgeschlossener Gedanke mit . ! oder ? — keine Satztrennung über Abschnittsgrenzen.
 - Wenn der Autor Recherche/Belege fordert („such im Internet“, „keine Ahnung“): recherchiere und arbeite belastbare Fakten ein — erfinde keine Studien oder Zahlen.`;
 
@@ -178,7 +181,8 @@ Aufgabe: Entwurf + Critic + Stilbibel zu konsistenter Autor-Prosa verdichten.
 Regeln:
 - Deutsch; Stilbibel hat Vorrang.
 - Berechtigte Critic-Fixes einbauen.
-- Keine Meta-Einleitung.`;
+- Keine Meta-Einleitung.
+- FORMAT: Nur Buchprosa. Entferne Markdown (# ##, **, *, Backticks, Listen-Marker) — Ausgabe wie im gedruckten Buch.`;
 
 function slot(
   modelSlug: string,

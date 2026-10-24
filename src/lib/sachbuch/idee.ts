@@ -269,6 +269,7 @@ ${transcriptBlock(book.idee.interviewMessages)}`,
       guide: {
         currentStep: "refine",
         ideaApprovedAt: null,
+        writeApprovedAt: null,
       },
       refineStatus: "idle",
     },

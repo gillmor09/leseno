@@ -1,14 +1,20 @@
 /**
  * Cover generation for Sachbuch: gpt-image-2.5-sunburst,
  * 1600×2400 JPEG RGB @ 300 ppi (canonical {@link ROMAN_COVER_SIZE}).
+ * Art has no painted letters; title + subtitle are composited (trade overlay).
  */
 
 import { generateOpenAiImage } from "@/lib/ai/openai-images";
 import { ensureRomanCoverExactSize } from "@/lib/roman/cover-compress";
+import { coverFontFamilyForGenre } from "@/lib/roman/cover-fonts";
 import {
   ROMAN_COVER_GENERATE_SIZE,
   romanCoverSizeLabel,
 } from "@/lib/roman/cover-size";
+import {
+  defaultCoverTitleDesign,
+  overlayCoverTitleByDesign,
+} from "@/lib/roman/cover-title-overlay";
 import { SACHBUCH_COVER_MODEL_SLUG } from "@/lib/sachbuch/agent-defaults";
 import { getSachbuchBookType } from "@/lib/sachbuch/book-types";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
@@ -19,8 +25,8 @@ import {
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 
 /**
- * Bold nonfiction cover from Klappentext / UVP.
- * No title typography on the image — Titelei is separate.
+ * Bold nonfiction art from Klappentext / UVP.
+ * Leave a calm lower third — title/subtitle are overlaid in code (readable type).
  */
 export function buildSachbuchCoverPrompt(input: {
   title: string;
@@ -33,10 +39,11 @@ export function buildSachbuchCoverPrompt(input: {
     `Category: German Sachbuch / ${input.bookTypeLabel || "business / self-help"}.`,
     input.zielgruppe ? `Audience vibe: ${input.zielgruppe}.` : "",
     "Style: courageous, high-impact, cinematic lighting, strong focal metaphor, premium trade-paperback look.",
-    "NO text, NO letters, NO title, NO author name, NO logos, NO barcodes, NO UI chrome.",
+    "Composition: keep the lower third relatively calm and uncluttered so typography can sit on it later.",
+    "NO text, NO letters, NO title, NO subtitle, NO author name, NO logos, NO barcodes, NO UI chrome.",
     "RGB color, photographic or painted realism with graphic punch — not pastel, not clipart.",
     `Book essence to visualize:\n${input.summary.trim().slice(0, 1_200)}`,
-    `Working title (do not paint as text): ${input.title}`,
+    `Working title (mood only — do not paint as letters): ${input.title}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -74,7 +81,21 @@ export async function generateSachbuchCoverImage(
     outputFormat: "jpeg",
   });
 
-  const dataUrl = await ensureRomanCoverExactSize(result.dataUrl);
+  let dataUrl = await ensureRomanCoverExactSize(result.dataUrl);
+  const subtitle = book.export.subtitle.trim();
+  const author = book.export.autorName.trim();
+  const fontFamily = coverFontFamilyForGenre(
+    `${bookType?.name ?? book.makro.typ} Wirtschaft Business`,
+    book.zielgruppe,
+  );
+  dataUrl = await overlayCoverTitleByDesign({
+    imageDataUrl: dataUrl,
+    design: defaultCoverTitleDesign(title, fontFamily),
+    author: author || undefined,
+    subtitle: subtitle || undefined,
+    lesenoMark: true,
+  });
+  dataUrl = await ensureRomanCoverExactSize(dataUrl);
   return {
     dataUrl,
     prompt,

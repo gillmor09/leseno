@@ -1,9 +1,10 @@
 /**
  * Guided Sachbuch wizard: resolve step, unlock rules, hard server gates.
- * Approval = idee.guide.ideaApprovedAt (never inferred from legacy ready).
+ * Approval = idee.guide.ideaApprovedAt / writeApprovedAt (never inferred).
  */
 
 import { hasConfirmedSachbuchBookType } from "@/lib/sachbuch/book-types";
+import { concatAbschnitteText, countSachbuchWords } from "@/lib/sachbuch/parse";
 import type {
   SachbuchGuide,
   SachbuchGuideStep,
@@ -17,12 +18,17 @@ export type SachbuchGuideGatePhase =
   | "evidenz"
   | "makro"
   | "write"
+  | "manuscript"
   | "export";
 
 export function emptySachbuchGuide(
   step: SachbuchGuideStep = "concept",
 ): SachbuchGuide {
-  return { currentStep: step, ideaApprovedAt: null };
+  return {
+    currentStep: step,
+    ideaApprovedAt: null,
+    writeApprovedAt: null,
+  };
 }
 
 export function hasUsableSachbuchConcept(book: SachbuchKontext): boolean {
@@ -36,19 +42,44 @@ export function isSachbuchIdeaApproved(book: SachbuchKontext): boolean {
   return Boolean(book.idee.guide.ideaApprovedAt?.trim());
 }
 
+/** True when Phase 5 Schreiben is frozen (Manuskript unlocked). */
+export function isSachbuchWriteApproved(book: SachbuchKontext): boolean {
+  return Boolean(book.idee.guide.writeApprovedAt?.trim());
+}
+
+/** Soft readiness: every chapter has enough Abschnitte prose to freeze. */
+export function sachbuchSchreibenReadyToFreeze(book: SachbuchKontext): {
+  ok: boolean;
+  reason?: string;
+} {
+  if (book.kapitel.length === 0) {
+    return { ok: false, reason: "Noch keine Kapitel." };
+  }
+  for (const k of book.kapitel) {
+    const words = countSachbuchWords(concatAbschnitteText(k.abschnitte));
+    if (words < 2_000) {
+      return {
+        ok: false,
+        reason: `Kapitel „${k.title || "ohne Titel"}“ hat zu wenig Text (${words} Wörter).`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
 function stepIndex(step: SachbuchGuideStep): number {
   return SACHBUCH_GUIDE_STEPS.indexOf(step);
 }
 
 /**
  * Hard-gate floor: everything at/below this is unlocked.
- * After idea approval + book type, Evidenz/Makro/Schreiben/Export are open
- * (Weiter without forcing research). Writing actions still need Kapitel.
+ * After idea + book type: through Schreiben. After write freeze: Manuskript + Export.
  */
 export function resolveSachbuchGuideFloor(book: SachbuchKontext): SachbuchGuideStep {
   if (!hasUsableSachbuchConcept(book)) return "concept";
   if (!isSachbuchIdeaApproved(book)) return "refine";
   if (!hasConfirmedSachbuchBookType(book.makro.bookTypeId)) return "book_type";
+  if (!isSachbuchWriteApproved(book)) return "write";
   return "export";
 }
 
@@ -113,7 +144,24 @@ export function assertSachbuchGuideAllows(
 
   if (phase === "export") return;
 
+  if (phase === "manuscript") {
+    if (!isSachbuchWriteApproved(book)) {
+      throw new Error(
+        "Schreiben noch nicht freigegeben — zuerst Rohentwurf fixieren.",
+      );
+    }
+    if (book.kapitel.length === 0) {
+      throw new Error("Keine Kapitel für das Manuskript.");
+    }
+    return;
+  }
+
   // write: graph + abschnitte
+  if (isSachbuchWriteApproved(book)) {
+    throw new Error(
+      "Schreiben ist freigegeben/fixiert — zum Nacharbeiten Manuskript öffnen oder Schreiben wieder freigeben.",
+    );
+  }
   if (book.kapitel.length === 0) {
     throw new Error(
       "Noch keine Kapitel — zuerst Makro erzeugen und Kapitel anlegen.",

@@ -407,8 +407,8 @@ export function SachbuchExportPanel({
         <p className="font-bold text-zinc-700">Cover</p>
         <p className="mt-0.5 text-xs text-zinc-500">
           {romanCoverSizeLabel()}, RGB, JPG · Modell{" "}
-          {sachbuchModelLabel(SACHBUCH_COVER_MODEL_SLUG)} · aus
-          Klappentext / UVP, kein Text auf dem Bild.
+          {sachbuchModelLabel(SACHBUCH_COVER_MODEL_SLUG)} · Motiv aus
+          Klappentext / UVP; Titel und Untertitel als Typografie auf dem Cover.
         </p>
         {hasCover ? (
           // eslint-disable-next-line @next/next/no-img-element

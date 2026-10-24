@@ -13,6 +13,7 @@ import {
   SACHBUCH_TARGET_WORDS_MIN,
 } from "@/lib/sachbuch/agent-defaults";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
+import { sanitizeSachbuchBookProse } from "@/lib/sachbuch/parse";
 import {
   getSachbuchKontext,
   patchSachbuchKapitel,
@@ -200,7 +201,7 @@ Prüfe Logik, Argumente und Fakten. Liefere strukturierte Kritik.`,
       modelSlug: SACHBUCH_MODEL_STYLIST,
     };
     const stylistModel = await resolveSachbuchAgentModel(stylist);
-    const finalText = (
+    const finalTextRaw = (
       await generateText({
         model: stylistModel,
         systemInstruction: stylist.systemPrompt,
@@ -215,14 +216,16 @@ ${draftPass1}
 Kritik (Pass 2):
 ${critiquePass2}
 
-Schreibe die fertige Kapitelprosa (Ziel ca. ${SACHBUCH_TARGET_WORDS_MIN}–${SACHBUCH_TARGET_WORDS_MAX} Wörter).`,
+Schreibe die fertige Kapitelprosa (Ziel ca. ${SACHBUCH_TARGET_WORDS_MIN}–${SACHBUCH_TARGET_WORDS_MAX} Wörter).
+FORMAT: Nur Buchabsätze — kein Markdown (# ##, **, *, Backticks, Listen).`,
         maxTokens: 8192,
         timeoutMs: 300_000,
       })
     ).trim();
+    const finalText = sanitizeSachbuchBookProse(finalTextRaw);
 
     return patchSachbuchKapitel(input.sachbuchId, input.kapitelId, {
-      draftPass1,
+      draftPass1: sanitizeSachbuchBookProse(draftPass1),
       critiquePass2,
       finalText,
       groundingSources,

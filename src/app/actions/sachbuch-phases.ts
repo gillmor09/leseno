@@ -38,6 +38,14 @@ import {
   runSachbuchIdeeRefine,
   setSachbuchGuideStep,
 } from "@/lib/sachbuch/idee-refine";
+import {
+  SACHBUCH_MANUSCRIPT_DEFAULT_CHANGE_ORDERS,
+  approveSachbuchSchreiben,
+  improveAllSachbuchManuscript,
+  improveSachbuchKapitelManuscript,
+  reopenSachbuchSchreiben,
+  scoreSachbuchKapitelManuscript,
+} from "@/lib/sachbuch/manuscript";
 import { upsertSachbuchExport } from "@/lib/sachbuch/repository";
 import {
   applySachbuchBookType,
@@ -215,6 +223,7 @@ const guideStepActionSchema = z.object({
     "evidenz",
     "makro",
     "write",
+    "manuscript",
     "export",
   ]),
 });
@@ -521,5 +530,101 @@ export async function saveSachbuchExportAction(
       });
     },
     "Export speichern fehlgeschlagen.",
+  );
+}
+
+/** Freeze Phase 5 Schreiben → Manuskript. */
+export async function approveSachbuchSchreibenAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => approveSachbuchSchreiben(parsed.data.id),
+    "Schreiben freigeben fehlgeschlagen.",
+  );
+}
+
+/** Re-open Schreiben (clears manuscript scores). */
+export async function reopenSachbuchSchreibenAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => reopenSachbuchSchreiben(parsed.data.id),
+    "Schreiben wieder öffnen fehlgeschlagen.",
+  );
+}
+
+/** Score one chapter for sales readiness. */
+export async function scoreSachbuchKapitelManuscriptAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchKapitelRefSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.sachbuchId,
+    () => scoreSachbuchKapitelManuscript(parsed.data),
+    "Manuskript-Score fehlgeschlagen.",
+  );
+}
+
+/** Improve one chapter (Argon). */
+export async function improveSachbuchKapitelManuscriptAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchKapitelRefSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.sachbuchId,
+    () =>
+      improveSachbuchKapitelManuscript({
+        ...parsed.data,
+        extraChangeOrders: [...SACHBUCH_MANUSCRIPT_DEFAULT_CHANGE_ORDERS],
+      }),
+    "Manuskript-Verbesserung fehlgeschlagen.",
+  );
+}
+
+/**
+ * Improve all chapters once with default editorial change-orders
+ * (Artikel-Schlacht, Wiederholung, Belege, Verkaufsreife).
+ */
+export async function improveAllSachbuchManuscriptAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () =>
+      improveAllSachbuchManuscript({
+        sachbuchId: parsed.data.id,
+        extraChangeOrders: [...SACHBUCH_MANUSCRIPT_DEFAULT_CHANGE_ORDERS],
+      }),
+    "Manuskript-Gesamtverbesserung fehlgeschlagen.",
   );
 }

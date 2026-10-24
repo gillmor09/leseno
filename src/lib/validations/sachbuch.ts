@@ -61,8 +61,35 @@ const guideStepSchema = z.enum([
   "evidenz",
   "makro",
   "write",
+  "manuscript",
   "export",
 ]);
+
+const kapitelManuscriptSchema = z
+  .object({
+    draftText: z.string().max(200_000).default(""),
+    improvedText: z.string().max(200_000).default(""),
+    salesScore: z.number().int().min(1).max(10).nullable().default(null),
+    scoreSummary: z.string().max(10_000).default(""),
+    strengths: z.array(z.string().max(2000)).max(20).default([]),
+    gaps: z.array(z.string().max(2000)).max(20).default([]),
+    changeOrders: z.array(z.string().max(5000)).max(20).default([]),
+    scoredAt: z.string().max(80).nullable().default(null),
+    improvedAt: z.string().max(80).nullable().default(null),
+    modelSlug: z.string().max(120).default(""),
+  })
+  .default({
+    draftText: "",
+    improvedText: "",
+    salesScore: null,
+    scoreSummary: "",
+    strengths: [],
+    gaps: [],
+    changeOrders: [],
+    scoredAt: null,
+    improvedAt: null,
+    modelSlug: "",
+  });
 
 const refineRoundSchema = z.object({
   round: z.number().int().min(1).max(20),
@@ -83,8 +110,13 @@ export const sachbuchIdeeSchema = z.object({
     .object({
       currentStep: guideStepSchema,
       ideaApprovedAt: z.string().max(80).nullable(),
+      writeApprovedAt: z.string().max(80).nullable().default(null),
     })
-    .default({ currentStep: "concept", ideaApprovedAt: null }),
+    .default({
+      currentStep: "concept",
+      ideaApprovedAt: null,
+      writeApprovedAt: null,
+    }),
   refineStatus: z
     .enum(["idle", "running", "awaiting_approval", "approved"])
     .default("idle"),
@@ -169,6 +201,7 @@ export const sachbuchKapitelSchema = z.object({
   critiquePass2: z.string().max(100_000),
   finalText: z.string().max(200_000),
   groundingSources: z.array(groundingSourceSchema).max(50),
+  manuscript: kapitelManuscriptSchema,
   status: z.enum([
     "draft",
     "graph",

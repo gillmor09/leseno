@@ -296,8 +296,10 @@ pass nur bei score ≥ ${SACHBUCH_IDEE_REFINE_PASS_SCORE}.`,
           ? dossier.caseStudies
           : live.idee.caseStudies,
       guide: {
+        ...live.idee.guide,
         currentStep: "refine",
         ideaApprovedAt: null,
+        writeApprovedAt: null,
       },
       status: "ready",
     },
@@ -342,8 +344,10 @@ export async function approveSachbuchIdeeRefine(
       refineStatus: "approved",
       status: "ready",
       guide: {
+        ...book.idee.guide,
         currentStep: "book_type",
         ideaApprovedAt: now,
+        writeApprovedAt: null,
       },
     },
   });
@@ -364,8 +368,10 @@ export async function rejectSachbuchIdeeRefine(
       refinedOpinion: "",
       refinedCaseStudies: [],
       guide: {
+        ...book.idee.guide,
         currentStep: "refine",
         ideaApprovedAt: null,
+        writeApprovedAt: null,
       },
     },
   });
@@ -407,8 +413,10 @@ export async function reopenSachbuchIdeeRefine(
       refinedOpinion: "",
       refinedCaseStudies: [],
       guide: {
+        ...book.idee.guide,
         currentStep: "refine",
         ideaApprovedAt: null,
+        writeApprovedAt: null,
       },
     },
     evidenz: emptySachbuchEvidenz(),
