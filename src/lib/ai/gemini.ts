@@ -1,13 +1,20 @@
 /**
  * Thin Gemini REST client for generateContent.
  * Uses `GEMINI_API_KEY` and the model slug from `leseno.ai_models`.
+ * Retries transient network drops (ECONNRESET) and 429/5xx — same class of
+ * failures that Claude already retries; common on long Argon chapter rewrites.
  */
 
 import { resolveGeminiCachedContent } from "@/lib/ai/gemini-cache";
 import {
   aiFetchSignal,
   GEMINI_4_ARGON_TIMEOUT_MS,
+  isAiAbortError,
+  isRetryableAiHttpStatus,
+  isRetryableAiNetworkError,
   mapAiFetchError,
+  resolveAiTimeoutMs,
+  sleepMs,
 } from "@/lib/ai/fetch-timeout";
 import { recordAiUsage } from "@/lib/ai/usage";
 
@@ -15,6 +22,11 @@ const GEMINI_API_BASE =
   "https://generativelanguage.googleapis.com/v1beta/models";
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 16_384;
+/** Network / 5xx retries (empty-text retry stays nested at 2). */
+const MAX_NETWORK_ATTEMPTS = 3;
+const RETRY_BASE_MS = 2_500;
+/** Don't start another long decode with almost no wall-clock left. */
+const MIN_RETRY_BUDGET_MS = 45_000;
 
 /** True for Gemini 4 Argon family (no explicit `cachedContents`). */
 export function isGemini4ArgonModel(modelSlug: string): boolean {
@@ -185,9 +197,13 @@ export async function generateWithGemini(
   const cacheablePrefix = input.cacheablePrefix?.trim() ?? "";
   const systemInstruction = input.systemInstruction?.trim() ?? "";
   const argon = isGemini4ArgonModel(input.modelSlug);
-  const effectiveTimeoutMs = argon
-    ? Math.max(input.timeoutMs ?? 0, GEMINI_4_ARGON_TIMEOUT_MS)
-    : input.timeoutMs;
+  const budgetMs = argon
+    ? Math.max(
+        resolveAiTimeoutMs(input.timeoutMs, GEMINI_4_ARGON_TIMEOUT_MS),
+        GEMINI_4_ARGON_TIMEOUT_MS,
+      )
+    : resolveAiTimeoutMs(input.timeoutMs);
+  const deadline = Date.now() + budgetMs;
 
   // Explicit Context Cache when prefix is large enough; else inline fallback.
   // Gemini 4 Argon rejects `cachedContents` — always inline prefix.
@@ -213,153 +229,224 @@ export async function generateWithGemini(
     level === "medium" ||
     level === "high";
 
-  try {
-    let lastFinish = "";
-    let lastThoughts: number | undefined;
+  let lastError: unknown;
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      const generationConfig: Record<string, unknown> = {
-        // Second try: a bit more room — thinking can eat the first budget.
-        maxOutputTokens: Math.min(
-          65_536,
-          baseMaxOutputTokens + (attempt > 0 ? 2_048 : 0),
-        ),
-      };
-
-      if (input.jsonOutput && !input.googleSearch) {
-        generationConfig.responseMimeType = "application/json";
-      }
-
-      // Retry without thinking when the first pass returned only thought tokens.
-      if (thinkingOk && attempt === 0) {
-        generationConfig.thinkingConfig = { thinkingLevel: level };
-      } else if (thinkingOk && attempt > 0 && level !== "low") {
-        generationConfig.thinkingConfig = { thinkingLevel: "low" };
-      }
-
-      const body: Record<string, unknown> = {
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: input.userText }],
-          },
-        ],
-        generationConfig,
-        safetySettings: [...CREATIVE_WRITING_SAFETY_SETTINGS],
-      };
-
-      if (input.googleSearch) {
-        body.tools = [{ googleSearch: {} }];
-      }
-
-      if (cachedContentName) {
-        body.cachedContent = cachedContentName;
-      } else {
-        if (systemInstruction) {
-          body.systemInstruction = {
-            parts: [{ text: systemInstruction }],
-          };
-        }
-        if (cacheablePrefix) {
-          body.contents = [
-            {
-              role: "user",
-              parts: [{ text: `${cacheablePrefix}\n\n${input.userText}` }],
-            },
-          ];
-        }
-      }
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: JSON.stringify(body),
-        signal: aiFetchSignal(effectiveTimeoutMs),
-      });
-
-      const payload = (await response.json()) as GeminiResponse;
-
-      if (!response.ok || payload.error) {
-        throw new Error(
-          payload.error?.message ??
-            `Gemini-Anfrage fehlgeschlagen (${response.status}).`,
-        );
-      }
-
-      const block = payload.promptFeedback?.blockReason;
-      if (block) {
-        throw new Error(
-          blockedContentMessage(
-            block,
-            payload.promptFeedback?.blockReasonMessage,
-          ),
-        );
-      }
-
-      const candidate = payload.candidates?.[0];
-      const finish = candidate?.finishReason ?? "";
-      lastFinish = finish;
-      if (finish === "SAFETY" || finish === "PROHIBITED_CONTENT") {
-        throw new Error(blockedContentMessage(finish));
-      }
-
-      const text = visibleTextFromParts(candidate?.content?.parts);
-
-      const meta = payload.usageMetadata;
-      lastThoughts = meta?.thoughtsTokenCount;
-      if (meta) {
-        recordAiUsage({
-          inputTokens: meta.promptTokenCount ?? 0,
-          outputTokens: meta.candidatesTokenCount ?? 0,
-          reasoningTokens: meta.thoughtsTokenCount,
-          cacheReadTokens: meta.cachedContentTokenCount,
-        });
-      }
-
-      if (text) {
-        const gm = candidate?.groundingMetadata;
-        const groundingSources =
-          gm?.groundingChunks
-            ?.map((c) => ({
-              title: (c.web?.title ?? "").trim(),
-              uri: (c.web?.uri ?? "").trim(),
-            }))
-            .filter((s) => s.uri.length > 0) ?? undefined;
-        const searchSuggestionsHtml =
-          gm?.searchEntryPoint?.renderedContent?.trim() || undefined;
-        const webSearchQueries = gm?.webSearchQueries?.filter(Boolean);
-
-        return {
-          text,
-          modelSlug: input.modelSlug,
-          groundingSources:
-            groundingSources && groundingSources.length > 0
-              ? groundingSources
-              : undefined,
-          searchSuggestionsHtml,
-          webSearchQueries:
-            webSearchQueries && webSearchQueries.length > 0
-              ? webSearchQueries
-              : undefined,
-        };
-      }
-
-      // Empty visible text — retry once (common Flash STOP / thinking glitch).
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, 400));
-        continue;
-      }
+  for (
+    let netAttempt = 1;
+    netAttempt <= MAX_NETWORK_ATTEMPTS;
+    netAttempt += 1
+  ) {
+    const remaining = deadline - Date.now();
+    if (remaining < 1_000) {
+      throw mapAiFetchError(
+        new DOMException("Timeout", "TimeoutError"),
+        "Gemini",
+        budgetMs,
+      );
+    }
+    if (netAttempt > 1 && remaining < MIN_RETRY_BUDGET_MS) {
+      throw mapAiFetchError(
+        new DOMException("Timeout", "TimeoutError"),
+        "Gemini",
+        budgetMs,
+      );
     }
 
-    throw new Error(
-      `Gemini hat keinen Text zurückgegeben (finishReason: ${
-        lastFinish || "unbekannt"
-      }).${emptyResponseHint(lastFinish, lastThoughts)}`,
-    );
-  } catch (error) {
-    throw mapAiFetchError(error, "Gemini", effectiveTimeoutMs);
+    try {
+      let lastFinish = "";
+      let lastThoughts: number | undefined;
+
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const generationConfig: Record<string, unknown> = {
+          // Second try: a bit more room — thinking can eat the first budget.
+          maxOutputTokens: Math.min(
+            65_536,
+            baseMaxOutputTokens + (attempt > 0 ? 2_048 : 0),
+          ),
+        };
+
+        if (input.jsonOutput && !input.googleSearch) {
+          generationConfig.responseMimeType = "application/json";
+        }
+
+        // Retry without thinking when the first pass returned only thought tokens.
+        if (thinkingOk && attempt === 0) {
+          generationConfig.thinkingConfig = { thinkingLevel: level };
+        } else if (thinkingOk && attempt > 0 && level !== "low") {
+          generationConfig.thinkingConfig = { thinkingLevel: "low" };
+        }
+
+        const body: Record<string, unknown> = {
+          contents: [
+            {
+              role: "user",
+              parts: [{ text: input.userText }],
+            },
+          ],
+          generationConfig,
+          safetySettings: [...CREATIVE_WRITING_SAFETY_SETTINGS],
+        };
+
+        if (input.googleSearch) {
+          body.tools = [{ googleSearch: {} }];
+        }
+
+        if (cachedContentName) {
+          body.cachedContent = cachedContentName;
+        } else {
+          if (systemInstruction) {
+            body.systemInstruction = {
+              parts: [{ text: systemInstruction }],
+            };
+          }
+          if (cacheablePrefix) {
+            body.contents = [
+              {
+                role: "user",
+                parts: [{ text: `${cacheablePrefix}\n\n${input.userText}` }],
+              },
+            ];
+          }
+        }
+
+        const sliceMs = Math.max(1_000, deadline - Date.now());
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body: JSON.stringify(body),
+          signal: aiFetchSignal(sliceMs),
+        });
+
+        if (
+          !response.ok &&
+          isRetryableAiHttpStatus(response.status) &&
+          netAttempt < MAX_NETWORK_ATTEMPTS &&
+          deadline - Date.now() > MIN_RETRY_BUDGET_MS
+        ) {
+          const wait = Math.min(
+            RETRY_BASE_MS * netAttempt,
+            deadline - Date.now() - MIN_RETRY_BUDGET_MS,
+          );
+          console.warn(
+            `[gemini] HTTP ${response.status}, retry ${netAttempt}/${MAX_NETWORK_ATTEMPTS} in ${wait}ms`,
+          );
+          await sleepMs(Math.max(0, wait));
+          throw Object.assign(new Error(`HTTP ${response.status}`), {
+            __geminiRetry: true,
+          });
+        }
+
+        const payload = (await response.json()) as GeminiResponse;
+
+        if (!response.ok || payload.error) {
+          throw new Error(
+            payload.error?.message ??
+              `Gemini-Anfrage fehlgeschlagen (${response.status}).`,
+          );
+        }
+
+        const block = payload.promptFeedback?.blockReason;
+        if (block) {
+          throw new Error(
+            blockedContentMessage(
+              block,
+              payload.promptFeedback?.blockReasonMessage,
+            ),
+          );
+        }
+
+        const candidate = payload.candidates?.[0];
+        const finish = candidate?.finishReason ?? "";
+        lastFinish = finish;
+        if (finish === "SAFETY" || finish === "PROHIBITED_CONTENT") {
+          throw new Error(blockedContentMessage(finish));
+        }
+
+        const text = visibleTextFromParts(candidate?.content?.parts);
+
+        const meta = payload.usageMetadata;
+        lastThoughts = meta?.thoughtsTokenCount;
+        if (meta) {
+          recordAiUsage({
+            inputTokens: meta.promptTokenCount ?? 0,
+            outputTokens: meta.candidatesTokenCount ?? 0,
+            reasoningTokens: meta.thoughtsTokenCount,
+            cacheReadTokens: meta.cachedContentTokenCount,
+          });
+        }
+
+        if (text) {
+          const gm = candidate?.groundingMetadata;
+          const groundingSources =
+            gm?.groundingChunks
+              ?.map((c) => ({
+                title: (c.web?.title ?? "").trim(),
+                uri: (c.web?.uri ?? "").trim(),
+              }))
+              .filter((s) => s.uri.length > 0) ?? undefined;
+          const searchSuggestionsHtml =
+            gm?.searchEntryPoint?.renderedContent?.trim() || undefined;
+          const webSearchQueries = gm?.webSearchQueries?.filter(Boolean);
+
+          return {
+            text,
+            modelSlug: input.modelSlug,
+            groundingSources:
+              groundingSources && groundingSources.length > 0
+                ? groundingSources
+                : undefined,
+            searchSuggestionsHtml,
+            webSearchQueries:
+              webSearchQueries && webSearchQueries.length > 0
+                ? webSearchQueries
+                : undefined,
+          };
+        }
+
+        // Empty visible text — retry once (common Flash STOP / thinking glitch).
+        if (attempt === 0) {
+          await sleepMs(400);
+          continue;
+        }
+      }
+
+      throw new Error(
+        `Gemini hat keinen Text zurückgegeben (finishReason: ${
+          lastFinish || "unbekannt"
+        }).${emptyResponseHint(lastFinish, lastThoughts)}`,
+      );
+    } catch (error) {
+      lastError = error;
+      if (isAiAbortError(error)) {
+        throw mapAiFetchError(error, "Gemini", budgetMs);
+      }
+      const forcedRetry =
+        error instanceof Error &&
+        (error as Error & { __geminiRetry?: boolean }).__geminiRetry === true;
+      if (
+        (forcedRetry || isRetryableAiNetworkError(error)) &&
+        netAttempt < MAX_NETWORK_ATTEMPTS &&
+        deadline - Date.now() > MIN_RETRY_BUDGET_MS
+      ) {
+        if (!forcedRetry) {
+          const wait = Math.min(
+            RETRY_BASE_MS * netAttempt,
+            deadline - Date.now() - MIN_RETRY_BUDGET_MS,
+          );
+          console.warn(
+            `[gemini] network error, retry ${netAttempt}/${MAX_NETWORK_ATTEMPTS} in ${wait}ms:`,
+            error instanceof Error ? error.message : error,
+          );
+          await sleepMs(Math.max(0, wait));
+        }
+        continue;
+      }
+      throw mapAiFetchError(error, "Gemini", budgetMs);
+    }
   }
+
+  throw mapAiFetchError(lastError, "Gemini", budgetMs);
 }

@@ -1,0 +1,58 @@
+﻿node.exe : node:internal/process/promises:394
+In Zeile:1 Zeichen:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (node:internal/process/promises:394:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+Error: Transform failed with 1 error:
+/eval.ts:1:226: ERROR: Top-level await is currently not supported with the "cjs" output format
+    at failureErrorWithLog 
+(C:\Users\bernd\AppData\Local\npm-cache\_npx\fd45a72a545557e9\node_modules\esbuild\lib\main.js:1752:15)
+    at C:\Users\bernd\AppData\Local\npm-cache\_npx\fd45a72a545557e9\node_modules\esbuild\lib\main.js:1019:50
+    at responseCallbacks.<computed> 
+(C:\Users\bernd\AppData\Local\npm-cache\_npx\fd45a72a545557e9\node_modules\esbuild\lib\main.js:886:9)
+    at handleIncomingPacket 
+(C:\Users\bernd\AppData\Local\npm-cache\_npx\fd45a72a545557e9\node_modules\esbuild\lib\main.js:941:12)
+    at Socket.readFromStdout 
+(C:\Users\bernd\AppData\Local\npm-cache\_npx\fd45a72a545557e9\node_modules\esbuild\lib\main.js:864:7)
+    at Socket.emit (node:events:509:28)
+    at addChunk (node:internal/streams/readable:563:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:514:3)
+    at Readable.push (node:internal/streams/readable:394:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23) {
+  errors: [
+    {
+      detail: undefined,
+      id: '',
+      location: {
+        column: 226,
+        file: '/eval.ts',
+        length: 5,
+        line: 1,
+        lineText: "import { getSachbuchKontext } from './src/lib/sachbuch/repository.ts'; import { 
+countKapitelAbschnitteWords, countSachbuchWords } from './src/lib/sachbuch/parse.ts'; const 
+ID='1640c419-5f83-4c62-a25b-d57190727fa4'; const book=await getSachbuchKontext(ID); if(!book){console.error('NO'); 
+process.exit(1);} const k=book.kapitel[0]; const words=countKapitelAbschnitteWords(k.abschnitte); const 
+draft=k.manuscript.draftText||''; const improved=k.manuscript.improvedText||''; const 
+body=(improved.trim()||draft.trim()||k.abschnitte.map(a=>a.draftText).join('\\n\\n')); const lower=body.toLowerCase(); 
+const markers=['connecttel','veritas','muda','artikel 5','art. 5']; const counts={}; for (const m of markers) 
+counts[m]=(lower.split(m).length-1); console.error(JSON.stringify({title:k.title,abschnitte:k.abschnitte.length,abschni
+ttWords:words,lens:k.abschnitte.map(a=>countSachbuchWords(a.draftText)),writeApprovedAt:book.writeApprovedAt,draftWords
+:countSachbuchWords(draft),improvedWords:countSachbuchWords(improved),salesScore:k.manuscript.salesScore,improvedAt:k.m
+anuscript.improvedAt,bodyWords:countSachbuchWords(body),counts,start:body.slice(0,350)},null,2));",
+        namespace: '',
+        suggestion: ''
+      },
+      notes: [],
+      pluginName: '',
+      text: 'Top-level await is currently not supported with the "cjs" output format'
+    }
+  ],
+  warnings: []
+}
+
+Node.js v24.18.1

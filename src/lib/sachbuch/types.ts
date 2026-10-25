@@ -128,6 +128,20 @@ export type SachbuchKapitelManuscript = {
   modelSlug: string;
 };
 
+/**
+ * Phase 7 — book-level Verkaufsreife (whole manuscript as one product).
+ * Not a mean of chapter scores; scored holistically by Argon.
+ */
+export type SachbuchManuscriptBookReview = {
+  salesScore: number | null;
+  scoreSummary: string;
+  strengths: string[];
+  gaps: string[];
+  changeOrders: string[];
+  scoredAt: string | null;
+  modelSlug: string;
+};
+
 export type SachbuchIdeeRefineStatus =
   | "idle"
   | "running"
@@ -159,6 +173,8 @@ export type SachbuchIdee = {
   refinedBriefing: string;
   refinedOpinion: string;
   refinedCaseStudies: string[];
+  /** Whole-book Verkaufsreife after Manuskript-Lektorat (null until scored). */
+  manuscriptReview: SachbuchManuscriptBookReview;
 };
 
 export type SachbuchEvidenzClaim = {

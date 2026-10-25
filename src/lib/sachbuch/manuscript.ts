@@ -3,6 +3,11 @@
  * Model: Gemini 4 Argon (`SACHBUCH_MODEL_MANUSCRIPT`).
  */
 
+import {
+  GEMINI_4_ARGON_TIMEOUT_MS,
+  isRetryableAiNetworkError,
+  sleepMs,
+} from "@/lib/ai/fetch-timeout";
 import { generateText } from "@/lib/ai/provider";
 import { SACHBUCH_MODEL_MANUSCRIPT } from "@/lib/sachbuch/agent-defaults";
 import { hasConfirmedSachbuchBookType } from "@/lib/sachbuch/book-types";
@@ -16,7 +21,10 @@ import {
   concatAbschnitteText,
   countSachbuchWords,
   emptySachbuchKapitelManuscript,
+  emptySachbuchManuscriptBookReview,
+  sachbuchBookCritiqueForChapter,
   sachbuchKapitelBodyText,
+  sachbuchKapitelNeedsManuscriptImprove,
   sanitizeSachbuchBookProse,
 } from "@/lib/sachbuch/parse";
 import {
@@ -30,6 +38,9 @@ import type {
   SachbuchKontext,
 } from "@/lib/sachbuch/types";
 import { resolveRomanSchreibModel } from "@/lib/roman/model";
+
+/** Per-chapter attempts when improve-all hits transient network drops. */
+const IMPROVE_CHAPTER_ATTEMPTS = 3;
 
 const SCORE_SYSTEM = `Du bist Lektor und Produktmanager für deutschsprachige Business-Sachbücher.
 Bewerte ein Kapitel auf VERKAUFSREIFE (Amazon/Fachbuch-Markt), nicht nur auf Grammatik.
@@ -51,6 +62,37 @@ Antworte NUR als JSON ohne Markdown-Fence:
   "gaps": ["…"],
   "changeOrders": ["konkrete Verbesserungsaufträge, max 8"]
 }`;
+
+const BOOK_SCORE_SYSTEM = `Du bist Lektor und Produktmanager für deutschsprachige Business-Sachbücher.
+Bewerte das GESAMTE BUCH als ein verkaufsfähiges Produkt (Amazon/Fachbuch), nicht als Mittelwert einzelner Kapitel.
+
+Rubrik (1–10 Gesamtscore, ganzzahlig) — Buch als Ganzes:
+- Roter Faden / Dramaturgie über alle Kapitel (Aufbau, Wiederholungen zwischen Kapiteln, Escalation)
+- UVP und Leseversprechen werden über das Werk eingelöst
+- Kohärenz der Cases, Begriffe und Handlungsstränge (kein Kapitel widerspricht dem anderen)
+- Marktfähigkeit des Gesamtwerks (Kaufgrund, Differenzierung, Abschluss/CTA des Buchs)
+- Druckreife über alle Kapitel (kein Markdown-Matsch, keine Artikel-Schlacht wo versprochen)
+- Kapitel-Einzelscores sind nur Kontext — der Buch-Score darf darunter oder darüber liegen, wenn das Gesamtwerk schwächer/stärker wirkt
+
+Antworte NUR als JSON ohne Markdown-Fence:
+{
+  "salesScore": 1-10,
+  "scoreSummary": "2–5 Sätze Gesamturteil zum BUCH",
+  "strengths": ["…"],
+  "gaps": ["…"],
+  "changeOrders": ["buchweite Verbesserungsaufträge, max 8"]
+}`;
+
+/** Soft cap per chapter excerpt so a 5×8k book still fits one score call. */
+const BOOK_SCORE_EXCERPT_WORDS = 2_200;
+
+function excerptForBookScore(text: string, maxWords: number): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return text.trim();
+  const head = Math.floor(maxWords * 0.7);
+  const tail = maxWords - head;
+  return `${words.slice(0, head).join(" ")}\n\n[…]\n\n${words.slice(-tail).join(" ")}`;
+}
 
 const IMPROVE_SYSTEM = `Du bist strenger Manuskript-Lektor für deutschsprachige Business-Sachbücher.
 Du überarbeitest EIN Kapitel vollständig und lieferst verkaufsbereite BUCHPROSA (Druck/ePub), keine Markdown-Datei.
@@ -147,10 +189,56 @@ export async function approveSachbuchSchreiben(
     kapitel,
     idee: {
       ...book.idee,
+      manuscriptReview: emptySachbuchManuscriptBookReview(),
       guide: {
         ...book.idee.guide,
         currentStep: "manuscript",
         writeApprovedAt: now,
+      },
+    },
+  });
+}
+
+/**
+ * Throw away frozen Manuskript AND Abschnitt prose, reopen Schreiben.
+ * Idea / Typ / Evidenz / Makro / Context Graphs stay. Next: generate Abschnitte again.
+ */
+export async function resetSachbuchSchreibenProse(
+  sachbuchId: string,
+): Promise<SachbuchKontext> {
+  const book = await getSachbuchKontext(sachbuchId);
+  if (!book) throw new Error("Sachbuch nicht gefunden.");
+  if (!isSachbuchIdeaApproved(book)) {
+    throw new Error("Idee noch nicht freigegeben.");
+  }
+  if (!hasConfirmedSachbuchBookType(book.makro.bookTypeId)) {
+    throw new Error("Zuerst Sachbuchtyp übernehmen.");
+  }
+
+  const now = new Date().toISOString();
+  const kapitel = book.kapitel.map((k) => ({
+    ...k,
+    abschnitte: [],
+    finalText: "",
+    draftPass1: "",
+    critiquePass2: "",
+    manuscript: emptySachbuchKapitelManuscript(),
+    status: "draft" as const,
+    generationJobId: null,
+    generationProgress: null,
+    generationError: null,
+    updatedAt: now,
+  }));
+
+  return patchSachbuchBook(sachbuchId, {
+    kapitel,
+    idee: {
+      ...book.idee,
+      manuscriptReview: emptySachbuchManuscriptBookReview(),
+      guide: {
+        ...book.idee.guide,
+        currentStep: "write",
+        writeApprovedAt: null,
       },
     },
   });
@@ -177,6 +265,7 @@ export async function reopenSachbuchSchreiben(
     kapitel,
     idee: {
       ...book.idee,
+      manuscriptReview: emptySachbuchManuscriptBookReview(),
       guide: {
         ...book.idee.guide,
         currentStep: "write",
@@ -247,7 +336,91 @@ ${body}`,
 }
 
 /**
- * Improve one chapter with Argon. Optional extra changeOrders (e.g. book-level critique).
+ * Score the whole manuscript as one product (Argon).
+ * Uses chapter bodies (improved preferred) + chapter scores as context — not a mean.
+ */
+export async function scoreSachbuchBookManuscript(
+  sachbuchId: string,
+): Promise<SachbuchKontext> {
+  const book = await getSachbuchKontext(sachbuchId);
+  if (!book) throw new Error("Sachbuch nicht gefunden.");
+  assertSachbuchGuideAllows(book, "manuscript");
+  if (book.kapitel.length === 0) {
+    throw new Error("Keine Kapitel zum Bewerten.");
+  }
+
+  const chapterBlocks = book.kapitel.map((k, i) => {
+    const body =
+      k.manuscript.improvedText.trim() ||
+      k.manuscript.draftText.trim() ||
+      draftFromKapitel(k);
+    const words = countSachbuchWords(body);
+    if (words < 200) {
+      throw new Error(
+        `Kapitel ${i + 1} („${k.title}“) ist zu kurz für die Buch-Bewertung.`,
+      );
+    }
+    const excerpt = excerptForBookScore(body, BOOK_SCORE_EXCERPT_WORDS);
+    const chScore =
+      k.manuscript.salesScore != null ? `${k.manuscript.salesScore}/10` : "—";
+    const summary = k.manuscript.scoreSummary.trim() || "—";
+    return `### Kapitel ${i + 1}: ${k.title}
+Kapitel-Score (nur Kontext): ${chScore}
+Kapitel-Kurzurteil: ${summary}
+Wörter gesamt: ${words} (Auszug unten)
+
+${excerpt}`;
+  });
+
+  const model = await resolveRomanSchreibModel(SACHBUCH_MODEL_MANUSCRIPT);
+  const raw = await generateText({
+    model,
+    systemInstruction: BOOK_SCORE_SYSTEM,
+    userText: `Buch: ${book.title}
+UVP: ${book.idee.unpopularOpinion}
+Zielgruppe: ${book.zielgruppe || "—"}
+Kapitelanzahl: ${book.kapitel.length}
+
+Bewerte das GESAMTWERK (nicht den Mittelwert der Kapitel-Scores).
+
+${chapterBlocks.join("\n\n---\n\n")}`,
+    preferJson: true,
+    maxTokens: 4000,
+    timeoutMs: GEMINI_4_ARGON_TIMEOUT_MS,
+  });
+
+  let scored: Partial<SachbuchKapitelManuscript>;
+  try {
+    scored = parseScoreJson(raw);
+  } catch {
+    throw new Error("Buch-Score-JSON ungültig — bitte erneut versuchen.");
+  }
+  if (scored.salesScore == null) {
+    throw new Error("Kein salesScore in der Buch-Bewertung.");
+  }
+
+  const now = new Date().toISOString();
+  return patchSachbuchBook(sachbuchId, {
+    idee: {
+      ...book.idee,
+      manuscriptReview: {
+        salesScore: scored.salesScore,
+        scoreSummary: scored.scoreSummary ?? "",
+        strengths: scored.strengths ?? [],
+        gaps: scored.gaps ?? [],
+        changeOrders: scored.changeOrders ?? [],
+        scoredAt: now,
+        modelSlug: SACHBUCH_MODEL_MANUSCRIPT,
+      },
+    },
+  });
+}
+
+/**
+ * Improve one chapter with Argon.
+ * Honors: default/extra orders, chapter critique, and (when present) Buch-Bewertung
+ * Change-Orders/Lücken that apply to this chapter. Preferiert Lektorat-Text als
+ * Vorlage, damit ein zweiter Lauf die Buch-Schwachstellen nachzieht.
  */
 export async function improveSachbuchKapitelManuscript(input: {
   sachbuchId: string;
@@ -267,27 +440,45 @@ export async function improveSachbuchKapitelManuscript(input: {
     kap = working.kapitel.find((k) => k.id === input.kapitelId)!;
   }
 
-  const body =
+  const frozenDraft =
     kap.manuscript.draftText.trim() ||
     draftFromKapitel(kap) ||
     sachbuchKapitelBodyText(kap);
+  // Second pass (Buch-Kritik): start from current Lektorat if present.
+  const body =
+    kap.manuscript.improvedText.trim() ||
+    frozenDraft;
+  const bookCritique = sachbuchBookCritiqueForChapter(working, input.kapitelId);
   const orders = [
+    ...bookCritique.orders.map(
+      (o) =>
+        `[Buch-weit — in DIESEM Kapitel umsetzen, soweit betroffen; sonst straffen/Querverweis statt Doppelung] ${o}`,
+    ),
     ...(input.extraChangeOrders ?? []),
     ...kap.manuscript.changeOrders,
   ].filter(Boolean);
+  const gaps = [
+    ...bookCritique.gaps.map((g) => `[Buch] ${g}`),
+    ...kap.manuscript.gaps,
+  ];
 
   const sourceWords = countSachbuchWords(body);
   const minWords = Math.round(sourceWords * 0.9);
   const model = await resolveRomanSchreibModel(SACHBUCH_MODEL_MANUSCRIPT);
+  const vorlageLabel = kap.manuscript.improvedText.trim()
+    ? "Aktuelles Lektorat"
+    : "Rohentwurf";
 
   async function rewriteOnce(userText: string): Promise<string> {
+    // Argon wall-clock is floored to GEMINI_4_ARGON_TIMEOUT_MS in the client;
+    // pass it explicitly so scripts/UI share the same 20‑min budget.
     const raw = (
       await generateText({
         model,
         systemInstruction: IMPROVE_SYSTEM,
         userText,
-        maxTokens: 24_000,
-        timeoutMs: 420_000,
+        maxTokens: 32_768,
+        timeoutMs: GEMINI_4_ARGON_TIMEOUT_MS,
       })
     )
       .replace(/^```(?:markdown|md|text)?\s*|\s*```$/g, "")
@@ -299,18 +490,20 @@ export async function improveSachbuchKapitelManuscript(input: {
 Kapitel: ${kap.title}
 UVP: ${book.idee.unpopularOpinion}
 
-Vorlage: ${sourceWords} Wörter — Ziel mindestens ${minWords} Wörter (kein starkes Kürzen).
+Vorlage: ${sourceWords} Wörter (${vorlageLabel}) — Ziel mindestens ${minWords} Wörter (kein starkes Kürzen).
+Priorität: Buch-weite Change-Orders zuerst (Redundanzen zwischen Kapiteln, Framework-Konsistenz, dramaturgische Staffelung), dann Kapitel-Orders.
 
-Score bisher: ${kap.manuscript.salesScore}/10
-Kritik: ${kap.manuscript.scoreSummary}
+Kapitel-Score bisher: ${kap.manuscript.salesScore}/10
+Kapitel-Kritik: ${kap.manuscript.scoreSummary || "—"}
+Buch-Gesamturteil: ${bookCritique.summary || "—"}
 
 Change-Orders (verbindlich):
 ${orders.map((o, i) => `${i + 1}. ${o}`).join("\n") || "—"}
 
 Lücken:
-${kap.manuscript.gaps.map((g) => `- ${g}`).join("\n") || "—"}
+${gaps.map((g) => `- ${g}`).join("\n") || "—"}
 
-Rohentwurf:
+${vorlageLabel}:
 ${body}`);
 
   let improvedWords = countSachbuchWords(improved);
@@ -324,13 +517,13 @@ ${body}`);
 Kapitel: ${kap.title}
 
 Die vorherige Überarbeitung ist zu kurz (${improvedWords} Wörter, Minimum ${minWords}).
-Schreibe das Kapitel erneut aus dem Rohentwurf: setze die Change-Orders um, aber behalte
+Schreibe das Kapitel erneut aus der Vorlage: setze die Change-Orders um, aber behalte
 Inhalt und Länge — Ziel mindestens ${minWords} Wörter (Vorlage: ${sourceWords}).
 
 Change-Orders:
 ${orders.map((o, i) => `${i + 1}. ${o}`).join("\n") || "—"}
 
-Rohentwurf:
+${vorlageLabel}:
 ${body}`);
     } else {
       improved = await rewriteOnce(`Buch: ${book.title}
@@ -338,12 +531,12 @@ Kapitel: ${kap.title}
 
 Expandiere die kurze Fassung auf mindestens ${minWords} Wörter.
 Behalte die Lektorat-Verbesserungen; hole fehlende Abschnitte, Beispiele und Details
-aus dem Rohentwurf zurück (kein neues Erfinden). Keine Artikelnummern 1:1.
+aus der Vorlage zurück (kein neues Erfinden). Keine Artikelnummern 1:1.
 
 Kurze Fassung (${improvedWords} Wörter):
 ${improved}
 
-Rohentwurf (${sourceWords} Wörter) als Füllquelle:
+Vorlage (${sourceWords} Wörter) als Füllquelle:
 ${body}`);
     }
     improvedWords = countSachbuchWords(improved);
@@ -363,7 +556,7 @@ ${body}`);
   let newScore = kap.manuscript.salesScore;
   let newSummary = kap.manuscript.scoreSummary;
   let strengths = kap.manuscript.strengths;
-  let gaps = kap.manuscript.gaps;
+  let gapsOut = kap.manuscript.gaps;
   let changeOrders = kap.manuscript.changeOrders;
   try {
     const scoreRaw = await generateText({
@@ -382,7 +575,7 @@ ${improved}`,
       newScore = parsed.salesScore;
       newSummary = parsed.scoreSummary || newSummary;
       strengths = parsed.strengths?.length ? parsed.strengths : strengths;
-      gaps = parsed.gaps ?? [];
+      gapsOut = parsed.gaps ?? [];
       changeOrders = parsed.changeOrders ?? [];
     }
   } catch {
@@ -393,12 +586,13 @@ ${improved}`,
     finalText: improved,
     manuscript: {
       ...kap.manuscript,
-      draftText: body,
+      // Keep frozen Rohentwurf; never overwrite with Lektorat.
+      draftText: frozenDraft,
       improvedText: improved,
       salesScore: newScore,
       scoreSummary: newSummary,
       strengths,
-      gaps,
+      gaps: gapsOut,
       changeOrders,
       scoredAt: kap.manuscript.scoredAt ?? now,
       improvedAt: now,
@@ -419,6 +613,9 @@ export const SACHBUCH_MANUSCRIPT_DEFAULT_CHANGE_ORDERS = [
 
 /**
  * Improve every chapter once (sequential) with optional shared change orders.
+ * Skips chapters that already have a fresh Lektorat — except when a newer
+ * Buch-Bewertung Change-Orders hat: then re-improve from current Lektorat so
+ * book-wide weaknesses (Redundanz, Framework, Staffelung) get applied.
  */
 export async function improveAllSachbuchManuscript(input: {
   sachbuchId: string;
@@ -428,12 +625,71 @@ export async function improveAllSachbuchManuscript(input: {
   if (!book) throw new Error("Sachbuch nicht gefunden.");
   assertSachbuchGuideAllows(book, "manuscript");
 
-  for (const k of book.kapitel) {
-    book = await improveSachbuchKapitelManuscript({
-      sachbuchId: input.sachbuchId,
-      kapitelId: k.id,
-      extraChangeOrders: input.extraChangeOrders,
-    });
+  const failures: string[] = [];
+
+  for (let i = 0; i < book.kapitel.length; i += 1) {
+    const kapitelId = book.kapitel[i]!.id;
+    book = (await getSachbuchKontext(input.sachbuchId))!;
+    const k = book.kapitel.find((c) => c.id === kapitelId);
+    if (!k) continue;
+
+    if (!sachbuchKapitelNeedsManuscriptImprove(book, kapitelId)) {
+      continue;
+    }
+
+    let ok = false;
+    let lastMsg = "unbekannt";
+    for (
+      let attempt = 1;
+      attempt <= IMPROVE_CHAPTER_ATTEMPTS && !ok;
+      attempt += 1
+    ) {
+      try {
+        book = await improveSachbuchKapitelManuscript({
+          sachbuchId: input.sachbuchId,
+          kapitelId,
+          extraChangeOrders: input.extraChangeOrders,
+        });
+        ok = true;
+      } catch (error) {
+        lastMsg = error instanceof Error ? error.message : String(error);
+        const retry =
+          attempt < IMPROVE_CHAPTER_ATTEMPTS &&
+          (isRetryableAiNetworkError(error) ||
+            /timeout|abgebrochen|fetch failed|econnreset|temporar|überlast/i.test(
+              lastMsg,
+            ));
+        if (retry) {
+          console.warn(
+            `[sachbuch-manuscript] Kap ${i + 1} improve attempt ${attempt} failed, retry: ${lastMsg}`,
+          );
+          await sleepMs(8_000 * attempt);
+          continue;
+        }
+        break;
+      }
+    }
+
+    if (!ok) {
+      failures.push(`Kapitel ${i + 1} (${k.title.slice(0, 48)}): ${lastMsg}`);
+    }
+  }
+
+  book = (await getSachbuchKontext(input.sachbuchId))!;
+  if (failures.length > 0) {
+    throw new Error(
+      `Manuskript-Improve teilweise fehlgeschlagen (${failures.length}): ${failures.join(" · ")}`,
+    );
+  }
+
+  // Holistic book score after a full improve pass (best-effort).
+  try {
+    book = await scoreSachbuchBookManuscript(input.sachbuchId);
+  } catch (error) {
+    console.warn(
+      "[sachbuch-manuscript] book score after improve-all failed:",
+      error instanceof Error ? error.message : error,
+    );
   }
   return book;
 }

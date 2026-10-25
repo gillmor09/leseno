@@ -1,0 +1,16 @@
+SCORE 10
+GAPS:
+1. Hohe Textdichte in den operativen Tool- und Sprint-Beschreibungen (insbesondere in Kapitel 3, 4 und 5), die im Fließtext ohne visuelle Aufbereitung im späteren Buchsatz erschlagend wirken kann.
+2. Im abschließenden 9-KPI-Cockpit (Kapitel 5) gibt es eine sprachliche Inkonsistenz zwischen komplett englischen Metriken (Kapitel 1), rein deutschen Metriken (Kapitel 4) und gemischten Begriffen (Kapitel 5), während die Frontend-/Conversion-Metriken aus Kapitel 3 im Gesamt-Cockpit nicht als eigene Säule repräsentiert sind.
+ORDERS:
+1. Für Satz & Layout: Die „Blätter für den Montagmorgen“, die Sprint-Wochenpläne (14-Tage- und 30-Tage-Sprint), den 6-Fragen-Prozesssteckbrief sowie das 9-KPI-Cockpit im Buchsatz zwingend als grafisch abgesetzte Einseiter-Boxen oder Tabellen gestalten, um optische Ruhepunkte im dichten Fließtext zu schaffen.
+2. KPI-Nomenklatur im Finale harmonisieren: In Kapitel 5 beim „9-KPI-Cockpit“ für jede der neun Kennzahlen einheitlich einen prägnanten deutschen Begriff plus das englische Fach-Äquivalent in Klammern verwenden (oder umgekehrt), um den Bruch zwischen Kapitel 1 (rein Englisch) und Kapitel 4 (rein Deutsch) zu glätten.
+3. Kapitel 3 im Abschluss-Cockpit verankern: Im 9-KPI-Cockpit am Ende von Kapitel 5 kurz erläutern, warum die Kennzahlen aus Kapitel 1, 4 und 5 die System-Säulen bilden, oder eine zentrale Frontend-Metrik aus Kapitel 3 (z. B. Formular-Abbruchquote / First-Time-Right-Rate) sichtbar in die erste oder zweite Säule integrieren.
+
+===== K5 COCKPIT =====
+
+Ihr Blatt für den Montagmorgen ist das 9-KPI-Cockpit. Säule Kosten und Bestand aus Kapitel 1: Data Health Rate über 85 Prozent; Cost per Dormant Record 0,30 bis 0,60 Euro pro Monat; Unstructured Storage Decay Time 14 bis 30 Tage. Säule Bestandsbetrieb aus Kapitel 4: Auskunfts-Durchlaufzeit unter fünfzehn Minuten; Muda-Quote in den operativen Kernsystemen fallend; Latenzzeit bei der Berechtigungsbereinigung unter 24 Stunden. Säule KI-Readiness aus Kapitel 5: Lead Time for Governance unter zehn Arbeitstage; Index Freshness Score über fünfundneunzig Prozent; Entschlackungsquote am Gateway steigend. Der A3-Report daneben: Prozessname, Zweck, Datenfelder, Löschfrist, Risiko und die Verknüpfung zu den drei KI-Kennzahlen auf einer Seite.
+
+Die Lean-Privacy-Architektur auf einen Blick. Fünf Artefakte in fünf Monaten: Chargeback-Rechnung (Kapitel 1), 6-Fragen-Prozesssteckbrief (Kapitel 2), 14-Tage-Sprint (Kapitel 3), 30-Tage-Altdaten-Sprint (Kapitel 4), A3-Report und 90-Tage-KI-Roadmap (Kapitel 5). Darüber das 9-KPI-Cockpit – drei Kennzahlen aus Kapitel 1, drei aus Kapitel 4, drei aus Kapitel 5. Wer die Artefakte in dieser Reihenfolge zündet, bekommt zuerst Diagnose und Stopp des Zuflusses, dann Aufräumen im Bestand und erst danach die Skalierung.
+
+Die ausfüllbaren Blätter liegen unter leseno.de/lean-privacy, der QR-Code steht auf der Umschlaginnenseite.

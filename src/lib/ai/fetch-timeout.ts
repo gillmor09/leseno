@@ -73,6 +73,59 @@ export function isAiAbortError(error: unknown): boolean {
   return /aborted|timeout/i.test(error.message);
 }
 
+/**
+ * Transient transport failures worth a short retry (Claude / Gemini / undici).
+ * Does not include Abort/Timeout — those should fail the call immediately.
+ */
+export function isRetryableAiNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (isAiAbortError(error)) return false;
+  const message = error.message.toLowerCase();
+  if (
+    message.includes("fetch failed") ||
+    message.includes("econnreset") ||
+    message.includes("econnrefused") ||
+    message.includes("etimedout") ||
+    message.includes("socket hang up") ||
+    message.includes("und_err") ||
+    message.includes("network")
+  ) {
+    return true;
+  }
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    const code = (cause as NodeJS.ErrnoException).code ?? "";
+    if (
+      code === "ECONNRESET" ||
+      code === "ETIMEDOUT" ||
+      code === "ECONNREFUSED" ||
+      code === "UND_ERR_SOCKET" ||
+      code === "UND_ERR_CONNECT_TIMEOUT"
+    ) {
+      return true;
+    }
+    return isRetryableAiNetworkError(cause);
+  }
+  return false;
+}
+
+/** HTTP statuses that are often transient on AI provider APIs. */
+export function isRetryableAiHttpStatus(status: number): boolean {
+  return (
+    status === 408 ||
+    status === 429 ||
+    status === 500 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    status === 529
+  );
+}
+
+export function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /** Prefer the seconds encoded in our Abort reason over a stale caller arg. */
 function timeoutSecsFromError(
   error: unknown,

@@ -199,6 +199,14 @@ export async function generateNextAbschnitt(input: {
     kapitel.abschnitte.filter((a) => a.status !== "draft"),
   );
   const order = kapitel.abschnitte.length;
+  const alreadyCovered = kapitel.abschnitte
+    .map((a, i) => {
+      const head = a.draftText.trim().slice(0, 220).replace(/\s+/g, " ");
+      return head ? `${i + 1}. ${head}` : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+  const openClaims = kapitel.contextGraph.claimsToProve.join("; ") || "—";
 
   const baseContext = `Buch: ${book.title}
 Stilbibel: ${book.stilbibel.trim() || "â€”"}
@@ -216,13 +224,23 @@ Context Graph:
     (
       await generateText({
         model: writerModel,
-        systemInstruction: writer.systemPrompt,
+        systemInstruction: `${writer.systemPrompt}
+
+Zusatz: Keine Wiederholungsschleifen. Cases/Studien/Metriken aus dem bisherigen Kapiteltext nicht neu aufwärmen. Nur Buchprosa, kein Markdown.`,
         userText: `${baseContext}
 
-Bisheriger Kapiteltext (endet mit einem abgeschlossenen Abschnitt â€” setze NICHT mitten im Satz fort):
+Bisheriger Kapiteltext (endet mit einem abgeschlossenen Abschnitt — setze NICHT mitten im Satz fort):
 ${prevText || "(Anfang)"}
 
-Schreibe den NÃ„CHSTEN Abschnitt (${SACHBUCH_ABSCHNITT_WORDS_MIN}â€“${SACHBUCH_ABSCHNITT_WORDS_MAX} WÃ¶rter).
+Bereits erzählt (NICHT neu einführen, NICHT wortgleich nacherzählen):
+${alreadyCovered || "(noch nichts — das ist der Kapitelanfang)"}
+
+Offene Claims: ${openClaims}
+Das ist Abschnitt ${order + 1}. Liefere NEUEN Stoff (nächste Phase, nächster Claim, neues Detail).
+VERBOTEN: denselben Case (z. B. ConnectTel) erneut vorstellen; dieselben Studien/Metriken/Bußgelder noch einmal erklären.
+Lehrfälle nur fortschreiben, nicht von vorn erzählen.
+
+Schreibe den NÄCHSTEN Abschnitt (${SACHBUCH_ABSCHNITT_WORDS_MIN}–${SACHBUCH_ABSCHNITT_WORDS_MAX} Wörter).
 ${ABSCHNITT_BOUNDARY_RULES}`,
         maxTokens: 3500,
         timeoutMs: 180_000,

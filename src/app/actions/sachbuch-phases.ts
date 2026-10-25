@@ -44,6 +44,7 @@ import {
   improveAllSachbuchManuscript,
   improveSachbuchKapitelManuscript,
   reopenSachbuchSchreiben,
+  scoreSachbuchBookManuscript,
   scoreSachbuchKapitelManuscript,
 } from "@/lib/sachbuch/manuscript";
 import { upsertSachbuchExport } from "@/lib/sachbuch/repository";
@@ -584,6 +585,23 @@ export async function scoreSachbuchKapitelManuscriptAction(
   );
 }
 
+/** Score the whole book as one Verkaufsreife product (not chapter mean). */
+export async function scoreSachbuchBookManuscriptAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  return wrap(
+    parsed.data.id,
+    () => scoreSachbuchBookManuscript(parsed.data.id),
+    "Buch-Gesamtscore fehlgeschlagen.",
+  );
+}
+
 /** Improve one chapter (Argon). */
 export async function improveSachbuchKapitelManuscriptAction(
   input: unknown,
@@ -606,8 +624,8 @@ export async function improveSachbuchKapitelManuscriptAction(
 }
 
 /**
- * Improve all chapters once with default editorial change-orders
- * (Artikel-Schlacht, Wiederholung, Belege, Verkaufsreife).
+ * Improve all chapters with default editorial change-orders plus Buch-Bewertung
+ * (when present). Re-runs chapters whose Lektorat is older than the book score.
  */
 export async function improveAllSachbuchManuscriptAction(
   input: unknown,

@@ -163,6 +163,7 @@ Regeln:
 - Baue auf etablierte Begriffe; beweise fällige Claims.
 - Leseversprechen: keine DSGVO-/Gesetzes-Artikelnummern 1:1 — Prinzipien und Alltagssprache statt Artikel-Schlacht.
 - FORMAT: Nur Buchprosa (Absätze). VERBOTEN: Markdown (# ## ###, **, *, Backticks, - Listen). Zwischenüberschriften — wenn überhaupt — als Normalzeile ohne Sonderzeichen.
+- Keine Wiederholungsschleife: Cases, Studien und Metriken, die im bisherigen Kapiteltext schon stehen, nicht neu aufwärmen. ConnectTel nur einmal einführen, danach fortschreiben.
 - Jeder Abschnitt ist in sich geschlossen: Anfang = neuer vollständiger Satz; Ende = abgeschlossener Gedanke mit . ! oder ? — keine Satztrennung über Abschnittsgrenzen.
 - Wenn der Autor Recherche/Belege fordert („such im Internet“, „keine Ahnung“): recherchiere und arbeite belastbare Fakten ein — erfinde keine Studien oder Zahlen.`;
 

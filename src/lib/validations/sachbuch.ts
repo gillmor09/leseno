@@ -124,6 +124,25 @@ export const sachbuchIdeeSchema = z.object({
   refinedBriefing: z.string().max(50_000).default(""),
   refinedOpinion: z.string().max(20_000).default(""),
   refinedCaseStudies: z.array(z.string().max(5000)).max(50).default([]),
+  manuscriptReview: z
+    .object({
+      salesScore: z.number().int().min(1).max(10).nullable().default(null),
+      scoreSummary: z.string().max(20_000).default(""),
+      strengths: z.array(z.string().max(2000)).max(20).default([]),
+      gaps: z.array(z.string().max(2000)).max(20).default([]),
+      changeOrders: z.array(z.string().max(2000)).max(20).default([]),
+      scoredAt: z.string().max(80).nullable().default(null),
+      modelSlug: z.string().max(120).default(""),
+    })
+    .default({
+      salesScore: null,
+      scoreSummary: "",
+      strengths: [],
+      gaps: [],
+      changeOrders: [],
+      scoredAt: null,
+      modelSlug: "",
+    }),
 });
 
 export const sachbuchEvidenzSchema = z.object({

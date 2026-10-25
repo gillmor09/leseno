@@ -27,6 +27,7 @@ import type {
   SachbuchKapitelManuscript,
   SachbuchKapitelStatus,
   SachbuchKontext,
+  SachbuchManuscriptBookReview,
   SachbuchMakro,
   SachbuchMakroStage,
   SachbuchMakroStageKey,
@@ -198,6 +199,42 @@ export function emptySachbuchKapitelManuscript(): SachbuchKapitelManuscript {
   };
 }
 
+export function emptySachbuchManuscriptBookReview(): SachbuchManuscriptBookReview {
+  return {
+    salesScore: null,
+    scoreSummary: "",
+    strengths: [],
+    gaps: [],
+    changeOrders: [],
+    scoredAt: null,
+    modelSlug: "",
+  };
+}
+
+function parseManuscriptBookReview(raw: unknown): SachbuchManuscriptBookReview {
+  const row = asRecord(raw);
+  const empty = emptySachbuchManuscriptBookReview();
+  const scoreRaw = row.salesScore;
+  const salesScore =
+    typeof scoreRaw === "number" && Number.isFinite(scoreRaw)
+      ? Math.max(1, Math.min(10, Math.round(scoreRaw)))
+      : null;
+  return {
+    salesScore,
+    scoreSummary:
+      typeof row.scoreSummary === "string" ? row.scoreSummary : empty.scoreSummary,
+    strengths: parseStringList(row.strengths),
+    gaps: parseStringList(row.gaps),
+    changeOrders: parseStringList(row.changeOrders),
+    scoredAt:
+      typeof row.scoredAt === "string" && row.scoredAt.trim()
+        ? row.scoredAt.trim()
+        : null,
+    modelSlug:
+      typeof row.modelSlug === "string" ? row.modelSlug.trim() : empty.modelSlug,
+  };
+}
+
 function parseKapitelManuscript(raw: unknown): SachbuchKapitelManuscript {
   const row = asRecord(raw);
   const empty = emptySachbuchKapitelManuscript();
@@ -242,6 +279,7 @@ export function emptySachbuchIdee(): SachbuchIdee {
     refinedBriefing: "",
     refinedOpinion: "",
     refinedCaseStudies: [],
+    manuscriptReview: emptySachbuchManuscriptBookReview(),
   };
 }
 
@@ -370,6 +408,7 @@ export function parseSachbuchIdee(raw: unknown): SachbuchIdee {
         ? row.refinedOpinion
         : empty.refinedOpinion,
     refinedCaseStudies: parseStringList(row.refinedCaseStudies),
+    manuscriptReview: parseManuscriptBookReview(row.manuscriptReview),
   };
 }
 
@@ -711,11 +750,90 @@ export function countKapitelAbschnitteWords(
   );
 }
 
+/** Min words for a chapter to count as already lektoriert. */
+export const SACHBUCH_MANUSCRIPT_IMPROVED_MIN_WORDS = 400;
+
 /**
- * Mean Verkaufsreife over scored chapters (null if none scored yet).
- * Client-safe; used by Manuskript Gesamt-Score UI.
+ * Whether a Buch-Change-Order / Lücke likely applies to chapter `index1` (1-based).
+ * Client-safe — shared by server improve + UI hop skip.
+ */
+export function sachbuchBookCritiqueAppliesToChapter(
+  text: string,
+  chapterIndex1: number,
+): boolean {
+  const mentions = [
+    ...text.matchAll(/\b[Kk]apitel\s*(\d+)\b/g),
+    ...text.matchAll(/\bKap\.?\s*(\d+)\b/g),
+  ].map((m) => Number(m[1]));
+  if (mentions.length === 0) return true;
+  return mentions.includes(chapterIndex1);
+}
+
+/** Book-wide critique lines that this chapter must honor. */
+export function sachbuchBookCritiqueForChapter(
+  book: SachbuchKontext,
+  kapitelId: string,
+): { orders: string[]; gaps: string[]; summary: string } {
+  const review = book.idee.manuscriptReview;
+  const empty = { orders: [] as string[], gaps: [] as string[], summary: "" };
+  const hasBookCritique =
+    Boolean(review?.changeOrders?.length) || Boolean(review?.gaps?.length);
+  if (!hasBookCritique) return empty;
+  const idx = book.kapitel.findIndex((k) => k.id === kapitelId);
+  if (idx < 0) return empty;
+  const n = idx + 1;
+  return {
+    orders: (review.changeOrders ?? []).filter((o) =>
+      sachbuchBookCritiqueAppliesToChapter(o, n),
+    ),
+    gaps: (review.gaps ?? []).filter((g) =>
+      sachbuchBookCritiqueAppliesToChapter(g, n),
+    ),
+    summary: (review.scoreSummary ?? "").trim(),
+  };
+}
+
+/**
+ * Whether this chapter still needs an Improve-Hop (first Lektorat or Buch-Pass
+ * newer than last improvedAt). Client-safe.
+ */
+export function sachbuchKapitelNeedsManuscriptImprove(
+  book: SachbuchKontext,
+  kapitelId: string,
+): boolean {
+  const k = book.kapitel.find((c) => c.id === kapitelId);
+  if (!k) return false;
+  const already = countSachbuchWords(k.manuscript.improvedText);
+  const improvedAt = k.manuscript.improvedAt?.trim() || null;
+  const bookScoredAt = book.idee.manuscriptReview?.scoredAt?.trim() || null;
+  const bookHasOrders =
+    (book.idee.manuscriptReview?.changeOrders?.length ?? 0) > 0;
+  const needsBookPass =
+    bookHasOrders &&
+    Boolean(bookScoredAt) &&
+    (!improvedAt || improvedAt < bookScoredAt!);
+  const critique = sachbuchBookCritiqueForChapter(book, kapitelId);
+  const chapterNeedsBookPass =
+    needsBookPass && (critique.orders.length > 0 || critique.gaps.length > 0);
+  if (
+    already >= SACHBUCH_MANUSCRIPT_IMPROVED_MIN_WORDS &&
+    improvedAt &&
+    !chapterNeedsBookPass
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Gesamt-Verkaufsreife for Manuskript UI.
+ * Prefers the holistic book review; falls back to chapter mean only as interim.
  */
 export function sachbuchManuscriptOverallSalesScore(book: SachbuchKontext): {
+  score: number | null;
+  /** How the displayed score was derived. */
+  source: "book" | "chapters-mean" | "none";
+  scoreSummary: string;
   average: number | null;
   scoredCount: number;
   chapterCount: number;
@@ -723,13 +841,39 @@ export function sachbuchManuscriptOverallSalesScore(book: SachbuchKontext): {
   const scores = book.kapitel
     .map((k) => k.manuscript.salesScore)
     .filter((s): s is number => typeof s === "number" && Number.isFinite(s));
+  const chapterMean =
+    scores.length > 0
+      ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) /
+        10
+      : null;
+  const bookScore = book.idee.manuscriptReview?.salesScore ?? null;
+  const bookSummary = book.idee.manuscriptReview?.scoreSummary?.trim() ?? "";
+  if (bookScore != null) {
+    return {
+      score: bookScore,
+      source: "book",
+      scoreSummary: bookSummary,
+      average: chapterMean,
+      scoredCount: scores.length,
+      chapterCount: book.kapitel.length,
+    };
+  }
+  if (chapterMean != null) {
+    return {
+      score: chapterMean,
+      source: "chapters-mean",
+      scoreSummary: "",
+      average: chapterMean,
+      scoredCount: scores.length,
+      chapterCount: book.kapitel.length,
+    };
+  }
   return {
-    average:
-      scores.length > 0
-        ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) /
-          10
-        : null,
-    scoredCount: scores.length,
+    score: null,
+    source: "none",
+    scoreSummary: "",
+    average: null,
+    scoredCount: 0,
     chapterCount: book.kapitel.length,
   };
 }

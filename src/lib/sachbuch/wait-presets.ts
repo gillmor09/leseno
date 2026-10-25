@@ -107,6 +107,13 @@ export const SACHBUCH_WAIT_MANUSCRIPT_SCORE = [
   "Score wird gespeichert …",
 ] as const;
 
+export const SACHBUCH_WAIT_MANUSCRIPT_BOOK_SCORE = [
+  "Alle Kapitel werden gelesen …",
+  "Roter Faden und Buchversprechen …",
+  "Verkaufsreife des Gesamtwerks …",
+  "Buch-Score wird gespeichert …",
+] as const;
+
 export const SACHBUCH_WAIT_MANUSCRIPT_IMPROVE = [
   "Rohentwurf und Kritik werden gelesen …",
   "Argon überarbeitet das Kapitel …",
@@ -116,10 +123,10 @@ export const SACHBUCH_WAIT_MANUSCRIPT_IMPROVE = [
 ] as const;
 
 export const SACHBUCH_WAIT_MANUSCRIPT_IMPROVE_ALL = [
-  "Kapitel werden der Reihe nach gelesen …",
-  "Argon lektoriert Kapitel für Kapitel …",
-  "Scores werden aktualisiert …",
-  "Gesamtmanuskript wird gespeichert …",
+  "Offene Kapitel werden ermittelt …",
+  "Argon lektoriert Kapitel für Kapitel (API-Hop) …",
+  "Buch-weite Change-Orders werden umgesetzt …",
+  "Buch-Verkaufsreife wird neu bewertet …",
 ] as const;
 
 export function sachbuchWaitAgentManuscript(): SachbuchWaitAgentInfo {

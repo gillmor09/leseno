@@ -1,0 +1,29 @@
+
+##### k1 start #####
+In den Konferenzräumen des Telekommunikationsanbieters ConnectTel herrschte verlässliches Augenrollen, sobald der Datenschutzbeauftragte die Tür öffnete. Eine breit angelegte Vertriebskampagne für neue Glasfaseranschlüsse stand in den Startlöchern, doch statt schneller Abschlüsse drohten nun endlose Prüfschleifen. Das Marketing wollte eine historisch gewachsene Kartei von über 150.000 Altkunden pe
+
+##### k2 docusign #####
+ift ab, was man kriegen kann, weil Informationen theoretisch irgendwann nützlich sein könnten.
+
+Wie unmittelbar sich der Verzicht auf solche Neugier bezahlt macht, zeigt die Praxis digitaler Software- und Dienstleistungsanbieter. Beim Signaturdienst DocuSign etwa verlangte das Registrierungsformular für kostenlose Testversionen ursprünglich eine ganze Batterie an Pflichtangaben über den Nutzer und dessen Arbeitgeber, die für das bloße Bereitstellen eines Testzugangs keinerlei operative Funktion erfüllten. Als das Unternehmen diesen Eingangsfilter entlang der dritten Kompassfrage bereinigte und die Pflichtfelder konsequent halbierte, verdoppelte sich die Registrierungsrate auf Anhieb. Auswertungen von Formular- und Marketingplattformen wie Formstack und HubSpot bestätigen diesen Hebel seit Jahren über tausende untersuchte Kampagnen hinweg: Bereits die Reduktion von vier Pflichtfeldern auf drei erhöht die Abschlussquote im Schnitt um fast fünfzig Prozent. Wie sich diese radikale Datenminimierung am Eingangstor technisch und psychologisch in E-Commerce- und B2B-Formularen umsetzen lässt – und warum ein einziges überflüssiges Formularfe
+
+##### k2 20 felder #####
+e Zuständigkeiten, fehlende Schnittstellen und mangelhafte Systemarchitekturen. Formulare, die zwanzig Pflichtfelder verlangen, obwohl drei für den Prozessschritt genügen würden, sind kein Zeichen bürokratischer Sorgfalt, sondern verkrustete Routinen, die wertvolle Kontakte verbrennen und Kaufinteressenten verprellen. Medienbrüche, bei denen Informationen händisch aus E-Mails in abteilungsinterne Tabellen kopiert werden, gefährden durch Tippfehler nicht nur die gesetzlich geforderte Datenrichtigkeit, sondern vergeuden hunderte produktive Arbeitsstunden mit vermeidbarer Nach
+
+##### k3 mid42 #####
+nbart. Für den Logistikleiter und den Finanzvorstand bedeutet exakt derselbe Vorgang operative Verschwendung in Reinform: Bei ConnectTel verursachte jede einzelne physische Fehlzustellung im Schnitt 25 Euro an direkten Prozesskosten für das Porto der Rückholung, die manuelle Vereinnahmung und Prüfung der Ware im Sperrlager, die Neuverpackung und den erneuten zweiten Versandversuch. Hinzu kamen die bezahlten Minuten an der Telefonhotline, weil sich der verärgerte Kunde erkundigte, wo seine bezahl
+
+##### k3 mid68 #####
+ Projektordner im verästelten Netzlaufwerk suchen und die Datei dort ablegen – dauert im betrieblichen Durchschnitt drei bis fünf Minuten wertvolle Arbeitszeit. Bei lediglich 20.000 Neukunden im Jahr bindet allein diese sinnlose Kopier-Routine mindestens 1.000 bezahlte Arbeitsstunden des Vertriebspersonals, was mehr als einer halben Vollzeitstelle entspricht, die über das Jahr hinweg nichts anderes tut, als digitalen Sondermüll zu produzieren. Im digitalen Online-Vertrieb wirkt ein erzwungener D
+
+##### k4 mid38 #####
+chnittstelle wird das Prinzip des internen Kunden lebendig: Jedes Team liefert der nachfolgenden Abteilung ausschließlich saubere Informationen, die direkt weiterverarbeitet werden können, wodurch der gefürchtete Ausschuss und die manuelle Nacharbeit an der Wurzel gestoppt werden.
+
+Altlasten und Architektur sanieren: Betroffenenrechte und Zombie-Systeme
+
+Wie dringend dieses Aufräumen an der Quelle und an den Schnittstellen ist, zeigt sich immer dann, wenn der Ernstfall eintritt. Kaum ein Ereigni
+
+##### k4 mid65 #####
+tspflichten. Der Verein war am Ende nicht einmal mehr in der Lage nachzuweisen, wer welche Dateiversionen wann und an wen versendet hatte.
+
+Aus Sicht der schlanken Prozesslehre markiert der Dateiversand per E-Mail das denkbar schlechteste Design. Er erzeugt massive Bestandsverschwendung durch zahllose unkontrollierbare Kopien auf fremden Festplatten und führt unweigerlich zu Überbearbeitung: Sobald eine Datei das Haus verlässt, arbeitet der Dienstleister mit einer toten, statischen Kopie. Später

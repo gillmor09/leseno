@@ -2,19 +2,20 @@
 
 /**
  * Phase 7 — Manuskript: Verkaufsreife-Score + Argon-Lektorat pro Kapitel.
+ * Gesamt-Score = holistische Buch-Bewertung (nicht Kapitel-Mittelwert).
+ * Improve-all: one API hop per chapter (like Abschnitte) — no giant Server Action.
  */
 
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  improveAllSachbuchManuscriptAction,
-  improveSachbuchKapitelManuscriptAction,
-  reopenSachbuchSchreibenAction,
-  scoreSachbuchKapitelManuscriptAction,
-} from "@/app/actions/sachbuch-phases";
+import { reopenSachbuchSchreibenAction } from "@/app/actions/sachbuch-phases";
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import {
+  requestImproveAllSachbuchManuscript,
+  requestImproveSachbuchKapitel,
+  requestScoreSachbuchBook,
+} from "@/lib/sachbuch/improve-manuscript-client";
 import {
   countSachbuchWords,
   sachbuchKapitelBodyText,
@@ -22,16 +23,16 @@ import {
 } from "@/lib/sachbuch/parse";
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 import {
+  SACHBUCH_WAIT_MANUSCRIPT_BOOK_SCORE,
   SACHBUCH_WAIT_MANUSCRIPT_IMPROVE,
   SACHBUCH_WAIT_MANUSCRIPT_IMPROVE_ALL,
-  SACHBUCH_WAIT_MANUSCRIPT_SCORE,
   sachbuchModelLabel,
   sachbuchWaitAgentManuscript,
 } from "@/lib/sachbuch/wait-presets";
 import { SACHBUCH_MODEL_MANUSCRIPT } from "@/lib/sachbuch/agent-defaults";
 import { cn } from "@/lib/utils";
 
-type WaitKind = "score" | "improve" | "improve-all" | null;
+type WaitKind = "book-score" | "improve" | "improve-all" | null;
 
 export function SachbuchManuscriptPanel({
   book,
@@ -45,6 +46,7 @@ export function SachbuchManuscriptPanel({
   const [selectedId, setSelectedId] = useState(book.kapitel[0]?.id ?? "");
   const [pending, setPending] = useState(false);
   const [waitKind, setWaitKind] = useState<WaitKind>(null);
+  const [waitProgress, setWaitProgress] = useState<string | null>(null);
   const [reopenOpen, setReopenOpen] = useState(false);
 
   const selected =
@@ -53,24 +55,29 @@ export function SachbuchManuscriptPanel({
   const words = countSachbuchWords(body);
   const modelLabel = sachbuchModelLabel(SACHBUCH_MODEL_MANUSCRIPT);
   const overall = sachbuchManuscriptOverallSalesScore(book);
+  const bookReview = book.idee.manuscriptReview;
 
-  async function runScore(kapitelId: string) {
+  async function runBookScore() {
     if (!canSave || pending) return;
     setPending(true);
-    setWaitKind("score");
+    setWaitKind("book-score");
+    setWaitProgress(null);
     try {
-      const result = await scoreSachbuchKapitelManuscriptAction({
-        sachbuchId: book.id,
-        kapitelId,
-      });
+      const result = await requestScoreSachbuchBook({ sachbuchId: book.id });
       if (!result.success || !result.data) {
-        toast.error(result.error ?? "Score fehlgeschlagen.");
+        toast.error(result.error ?? "Buch-Score fehlgeschlagen.");
         return;
       }
       onBookUpdate(result.data.book);
-      toast.success("Verkaufsreife bewertet.");
+      const s = result.data.book.idee.manuscriptReview.salesScore;
+      toast.success(
+        s != null
+          ? `Buch-Verkaufsreife: ${s}/10`
+          : "Buch-Verkaufsreife bewertet.",
+      );
     } finally {
       setWaitKind(null);
+      setWaitProgress(null);
       setPending(false);
     }
   }
@@ -79,8 +86,9 @@ export function SachbuchManuscriptPanel({
     if (!canSave || pending) return;
     setPending(true);
     setWaitKind("improve");
+    setWaitProgress(null);
     try {
-      const result = await improveSachbuchKapitelManuscriptAction({
+      const result = await requestImproveSachbuchKapitel({
         sachbuchId: book.id,
         kapitelId,
       });
@@ -92,6 +100,7 @@ export function SachbuchManuscriptPanel({
       toast.success("Kapitel lektoriert.");
     } finally {
       setWaitKind(null);
+      setWaitProgress(null);
       setPending(false);
     }
   }
@@ -100,16 +109,29 @@ export function SachbuchManuscriptPanel({
     if (!canSave || pending) return;
     setPending(true);
     setWaitKind("improve-all");
+    setWaitProgress("Starte Kapitel-Hops…");
     try {
-      const result = await improveAllSachbuchManuscriptAction({ id: book.id });
-      if (!result.success || !result.data) {
+      const result = await requestImproveAllSachbuchManuscript({
+        book,
+        onBookUpdate,
+        onProgress: setWaitProgress,
+      });
+      if (result.data?.book) {
+        onBookUpdate(result.data.book);
+      }
+      if (!result.success) {
         toast.error(result.error ?? "Gesamtverbesserung fehlgeschlagen.");
         return;
       }
-      onBookUpdate(result.data.book);
-      toast.success("Gesamtes Manuskript lektoriert (Argon).");
+      const n = result.data?.improvedCount ?? 0;
+      toast.success(
+        n > 0
+          ? `${n} Kapitel lektoriert — Buch-Score aktualisiert.`
+          : "Alles aktuell — Buch-Score aktualisiert.",
+      );
     } finally {
       setWaitKind(null);
+      setWaitProgress(null);
       setPending(false);
     }
   }
@@ -131,6 +153,13 @@ export function SachbuchManuscriptPanel({
     }
   }
 
+  const scoreLabel =
+    overall.source === "book"
+      ? "Gesamtwerk (Buch-Bewertung)"
+      : overall.source === "chapters-mean"
+        ? `Vorläufig: Mittelwert aus ${overall.scoredCount} von ${overall.chapterCount} Kapitel — bitte „Buch bewerten“`
+        : "Noch keine Bewertung";
+
   return (
     <div className="space-y-5">
       <section className="space-y-3 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10 sm:p-6">
@@ -148,7 +177,16 @@ export function SachbuchManuscriptPanel({
             <button
               type="button"
               disabled={!canSave || pending || book.kapitel.length === 0}
+              onClick={() => void runBookScore()}
+              className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
+            >
+              Buch bewerten
+            </button>
+            <button
+              type="button"
+              disabled={!canSave || pending || book.kapitel.length === 0}
               onClick={() => void runImproveAll()}
+              title="Setzt Kapitel- und Buch-Change-Orders um; bei neuer Buch-Bewertung erneut"
               className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
             >
               Alle Kapitel verbessern
@@ -165,35 +203,82 @@ export function SachbuchManuscriptPanel({
         </div>
         <div
           className={cn(
-            "rounded-2xl px-4 py-3 ring-1",
-            overall.average != null
+            "space-y-3 rounded-2xl px-4 py-3 ring-1",
+            overall.source === "book"
               ? "bg-emerald-50 text-emerald-950 ring-emerald-200/80"
-              : "bg-zinc-50 text-zinc-700 ring-zinc-950/5",
+              : overall.score != null
+                ? "bg-amber-50 text-amber-950 ring-amber-200/80"
+                : "bg-zinc-50 text-zinc-700 ring-zinc-950/5",
           )}
         >
-          <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-            Gesamt-Score Verkaufsreife
-          </p>
-          {overall.average != null ? (
-            <p className="mt-1 text-2xl font-extrabold tabular-nums">
-              {overall.average.toLocaleString("de-DE", {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 1,
-              })}
-              <span className="text-base font-bold text-zinc-600">/10</span>
+          <div>
+            <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+              Buch-Bewertung Verkaufsreife
             </p>
-          ) : (
-            <p className="mt-1 text-sm font-semibold">
-              Noch keine Kapitel bewertet.
+            {overall.source === "book" && overall.score != null ? (
+              <p className="mt-1 text-2xl font-extrabold tabular-nums">
+                {overall.score}
+                <span className="text-base font-bold text-zinc-600">/10</span>
+              </p>
+            ) : (
+              <p className="mt-1 text-sm font-semibold">
+                Noch keine Buch-Bewertung — „Buch bewerten“ starten.
+              </p>
+            )}
+            <p className="mt-0.5 text-xs font-semibold text-zinc-600">
+              {scoreLabel}
             </p>
-          )}
-          <p className="mt-0.5 text-xs font-semibold text-zinc-600">
-            Mittelwert aus {overall.scoredCount} von {overall.chapterCount}{" "}
-            Kapitel
-            {overall.scoredCount < overall.chapterCount && overall.scoredCount > 0
-              ? " (unbewertete zählen nicht mit)"
-              : ""}
-          </p>
+          </div>
+
+          {overall.source === "book" && bookReview.scoreSummary ? (
+            <div>
+              <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                Gesamturteil
+              </p>
+              <p className="mt-1 text-sm font-semibold text-zinc-800">
+                {bookReview.scoreSummary}
+              </p>
+            </div>
+          ) : null}
+
+          {overall.source === "book" && bookReview.strengths.length > 0 ? (
+            <div>
+              <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                Stärken
+              </p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm font-semibold text-zinc-800">
+                {bookReview.strengths.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {overall.source === "book" && bookReview.gaps.length > 0 ? (
+            <div>
+              <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                Lücken
+              </p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm font-semibold text-zinc-800">
+                {bookReview.gaps.map((g) => (
+                  <li key={g}>{g}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {overall.source === "book" && bookReview.changeOrders.length > 0 ? (
+            <div>
+              <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                Change-Orders (Buch)
+              </p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm font-semibold text-zinc-800">
+                {bookReview.changeOrders.map((o) => (
+                  <li key={o}>{o}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -218,8 +303,8 @@ export function SachbuchManuscriptPanel({
                     {i + 1}. {k.title || "Kapitel"}
                   </span>
                   <span className="mt-0.5 block text-xs text-zinc-500">
-                    {score != null ? `${score}/10` : "noch kein Score"}
-                    {improved ? " · lektoriert" : " · Rohentwurf"}
+                    {improved ? "lektoriert" : "Rohentwurf"}
+                    {score != null ? ` · intern ${score}/10` : ""}
                   </span>
                 </button>
               </li>
@@ -236,20 +321,12 @@ export function SachbuchManuscriptPanel({
                 </h3>
                 <p className="mt-1 text-xs font-semibold text-zinc-500">
                   {words.toLocaleString("de-DE")} Wörter
-                  {selected.manuscript.salesScore != null
-                    ? ` · Verkaufsreife ${selected.manuscript.salesScore}/10`
-                    : ""}
+                  {selected.manuscript.improvedText.trim()
+                    ? " · Lektorat"
+                    : " · Rohentwurf"}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={!canSave || pending}
-                  onClick={() => void runScore(selected.id)}
-                  className="rounded-full bg-zinc-900 px-4 py-2 text-xs font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
-                >
-                  Score
-                </button>
                 <button
                   type="button"
                   disabled={!canSave || pending}
@@ -260,24 +337,6 @@ export function SachbuchManuscriptPanel({
                 </button>
               </div>
             </div>
-
-            {selected.manuscript.scoreSummary ? (
-              <div className="rounded-2xl bg-zinc-50 px-4 py-3 ring-1 ring-zinc-950/5">
-                <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-                  Bewertung
-                </p>
-                <p className="mt-1 text-sm font-semibold text-zinc-800">
-                  {selected.manuscript.scoreSummary}
-                </p>
-                {selected.manuscript.gaps.length > 0 ? (
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs font-semibold text-zinc-600">
-                    {selected.manuscript.gaps.map((g) => (
-                      <li key={g}>{g}</li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
 
             <div>
               <p className="mb-1.5 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
@@ -310,10 +369,11 @@ export function SachbuchManuscriptPanel({
       />
 
       <SachbuchWaitDialog
-        open={waitKind === "score"}
-        title="Verkaufsreife wird bewertet"
-        steps={SACHBUCH_WAIT_MANUSCRIPT_SCORE}
+        open={waitKind === "book-score"}
+        title="Buch-Verkaufsreife wird bewertet"
+        steps={SACHBUCH_WAIT_MANUSCRIPT_BOOK_SCORE}
         agentInfo={sachbuchWaitAgentManuscript()}
+        footer="Fenster offen lassen — Argon liest das Gesamtwerk."
       />
       <SachbuchWaitDialog
         open={waitKind === "improve"}
@@ -325,8 +385,9 @@ export function SachbuchManuscriptPanel({
         open={waitKind === "improve-all"}
         title="Manuskript wird lektoriert"
         steps={SACHBUCH_WAIT_MANUSCRIPT_IMPROVE_ALL}
+        progressLabel={waitProgress}
         agentInfo={sachbuchWaitAgentManuscript()}
-        footer="Fenster offen lassen — alle Kapitel nacheinander (kann sehr lange dauern)."
+        footer="Fenster offen lassen — ein Kapitel pro Hop (wie Abschnitte). Fortschritt bleibt bei Abbruch erhalten."
       />
     </div>
   );
