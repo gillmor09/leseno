@@ -14,6 +14,7 @@ import {
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import {
   emptySachbuchEvidenz,
+  emptySachbuchHerstellungBookReview,
   emptySachbuchMakro,
   emptySachbuchManuscriptBookReview,
 } from "@/lib/sachbuch/parse";
@@ -414,6 +415,7 @@ export async function reopenSachbuchIdeeRefine(
       refinedOpinion: "",
       refinedCaseStudies: [],
       manuscriptReview: emptySachbuchManuscriptBookReview(),
+      herstellungReview: emptySachbuchHerstellungBookReview(),
       guide: {
         ...book.idee.guide,
         currentStep: "refine",

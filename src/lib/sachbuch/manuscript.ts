@@ -20,6 +20,7 @@ import {
 import {
   concatAbschnitteText,
   countSachbuchWords,
+  emptySachbuchHerstellungBookReview,
   emptySachbuchKapitelManuscript,
   emptySachbuchManuscriptBookReview,
   sachbuchBookCritiqueForChapter,
@@ -172,6 +173,9 @@ export async function approveSachbuchSchreiben(
         ...k.manuscript,
         draftText: draft,
         improvedText: "",
+        herstellungText: "",
+        herstellungNotes: [],
+        hergestelltAt: null,
         salesScore: null,
         scoreSummary: "",
         strengths: [],
@@ -190,6 +194,7 @@ export async function approveSachbuchSchreiben(
     idee: {
       ...book.idee,
       manuscriptReview: emptySachbuchManuscriptBookReview(),
+      herstellungReview: emptySachbuchHerstellungBookReview(),
       guide: {
         ...book.idee.guide,
         currentStep: "manuscript",
@@ -235,6 +240,7 @@ export async function resetSachbuchSchreibenProse(
     idee: {
       ...book.idee,
       manuscriptReview: emptySachbuchManuscriptBookReview(),
+      herstellungReview: emptySachbuchHerstellungBookReview(),
       guide: {
         ...book.idee.guide,
         currentStep: "write",
@@ -266,6 +272,7 @@ export async function reopenSachbuchSchreiben(
     idee: {
       ...book.idee,
       manuscriptReview: emptySachbuchManuscriptBookReview(),
+      herstellungReview: emptySachbuchHerstellungBookReview(),
       guide: {
         ...book.idee.guide,
         currentStep: "write",

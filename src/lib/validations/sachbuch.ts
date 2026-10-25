@@ -62,6 +62,7 @@ const guideStepSchema = z.enum([
   "makro",
   "write",
   "manuscript",
+  "herstellung",
   "export",
 ]);
 
@@ -69,6 +70,9 @@ const kapitelManuscriptSchema = z
   .object({
     draftText: z.string().max(200_000).default(""),
     improvedText: z.string().max(200_000).default(""),
+    herstellungText: z.string().max(220_000).default(""),
+    herstellungNotes: z.array(z.string().max(2000)).max(30).default([]),
+    hergestelltAt: z.string().max(80).nullable().default(null),
     salesScore: z.number().int().min(1).max(10).nullable().default(null),
     scoreSummary: z.string().max(10_000).default(""),
     strengths: z.array(z.string().max(2000)).max(20).default([]),
@@ -81,6 +85,9 @@ const kapitelManuscriptSchema = z
   .default({
     draftText: "",
     improvedText: "",
+    herstellungText: "",
+    herstellungNotes: [],
+    hergestelltAt: null,
     salesScore: null,
     scoreSummary: "",
     strengths: [],
@@ -141,6 +148,19 @@ export const sachbuchIdeeSchema = z.object({
       gaps: [],
       changeOrders: [],
       scoredAt: null,
+      modelSlug: "",
+    }),
+  herstellungReview: z
+    .object({
+      summary: z.string().max(20_000).default(""),
+      decisions: z.array(z.string().max(2000)).max(40).default([]),
+      preparedAt: z.string().max(80).nullable().default(null),
+      modelSlug: z.string().max(120).default(""),
+    })
+    .default({
+      summary: "",
+      decisions: [],
+      preparedAt: null,
       modelSlug: "",
     }),
 });

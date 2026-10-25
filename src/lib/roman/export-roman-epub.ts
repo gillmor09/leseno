@@ -29,6 +29,10 @@ import {
   type RomanExportChapter,
   type RomanExportScene,
 } from "@/lib/roman/export-roman-pdf";
+import {
+  hasSachbuchLayoutMarkup,
+  sachbuchLayoutBlocksToXhtml,
+} from "@/lib/sachbuch/herstellung-markup";
 
 export type RomanEpubInput = {
   title: string;
@@ -77,6 +81,10 @@ function chapterHeadingLabel(chapter: RomanExportChapter): string {
 }
 
 function paragraphsToXhtml(text: string): string {
+  if (hasSachbuchLayoutMarkup(text)) {
+    const xhtml = sachbuchLayoutBlocksToXhtml(text, escapeXml);
+    return xhtml.trim() ? xhtml : "<p>&#160;</p>";
+  }
   const parts = text
     .replace(/\r\n/g, "\n")
     .split(/\n\s*\n/)
@@ -245,6 +253,34 @@ p.scene-break {
   content: "✓ ";
   color: #16a34a;
   font-weight: bold;
+}
+h2.unterkapitel {
+  font-size: 1.05em;
+  font-weight: bold;
+  text-align: left;
+  text-indent: 0;
+  margin: 1.4em 0 0.65em;
+}
+aside.sachbuch-box {
+  margin: 1.1em 0;
+  padding: 0.85em 1em;
+  background: #f4f4f5;
+  border: 1px solid #d4d4d8;
+  border-radius: 0.5em;
+  page-break-inside: avoid;
+}
+aside.sachbuch-box h3 {
+  font-size: 0.95em;
+  font-weight: bold;
+  margin: 0 0 0.55em;
+  text-indent: 0;
+}
+aside.sachbuch-box p {
+  text-indent: 0;
+  margin: 0 0 0.55em;
+}
+aside.sachbuch-box p:last-child {
+  margin-bottom: 0;
 }
 .toc {
   page-break-before: always;

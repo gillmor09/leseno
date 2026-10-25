@@ -32,6 +32,8 @@ export const SACHBUCH_MODEL_MARKETING = "gemini-4-argon";
 export const SACHBUCH_COVER_MODEL_SLUG = "gpt-image-2.5-sunburst";
 /** Phase 7 Manuskript-Lektorat (Verkaufsreife + Rewrite). */
 export const SACHBUCH_MODEL_MANUSCRIPT = "gemini-4-argon";
+/** Phase 8 Herstellung (Unterkapitel + Layout-Kästen vor Export). */
+export const SACHBUCH_MODEL_HERSTELLUNG = "claude-haiku-5-5";
 /** Luna pass only at/above this score (1–10). */
 export const SACHBUCH_IDEE_REFINE_PASS_SCORE = 8;
 

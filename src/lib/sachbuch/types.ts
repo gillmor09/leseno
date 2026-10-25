@@ -33,7 +33,7 @@ export type SachbuchGroundingSource = {
 
 export type SachbuchPhaseStatus = "empty" | "in_progress" | "ready";
 
-/** Guided wizard steps (Idee → … → Schreiben freigeben → Manuskript → Export). */
+/** Guided wizard steps (Idee → … → Manuskript → Herstellung → Export). */
 export type SachbuchGuideStep =
   | "concept"
   | "refine"
@@ -42,6 +42,7 @@ export type SachbuchGuideStep =
   | "makro"
   | "write"
   | "manuscript"
+  | "herstellung"
   | "export";
 
 export const SACHBUCH_GUIDE_STEPS: readonly SachbuchGuideStep[] = [
@@ -52,6 +53,7 @@ export const SACHBUCH_GUIDE_STEPS: readonly SachbuchGuideStep[] = [
   "makro",
   "write",
   "manuscript",
+  "herstellung",
   "export",
 ] as const;
 
@@ -63,6 +65,7 @@ export const SACHBUCH_GUIDE_STEP_LABELS: Record<SachbuchGuideStep, string> = {
   makro: "Makro",
   write: "Schreiben",
   manuscript: "Manuskript",
+  herstellung: "Herstellung",
   export: "Export",
 };
 
@@ -106,7 +109,7 @@ export type SachbuchGuide = {
   ideaApprovedAt: string | null;
   /**
    * Set when user freezes Phase 5 (Schreiben). Locks Abschnitte/Graph edits;
-   * unlocks Manuskript-Lektorat.
+   * unlocks Manuskript-Lektorat (+ Herstellung / Export).
    */
   writeApprovedAt: string | null;
 };
@@ -117,6 +120,14 @@ export type SachbuchKapitelManuscript = {
   draftText: string;
   /** Lektorat-Rewrite; empty until improved. */
   improvedText: string;
+  /**
+   * Herstellung (Haiku): same prose + layout markers
+   * (`<<<H>>>`, `<<<BOX …>>>`) for PDF/ePub. Empty until prepared.
+   */
+  herstellungText: string;
+  /** Short notes from the last Herstellung pass (Unterkapitel / Kästen). */
+  herstellungNotes: string[];
+  hergestelltAt: string | null;
   /** Verkaufsreife 1–10; null until scored. */
   salesScore: number | null;
   scoreSummary: string;
@@ -139,6 +150,14 @@ export type SachbuchManuscriptBookReview = {
   gaps: string[];
   changeOrders: string[];
   scoredAt: string | null;
+  modelSlug: string;
+};
+
+/** Phase 8 — book-level Herstellung summary (layout readiness). */
+export type SachbuchHerstellungBookReview = {
+  summary: string;
+  decisions: string[];
+  preparedAt: string | null;
   modelSlug: string;
 };
 
@@ -175,6 +194,8 @@ export type SachbuchIdee = {
   refinedCaseStudies: string[];
   /** Whole-book Verkaufsreife after Manuskript-Lektorat (null until scored). */
   manuscriptReview: SachbuchManuscriptBookReview;
+  /** Whole-book Herstellung notes after Haiku layout pass. */
+  herstellungReview: SachbuchHerstellungBookReview;
 };
 
 export type SachbuchEvidenzClaim = {

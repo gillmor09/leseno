@@ -33,6 +33,12 @@ import {
   type PlotChapter,
 } from "@/lib/roman/plot-chapters";
 import type { Szene } from "@/lib/roman/types";
+import {
+  hasSachbuchLayoutMarkup,
+  parseSachbuchLayoutBlocks,
+  sachbuchLayoutBoxLabel,
+  type SachbuchLayoutBlock,
+} from "@/lib/sachbuch/herstellung-markup";
 
 export type RomanExportScene = Pick<
   Szene,
@@ -1159,6 +1165,135 @@ function writeAbenteuerWissenCard(ctx: WriteCtx, fakten: string[]): void {
   ctx.y = Math.max(ctx.y, cardY + drawH + 2);
 }
 
+/** Soft gray card for Sachbuch One-Pager / Merksatz / Infobox / Schaubild. */
+function writeSachbuchLayoutBox(
+  ctx: WriteCtx,
+  block: Extract<SachbuchLayoutBlock, { type: "box" }>,
+  scale: PdfTypeScale,
+  wrapW: number,
+): void {
+  const pdf = ctx.pdf;
+  const padX = 3.5;
+  const padY = 3.2;
+  const titlePt = Math.max(scale.bodyPt, 10);
+  const bodyPt = scale.bodyPt;
+  const lineH = scale.bodyLineMm;
+  const innerW = wrapW - padX * 2;
+  const label = sachbuchLayoutBoxLabel(block.kind);
+  const head =
+    block.title.trim() && block.title.trim() !== label
+      ? `${label}: ${block.title.trim()}`
+      : block.title.trim() || label;
+
+  clearPdfCharSpacing(pdf);
+  setNunito(pdf, "bold", titlePt);
+  const titleLines = pdf.splitTextToSize(head, innerW) as string[];
+  setNunito(pdf, "normal", bodyPt);
+  const paras = block.body
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const wrappedParas = paras.map(
+    (p) => pdf.splitTextToSize(p, innerW) as string[],
+  );
+
+  let cardH = padY + titleLines.length * (titlePt * 1.35 * (25.4 / 72)) + 1.5;
+  for (let i = 0; i < wrappedParas.length; i++) {
+    cardH += wrappedParas[i]!.length * lineH;
+    if (i < wrappedParas.length - 1) cardH += lineH * 0.35;
+  }
+  cardH += padY;
+
+  const avail = ctx.pageHeight - ctx.marginBottom - ctx.y;
+  if (cardH > avail && ctx.y > ctx.marginTop + 2) {
+    startNewPage(ctx);
+  }
+
+  const cardX = ctx.marginX;
+  const cardY = ctx.y;
+  pdf.setFillColor(244, 244, 245);
+  pdf.setDrawColor(212, 212, 216);
+  pdf.setLineWidth(0.3);
+  pdf.roundedRect(cardX, cardY, ctx.contentWidth, cardH, 2.2, 2.2, "FD");
+
+  let cy = cardY + padY + titlePt * 0.35;
+  setNunito(pdf, "bold", titlePt);
+  pdf.setTextColor(24, 24, 27);
+  for (const line of titleLines) {
+    pdf.text(line, cardX + padX, cy);
+    cy += titlePt * 1.35 * (25.4 / 72);
+  }
+  cy += 1.2;
+  setNunito(pdf, "normal", bodyPt);
+  for (let i = 0; i < wrappedParas.length; i++) {
+    for (const line of wrappedParas[i]!) {
+      const room = ctx.pageHeight - ctx.marginBottom - cy;
+      if (room < lineH && cy > ctx.marginTop + 4) {
+        // Box split across pages: continue without redrawing border.
+        startNewPage(ctx);
+        cy = ctx.marginTop;
+      }
+      pdf.text(line, cardX + padX, cy);
+      cy += lineH;
+    }
+    if (i < wrappedParas.length - 1) cy += lineH * 0.35;
+  }
+  ctx.y = Math.max(cardY + cardH + 2, cy + 1);
+}
+
+/** Sachbuch Herstellung body: Zwischenüberschriften + Kästen + Prosa. */
+function writeSachbuchLayoutBody(
+  ctx: WriteCtx,
+  body: string,
+  scale: PdfTypeScale,
+  wrapW: number,
+  charScale: number,
+): void {
+  const pdf = ctx.pdf;
+  const blocks = parseSachbuchLayoutBlocks(body);
+  const subPt = Math.min(scale.headingPt, scale.bodyPt + 1.5);
+
+  for (const block of blocks) {
+    if (block.type === "heading") {
+      ctx.y += scale.bodyLineMm * 0.6;
+      setNunito(pdf, "bold", subPt);
+      applyPdfCharSpacing(pdf, charScale);
+      pdf.setTextColor(9, 9, 11);
+      const lines = pdf.splitTextToSize(block.text, wrapW) as string[];
+      writeLines(ctx, lines, scale.headingLineMm * 0.9);
+      ctx.y += scale.bodyLineMm * 0.35;
+      setNunito(pdf, "normal", scale.bodyPt);
+      pdf.setTextColor(24, 24, 27);
+      continue;
+    }
+
+    if (block.type === "box") {
+      ctx.y += scale.bodyLineMm * 0.35;
+      writeSachbuchLayoutBox(ctx, block, scale, wrapW);
+      applyPdfCharSpacing(pdf, charScale);
+      setNunito(pdf, "normal", scale.bodyPt);
+      pdf.setTextColor(24, 24, 27);
+      continue;
+    }
+
+    const paras = block.text
+      .split(/\n\s*\n/)
+      .map((p) => p.replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    for (const para of paras) {
+      if (isSceneBreakParagraph(para)) {
+        ctx.y += scale.bodyLineMm * 0.5;
+        writeCenteredLines(ctx, [SCENE_BREAK_MARKER], scale.bodyLineMm);
+        ctx.y += scale.bodyLineMm * 0.5;
+        continue;
+      }
+      const lines = pdf.splitTextToSize(para, wrapW) as string[];
+      writeLines(ctx, lines, scale.bodyLineMm);
+      ctx.y += scale.bodyLineMm * 0.4;
+    }
+  }
+}
+
 /**
  * TOC page(s) after front matter; entries filled once chapter start pages
  * are known (`fillTocPdfEntries`). Always ends ready for chapter `startNewPage`.
@@ -1380,16 +1515,20 @@ export async function buildRomanPdfBlob(
     applyPdfCharSpacing(pdf, charScale);
     pdf.setTextColor(24, 24, 27);
 
-    for (const para of paras) {
-      if (isSceneBreakParagraph(para)) {
-        ctx.y += scale.bodyLineMm * 0.5;
-        writeCenteredLines(ctx, [SCENE_BREAK_MARKER], scale.bodyLineMm);
-        ctx.y += scale.bodyLineMm * 0.5;
-        continue;
+    if (hasSachbuchLayoutMarkup(chapter.body)) {
+      writeSachbuchLayoutBody(ctx, chapter.body, scale, wrapW, charScale);
+    } else {
+      for (const para of paras) {
+        if (isSceneBreakParagraph(para)) {
+          ctx.y += scale.bodyLineMm * 0.5;
+          writeCenteredLines(ctx, [SCENE_BREAK_MARKER], scale.bodyLineMm);
+          ctx.y += scale.bodyLineMm * 0.5;
+          continue;
+        }
+        const lines = pdf.splitTextToSize(para, wrapW) as string[];
+        writeLines(ctx, lines, scale.bodyLineMm);
+        ctx.y += scale.bodyLineMm * 0.4;
       }
-      const lines = pdf.splitTextToSize(para, wrapW) as string[];
-      writeLines(ctx, lines, scale.bodyLineMm);
-      ctx.y += scale.bodyLineMm * 0.4;
     }
     clearPdfCharSpacing(pdf);
 

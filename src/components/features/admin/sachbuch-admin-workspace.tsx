@@ -1,8 +1,7 @@
 "use client";
 
 /**
- * Guided Sachbuch wizard: Rohkonzept → Argon-Verfeinerung → Freigabe →
- * Buchtyp → Evidenz → Makro → Schreiben (fixieren) → Manuskript → Export.
+ * Guided Sachbuch wizard: Rohkonzept → … → Manuskript → Herstellung → Export.
  */
 
 import Link from "next/link";
@@ -22,6 +21,7 @@ import { SachbuchBookTypePanel } from "@/components/features/admin/sachbuch-book
 import { SachbuchEvidenzPanel } from "@/components/features/admin/sachbuch-evidenz-panel";
 import { SachbuchExportPanel } from "@/components/features/admin/sachbuch-export-panel";
 import { SachbuchGuideStepper } from "@/components/features/admin/sachbuch-guide-stepper";
+import { SachbuchHerstellungPanel } from "@/components/features/admin/sachbuch-herstellung-panel";
 import { SachbuchIdeePanel } from "@/components/features/admin/sachbuch-idee-panel";
 import { SachbuchIdeeRefinePanel } from "@/components/features/admin/sachbuch-idee-refine-panel";
 import { SachbuchMakroPanel } from "@/components/features/admin/sachbuch-makro-panel";
@@ -495,6 +495,32 @@ export function SachbuchAdminWorkspace({
               canSave={canSave}
               onBookUpdate={setBook}
             />
+            {canOpenSachbuchGuideStep(book, "herstellung") ? (
+              <button
+                type="button"
+                disabled={!canSave || stepPending}
+                onClick={() => void goToStep("herstellung")}
+                className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+              >
+                Weiter: Herstellung
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
+            Manuskript gesperrt — zuerst Schreiben freigeben/fixieren.
+          </p>
+        )
+      ) : null}
+
+      {step === "herstellung" ? (
+        writeApproved ? (
+          <div className="space-y-3">
+            <SachbuchHerstellungPanel
+              book={book}
+              canSave={canSave}
+              onBookUpdate={setBook}
+            />
             {canOpenSachbuchGuideStep(book, "export") ? (
               <button
                 type="button"
@@ -508,7 +534,7 @@ export function SachbuchAdminWorkspace({
           </div>
         ) : (
           <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
-            Manuskript gesperrt — zuerst Schreiben freigeben/fixieren.
+            Herstellung gesperrt — zuerst Schreiben freigeben/fixieren.
           </p>
         )
       ) : null}
@@ -532,6 +558,7 @@ export function SachbuchAdminWorkspace({
       step !== "makro" &&
       step !== "write" &&
       step !== "manuscript" &&
+      step !== "herstellung" &&
       step !== "concept" &&
       step !== "refine" &&
       canOpenSachbuchGuideStep(book, next) ? (

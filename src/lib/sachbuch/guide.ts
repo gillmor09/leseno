@@ -19,6 +19,7 @@ export type SachbuchGuideGatePhase =
   | "makro"
   | "write"
   | "manuscript"
+  | "herstellung"
   | "export";
 
 export function emptySachbuchGuide(
@@ -73,7 +74,7 @@ function stepIndex(step: SachbuchGuideStep): number {
 
 /**
  * Hard-gate floor: everything at/below this is unlocked.
- * After idea + book type: through Schreiben. After write freeze: Manuskript + Export.
+ * After idea + book type: through Schreiben. After write freeze: Manuskript → Herstellung → Export.
  */
 export function resolveSachbuchGuideFloor(book: SachbuchKontext): SachbuchGuideStep {
   if (!hasUsableSachbuchConcept(book)) return "concept";
@@ -144,14 +145,18 @@ export function assertSachbuchGuideAllows(
 
   if (phase === "export") return;
 
-  if (phase === "manuscript") {
+  if (phase === "manuscript" || phase === "herstellung") {
     if (!isSachbuchWriteApproved(book)) {
       throw new Error(
         "Schreiben noch nicht freigegeben — zuerst Rohentwurf fixieren.",
       );
     }
     if (book.kapitel.length === 0) {
-      throw new Error("Keine Kapitel für das Manuskript.");
+      throw new Error(
+        phase === "herstellung"
+          ? "Keine Kapitel für die Herstellung."
+          : "Keine Kapitel für das Manuskript.",
+      );
     }
     return;
   }

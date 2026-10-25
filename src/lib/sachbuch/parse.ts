@@ -21,6 +21,7 @@ import type {
   SachbuchEvidenzClaim,
   SachbuchExport,
   SachbuchGroundingSource,
+  SachbuchHerstellungBookReview,
   SachbuchIdee,
   SachbuchInterviewMessage,
   SachbuchKapitel,
@@ -188,6 +189,9 @@ export function emptySachbuchKapitelManuscript(): SachbuchKapitelManuscript {
   return {
     draftText: "",
     improvedText: "",
+    herstellungText: "",
+    herstellungNotes: [],
+    hergestelltAt: null,
     salesScore: null,
     scoreSummary: "",
     strengths: [],
@@ -207,6 +211,15 @@ export function emptySachbuchManuscriptBookReview(): SachbuchManuscriptBookRevie
     gaps: [],
     changeOrders: [],
     scoredAt: null,
+    modelSlug: "",
+  };
+}
+
+export function emptySachbuchHerstellungBookReview(): SachbuchHerstellungBookReview {
+  return {
+    summary: "",
+    decisions: [],
+    preparedAt: null,
     modelSlug: "",
   };
 }
@@ -247,6 +260,15 @@ function parseKapitelManuscript(raw: unknown): SachbuchKapitelManuscript {
     draftText: typeof row.draftText === "string" ? row.draftText : empty.draftText,
     improvedText:
       typeof row.improvedText === "string" ? row.improvedText : empty.improvedText,
+    herstellungText:
+      typeof row.herstellungText === "string"
+        ? row.herstellungText
+        : empty.herstellungText,
+    herstellungNotes: parseStringList(row.herstellungNotes),
+    hergestelltAt:
+      typeof row.hergestelltAt === "string" && row.hergestelltAt.trim()
+        ? row.hergestelltAt.trim()
+        : null,
     salesScore,
     scoreSummary:
       typeof row.scoreSummary === "string" ? row.scoreSummary : empty.scoreSummary,
@@ -260,6 +282,21 @@ function parseKapitelManuscript(raw: unknown): SachbuchKapitelManuscript {
     improvedAt:
       typeof row.improvedAt === "string" && row.improvedAt.trim()
         ? row.improvedAt.trim()
+        : null,
+    modelSlug:
+      typeof row.modelSlug === "string" ? row.modelSlug.trim() : empty.modelSlug,
+  };
+}
+
+function parseHerstellungBookReview(raw: unknown): SachbuchHerstellungBookReview {
+  const row = asRecord(raw);
+  const empty = emptySachbuchHerstellungBookReview();
+  return {
+    summary: typeof row.summary === "string" ? row.summary : empty.summary,
+    decisions: parseStringList(row.decisions),
+    preparedAt:
+      typeof row.preparedAt === "string" && row.preparedAt.trim()
+        ? row.preparedAt.trim()
         : null,
     modelSlug:
       typeof row.modelSlug === "string" ? row.modelSlug.trim() : empty.modelSlug,
@@ -280,6 +317,7 @@ export function emptySachbuchIdee(): SachbuchIdee {
     refinedOpinion: "",
     refinedCaseStudies: [],
     manuscriptReview: emptySachbuchManuscriptBookReview(),
+    herstellungReview: emptySachbuchHerstellungBookReview(),
   };
 }
 
@@ -409,6 +447,7 @@ export function parseSachbuchIdee(raw: unknown): SachbuchIdee {
         : empty.refinedOpinion,
     refinedCaseStudies: parseStringList(row.refinedCaseStudies),
     manuscriptReview: parseManuscriptBookReview(row.manuscriptReview),
+    herstellungReview: parseHerstellungBookReview(row.herstellungReview),
   };
 }
 
@@ -719,9 +758,9 @@ export function sanitizeSachbuchBookProse(text: string): string {
 }
 
 /**
- * Best available chapter body for Manuskript/Export:
+ * Best available chapter body for Manuskript UI / Lektorat:
  * improved lektorat → frozen draft → Abschnitte → legacy finalText.
- * Always sanitized for print/ePub (no Markdown heading markers).
+ * Always sanitized (no Markdown). Does not prefer Herstellung markers.
  */
 export function sachbuchKapitelBodyText(kapitel: SachbuchKapitel): string {
   const improved = kapitel.manuscript.improvedText.trim();
@@ -731,6 +770,21 @@ export function sachbuchKapitelBodyText(kapitel: SachbuchKapitel): string {
   const abschnitte = concatAbschnitteText(kapitel.abschnitte).trim();
   if (abschnitte) return sanitizeSachbuchBookProse(abschnitte);
   return sanitizeSachbuchBookProse(kapitel.finalText.trim());
+}
+
+/**
+ * Chapter body for PDF/ePub: Herstellung (layout markers) → Lektorat → Draft.
+ * Layout markers (`<<<H>>>` / `<<<BOX>>>`) are kept for the export engines.
+ */
+export function sachbuchKapitelExportBody(kapitel: SachbuchKapitel): string {
+  const herstellung = kapitel.manuscript.herstellungText.trim();
+  if (herstellung) return herstellung;
+  return sachbuchKapitelBodyText(kapitel);
+}
+
+/** True when Haiku Herstellung has produced layout text for a chapter. */
+export function sachbuchKapitelHasHerstellung(kapitel: SachbuchKapitel): boolean {
+  return kapitel.manuscript.herstellungText.trim().length >= 200;
 }
 
 /** Whitespace-separated word count (German prose). */

@@ -225,6 +225,7 @@ const guideStepActionSchema = z.object({
     "makro",
     "write",
     "manuscript",
+    "herstellung",
     "export",
   ]),
 });

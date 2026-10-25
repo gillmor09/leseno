@@ -9,6 +9,7 @@ import {
   SACHBUCH_COVER_MODEL_SLUG,
   SACHBUCH_MODEL_IDEE_CRITIC,
   SACHBUCH_MODEL_IDEE_DRAFTER,
+  SACHBUCH_MODEL_HERSTELLUNG,
   SACHBUCH_MODEL_MANUSCRIPT,
   SACHBUCH_MODEL_MARKETING,
   sachbuchRuntimeModelSlug,
@@ -129,11 +130,28 @@ export const SACHBUCH_WAIT_MANUSCRIPT_IMPROVE_ALL = [
   "Buch-Verkaufsreife wird neu bewertet …",
 ] as const;
 
+export const SACHBUCH_WAIT_HERSTELLUNG = [
+  "Lektorierter Text wird gelesen …",
+  "Unterkapitel werden gesetzt …",
+  "One-Pager, Merksätze und Infoboxen …",
+  "Herstellung wird gespeichert …",
+] as const;
+
+export const SACHBUCH_WAIT_HERSTELLUNG_ALL = [
+  "Offene Kapitel werden ermittelt …",
+  "Haiku setzt Layout Kapitel für Kapitel …",
+  "Buch-Herstellung wird zusammengefasst …",
+] as const;
+
 export function sachbuchWaitAgentManuscript(): SachbuchWaitAgentInfo {
   return sachbuchWaitAgentForSlug(
     "Manuskript-Lektorat",
     SACHBUCH_MODEL_MANUSCRIPT,
   );
+}
+
+export function sachbuchWaitAgentHerstellung(): SachbuchWaitAgentInfo {
+  return sachbuchWaitAgentForSlug("Herstellung", SACHBUCH_MODEL_HERSTELLUNG);
 }
 
 export const SACHBUCH_WAIT_EXPORT_META = [

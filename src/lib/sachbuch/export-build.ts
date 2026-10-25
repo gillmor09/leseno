@@ -17,16 +17,16 @@ import {
   parseVorsatzJson,
   type RomanVorsatz,
 } from "@/lib/roman/front-matter";
-import { sachbuchKapitelBodyText } from "@/lib/sachbuch/parse";
+import { sachbuchKapitelExportBody } from "@/lib/sachbuch/parse";
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 
-/** Kapitel with enough prose for export (Manuskript → Abschnitte → finalText). */
+/** Kapitel with enough prose for export (Herstellung → Manuskript → Abschnitte). */
 export function sachbuchExportChapters(
   book: SachbuchKontext,
 ): RomanExportChapter[] {
   return book.kapitel
     .map((k, i) => {
-      const body = sachbuchKapitelBodyText(k);
+      const body = sachbuchKapitelExportBody(k);
       return {
         number: i + 1,
         title: k.title.trim() || `Kapitel ${i + 1}`,
