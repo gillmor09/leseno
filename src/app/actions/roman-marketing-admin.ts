@@ -201,6 +201,7 @@ export async function saveRomanMarketingCopyAction(
         imprint: parsed.data.vorsatz.imprint,
         copyrightHinweis: parsed.data.vorsatz.copyrightHinweis,
         motto: parsed.data.vorsatz.motto,
+        vorwort: previous.vorwort ?? "",
       });
       const buchruecken = {
         ...(roman.buchruecken ?? emptyBuchruecken()),

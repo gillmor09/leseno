@@ -141,6 +141,8 @@ ${manuscriptSample(book) || book.idee.briefing.trim() || book.idee.unpopularOpin
     },
     motto: parsed.data.motto?.trim() || "",
     widmung: "",
+    // Keep an existing preface when regenerating marketing copy.
+    vorwort: book.export.vorsatz.vorwort?.trim() || "",
   };
 
   return {

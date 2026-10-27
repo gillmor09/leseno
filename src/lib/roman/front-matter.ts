@@ -38,6 +38,11 @@ export type RomanVorsatz = {
   widmung: string;
   /** Optional epigraph/motto; empty = omit. */
   motto: string;
+  /**
+   * Optional preface before chapters (Sachbuch expectation-setting).
+   * Multi-paragraph plain text; empty = omit.
+   */
+  vorwort: string;
 };
 
 export function emptyBuchruecken(): RomanBuchruecken {
@@ -67,6 +72,7 @@ export function emptyVorsatz(): RomanVorsatz {
     },
     widmung: "",
     motto: "",
+    vorwort: "",
   };
 }
 
@@ -117,6 +123,7 @@ export function parseVorsatzJson(value: unknown): RomanVorsatz {
     },
     widmung: String(row.widmung ?? base.widmung),
     motto: String(row.motto ?? row.epigraph ?? base.motto),
+    vorwort: String(row.vorwort ?? row.preface ?? base.vorwort),
   };
 }
 
@@ -309,6 +316,7 @@ export type RomanVorsatzUiFields = {
   imprint: string;
   copyrightHinweis: string;
   motto: string;
+  vorwort: string;
 };
 
 /** Flatten vorsatz for editable UI fields (defaults: Jannis Fynk / leseno.de). */
@@ -325,6 +333,7 @@ export function vorsatzToUiFields(
     copyrightHinweis:
       v.impressum.hinweis.trim() || defaultCopyrightHinweis(year),
     motto: v.motto,
+    vorwort: v.vorwort,
   };
 }
 
@@ -354,5 +363,6 @@ export function mergeVorsatzFromUiFields(
       hinweis,
     },
     motto: ui.motto.trim(),
+    vorwort: ui.vorwort.trim(),
   };
 }

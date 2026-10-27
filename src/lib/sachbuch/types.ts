@@ -97,6 +97,8 @@ export type SachbuchExport = {
     };
     widmung: string;
     motto: string;
+    /** Preface before chapters (expectation-setting); empty = omit. */
+    vorwort: string;
   };
   coverImageDataUrl: string;
   coverPrompt: string;
@@ -239,10 +241,38 @@ export type SachbuchMakroStage = {
   notes: string;
 };
 
+/**
+ * One planned chapter inside a Buchteil (flexible makro).
+ * `id` is stable within the part (e.g. `ch_01`); combined with part id → kapitel.makroStageKey.
+ */
+export type SachbuchMakroChapterPlan = {
+  id: string;
+  title: string;
+  promise: string;
+  notes: string;
+};
+
+/** Book part (e.g. Teil A Fundament) with one or more chapters. */
+export type SachbuchMakroPart = {
+  id: string;
+  title: string;
+  promise: string;
+  chapters: SachbuchMakroChapterPlan[];
+};
+
 /** Phase 3 — Makro (Journey, Erklärung oder Erzählung). */
 export type SachbuchMakro = {
   typ: SachbuchMakroTyp;
+  /**
+   * Legacy 5-stage spine (typ template). Still filled for older books;
+   * when `parts` has chapters, parts drive Kapitel-Erzeugung.
+   */
   stages: SachbuchMakroStage[];
+  /**
+   * Flexible structure: Buchteile → Kapitel.
+   * Preferred for new makro generation (idea-fit, not fixed 5).
+   */
+  parts: SachbuchMakroPart[];
   status: SachbuchPhaseStatus;
   /** True after „Kapitel aus Makro“ at least once. */
   kapitelGenerated: boolean;
@@ -321,8 +351,11 @@ export type SachbuchKapitel = {
   id: string;
   title: string;
   goals: string;
-  /** Links chapter to a makro stage when generated from journey. */
-  makroStageKey: SachbuchMakroStageKey | null;
+  /**
+   * Links chapter to makro outline.
+   * Flexible: `partId__chapterId` from parts, or legacy stage key.
+   */
+  makroStageKey: string | null;
   contextGraph: SachbuchContextGraph;
   abschnitte: SachbuchAbschnitt[];
   /** Legacy chapter interview (unused in phases flow; kept for compat). */
@@ -334,6 +367,15 @@ export type SachbuchKapitel = {
   groundingSources: SachbuchGroundingSource[];
   /** Phase 7 lektorat (score + improved prose). */
   manuscript: SachbuchKapitelManuscript;
+  /**
+   * Optional full-page Infografik after chapter prose (PDF/ePub).
+   * data:image/…; set in Herstellung via Gemini Pro Image.
+   */
+  infografikDataUrl: string | null;
+  /** Short German title shown in admin / used in the image brief. */
+  infografikTitle: string;
+  /** Last image prompt (debug / regenerate). */
+  infografikPrompt: string;
   status: SachbuchKapitelStatus;
   generationJobId: string | null;
   generationProgress: string | null;
@@ -466,13 +508,56 @@ export function emptyMakroStages(
   }));
 }
 
-/** One-line stage path for UI copy. */
+/** One-line stage path for UI copy (typ as narrative hint; structure is flexible parts). */
 export function makroStagePathLabel(typ: SachbuchMakroTyp): string {
+  const flex =
+    "Flexibel: Buchteile mit je 1+ Kapiteln (an Idee anpassen, typisch 2–4 Teile / 6–12 Kapitel)";
   if (typ === "erklaerung") {
-    return "Kontext → Kernidee → Vertiefung → Beispiele → Einordnung";
+    return `${flex}. Erzählhint: Kontext → Kernidee → Vertiefung → Beispiele → Einordnung`;
   }
   if (typ === "erzaehlung") {
-    return "Ausgang → Konflikt → Verlauf → Erkenntnis → Bedeutung";
+    return `${flex}. Erzählhint: Ausgang → Konflikt → Verlauf → Erkenntnis → Bedeutung`;
   }
-  return "Status Quo → Paradigmenwechsel → Framework → Implementierung → Zukunft";
+  return `${flex}. Erzählhint: Status Quo → Paradigmenwechsel → Framework → Implementierung → Zukunft`;
+}
+
+/** Stable kapitel key from part + chapter plan ids. */
+export function makroChapterLinkKey(partId: string, chapterId: string): string {
+  return `${partId}__${chapterId}`;
+}
+
+/** Flatten parts (or legacy stages) into ordered chapter plans for Kapitel-Erzeugung. */
+export function flattenMakroChapterPlans(makro: SachbuchMakro): Array<{
+  key: string;
+  partId: string;
+  partTitle: string;
+  title: string;
+  promise: string;
+  notes: string;
+}> {
+  const fromParts = makro.parts.flatMap((part) =>
+    part.chapters.map((ch) => ({
+      key: makroChapterLinkKey(part.id, ch.id),
+      partId: part.id,
+      partTitle: part.title,
+      title: ch.title,
+      promise: ch.promise,
+      notes: ch.notes,
+    })),
+  );
+  if (fromParts.length > 0) return fromParts;
+
+  return makro.stages.map((stage) => ({
+    key: stage.key,
+    partId: stage.key,
+    partTitle: SACHBUCH_MAKRO_STAGE_LABELS[stage.key] ?? stage.key,
+    title: stage.title,
+    promise: stage.promise,
+    notes: stage.notes,
+  }));
+}
+
+/** Total planned chapters (parts preferred). */
+export function makroPlannedKapitelCount(makro: SachbuchMakro): number {
+  return flattenMakroChapterPlans(makro).length;
 }

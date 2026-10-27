@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Phase 3 — Makro stages for the book's Buchart (set in Grundlagen).
+ * Phase 3 — Flexible Makro: Buchteile mit Kapiteln (idea-fit).
  */
 
 import { useState } from "react";
@@ -14,10 +14,14 @@ import {
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { emptySachbuchMakro } from "@/lib/sachbuch/parse";
-import type { SachbuchKontext, SachbuchMakroStage } from "@/lib/sachbuch/types";
+import type {
+  SachbuchKontext,
+  SachbuchMakroPart,
+} from "@/lib/sachbuch/types";
 import {
-  SACHBUCH_MAKRO_STAGE_LABELS,
   SACHBUCH_MAKRO_TYP_LABELS,
+  flattenMakroChapterPlans,
+  makroPlannedKapitelCount,
   makroStagePathLabel,
 } from "@/lib/sachbuch/types";
 import {
@@ -36,15 +40,22 @@ export function SachbuchMakroPanel({
   onBookUpdate: (book: SachbuchKontext) => void;
 }) {
   const typ = book.makro.typ ?? "journey";
-  const [stages, setStages] = useState(book.makro.stages);
+  const [parts, setParts] = useState<SachbuchMakroPart[]>(
+    book.makro.parts ?? [],
+  );
   const [pending, setPending] = useState(false);
   const [waitKind, setWaitKind] = useState<"makro" | "kapitel" | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const uvpReady =
     Boolean(book.idee.unpopularOpinion.trim()) ||
     Boolean(book.idee.briefing.trim());
+  const plannedCount = makroPlannedKapitelCount({
+    ...book.makro,
+    parts,
+  });
   const hasMakroContent =
     book.makro.status !== "empty" ||
+    parts.some((p) => p.chapters.length > 0) ||
     book.makro.stages.some(
       (s) => s.promise.trim() || s.notes.trim() || s.title.trim(),
     ) ||
@@ -54,12 +65,30 @@ export function SachbuchMakroPanel({
   const [syncedMakroKey, setSyncedMakroKey] = useState(makroSyncKey);
   if (makroSyncKey !== syncedMakroKey) {
     setSyncedMakroKey(makroSyncKey);
-    setStages(book.makro.stages);
+    setParts(book.makro.parts ?? []);
   }
 
-  function patchStage(key: string, patch: Partial<SachbuchMakroStage>) {
-    setStages((prev) =>
-      prev.map((s) => (s.key === key ? { ...s, ...patch } : s)),
+  function patchPart(partId: string, patch: Partial<SachbuchMakroPart>) {
+    setParts((prev) =>
+      prev.map((p) => (p.id === partId ? { ...p, ...patch } : p)),
+    );
+  }
+
+  function patchChapter(
+    partId: string,
+    chapterId: string,
+    patch: Partial<SachbuchMakroPart["chapters"][number]>,
+  ) {
+    setParts((prev) =>
+      prev.map((p) => {
+        if (p.id !== partId) return p;
+        return {
+          ...p,
+          chapters: p.chapters.map((c) =>
+            c.id === chapterId ? { ...c, ...patch } : c,
+          ),
+        };
+      }),
     );
   }
 
@@ -77,16 +106,20 @@ export function SachbuchMakroPanel({
         toast.error(result.error ?? "Makro erzeugen fehlgeschlagen.");
         return;
       }
-      onBookUpdate(result.data!.book);
-      setStages(result.data!.book.makro.stages);
-      toast.success(`${SACHBUCH_MAKRO_TYP_LABELS[typ]}-Makro erzeugt.`);
+      const next = result.data!.book;
+      onBookUpdate(next);
+      setParts(next.makro.parts ?? []);
+      const n = makroPlannedKapitelCount(next.makro);
+      toast.success(
+        `Makro erzeugt: ${next.makro.parts.length} Teile, ${n} Kapitel.`,
+      );
     } finally {
       setWaitKind(null);
       setPending(false);
     }
   }
 
-  async function saveStages() {
+  async function saveParts() {
     if (!canSave || pending) return;
     setPending(true);
     const result = await saveSachbuchAction({
@@ -99,7 +132,7 @@ export function SachbuchMakroPanel({
       evidenz: book.evidenz,
       makro: {
         ...book.makro,
-        stages,
+        parts,
         status:
           book.makro.status === "empty" ? "in_progress" : book.makro.status,
       },
@@ -127,7 +160,7 @@ export function SachbuchMakroPanel({
         agents: book.agents,
         idee: book.idee,
         evidenz: book.evidenz,
-        makro: { ...book.makro, stages },
+        makro: { ...book.makro, parts },
         kapitel: book.kapitel,
       });
       const result = await applyMakroToKapitelAction({ id: book.id });
@@ -136,7 +169,9 @@ export function SachbuchMakroPanel({
         return;
       }
       onBookUpdate(result.data!.book);
-      toast.success("Kapitelgerüst aus Makro angelegt.");
+      toast.success(
+        `Kapitelgerüst angelegt (${result.data!.book.kapitel.length} Kapitel).`,
+      );
     } finally {
       setWaitKind(null);
       setPending(false);
@@ -164,12 +199,17 @@ export function SachbuchMakroPanel({
       return;
     }
     setDeleteOpen(false);
-    setStages(makro.stages);
+    setParts([]);
     onBookUpdate(result.data!.book);
     toast.success("Makro und Kapitel gelöscht.");
   }
 
   const generateLabel = `${SACHBUCH_MAKRO_TYP_LABELS[typ]} erzeugen`;
+  const showLegacyStages =
+    parts.length === 0 &&
+    book.makro.stages.some(
+      (s) => s.promise.trim() || s.notes.trim() || s.title.trim(),
+    );
 
   return (
     <div className="space-y-6">
@@ -194,15 +234,20 @@ export function SachbuchMakroPanel({
         </button>
         <button
           type="button"
-          disabled={!canSave || pending}
-          onClick={() => void saveStages()}
+          disabled={!canSave || pending || parts.length === 0}
+          onClick={() => void saveParts()}
           className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-zinc-700 ring-1 ring-zinc-950/10 disabled:opacity-50"
         >
-          Stages speichern
+          Teile speichern
         </button>
         <button
           type="button"
-          disabled={!canSave || pending || book.makro.status === "empty"}
+          disabled={
+            !canSave ||
+            pending ||
+            book.makro.status === "empty" ||
+            plannedCount === 0
+          }
           onClick={() => void applyKapitel()}
           className="rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50"
         >
@@ -218,60 +263,113 @@ export function SachbuchMakroPanel({
         </button>
       </div>
 
-      <div className="space-y-4">
-        {stages.map((stage) => (
-          <section
-            key={stage.key}
-            className="space-y-3 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10"
-          >
-            <p className="text-[10px] font-extrabold tracking-wide text-zinc-500 uppercase">
-              {SACHBUCH_MAKRO_STAGE_LABELS[stage.key]}
-            </p>
-            <input
-              value={stage.title}
-              disabled={!canSave || pending}
-              onChange={(e) => patchStage(stage.key, { title: e.target.value })}
-              className="w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-extrabold outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-            />
-            <textarea
-              value={stage.promise}
-              disabled={!canSave || pending}
-              onChange={(e) =>
-                patchStage(stage.key, { promise: e.target.value })
-              }
-              rows={2}
-              placeholder={
-                typ === "journey"
-                  ? "Leserversprechen / Transformation"
-                  : typ === "erzaehlung"
-                    ? "Was der Leser hier miterlebt / mitnimmt"
-                    : "Was der Leser hier versteht / mitnimmt"
-              }
-              className="w-full resize-y rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-            />
-            <textarea
-              value={stage.notes}
-              disabled={!canSave || pending}
-              onChange={(e) => patchStage(stage.key, { notes: e.target.value })}
-              rows={3}
-              placeholder="Notizen / Argumentkerne"
-              className="w-full resize-y rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
-            />
-          </section>
-        ))}
-      </div>
+      {parts.length > 0 ? (
+        <div className="space-y-5">
+          {parts.map((part, partIndex) => (
+            <section
+              key={part.id}
+              className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-zinc-950/10"
+            >
+              <p className="text-[10px] font-extrabold tracking-wide text-zinc-500 uppercase">
+                Buchteil {partIndex + 1}
+              </p>
+              <input
+                value={part.title}
+                disabled={!canSave || pending}
+                onChange={(e) =>
+                  patchPart(part.id, { title: e.target.value })
+                }
+                className="w-full rounded-2xl bg-gray-100 px-4 py-3 text-sm font-extrabold outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
+              />
+              <textarea
+                value={part.promise}
+                disabled={!canSave || pending}
+                onChange={(e) =>
+                  patchPart(part.id, { promise: e.target.value })
+                }
+                rows={2}
+                placeholder="Was dieser Teil für den Leser leistet"
+                className="w-full resize-y rounded-2xl bg-gray-100 px-4 py-3 text-sm font-semibold outline-none ring-1 ring-zinc-950/10 focus:bg-white focus:ring-2 focus:ring-orange-700"
+              />
+              <div className="space-y-3 border-t border-zinc-100 pt-3">
+                {part.chapters.map((ch, chIndex) => (
+                  <div
+                    key={ch.id}
+                    className="space-y-2 rounded-2xl bg-zinc-50 p-4 ring-1 ring-zinc-950/5"
+                  >
+                    <p className="text-[10px] font-extrabold tracking-wide text-zinc-400 uppercase">
+                      Kapitel {chIndex + 1}
+                    </p>
+                    <input
+                      value={ch.title}
+                      disabled={!canSave || pending}
+                      onChange={(e) =>
+                        patchChapter(part.id, ch.id, {
+                          title: e.target.value,
+                        })
+                      }
+                      className="w-full rounded-xl bg-white px-3 py-2 text-sm font-extrabold outline-none ring-1 ring-zinc-950/10 focus:ring-2 focus:ring-orange-700"
+                    />
+                    <textarea
+                      value={ch.promise}
+                      disabled={!canSave || pending}
+                      onChange={(e) =>
+                        patchChapter(part.id, ch.id, {
+                          promise: e.target.value,
+                        })
+                      }
+                      rows={2}
+                      placeholder="Leserversprechen dieses Kapitels"
+                      className="w-full resize-y rounded-xl bg-white px-3 py-2 text-sm font-semibold outline-none ring-1 ring-zinc-950/10 focus:ring-2 focus:ring-orange-700"
+                    />
+                    <textarea
+                      value={ch.notes}
+                      disabled={!canSave || pending}
+                      onChange={(e) =>
+                        patchChapter(part.id, ch.id, {
+                          notes: e.target.value,
+                        })
+                      }
+                      rows={2}
+                      placeholder="Notizen / Argumentkerne"
+                      className="w-full resize-y rounded-xl bg-white px-3 py-2 text-sm font-semibold outline-none ring-1 ring-zinc-950/10 focus:ring-2 focus:ring-orange-700"
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : showLegacyStages ? (
+        <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200">
+          Altes 5-Stage-Makro vorhanden. Bitte „{generateLabel}“ für flexible
+          Buchteile neu erzeugen ({flattenMakroChapterPlans(book.makro).length}{" "}
+          Legacy-Stages als Fallback).
+        </p>
+      ) : (
+        <p className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm font-semibold text-zinc-600 ring-1 ring-zinc-950/5">
+          Noch keine Buchteile. Makro erzeugen — Struktur folgt der Idee (nicht
+          starr 5 Kapitel).
+        </p>
+      )}
 
       {book.makro.kapitelGenerated ? (
         <p className="text-sm font-semibold text-emerald-800">
-          Kapitelgerüst vorhanden ({book.kapitel.length} Kapitel) — weiter zu
+          Kapitelgerüst vorhanden ({book.kapitel.length} Kapitel
+          {plannedCount > 0 ? `, Plan: ${plannedCount}` : ""}) — weiter zu
           Schreiben.
+        </p>
+      ) : plannedCount > 0 ? (
+        <p className="text-sm font-semibold text-zinc-600">
+          Plan: {parts.length} Teile · {plannedCount} Kapitel — noch nicht als
+          Kapitelgerüst erzeugt.
         </p>
       ) : null}
 
       <ConfirmDeleteDialog
         open={deleteOpen}
         title="Makro löschen?"
-        description={`Stages werden zurückgesetzt. ${book.kapitel.length > 0 ? `Zusätzlich werden alle ${book.kapitel.length} Kapitel inkl. Context Graph und Abschnitte unwiderruflich gelöscht.` : "Noch keine Kapitel vorhanden."} Evidenz und Idee bleiben erhalten.`}
+        description={`Buchteile/Stages werden zurückgesetzt. ${book.kapitel.length > 0 ? `Zusätzlich werden alle ${book.kapitel.length} Kapitel inkl. Context Graph und Abschnitte unwiderruflich gelöscht.` : "Noch keine Kapitel vorhanden."} Evidenz und Idee bleiben erhalten.`}
         confirmLabel="Makro löschen"
         pending={pending}
         onCancel={() => {

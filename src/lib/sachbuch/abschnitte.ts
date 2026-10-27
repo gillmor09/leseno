@@ -237,7 +237,7 @@ ${alreadyCovered || "(noch nichts — das ist der Kapitelanfang)"}
 
 Offene Claims: ${openClaims}
 Das ist Abschnitt ${order + 1}. Liefere NEUEN Stoff (nächste Phase, nächster Claim, neues Detail).
-VERBOTEN: denselben Case (z. B. ConnectTel) erneut vorstellen; dieselben Studien/Metriken/Bußgelder noch einmal erklären.
+VERBOTEN: denselben Case (z. B. KlarNetz AG) erneut vorstellen; dieselben Studien/Metriken/Bußgelder noch einmal erklären.
 Lehrfälle nur fortschreiben, nicht von vorn erzählen.
 
 Schreibe den NÄCHSTEN Abschnitt (${SACHBUCH_ABSCHNITT_WORDS_MIN}–${SACHBUCH_ABSCHNITT_WORDS_MAX} Wörter).

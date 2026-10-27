@@ -50,13 +50,13 @@ export const SACHBUCH_WAIT_EVIDENZ = [
 
 export const SACHBUCH_WAIT_MAKRO = [
   "UVP und Evidenz werden gelesen …",
-  "Architect baut die Journey …",
-  "Fünf Stages werden verdichtet …",
+  "Architect plant Buchteile nach der Idee …",
+  "Kapitel je Teil werden verdichtet …",
   "Makro wird gespeichert …",
 ] as const;
 
 export const SACHBUCH_WAIT_KAPITEL_FROM_MAKRO = [
-  "Journey-Stages werden gelesen …",
+  "Buchteile und Kapitelpläne werden gelesen …",
   "Kapitelgerüst wird angelegt …",
   "Kapitel werden gespeichert …",
 ] as const;
@@ -131,15 +131,15 @@ export const SACHBUCH_WAIT_MANUSCRIPT_IMPROVE_ALL = [
 ] as const;
 
 export const SACHBUCH_WAIT_HERSTELLUNG = [
-  "Lektorierter Text wird gelesen …",
-  "Unterkapitel werden gesetzt …",
-  "One-Pager, Merksätze und Infoboxen …",
+  "Absatzstruktur wird gelesen …",
+  "Haiku plant Unterkapitel und Kästen …",
+  "Marker werden in den Originaltext gesetzt …",
   "Herstellung wird gespeichert …",
 ] as const;
 
 export const SACHBUCH_WAIT_HERSTELLUNG_ALL = [
   "Offene Kapitel werden ermittelt …",
-  "Haiku setzt Layout Kapitel für Kapitel …",
+  "Haiku plant Layout Kapitel für Kapitel …",
   "Buch-Herstellung wird zusammengefasst …",
 ] as const;
 
@@ -152,6 +152,21 @@ export function sachbuchWaitAgentManuscript(): SachbuchWaitAgentInfo {
 
 export function sachbuchWaitAgentHerstellung(): SachbuchWaitAgentInfo {
   return sachbuchWaitAgentForSlug("Herstellung", SACHBUCH_MODEL_HERSTELLUNG);
+}
+
+export const SACHBUCH_WAIT_INFOGRAFIKEN = [
+  "Kapitel-Diagramme werden geplant …",
+  "Napkin AI erzeugt Infografiken …",
+  "Status wird abgefragt …",
+  "Seitenformat wird normalisiert …",
+  "Infografiken werden gespeichert …",
+] as const;
+
+export function sachbuchWaitAgentInfografik(): SachbuchWaitAgentInfo {
+  return {
+    roleLabel: "Infografik",
+    modelLabel: "Napkin AI",
+  };
 }
 
 export const SACHBUCH_WAIT_EXPORT_META = [

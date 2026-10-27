@@ -1,7 +1,7 @@
 /**
- * Phase 8 — Herstellung: Haiku layout pass between Manuskript and Export.
- * Inserts Zwischenüberschriften + One-Pager/Merksatz/Infobox/Schaubild markers
- * without rewriting lektorierte Prosa. See `herstellung-markup.ts`.
+ * Phase 8 — Herstellung: Haiku layout *plan* + local apply.
+ * Prose is never rewritten — only `<<<H>>>` / `<<<BOX>>>` markers are inserted
+ * into the original paragraph list. Avoids token-truncation shortening.
  */
 
 import {
@@ -18,6 +18,8 @@ import {
   sachbuchKapitelHasHerstellung,
 } from "@/lib/sachbuch/parse";
 import {
+  SACHBUCH_LAYOUT_BOX_KINDS,
+  type SachbuchLayoutBoxKind,
   hasSachbuchLayoutMarkup,
   stripSachbuchLayoutMarkup,
   summarizeSachbuchLayoutMarkup,
@@ -30,83 +32,246 @@ import {
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 import { resolveRomanSchreibModel } from "@/lib/roman/model";
 
-const HERSTELLUNG_SYSTEM = `Du bist Herstellung / Buchsatz-Lektor für deutschsprachige Business-Sachbücher.
-Du bereitet EIN bereits lektoriertes Kapitel für Druck und ePub vor — OHNE den Inhalt umzuschreiben.
+const HERSTELLUNG_PLAN_SYSTEM = `Du bist Herstellung / Buchsatz-Lektor für deutschsprachige Business-Sachbücher.
+Du bekommst eine NUMMERIERTE Absatzliste eines bereits lektorierten Kapitels.
+Du schreibst KEINEN Buchtext. Du lieferst nur einen Layout-Plan als JSON.
 
 Aufgabe:
-1) Prüfe, wo echte Unterkapitel (Zwischenüberschriften) dem Leser helfen — typisch 2–6 pro Kapitel, an thematischen Brüchen.
-2) Markiere Layout-Artefakte als Kästen:
-   - One-Pager / „Blatt für den Montagmorgen“ / Sprint-Board / 9-KPI-Cockpit / A3-Report → BOX onepager
-   - Zeilen die mit „Merksatz:“ beginnen oder klare Pull-Quotes → BOX merksatz
-   - Kurze Definitionen / KPI-Definitionslisten als Infobox → BOX infobox (nur wenn klar abgegrenzt)
-   - Architektur-auf-einen-Blick / Schaubild-Absätze → BOX schaubild
-3) Prosa dazwischen unverändert lassen (Formulierung, Reihenfolge, Zahlen). Keine neuen Argumente, keine Kürzungen.
+1) 2–6 Zwischenüberschriften an thematischen Brüchen (beforePara = Index, VOR dem Absatz).
+2) Kästen nur wo der Text klar abgegrenzt ist:
+   - merksatz: Absätze die mit „Merksatz:“ beginnen (oft 1 Absatz) — bevorzugen als optische Anker
+   - infobox: kurze Definitionslisten / KPI-Blöcke / Säulen-Zusammenfassungen
+   - schaubild: „Architektur auf einen Blick“ / Schaubild-Absätze
+   - onepager: Management-Canvas / Sprint-Pläne / Chargeback / 6-Fragen-Kompass / 14-Tage- und 30-Tage-Bögen — KEINE „Montagmorgen“-/Download-Rhetorik
+3) Pflicht, sofern im Text vorhanden: die großen Werkzeugblöcke (Chargeback, 6-Fragen-Felder, Sprint-Tage/Wochen, 9-KPI-Säulen) als onepager oder infobox absetzen.
+4) Keine überlappenden Boxes. fromPara/toPara inklusiv, 0-basiert.
+5) Erfinde keine Kästen ohne Textbasis. Titel kurz, deutsch, ohne „Kapitel 3.1“.
 
-Marker-FORMAT (hart, exakt so):
-<<<H>>> Kurzer Unterkapitel-Titel
-<<<BOX onepager Optionaler Titel>>>
-…Inhalt der Box (Absätze aus dem Original)…
-<<<END BOX>>>
-<<<BOX merksatz>>>
-…Merksatz-Text…
-<<<END BOX>>>
-<<<BOX infobox Optionaler Titel>>>
-…
-<<<END BOX>>>
-<<<BOX schaubild Optionaler Titel>>>
-…
-<<<END BOX>>>
-
-Regeln:
-- Deutsch. Kein Markdown (# ## **, Listen-Striche, Backticks), kein JSON, kein Vorspann.
-- Nur die Marker oben sind erlaubt; sonst reine Absätze mit Leerzeilen.
-- Länge: mindestens 92 % der Vorlage in Wörtern (Marker zählen nicht mit).
-- Keine Gesetzes-Artikelnummern 1:1 einführen.
-- Wenn ein One-Pager/Merksatz schon klar erkennbar ist, wrappe ihn — erfinde keine neuen Kästen ohne Textbasis.
-- Unterkapitel-Titel: kurz, inhaltlich, ohne „Kapitel 3.1“-Nummern.`;
+Antwort NUR als JSON ohne Markdown-Fence:
+{
+  "headings": [{ "beforePara": 12, "title": "Kurzer Titel" }],
+  "boxes": [{ "kind": "onepager"|"merksatz"|"infobox"|"schaubild", "title": "optional", "fromPara": 40, "toPara": 42 }]
+}`;
 
 const HERSTELLUNG_ATTEMPTS = 3;
+const BOX_KIND_SET = new Set<string>(SACHBUCH_LAYOUT_BOX_KINDS);
 
-function sourceBodyForHerstellung(book: SachbuchKontext, kapitelId: string): {
-  kapIndex: number;
-  body: string;
-} {
-  const kapIndex = book.kapitel.findIndex((k) => k.id === kapitelId);
-  if (kapIndex < 0) throw new Error("Kapitel nicht gefunden.");
-  const kap = book.kapitel[kapIndex]!;
-  const body =
-    kap.manuscript.improvedText.trim() ||
-    sachbuchKapitelBodyText(kap);
-  if (countSachbuchWords(body) < 400) {
-    throw new Error(
-      "Kapitel noch zu kurz für Herstellung — zuerst Manuskript lektorieren.",
-    );
-  }
-  return { kapIndex, body };
+type HeadingPlan = { beforePara: number; title: string };
+type BoxPlan = {
+  kind: SachbuchLayoutBoxKind;
+  title: string;
+  fromPara: number;
+  toPara: number;
+};
+type HerstellungPlan = { headings: HeadingPlan[]; boxes: BoxPlan[] };
+
+/** Split lektorierte Prosa into blank-line paragraphs (stable indices for the plan). */
+export function splitSachbuchParagraphs(text: string): string[] {
+  return text
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/[ \t]+\n/g, "\n").trim())
+    .filter(Boolean);
 }
 
-async function callHaikuHerstellung(input: {
+function previewPara(text: string, max = 110): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  if (one.length <= max) return one;
+  return `${one.slice(0, max - 1)}…`;
+}
+
+function hintFlags(text: string): string {
+  const flags: string[] = [];
+  if (/^\s*Merksatz:/i.test(text)) flags.push("merksatz?");
+  if (/Merksatz:/i.test(text) === false && /Säule \d/i.test(text)) {
+    flags.push("kpi-block?");
+  }
+  if (/9-KPI|A3-Report|Chargeback|14-Tage-Sprint|30-Tage/i.test(text)) {
+    flags.push("onepager?");
+  }
+  if (/Architektur auf einen Blick|Schaubild/i.test(text)) flags.push("schaubild?");
+  return flags.length ? ` [${flags.join(",")}]` : "";
+}
+
+function buildParagraphOutline(paras: string[]): string {
+  return paras
+    .map((p, i) => {
+      const w = countSachbuchWords(p);
+      return `[${i}] (${w}w)${hintFlags(p)} ${previewPara(p)}`;
+    })
+    .join("\n");
+}
+
+/**
+ * Deterministic seed boxes Haiku often misses — Merksatz pull-quotes.
+ * (No Montagmorgen/worksheet onepagers: the book is not a download-ratgeber.)
+ */
+function heuristicBoxes(paras: string[]): BoxPlan[] {
+  const boxes: BoxPlan[] = [];
+  for (let i = 0; i < paras.length; i++) {
+    const p = paras[i]!;
+    if (/^\s*Merksatz:/i.test(p)) {
+      boxes.push({ kind: "merksatz", title: "", fromPara: i, toPara: i });
+    }
+  }
+  return boxes;
+}
+
+function boxesOverlap(a: BoxPlan, b: BoxPlan): boolean {
+  return !(a.toPara < b.fromPara || b.toPara < a.fromPara);
+}
+
+function normalizePlan(
+  raw: HerstellungPlan,
+  paraCount: number,
+  seedBoxes: BoxPlan[],
+): HerstellungPlan {
+  const headings: HeadingPlan[] = [];
+  for (const h of raw.headings ?? []) {
+    const before = Math.round(Number(h.beforePara));
+    const title = String(h.title ?? "")
+      .replace(/^#+\s*/, "")
+      .trim();
+    if (!title || before < 0 || before > paraCount) continue;
+    if (headings.some((x) => x.beforePara === before)) continue;
+    headings.push({ beforePara: before, title: title.slice(0, 120) });
+  }
+  headings.sort((a, b) => a.beforePara - b.beforePara);
+
+  const boxes: BoxPlan[] = [];
+  const pushBox = (b: BoxPlan) => {
+    let from = Math.round(Number(b.fromPara));
+    let to = Math.round(Number(b.toPara));
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+    if (from > to) [from, to] = [to, from];
+    if (from < 0 || to >= paraCount) return;
+    if (!BOX_KIND_SET.has(b.kind)) return;
+    const next: BoxPlan = {
+      kind: b.kind,
+      title: String(b.title ?? "").trim().slice(0, 120),
+      fromPara: from,
+      toPara: to,
+    };
+    if (boxes.some((x) => boxesOverlap(x, next))) return;
+    boxes.push(next);
+  };
+
+  for (const b of raw.boxes ?? []) {
+    const kind = String(b.kind ?? "").toLowerCase() as SachbuchLayoutBoxKind;
+    pushBox({
+      kind,
+      title: String(b.title ?? ""),
+      fromPara: Number(b.fromPara),
+      toPara: Number(b.toPara),
+    });
+  }
+  // Heuristics fill gaps (no overlap with Haiku boxes).
+  for (const b of seedBoxes) pushBox(b);
+
+  boxes.sort((a, b) => a.fromPara - b.fromPara || a.toPara - b.toPara);
+
+  // Drop headings that fall inside a box (title belongs on the box).
+  const cleanHeadings = headings.filter(
+    (h) =>
+      !boxes.some((b) => h.beforePara > b.fromPara && h.beforePara <= b.toPara),
+  );
+
+  return { headings: cleanHeadings, boxes };
+}
+
+function parsePlanJson(raw: string): HerstellungPlan {
+  const cleaned = raw.replace(/^```json?\s*|\s*```$/g, "").trim();
+  const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+  const headingsRaw = Array.isArray(parsed.headings) ? parsed.headings : [];
+  const boxesRaw = Array.isArray(parsed.boxes) ? parsed.boxes : [];
+  return {
+    headings: headingsRaw.map((h) => {
+      const row = h as Record<string, unknown>;
+      return {
+        beforePara: Number(row.beforePara),
+        title: String(row.title ?? ""),
+      };
+    }),
+    boxes: boxesRaw.map((b) => {
+      const row = b as Record<string, unknown>;
+      return {
+        kind: String(row.kind ?? "").toLowerCase() as SachbuchLayoutBoxKind,
+        title: String(row.title ?? ""),
+        fromPara: Number(row.fromPara),
+        toPara: Number(row.toPara),
+      };
+    }),
+  };
+}
+
+/** Apply plan onto original paragraphs — prose bytes unchanged. */
+export function applyHerstellungPlan(
+  paras: string[],
+  plan: HerstellungPlan,
+): string {
+  const headingAt = new Map<number, string>();
+  for (const h of plan.headings) headingAt.set(h.beforePara, h.title);
+
+  const boxStart = new Map<number, BoxPlan>();
+  const boxEnd = new Set<number>();
+  for (const b of plan.boxes) {
+    boxStart.set(b.fromPara, b);
+    boxEnd.add(b.toPara);
+  }
+
+  const out: string[] = [];
+  for (let i = 0; i < paras.length; i++) {
+    const h = headingAt.get(i);
+    if (h) out.push(`<<<H>>> ${h}`);
+
+    const start = boxStart.get(i);
+    if (start) {
+      const title = start.title.trim();
+      out.push(
+        title
+          ? `<<<BOX ${start.kind} ${title}>>>`
+          : `<<<BOX ${start.kind}>>>`,
+      );
+    }
+
+    out.push(paras[i]!);
+
+    if (boxEnd.has(i)) out.push("<<<END BOX>>>");
+  }
+
+  // Heading after last para (rare) — allow beforePara === length
+  const after = headingAt.get(paras.length);
+  if (after) out.push(`<<<H>>> ${after}`);
+
+  return out.join("\n\n").trim();
+}
+
+async function callHaikuPlan(input: {
   title: string;
   kapitelTitle: string;
-  body: string;
-  hint?: string;
-}): Promise<string> {
+  outline: string;
+  paraCount: number;
+}): Promise<HerstellungPlan> {
   const model = await resolveRomanSchreibModel(SACHBUCH_MODEL_HERSTELLUNG);
   let lastError: unknown;
   for (let attempt = 1; attempt <= HERSTELLUNG_ATTEMPTS; attempt += 1) {
     try {
       const raw = await generateText({
         model,
-        systemInstruction: HERSTELLUNG_SYSTEM,
+        systemInstruction: HERSTELLUNG_PLAN_SYSTEM,
         userText: `Buch: ${input.title}
 Kapitel: ${input.kapitelTitle}
+Absätze: 0…${input.paraCount - 1} (insgesamt ${input.paraCount})
 
-${input.hint ? `${input.hint}\n\n` : ""}Lektorierter Kapiteltext (Vorlage — Inhalt behalten):
-${input.body}`,
-        maxTokens: 16_000,
-        timeoutMs: 300_000,
+Absatz-Übersicht (Index, Wörter, Anfang):
+${input.outline}
+
+Liefere den Layout-Plan als JSON.`,
+        preferJson: true,
+        maxTokens: 4_000,
+        timeoutMs: 180_000,
       });
-      return raw.replace(/^```(?:markdown|md|text)?\s*|\s*```$/g, "").trim();
+      return parsePlanJson(raw);
     } catch (error) {
       lastError = error;
       if (!isRetryableAiNetworkError(error) || attempt >= HERSTELLUNG_ATTEMPTS) {
@@ -117,11 +282,29 @@ ${input.body}`,
   }
   throw lastError instanceof Error
     ? lastError
-    : new Error("Herstellung fehlgeschlagen.");
+    : new Error("Herstellung-Plan fehlgeschlagen.");
+}
+
+function sourceBodyForHerstellung(book: SachbuchKontext, kapitelId: string): {
+  kapIndex: number;
+  body: string;
+} {
+  const kapIndex = book.kapitel.findIndex((k) => k.id === kapitelId);
+  if (kapIndex < 0) throw new Error("Kapitel nicht gefunden.");
+  const kap = book.kapitel[kapIndex]!;
+  const body =
+    kap.manuscript.improvedText.trim() || sachbuchKapitelBodyText(kap);
+  if (countSachbuchWords(body) < 400) {
+    throw new Error(
+      "Kapitel noch zu kurz für Herstellung — zuerst Manuskript lektorieren.",
+    );
+  }
+  return { kapIndex, body };
 }
 
 /**
  * Run Haiku Herstellung for one chapter → manuscript.herstellungText.
+ * Original prose is preserved; only layout markers are added.
  */
 export async function herstellenSachbuchKapitel(input: {
   sachbuchId: string;
@@ -133,37 +316,38 @@ export async function herstellenSachbuchKapitel(input: {
 
   const { kapIndex, body } = sourceBodyForHerstellung(book, input.kapitelId);
   const kap = book.kapitel[kapIndex]!;
-  const sourceWords = countSachbuchWords(body);
-  const minWords = Math.ceil(sourceWords * 0.92);
-
-  let prepared = await callHaikuHerstellung({
-    title: book.title,
-    kapitelTitle: kap.title || `Kapitel ${kapIndex + 1}`,
-    body,
-  });
-
-  let plainWords = countSachbuchWords(stripSachbuchLayoutMarkup(prepared));
-  if (plainWords < minWords || !hasSachbuchLayoutMarkup(prepared)) {
-    prepared = await callHaikuHerstellung({
-      title: book.title,
-      kapitelTitle: kap.title || `Kapitel ${kapIndex + 1}`,
-      body,
-      hint: !hasSachbuchLayoutMarkup(prepared)
-        ? `Die vorherige Ausgabe hatte keine gültigen Marker. Setze zwingend <<<H>>> und mindestens einen <<<BOX …>>> / <<<END BOX>>> (One-Pager oder Merksatz), ohne den Inhalt zu kürzen (mind. ${minWords} Wörter).`
-        : `Die vorherige Ausgabe war zu kurz (${plainWords}/${minWords} Wörter). Wiederhole mit vollständiger Vorlage und Markern — nicht kürzen.`,
-    });
-    plainWords = countSachbuchWords(stripSachbuchLayoutMarkup(prepared));
+  const paras = splitSachbuchParagraphs(body);
+  if (paras.length < 3) {
+    throw new Error("Kapitel hat zu wenige Absätze für Herstellung.");
   }
 
-  if (plainWords < Math.ceil(sourceWords * 0.85)) {
+  const sourceWords = countSachbuchWords(body);
+  const outline = buildParagraphOutline(paras);
+  const rawPlan = await callHaikuPlan({
+    title: book.title,
+    kapitelTitle: kap.title || `Kapitel ${kapIndex + 1}`,
+    outline,
+    paraCount: paras.length,
+  });
+  const plan = normalizePlan(rawPlan, paras.length, heuristicBoxes(paras));
+
+  if (plan.headings.length === 0 && plan.boxes.length === 0) {
     throw new Error(
-      `Herstellung zu kurz (${plainWords}/${minWords} Wörter) — bitte erneut versuchen.`,
+      "Herstellung ohne Layout-Entscheidungen — bitte erneut versuchen.",
+    );
+  }
+
+  const prepared = applyHerstellungPlan(paras, plan);
+  const plainWords = countSachbuchWords(stripSachbuchLayoutMarkup(prepared));
+
+  // Must be essentially the original (allow tiny whitespace drift from split/join).
+  if (plainWords < Math.ceil(sourceWords * 0.98)) {
+    throw new Error(
+      `Herstellung hat Prosa verändert (${plainWords}/${sourceWords} Wörter) — Abbruch.`,
     );
   }
   if (!hasSachbuchLayoutMarkup(prepared)) {
-    throw new Error(
-      "Herstellung ohne Layout-Marker — bitte erneut versuchen.",
-    );
+    throw new Error("Herstellung ohne Layout-Marker — bitte erneut versuchen.");
   }
 
   const notes = summarizeSachbuchLayoutMarkup(prepared);
@@ -182,7 +366,6 @@ export async function herstellenSachbuchKapitel(input: {
 
 /**
  * Refresh book-level Herstellung summary from chapter notes.
- * Call after a full-book run (or a single chapter if desired).
  */
 export async function refreshSachbuchHerstellungBookReview(
   sachbuchId: string,

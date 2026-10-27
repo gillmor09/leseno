@@ -27,10 +27,12 @@ export function sachbuchExportChapters(
   return book.kapitel
     .map((k, i) => {
       const body = sachbuchKapitelExportBody(k);
+      const info = (k.infografikDataUrl ?? "").trim();
       return {
         number: i + 1,
         title: k.title.trim() || `Kapitel ${i + 1}`,
         body,
+        infografikDataUrl: info.startsWith("data:image/") ? info : null,
       };
     })
     .filter((c) => c.body.length >= 40);

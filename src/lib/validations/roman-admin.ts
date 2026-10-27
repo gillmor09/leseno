@@ -346,6 +346,8 @@ const vorsatzSchema = z.object({
   }),
   widmung: z.string().max(2000),
   motto: z.string().max(4000),
+  /** Optional preface (mainly Sachbuch); empty for most novels. */
+  vorwort: z.string().max(20_000).optional().default(""),
 });
 
 /** Generate spine + front matter from saved kontext. */

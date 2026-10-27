@@ -34,6 +34,12 @@ export const SACHBUCH_COVER_MODEL_SLUG = "gpt-image-2.5-sunburst";
 export const SACHBUCH_MODEL_MANUSCRIPT = "gemini-4-argon";
 /** Phase 8 Herstellung (Unterkapitel + Layout-Kästen vor Export). */
 export const SACHBUCH_MODEL_HERSTELLUNG = "claude-haiku-5-5";
+/**
+ * Chapter Infografiken — Napkin AI (`NAPKIN_API_KEY`), not a wired Gemini slug.
+ * Kept as display/token id for wait UI compatibility.
+ */
+export const SACHBUCH_MODEL_INFOGRAFIK = "napkin";
+export const SACHBUCH_INFOGRAFIK_PROVIDER = "napkin";
 /** Luna pass only at/above this score (1–10). */
 export const SACHBUCH_IDEE_REFINE_PASS_SCORE = 8;
 
@@ -56,13 +62,16 @@ export function sachbuchRuntimeModelSlug(key: SachbuchAgentKey): string {
   return SACHBUCH_RUNTIME_MODEL_BY_AGENT[key];
 }
 
-/** Soft volume targets for a full adult Sachbuch (~5 Makro-Kapitel). */
-export const SACHBUCH_BOOK_WORDS_TARGET = 40_000;
-export const SACHBUCH_KAPITEL_WORDS_TARGET = 8_000;
+/**
+ * Soft volume targets for a full adult Sachbuch with Buchteilen
+ * (typisch 3 Teile / ~8–10 Kapitel → ca. 70–90k Wörter).
+ */
+export const SACHBUCH_BOOK_WORDS_TARGET = 80_000;
+export const SACHBUCH_KAPITEL_WORDS_TARGET = 9_000;
 
 /**
  * Phase 5 section word band — writing unit with checkpoint/critic/style.
- * ~14 Abschnitte × ~550 Wörter ≈ 8.000 Wörter/Kapitel.
+ * ~16 Abschnitte × ~550 Wörter ≈ 9.000 Wörter/Kapitel.
  */
 export const SACHBUCH_ABSCHNITT_WORDS_MIN = 400;
 export const SACHBUCH_ABSCHNITT_WORDS_MAX = 700;
@@ -73,8 +82,8 @@ export const SACHBUCH_ABSCHNITT_WORDS_TARGET = Math.round(
 );
 
 /** Soft chapter word band (assembled Abschnitte / Gesamtkapitel). */
-export const SACHBUCH_TARGET_WORDS_MIN = 6_000;
-export const SACHBUCH_TARGET_WORDS_MAX = 10_000;
+export const SACHBUCH_TARGET_WORDS_MIN = 7_000;
+export const SACHBUCH_TARGET_WORDS_MAX = 11_000;
 
 /**
  * Soft minimum Abschnitte per chapter: volume-first, then claims as floor.
@@ -122,28 +131,17 @@ Regeln:
 - Kein Buchtext, keine Kapitelgliederung.`;
 
 const ARCHITECT_PROMPT = `Du bist Architect für Sachbuch-Makro und Kapitel-Context-Graphs.
-Aufgabe: Je nach Makro-Typ eine passende 5-Stage-Struktur und danach Mikro-Kontext pro Kapitel.
+Aufgabe: Aus Idee/UVP eine FLEXIBLE Buchstruktur erzeugen — Buchteile (parts) mit je einem oder mehreren Kapiteln — und danach Mikro-Kontext pro Kapitel.
 
-Makro-Typ „journey“ (Reader-Transformation):
-1) Status Quo / ungelöstes Problem
-2) Paradigmenwechsel / neue These
-3) Framework / Methode
-4) Implementierung & Hindernisse
-5) Zukunft / Ausblick
+Makro-Struktur (verbindlich für Phase 3):
+- Nicht starr auf genau 5 Kapitel fixieren.
+- 2–5 Buchteile, insgesamt typisch 6–12 Kapitel; Anzahl und Gewichtung folgen der Idee (z. B. 3 Pyramidenteile, verdichtete Mitte, eigener Kundenergebnis-Teil).
+- JSON-Form: parts[] → chapters[] (id, title, promise, notes).
 
-Makro-Typ „erklaerung“ (Thema verständlich machen):
-1) Kontext / Ausgangslage
-2) Kernidee
-3) Vertiefung
-4) Beispiele / Anschauung
-5) Einordnung / Fazit
-
-Makro-Typ „erzaehlung“ (narratives Sachbuch / Fallgeschichte):
-1) Ausgangssituation / Szene
-2) Zentrale Frage / Konflikt
-3) Verlauf / Zuspitzung
-4) Wendepunkt / Erkenntnis
-5) Bedeutung für den Leser
+Makro-Typ nur als Erzählhint (nicht als feste 5er-Liste):
+- journey: Transformation (Diagnose → These → Methode → Umbau → Ausblick)
+- erklaerung: Verständnis (Kontext → Kern → Vertiefung → Beispiele → Einordnung)
+- erzaehlung: Fallbogen (Ausgang → Konflikt → Verlauf → Erkenntnis → Bedeutung)
 
 Context Graph pro Kapitel: Leser-Wissensstand, etablierte Begriffe, zu beweisende Behauptungen, Abhängigkeiten.
 
@@ -152,7 +150,7 @@ Leseversprechen (rechtlich / DSGVO u. a.):
 - Stattdessen Alltagssprache und Prinzipien: Zweckbindung, Einwilligung, Auskunftsrecht, Löschung, …
 - Ziel: Leserführung ohne Artikel-Schlacht — Normen nur als verständliche Pflichten/Rechte, nie als Zitatkatalog.
 
-Regeln: Deutsch, konkret, editierbar kurz. Keine 10-Kapitel-Standardgliederung.`;
+Regeln: Deutsch, konkret, editierbar kurz. Keine austauschbare 10-Kapitel-Standardgliederung.`;
 
 const WRITER_PROMPT = `Du bist Writer für Sachbuch-Abschnitte (${SACHBUCH_ABSCHNITT_WORDS_MIN}–${SACHBUCH_ABSCHNITT_WORDS_MAX} Wörter).
 Aufgabe: Einen Abschnitt auf Basis Context Graph, UVP, Evidenz und bisheriger Abschnitte schreiben.
@@ -165,7 +163,7 @@ Regeln:
 - Baue auf etablierte Begriffe; beweise fällige Claims.
 - Leseversprechen: keine DSGVO-/Gesetzes-Artikelnummern 1:1 — Prinzipien und Alltagssprache statt Artikel-Schlacht.
 - FORMAT: Nur Buchprosa (Absätze). VERBOTEN: Markdown (# ## ###, **, *, Backticks, - Listen). Zwischenüberschriften — wenn überhaupt — als Normalzeile ohne Sonderzeichen.
-- Keine Wiederholungsschleife: Cases, Studien und Metriken, die im bisherigen Kapiteltext schon stehen, nicht neu aufwärmen. ConnectTel nur einmal einführen, danach fortschreiben.
+- Keine Wiederholungsschleife: Cases, Studien und Metriken, die im bisherigen Kapiteltext schon stehen, nicht neu aufwärmen. KlarNetz AG (fiktives Composite) nur einmal einführen und als fiktiv markieren, danach fortschreiben.
 - Jeder Abschnitt ist in sich geschlossen: Anfang = neuer vollständiger Satz; Ende = abgeschlossener Gedanke mit . ! oder ? — keine Satztrennung über Abschnittsgrenzen.
 - Wenn der Autor Recherche/Belege fordert („such im Internet“, „keine Ahnung“): recherchiere und arbeite belastbare Fakten ein — erfinde keine Studien oder Zahlen.`;
 

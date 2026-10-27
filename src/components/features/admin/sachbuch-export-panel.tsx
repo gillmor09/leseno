@@ -66,6 +66,7 @@ export function SachbuchExportPanel({
   const [keywords, setKeywords] = useState(() => padKeywords(exp.keywords));
   const [autorName, setAutorName] = useState(exp.autorName);
   const [motto, setMotto] = useState(exp.vorsatz.motto);
+  const [vorwort, setVorwort] = useState(exp.vorsatz.vorwort ?? "");
   const [pending, setPending] = useState<
     "meta" | "cover" | "save" | "apply-title" | "pdf" | "epub" | null
   >(null);
@@ -77,6 +78,7 @@ export function SachbuchExportPanel({
     setKeywords(padKeywords(exp.keywords));
     setAutorName(exp.autorName);
     setMotto(exp.vorsatz.motto);
+    setVorwort(exp.vorsatz.vorwort ?? "");
   }, [
     book.id,
     exp.suggestedTitle,
@@ -85,6 +87,7 @@ export function SachbuchExportPanel({
     exp.keywords,
     exp.autorName,
     exp.vorsatz.motto,
+    exp.vorsatz.vorwort,
     exp.coverImageDataUrl,
   ]);
 
@@ -141,6 +144,7 @@ export function SachbuchExportPanel({
           .slice(0, SACHBUCH_KEYWORD_COUNT),
         autorName,
         motto,
+        vorwort,
       });
       if (!result.success || !result.data) {
         toast.error(result.error ?? "Speichern fehlgeschlagen.");
@@ -172,6 +176,7 @@ export function SachbuchExportPanel({
           .slice(0, SACHBUCH_KEYWORD_COUNT),
         autorName,
         motto,
+        vorwort,
       });
       if (!saved.success || !saved.data) {
         toast.error(saved.error ?? "Zwischenspeichern fehlgeschlagen.");
@@ -380,6 +385,20 @@ export function SachbuchExportPanel({
           disabled={busy}
           rows={2}
           className="mt-1 w-full resize-y rounded-xl bg-gray-50 px-3 py-2 ring-1 ring-zinc-950/10"
+        />
+      </label>
+
+      <label className="block">
+        <span className="font-bold text-zinc-700">Vorwort</span>
+        <p className="mt-0.5 text-xs text-zinc-500">
+          Erwartungsmanagement vor Kapitel 1 (PDF/ePub).
+        </p>
+        <textarea
+          value={vorwort}
+          onChange={(e) => setVorwort(e.target.value)}
+          disabled={busy}
+          rows={10}
+          className="mt-1 max-h-[40vh] w-full resize-y overflow-y-auto rounded-xl bg-gray-50 px-3 py-2 leading-relaxed ring-1 ring-zinc-950/10"
         />
       </label>
 

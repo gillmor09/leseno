@@ -208,6 +208,7 @@ export async function applySachbuchBookType(input: {
       bookTypeId: t.id,
       typ: t.makroTyp,
       stages: typChanged ? emptyMakroStages(t.makroTyp) : book.makro.stages,
+      parts: typChanged ? [] : book.makro.parts ?? [],
       status: typChanged ? "empty" : book.makro.status,
       kapitelGenerated: typChanged ? false : book.makro.kapitelGenerated,
     },

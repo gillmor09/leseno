@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -40,6 +40,10 @@ import {
 } from "@/lib/sachbuch/guide";
 import type { SachbuchGuideStep, SachbuchKontext } from "@/lib/sachbuch/types";
 import { SACHBUCH_GUIDE_STEP_LABELS } from "@/lib/sachbuch/types";
+import {
+  SACHBUCH_BRIEFING_MAX_CHARS,
+  SACHBUCH_OPINION_MAX_CHARS,
+} from "@/lib/validations/sachbuch";
 
 export function SachbuchAdminWorkspace({
   initialBook,
@@ -57,6 +61,11 @@ export function SachbuchAdminWorkspace({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [stepPending, setStepPending] = useState(false);
+  const [draftOpinion, setDraftOpinion] = useState(
+    initialBook.idee.unpopularOpinion,
+  );
+  const [draftBriefing, setDraftBriefing] = useState(initialBook.idee.briefing);
+  const [conceptPending, setConceptPending] = useState(false);
 
   const bookType = getSachbuchBookType(book.makro.bookTypeId);
   const step = effectiveSachbuchGuideStep(book);
@@ -69,8 +78,20 @@ export function SachbuchAdminWorkspace({
     (book.idee.status === "in_progress" ||
       book.idee.status === "empty" ||
       !hasConcept);
+  const conceptDirty =
+    draftOpinion !== book.idee.unpopularOpinion ||
+    draftBriefing !== book.idee.briefing;
+  const draftConceptUsable =
+    draftOpinion.trim().length >= 20 || draftBriefing.trim().length >= 20;
+  const briefingOverLimit = draftBriefing.length > SACHBUCH_BRIEFING_MAX_CHARS;
+  const opinionOverLimit = draftOpinion.length > SACHBUCH_OPINION_MAX_CHARS;
 
   const next = nextSachbuchGuideStep(step);
+
+  useEffect(() => {
+    setDraftOpinion(book.idee.unpopularOpinion);
+    setDraftBriefing(book.idee.briefing);
+  }, [book.id, book.idee.unpopularOpinion, book.idee.briefing]);
 
   async function saveTitle() {
     if (!canSave || titlePending) return;
@@ -186,6 +207,79 @@ export function SachbuchAdminWorkspace({
     }
   }
 
+  /**
+   * Replace Rohkonzept (These + Briefing) by paste/edit.
+   * Clears Idee-Freigabe so Verfeinern neu laufen kann — keeps Makro/Kapitel.
+   */
+  async function saveRohkonzept() {
+    if (!canSave || conceptPending) return;
+    const opinion = draftOpinion.trim();
+    const briefing = draftBriefing.trim();
+    if (opinion.length < 20 && briefing.length < 20) {
+      toast.error("These oder Briefing einfügen (mind. 20 Zeichen).");
+      return;
+    }
+    if (briefing.length > SACHBUCH_BRIEFING_MAX_CHARS) {
+      toast.error(
+        `Briefing zu lang (${briefing.length.toLocaleString("de-DE")} / ${SACHBUCH_BRIEFING_MAX_CHARS.toLocaleString("de-DE")} Zeichen). Bitte kürzen.`,
+      );
+      return;
+    }
+    if (opinion.length > SACHBUCH_OPINION_MAX_CHARS) {
+      toast.error(
+        `These zu lang (${opinion.length.toLocaleString("de-DE")} / ${SACHBUCH_OPINION_MAX_CHARS.toLocaleString("de-DE")} Zeichen).`,
+      );
+      return;
+    }
+    const nextOpinion =
+      opinion ||
+      briefing.split(/[.!?\n]/).find((s) => s.trim().length >= 20)?.trim() ||
+      briefing.slice(0, 280);
+    setConceptPending(true);
+    try {
+      const wasApproved = isSachbuchIdeaApproved(book);
+      const result = await saveSachbuchAction({
+        id: book.id,
+        title: book.title,
+        stilbibel: book.stilbibel,
+        zielgruppe: book.zielgruppe,
+        agents: book.agents,
+        idee: {
+          ...book.idee,
+          unpopularOpinion: nextOpinion,
+          briefing,
+          status: "ready",
+          refineStatus: "idle",
+          refineLog: [],
+          refinedBriefing: "",
+          refinedOpinion: "",
+          refinedCaseStudies: [],
+          guide: {
+            ...book.idee.guide,
+            currentStep: "concept",
+            ideaApprovedAt: null,
+            writeApprovedAt: null,
+          },
+        },
+        evidenz: book.evidenz,
+        makro: book.makro,
+        kapitel: book.kapitel,
+      });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Rohkonzept speichern fehlgeschlagen.");
+        return;
+      }
+      setBook(result.data.book);
+      toast.success(
+        wasApproved
+          ? "Rohkonzept gespeichert — Idee-Freigabe zurückgesetzt. Als Nächstes verfeinern."
+          : "Rohkonzept gespeichert.",
+      );
+    } finally {
+      setConceptPending(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -270,69 +364,138 @@ export function SachbuchAdminWorkspace({
                     Rohkonzept
                   </h2>
                   <p className="mt-1 text-xs font-semibold text-zinc-500">
-                    Ausgangspunkt für die agentische Verfeinerung.
+                    Verbesserte Idee hier einfügen und speichern — Ausgangspunkt
+                    für die agentische Verfeinerung. Speichern setzt eine
+                    vorhandene Idee-Freigabe zurück (Kapitel bleiben).
                   </p>
                 </div>
                 <button
                   type="button"
-                  disabled={!canSave || titlePending}
+                  disabled={
+                    !canSave ||
+                    titlePending ||
+                    conceptPending ||
+                    conceptDirty ||
+                    !draftConceptUsable
+                  }
                   onClick={() => void leaveInterviewToRefine()}
                   className="rounded-full bg-orange-700 px-4 py-2 text-xs font-bold text-white hover:bg-orange-800 disabled:opacity-50"
                 >
                   Weiter: Verfeinern
                 </button>
               </div>
-              {book.idee.unpopularOpinion.trim() ? (
-                <p className="text-sm font-semibold text-zinc-900">
-                  {book.idee.unpopularOpinion}
-                </p>
-              ) : null}
-              <div className="max-h-[40vh] overflow-y-auto rounded-2xl bg-zinc-50 px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 ring-1 ring-zinc-950/5">
-                {book.idee.briefing.trim() || "—"}
-              </div>
-              <button
-                type="button"
-                disabled={!canSave || titlePending}
-                onClick={() => {
-                  void (async () => {
-                    setTitlePending(true);
-                    try {
-                      const result = await saveSachbuchAction({
-                        id: book.id,
-                        title: book.title,
-                        stilbibel: book.stilbibel,
-                        zielgruppe: book.zielgruppe,
-                        agents: book.agents,
-                        idee: {
-                          ...book.idee,
-                          status: "in_progress",
-                          guide: {
-                            ...book.idee.guide,
-                            currentStep: "concept",
-                            ideaApprovedAt: null,
-                            writeApprovedAt: null,
-                          },
-                        },
-                        evidenz: book.evidenz,
-                        makro: book.makro,
-                        kapitel: book.kapitel,
-                      });
-                      if (!result.success || !result.data) {
-                        toast.error(
-                          result.error ?? "Speichern fehlgeschlagen.",
-                        );
-                        return;
-                      }
-                      setBook(result.data.book);
-                    } finally {
-                      setTitlePending(false);
+              <label className="block space-y-1.5">
+                <span className="flex items-baseline justify-between gap-2 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  <span>These / UVP</span>
+                  <span
+                    className={
+                      opinionOverLimit ? "text-red-700" : "normal-case text-zinc-400"
                     }
-                  })();
-                }}
-                className="text-sm font-bold text-orange-800 underline-offset-2 hover:underline disabled:opacity-50"
-              >
-                Im Interview nachschärfen
-              </button>
+                  >
+                    {draftOpinion.length.toLocaleString("de-DE")} /{" "}
+                    {SACHBUCH_OPINION_MAX_CHARS.toLocaleString("de-DE")}
+                  </span>
+                </span>
+                <textarea
+                  value={draftOpinion}
+                  onChange={(e) => setDraftOpinion(e.target.value)}
+                  disabled={!canSave || conceptPending}
+                  rows={4}
+                  className="w-full resize-y rounded-2xl bg-zinc-50 px-4 py-3 text-sm font-semibold leading-relaxed text-zinc-900 ring-1 ring-zinc-950/10 outline-none focus:ring-2 focus:ring-orange-600 disabled:opacity-50"
+                  placeholder="Scharfe These / Unpopular Opinion …"
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="flex items-baseline justify-between gap-2 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  <span>Briefing / Buchkonzept</span>
+                  <span
+                    className={
+                      briefingOverLimit
+                        ? "text-red-700"
+                        : "normal-case text-zinc-400"
+                    }
+                  >
+                    {draftBriefing.length.toLocaleString("de-DE")} /{" "}
+                    {SACHBUCH_BRIEFING_MAX_CHARS.toLocaleString("de-DE")} Zeichen
+                  </span>
+                </span>
+                <textarea
+                  value={draftBriefing}
+                  onChange={(e) => setDraftBriefing(e.target.value)}
+                  disabled={!canSave || conceptPending}
+                  rows={16}
+                  className="w-full resize-y rounded-2xl bg-zinc-50 px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 ring-1 ring-zinc-950/10 outline-none focus:ring-2 focus:ring-orange-600 disabled:opacity-50"
+                  placeholder="Vollständiges Konzept hier einfügen oder überschreiben …"
+                />
+              </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={
+                    !canSave ||
+                    conceptPending ||
+                    !conceptDirty ||
+                    !draftConceptUsable ||
+                    briefingOverLimit ||
+                    opinionOverLimit
+                  }
+                  onClick={() => void saveRohkonzept()}
+                  className="inline-flex items-center gap-2 rounded-full bg-zinc-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  {conceptPending ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : null}
+                  Rohkonzept speichern
+                </button>
+                {conceptDirty ? (
+                  <span className="text-xs font-semibold text-amber-800">
+                    Ungespeicherte Änderungen
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={!canSave || titlePending || conceptPending}
+                  onClick={() => {
+                    void (async () => {
+                      setTitlePending(true);
+                      try {
+                        const result = await saveSachbuchAction({
+                          id: book.id,
+                          title: book.title,
+                          stilbibel: book.stilbibel,
+                          zielgruppe: book.zielgruppe,
+                          agents: book.agents,
+                          idee: {
+                            ...book.idee,
+                            status: "in_progress",
+                            guide: {
+                              ...book.idee.guide,
+                              currentStep: "concept",
+                              ideaApprovedAt: null,
+                              writeApprovedAt: null,
+                            },
+                          },
+                          evidenz: book.evidenz,
+                          makro: book.makro,
+                          kapitel: book.kapitel,
+                        });
+                        if (!result.success || !result.data) {
+                          toast.error(
+                            result.error ?? "Speichern fehlgeschlagen.",
+                          );
+                          return;
+                        }
+                        setBook(result.data.book);
+                      } finally {
+                        setTitlePending(false);
+                      }
+                    })();
+                  }}
+                  className="text-sm font-bold text-orange-800 underline-offset-2 hover:underline disabled:opacity-50"
+                >
+                  Im Interview nachschärfen
+                </button>
+              </div>
             </section>
           ) : (
             <div className="space-y-3">

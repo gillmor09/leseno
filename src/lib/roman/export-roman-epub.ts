@@ -175,7 +175,7 @@ h1.chapter {
   text-align: left;
   margin: 0 0 1.25em;
 }
-.copyright p, .dedication p, .epigraph p {
+.copyright p, .dedication p, .epigraph p, .preface p {
   margin: 0.75em 0;
 }
 .dedication, .epigraph {
@@ -183,6 +183,18 @@ h1.chapter {
   text-align: center;
 }
 .epigraph p { font-style: italic; }
+.preface {
+  margin-top: 8%;
+  text-align: left;
+}
+.preface h1 {
+  font-size: 1.35em;
+  text-align: left;
+  margin: 0 0 1em;
+}
+.preface p {
+  text-indent: 0;
+}
 p {
   margin: 0 0 0.85em;
   text-indent: 1.2em;
@@ -194,7 +206,7 @@ p.scene-break {
   letter-spacing: 0.35em;
   margin: 1.4em 0;
 }
-.titlepage p, .copyright p, .dedication p, .epigraph p, h1.chapter + p {
+.titlepage p, .copyright p, .dedication p, .epigraph p, .preface p, h1.chapter + p {
   text-indent: 0;
 }
 .infografik {
@@ -272,8 +284,17 @@ aside.sachbuch-box {
 aside.sachbuch-box h3 {
   font-size: 0.95em;
   font-weight: bold;
-  margin: 0 0 0.55em;
+  margin: 0 0 0.9em;
   text-indent: 0;
+}
+aside.sachbuch-box .box-kind {
+  font-size: 0.75em;
+  font-weight: bold;
+  margin: 0 0 0.25em;
+  text-indent: 0;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #52525b;
 }
 aside.sachbuch-box p {
   text-indent: 0;
@@ -281,6 +302,15 @@ aside.sachbuch-box p {
 }
 aside.sachbuch-box p:last-child {
   margin-bottom: 0;
+}
+aside.sachbuch-box ul {
+  margin: 0.35em 0 0.7em;
+  padding-left: 1.2em;
+  text-indent: 0;
+}
+aside.sachbuch-box li {
+  margin: 0.25em 0;
+  text-indent: 0;
 }
 .toc {
   page-break-before: always;
@@ -605,6 +635,24 @@ export async function buildRomanEpubBlob(
         id: "epigraph",
         href: "epigraph.xhtml",
         title: "Motto",
+      });
+    }
+
+    if (vorsatz.vorwort.trim()) {
+      oebps.file(
+        "preface.xhtml",
+        xhtmlDoc(
+          "Vorwort",
+          `<section class="preface" epub:type="preface">
+  <h1>Vorwort</h1>
+  ${plainLinesToXhtml(vorsatz.vorwort)}
+</section>`,
+        ),
+      );
+      spine.push({
+        id: "preface",
+        href: "preface.xhtml",
+        title: "Vorwort",
       });
     }
   }

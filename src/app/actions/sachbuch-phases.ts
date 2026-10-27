@@ -485,6 +485,7 @@ const saveSachbuchExportSchema = z.object({
   keywords: z.array(z.string().max(80)).max(SACHBUCH_KEYWORD_COUNT).optional(),
   autorName: z.string().max(200).optional(),
   motto: z.string().max(2_000).optional(),
+  vorwort: z.string().max(20_000).optional(),
 });
 
 /** Persist edited marketing fields (keeps cover). */
@@ -511,6 +512,8 @@ export async function saveSachbuchExportAction(
       const autorName = parsed.data.autorName ?? book.export.autorName;
       const motto =
         parsed.data.motto ?? book.export.vorsatz.motto;
+      const vorwort =
+        parsed.data.vorwort ?? book.export.vorsatz.vorwort ?? "";
       const vorsatz = {
         ...book.export.vorsatz,
         titelseite: {
@@ -520,6 +523,7 @@ export async function saveSachbuchExportAction(
           autor: autorName,
         },
         motto,
+        vorwort,
       };
       return upsertSachbuchExport({
         id: parsed.data.id,

@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { SachbuchHerstellungPreview } from "@/components/features/admin/sachbuch-herstellung-preview";
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
 import { SACHBUCH_MODEL_HERSTELLUNG } from "@/lib/sachbuch/agent-defaults";
 import {
@@ -16,18 +17,21 @@ import {
   countSachbuchWords,
   sachbuchKapitelBodyText,
   sachbuchKapitelHasHerstellung,
+  sachbuchKapitelHasInfografik,
 } from "@/lib/sachbuch/parse";
 import { stripSachbuchLayoutMarkup } from "@/lib/sachbuch/herstellung-markup";
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 import {
   SACHBUCH_WAIT_HERSTELLUNG,
   SACHBUCH_WAIT_HERSTELLUNG_ALL,
+  SACHBUCH_WAIT_INFOGRAFIKEN,
   sachbuchModelLabel,
   sachbuchWaitAgentHerstellung,
+  sachbuchWaitAgentInfografik,
 } from "@/lib/sachbuch/wait-presets";
 import { cn } from "@/lib/utils";
 
-type WaitKind = "one" | "all" | null;
+type WaitKind = "one" | "all" | "infografik" | null;
 
 export function SachbuchHerstellungPanel({
   book,
@@ -42,6 +46,7 @@ export function SachbuchHerstellungPanel({
   const [pending, setPending] = useState(false);
   const [waitKind, setWaitKind] = useState<WaitKind>(null);
   const [waitProgress, setWaitProgress] = useState<string | null>(null);
+  const [showMarkers, setShowMarkers] = useState(false);
 
   const selected =
     book.kapitel.find((k) => k.id === selectedId) ?? book.kapitel[0] ?? null;
@@ -57,6 +62,40 @@ export function SachbuchHerstellungPanel({
   const modelLabel = sachbuchModelLabel(SACHBUCH_MODEL_HERSTELLUNG);
   const review = book.idee.herstellungReview;
   const doneCount = book.kapitel.filter(sachbuchKapitelHasHerstellung).length;
+  const infoCount = book.kapitel.filter(sachbuchKapitelHasInfografik).length;
+
+  async function runInfografiken(force: boolean) {
+    if (!canSave || pending) return;
+    setPending(true);
+    setWaitKind("infografik");
+    setWaitProgress(null);
+    try {
+      const res = await fetch("/api/admin/sachbuch/infografiken", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sachbuchId: book.id, force }),
+      });
+      const json = (await res.json()) as {
+        success?: boolean;
+        book?: SachbuchKontext;
+        error?: string;
+      };
+      if (!res.ok || !json.success || !json.book) {
+        toast.error(json.error ?? "Infografiken fehlgeschlagen.");
+        return;
+      }
+      onBookUpdate(json.book);
+      toast.success("Infografiken gespeichert.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Infografiken fehlgeschlagen.",
+      );
+    } finally {
+      setWaitKind(null);
+      setWaitProgress(null);
+      setPending(false);
+    }
+  }
 
   async function runOne(kapitelId: string, refreshBook: boolean) {
     if (!canSave || pending) return;
@@ -118,9 +157,9 @@ export function SachbuchHerstellungPanel({
           <div>
             <h2 className="text-lg font-extrabold text-zinc-950">Herstellung</h2>
             <p className="mt-1 text-sm font-semibold text-zinc-600">
-              {modelLabel} prüft Unterkapitel und setzt Layout-Marker (One-Pager,
-              Merksatz, Infobox, Schaubild) für PDF/ePub — ohne die lektorierte
-              Prosa umzuschreiben.
+              {modelLabel} plant Unterkapitel und Kästen. Die Marker im Text
+              sind die Satz-Anweisung; PDF/ePub und die Vorschau unten setzen sie
+              in echte Zwischenüberschriften und Infoboxen um.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -140,6 +179,17 @@ export function SachbuchHerstellungPanel({
             >
               Alle neu herstellen
             </button>
+            <button
+              type="button"
+              disabled={!canSave || pending || book.kapitel.length === 0}
+              onClick={() => void runInfografiken(infoCount > 0)}
+              title="Gemini 3 Pro Image — KPI-Cockpit, Kompass, Sprints …"
+              className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {infoCount > 0
+                ? "Infografiken neu erzeugen"
+                : "Infografiken erzeugen"}
+            </button>
           </div>
         </div>
 
@@ -156,14 +206,17 @@ export function SachbuchHerstellungPanel({
           </p>
           <p className="text-sm font-semibold">
             {doneCount} von {book.kapitel.length} Kapiteln hergestellt
+            {infoCount > 0
+              ? ` · ${infoCount} Infografik${infoCount === 1 ? "" : "en"}`
+              : ""}
           </p>
           {review.summary ? (
             <p className="text-sm font-semibold text-zinc-700">{review.summary}</p>
           ) : null}
-          {review.decisions.length > 0 ? (
+              {review.decisions.length > 0 ? (
             <ul className="list-disc space-y-1 pl-5 text-sm font-semibold text-zinc-700">
-              {review.decisions.map((d) => (
-                <li key={d}>{d}</li>
+              {review.decisions.map((d, i) => (
+                <li key={`dec-${i}`}>{d}</li>
               ))}
             </ul>
           ) : null}
@@ -191,6 +244,7 @@ export function SachbuchHerstellungPanel({
                   </span>
                   <span className="mt-0.5 block text-xs text-zinc-500">
                     {ready ? "hergestellt" : "offen"}
+                    {sachbuchKapitelHasInfografik(k) ? " · Infografik" : ""}
                   </span>
                 </button>
               </li>
@@ -224,20 +278,67 @@ export function SachbuchHerstellungPanel({
 
             {hasH && selected.manuscript.herstellungNotes.length > 0 ? (
               <ul className="list-disc space-y-1 rounded-2xl bg-zinc-50 px-4 py-3 pl-8 text-sm font-semibold text-zinc-700 ring-1 ring-zinc-950/5">
-                {selected.manuscript.herstellungNotes.map((n) => (
-                  <li key={n}>{n}</li>
+                {selected.manuscript.herstellungNotes.map((n, i) => (
+                  <li key={`note-${i}`}>{n}</li>
                 ))}
               </ul>
             ) : null}
 
-            <div>
-              <p className="mb-1.5 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-                {hasH ? "Herstellungstext" : "Vorlage (Lektorat)"}
-              </p>
-              <div className="max-h-[50vh] overflow-y-auto rounded-2xl bg-zinc-50 px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-zinc-800 ring-1 ring-zinc-950/5">
-                {preview || "—"}
+            {selected.infografikDataUrl?.startsWith("data:image/") ? (
+              <div>
+                <p className="mb-1.5 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Infografik
+                  {selected.infografikTitle
+                    ? ` · ${selected.infografikTitle}`
+                    : ""}
+                </p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={selected.infografikDataUrl}
+                  alt={selected.infografikTitle || "Kapitel-Infografik"}
+                  className="max-h-[40vh] w-auto max-w-full rounded-2xl ring-1 ring-zinc-950/10"
+                />
               </div>
-            </div>
+            ) : null}
+
+            {hasH ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                    Vorschau (wie Export)
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowMarkers((v) => !v)}
+                    className="text-xs font-bold text-orange-800 underline-offset-2 hover:underline"
+                  >
+                    {showMarkers ? "Marker ausblenden" : "Marker-Rohtext zeigen"}
+                  </button>
+                </div>
+                <div className="max-h-[50vh] overflow-y-auto rounded-2xl bg-white px-4 py-4 ring-1 ring-zinc-950/10">
+                  <SachbuchHerstellungPreview text={preview} />
+                </div>
+                {showMarkers ? (
+                  <div>
+                    <p className="mb-1.5 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                      Marker-Rohtext (für PDF/ePub-Parser)
+                    </p>
+                    <div className="max-h-[30vh] overflow-y-auto rounded-2xl bg-zinc-50 px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-zinc-700 ring-1 ring-zinc-950/5">
+                      {preview}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div>
+                <p className="mb-1.5 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+                  Vorlage (Lektorat)
+                </p>
+                <div className="max-h-[50vh] overflow-y-auto rounded-2xl bg-zinc-50 px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 ring-1 ring-zinc-950/5">
+                  {preview || "—"}
+                </div>
+              </div>
+            )}
           </section>
         ) : (
           <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
@@ -259,6 +360,13 @@ export function SachbuchHerstellungPanel({
         progressLabel={waitProgress}
         agentInfo={sachbuchWaitAgentHerstellung()}
         footer="Fenster offen lassen — ein Kapitel pro Hop."
+      />
+      <SachbuchWaitDialog
+        open={waitKind === "infografik"}
+        title="Infografiken werden erzeugt"
+        steps={SACHBUCH_WAIT_INFOGRAFIKEN}
+        agentInfo={sachbuchWaitAgentInfografik()}
+        footer="Fenster offen lassen — Gemini Pro Image braucht pro Diagramm etwas Zeit."
       />
     </div>
   );

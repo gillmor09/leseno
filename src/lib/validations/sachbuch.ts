@@ -5,6 +5,16 @@
 import { z } from "zod";
 import "@/lib/validations/configure-zod";
 
+/**
+ * Rohkonzept briefing may hold a long pasted dossier (Astra etc.).
+ * ~1M chars ≈ room for very long drafts; Verfeinerung trims for the model.
+ */
+export const SACHBUCH_BRIEFING_MAX_CHARS = 1_000_000;
+/** These / UVP — shorter by design. */
+export const SACHBUCH_OPINION_MAX_CHARS = 50_000;
+/** Stored refine-log round payload (truncated dossier, not full briefing). */
+export const SACHBUCH_REFINE_LOG_CONTENT_MAX_CHARS = 80_000;
+
 const agentSlotSchema = z.object({
   modelSlug: z.string().trim().min(1).max(200),
   systemPrompt: z.string().max(50_000),
@@ -101,7 +111,7 @@ const kapitelManuscriptSchema = z
 const refineRoundSchema = z.object({
   round: z.number().int().min(1).max(20),
   role: z.enum(["haiku", "luna"]),
-  content: z.string().max(50_000),
+  content: z.string().max(SACHBUCH_REFINE_LOG_CONTENT_MAX_CHARS),
   passed: z.boolean().nullable(),
   changeOrders: z.array(z.string().max(5000)).max(50),
   createdAt: z.string().max(80),
@@ -109,8 +119,8 @@ const refineRoundSchema = z.object({
 
 export const sachbuchIdeeSchema = z.object({
   interviewMessages: z.array(interviewMessageSchema).max(500),
-  briefing: z.string().max(50_000),
-  unpopularOpinion: z.string().max(20_000),
+  briefing: z.string().max(SACHBUCH_BRIEFING_MAX_CHARS),
+  unpopularOpinion: z.string().max(SACHBUCH_OPINION_MAX_CHARS),
   caseStudies: z.array(z.string().max(5000)).max(50),
   status: phaseStatusSchema,
   guide: z
@@ -128,8 +138,8 @@ export const sachbuchIdeeSchema = z.object({
     .enum(["idle", "running", "awaiting_approval", "approved"])
     .default("idle"),
   refineLog: z.array(refineRoundSchema).max(40).default([]),
-  refinedBriefing: z.string().max(50_000).default(""),
-  refinedOpinion: z.string().max(20_000).default(""),
+  refinedBriefing: z.string().max(SACHBUCH_BRIEFING_MAX_CHARS).default(""),
+  refinedOpinion: z.string().max(SACHBUCH_OPINION_MAX_CHARS).default(""),
   refinedCaseStudies: z.array(z.string().max(5000)).max(50).default([]),
   manuscriptReview: z
     .object({
@@ -181,6 +191,20 @@ export const sachbuchEvidenzSchema = z.object({
   status: phaseStatusSchema,
 });
 
+const makroChapterPlanSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  title: z.string().max(500),
+  promise: z.string().max(10_000),
+  notes: z.string().max(20_000),
+});
+
+const makroPartSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  title: z.string().max(500),
+  promise: z.string().max(10_000),
+  chapters: z.array(makroChapterPlanSchema).min(1).max(12),
+});
+
 export const sachbuchMakroSchema = z.object({
   typ: makroTypSchema.default("journey"),
   stages: z
@@ -193,6 +217,8 @@ export const sachbuchMakroSchema = z.object({
       }),
     )
     .max(10),
+  /** Flexible Buchteile → Kapitel (preferred). Empty = legacy stages only. */
+  parts: z.array(makroPartSchema).max(8).default([]),
   status: phaseStatusSchema,
   kapitelGenerated: z.boolean(),
   bookTypeId: z.string().max(120).default(""),
@@ -231,7 +257,8 @@ export const sachbuchKapitelSchema = z.object({
   id: z.string().uuid(),
   title: z.string().max(500),
   goals: z.string().max(20_000),
-  makroStageKey: makroStageKeySchema.nullable(),
+  /** Legacy stage key or `partId__chapterId` from flexible parts. */
+  makroStageKey: z.string().max(120).nullable(),
   contextGraph: contextGraphSchema,
   abschnitte: z.array(abschnittSchema).max(200),
   interviewMessages: z.array(interviewMessageSchema).max(500),
@@ -241,6 +268,14 @@ export const sachbuchKapitelSchema = z.object({
   finalText: z.string().max(200_000),
   groundingSources: z.array(groundingSourceSchema).max(50),
   manuscript: kapitelManuscriptSchema,
+  infografikDataUrl: z
+    .string()
+    .max(12_000_000)
+    .nullable()
+    .optional()
+    .default(null),
+  infografikTitle: z.string().max(300).optional().default(""),
+  infografikPrompt: z.string().max(20_000).optional().default(""),
   status: z.enum([
     "draft",
     "graph",

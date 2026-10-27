@@ -36,7 +36,7 @@ import type { Szene } from "@/lib/roman/types";
 import {
   hasSachbuchLayoutMarkup,
   parseSachbuchLayoutBlocks,
-  sachbuchLayoutBoxLabel,
+  sachbuchBoxChromeTitle,
   type SachbuchLayoutBlock,
 } from "@/lib/sachbuch/herstellung-markup";
 
@@ -649,6 +649,18 @@ function frontMatterHtml(vorsatz: RomanVorsatz): string {
   </section>`);
   }
 
+  if (vorsatz.vorwort.trim()) {
+    const paras = vorsatz.vorwort
+      .split(/\n\s*\n/)
+      .map((p) => p.replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    parts.push(`
+  <section class="front-matter vorwort">
+    <h2>Vorwort</h2>
+    ${paras.map((p) => `<p>${escapeHtml(p)}</p>`).join("\n    ")}
+  </section>`);
+  }
+
   return parts.join("\n");
 }
 
@@ -944,6 +956,28 @@ function writeFrontMatterPdf(
       6,
     );
   }
+
+  if (vorsatz.vorwort.trim()) {
+    startNewPage(ctx);
+    setNunito(ctx.pdf, "extrabold", Math.max(scale.bodyPt + 4, 14));
+    ctx.pdf.setTextColor(9, 9, 11);
+    writeLines(ctx, ["Vorwort"], scale.bodyLineMm * 1.35);
+    ctx.y += scale.bodyLineMm * 0.6;
+    setNunito(ctx.pdf, "normal", scale.bodyPt);
+    ctx.pdf.setTextColor(24, 24, 27);
+    const paras = vorsatz.vorwort
+      .split(/\n\s*\n/)
+      .map((p) => p.replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    for (let i = 0; i < paras.length; i++) {
+      const lines = ctx.pdf.splitTextToSize(
+        paras[i]!,
+        ctx.contentWidth,
+      ) as string[];
+      writeLines(ctx, lines, scale.bodyLineMm);
+      if (i < paras.length - 1) ctx.y += scale.bodyLineMm * 0.45;
+    }
+  }
 }
 
 /** Image cover-fit into a box (may extend past box edges). */
@@ -1165,7 +1199,48 @@ function writeAbenteuerWissenCard(ctx: WriteCtx, fakten: string[]): void {
   ctx.y = Math.max(ctx.y, cardY + drawH + 2);
 }
 
-/** Soft gray card for Sachbuch One-Pager / Merksatz / Infobox / Schaubild. */
+type SachbuchBoxLine = {
+  text: string;
+  kind: "title" | "body" | "bullet" | "gap";
+  lineH: number;
+};
+
+function heightOfBoxLines(lines: SachbuchBoxLine[]): number {
+  return lines.reduce((sum, l) => sum + l.lineH, 0);
+}
+
+/** Split box body into scannable chunks (blank lines + bullet/number rows). */
+function expandSachbuchBoxParas(body: string): string[] {
+  const chunks = body
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const chunk of chunks) {
+    const lines = chunk.split("\n").map((l) => l.trim()).filter(Boolean);
+    const listish =
+      lines.length > 1 &&
+      lines.every((l) => /^(?:[•\-–—]|\d+[.)])\s+/.test(l));
+    if (listish) {
+      for (const l of lines) out.push(l);
+    } else if (
+      lines.length === 1 &&
+      /^(?:[•\-–—]|\d+[.)])\s+/.test(lines[0]!)
+    ) {
+      out.push(lines[0]!);
+    } else {
+      out.push(chunk.replace(/\s+/g, " ").trim());
+    }
+  }
+  return out;
+}
+
+/**
+ * Soft gray card for Sachbuch One-Pager / Merksatz / Infobox / Schaubild.
+ * Paginates: each page draws a border only as tall as that page's content
+ * (never a single rect taller than the printable area).
+ */
 function writeSachbuchLayoutBox(
   ctx: WriteCtx,
   block: Extract<SachbuchLayoutBlock, { type: "box" }>,
@@ -1177,68 +1252,137 @@ function writeSachbuchLayoutBox(
   const padY = 3.2;
   const titlePt = Math.max(scale.bodyPt, 10);
   const bodyPt = scale.bodyPt;
-  const lineH = scale.bodyLineMm;
+  const titleLineH = titlePt * 1.35 * (25.4 / 72);
+  const bodyLineH = scale.bodyLineMm;
+  const gapH = bodyLineH * 0.35;
   const innerW = wrapW - padX * 2;
-  const label = sachbuchLayoutBoxLabel(block.kind);
-  const head =
-    block.title.trim() && block.title.trim() !== label
-      ? `${label}: ${block.title.trim()}`
-      : block.title.trim() || label;
+  const head = sachbuchBoxChromeTitle(block.kind, block.title);
 
   clearPdfCharSpacing(pdf);
   setNunito(pdf, "bold", titlePt);
   const titleLines = pdf.splitTextToSize(head, innerW) as string[];
   setNunito(pdf, "normal", bodyPt);
-  const paras = block.body
-    .split(/\n\s*\n/)
-    .map((p) => p.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
-  const wrappedParas = paras.map(
-    (p) => pdf.splitTextToSize(p, innerW) as string[],
-  );
+  // Body already deduped in parseSachbuchLayoutBlocks.
+  // Blank-line paragraphs; within a chunk, bullet/number lines stay separate.
+  const paras = expandSachbuchBoxParas(block.body);
 
-  let cardH = padY + titleLines.length * (titlePt * 1.35 * (25.4 / 72)) + 1.5;
-  for (let i = 0; i < wrappedParas.length; i++) {
-    cardH += wrappedParas[i]!.length * lineH;
-    if (i < wrappedParas.length - 1) cardH += lineH * 0.35;
-  }
-  cardH += padY;
-
-  const avail = ctx.pageHeight - ctx.marginBottom - ctx.y;
-  if (cardH > avail && ctx.y > ctx.marginTop + 2) {
-    startNewPage(ctx);
-  }
-
-  const cardX = ctx.marginX;
-  const cardY = ctx.y;
-  pdf.setFillColor(244, 244, 245);
-  pdf.setDrawColor(212, 212, 216);
-  pdf.setLineWidth(0.3);
-  pdf.roundedRect(cardX, cardY, ctx.contentWidth, cardH, 2.2, 2.2, "FD");
-
-  let cy = cardY + padY + titlePt * 0.35;
-  setNunito(pdf, "bold", titlePt);
-  pdf.setTextColor(24, 24, 27);
+  const queue: SachbuchBoxLine[] = [];
   for (const line of titleLines) {
-    pdf.text(line, cardX + padX, cy);
-    cy += titlePt * 1.35 * (25.4 / 72);
+    queue.push({ text: line, kind: "title", lineH: titleLineH });
   }
-  cy += 1.2;
-  setNunito(pdf, "normal", bodyPt);
-  for (let i = 0; i < wrappedParas.length; i++) {
-    for (const line of wrappedParas[i]!) {
-      const room = ctx.pageHeight - ctx.marginBottom - cy;
-      if (room < lineH && cy > ctx.marginTop + 4) {
-        // Box split across pages: continue without redrawing border.
-        startNewPage(ctx);
-        cy = ctx.marginTop;
-      }
-      pdf.text(line, cardX + padX, cy);
-      cy += lineH;
+  // Title → body: ~½ body line so chrome doesn’t sit on the first sentence.
+  const titleBodyGap = Math.max(bodyLineH * 0.55, 3.2);
+  if (titleLines.length > 0 && paras.length > 0) {
+    queue.push({ text: "", kind: "gap", lineH: titleBodyGap });
+  }
+  const bulletIndent = 3.2;
+  for (let i = 0; i < paras.length; i++) {
+    const para = paras[i]!;
+    const isBullet = /^(?:[•\-–—]|\d+[.)])\s+/.test(para);
+    const wrapWInner = isBullet ? innerW - bulletIndent : innerW;
+    const wrapped = pdf.splitTextToSize(para, wrapWInner) as string[];
+    for (const line of wrapped) {
+      queue.push({
+        text: line,
+        kind: isBullet ? "bullet" : "body",
+        lineH: bodyLineH,
+      });
     }
-    if (i < wrappedParas.length - 1) cy += lineH * 0.35;
+    if (i < paras.length - 1) {
+      queue.push({
+        text: "",
+        kind: "gap",
+        lineH: isBullet ? gapH * 0.7 : gapH,
+      });
+    }
   }
-  ctx.y = Math.max(cardY + cardH + 2, cy + 1);
+
+  const pageBottom = () => ctx.pageHeight - ctx.marginBottom;
+  const minSegment = padY * 2 + bodyLineH + titleLineH;
+
+  const continuationHeader = (): SachbuchBoxLine[] => {
+    const lines = pdf.splitTextToSize(`${head} (Forts.)`, innerW) as string[];
+    const out: SachbuchBoxLine[] = lines.map((text) => ({
+      text,
+      kind: "title" as const,
+      lineH: titleLineH,
+    }));
+    out.push({ text: "", kind: "gap", lineH: Math.max(bodyLineH * 0.45, 2.6) });
+    return out;
+  };
+
+  let idx = 0;
+  let isContinuation = false;
+  while (idx < queue.length) {
+    if (pageBottom() - ctx.y < minSegment && ctx.y > ctx.marginTop + 1) {
+      startNewPage(ctx);
+    }
+
+    const header = isContinuation ? continuationHeader() : [];
+    const headerH = heightOfBoxLines(header);
+    let availForBody = pageBottom() - ctx.y - padY * 2 - headerH;
+    if (availForBody < bodyLineH && ctx.y > ctx.marginTop + 1) {
+      startNewPage(ctx);
+      availForBody = pageBottom() - ctx.y - padY * 2 - headerH;
+    }
+
+    const slice: SachbuchBoxLine[] = [...header];
+    let bodyUsed = 0;
+    while (idx < queue.length) {
+      const next = queue[idx]!;
+      if (bodyUsed + next.lineH > availForBody && slice.length > header.length) {
+        break;
+      }
+      if (bodyUsed + next.lineH > availForBody && slice.length === header.length) {
+        // Force at least one body line to avoid stalling.
+        slice.push(next);
+        idx += 1;
+        break;
+      }
+      slice.push(next);
+      bodyUsed += next.lineH;
+      idx += 1;
+    }
+
+    const cardX = ctx.marginX;
+    const cardY = ctx.y;
+    const rawH = padY * 2 + heightOfBoxLines(slice);
+    // Never paint past the printable bottom (safety clamp).
+    const segmentH = Math.min(rawH, Math.max(minSegment, pageBottom() - cardY));
+
+    pdf.setFillColor(244, 244, 245);
+    pdf.setDrawColor(212, 212, 216);
+    pdf.setLineWidth(0.3);
+    pdf.roundedRect(cardX, cardY, ctx.contentWidth, segmentH, 2.2, 2.2, "FD");
+
+    let cy = cardY + padY;
+    pdf.setTextColor(24, 24, 27);
+    for (const item of slice) {
+      if (item.kind === "gap") {
+        cy += item.lineH;
+        continue;
+      }
+      setNunito(
+        pdf,
+        item.kind === "title" ? "bold" : "normal",
+        item.kind === "title" ? titlePt : bodyPt,
+      );
+      const x =
+        cardX + padX + (item.kind === "bullet" ? bulletIndent : 0);
+      pdf.text(
+        item.text,
+        x,
+        cy + (item.kind === "title" ? titlePt * 0.2 : 0),
+      );
+      cy += item.lineH;
+    }
+
+    ctx.y = cardY + segmentH;
+    if (idx < queue.length) {
+      startNewPage(ctx);
+      isContinuation = true;
+    }
+  }
 }
 
 /** Sachbuch Herstellung body: Zwischenüberschriften + Kästen + Prosa. */
@@ -1252,24 +1396,28 @@ function writeSachbuchLayoutBody(
   const pdf = ctx.pdf;
   const blocks = parseSachbuchLayoutBlocks(body);
   const subPt = Math.min(scale.headingPt, scale.bodyPt + 1.5);
+  /** Breathing room after boxes / before next prose (matches UI preview gap). */
+  const afterBoxGap = scale.bodyLineMm * 1.05;
+  const afterHeadingGap = scale.bodyLineMm * 0.45;
 
   for (const block of blocks) {
     if (block.type === "heading") {
-      ctx.y += scale.bodyLineMm * 0.6;
+      ctx.y += scale.bodyLineMm * 0.75;
       setNunito(pdf, "bold", subPt);
       applyPdfCharSpacing(pdf, charScale);
       pdf.setTextColor(9, 9, 11);
       const lines = pdf.splitTextToSize(block.text, wrapW) as string[];
       writeLines(ctx, lines, scale.headingLineMm * 0.9);
-      ctx.y += scale.bodyLineMm * 0.35;
+      ctx.y += afterHeadingGap;
       setNunito(pdf, "normal", scale.bodyPt);
       pdf.setTextColor(24, 24, 27);
       continue;
     }
 
     if (block.type === "box") {
-      ctx.y += scale.bodyLineMm * 0.35;
+      ctx.y += scale.bodyLineMm * 0.55;
       writeSachbuchLayoutBox(ctx, block, scale, wrapW);
+      ctx.y += afterBoxGap;
       applyPdfCharSpacing(pdf, charScale);
       setNunito(pdf, "normal", scale.bodyPt);
       pdf.setTextColor(24, 24, 27);

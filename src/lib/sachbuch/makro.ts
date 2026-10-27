@@ -1,9 +1,12 @@
 /**
- * Phase 3 — Makro (Journey oder Erklärung) + Kapitel from stages.
+ * Phase 3 — Makro: flexible Buchteile + Kapitel (idea-fit), legacy 5-stage fallback.
  */
 
 import { generateText } from "@/lib/ai/provider";
-import { SACHBUCH_MODEL_ARCHITECT } from "@/lib/sachbuch/agent-defaults";
+import {
+  SACHBUCH_MODEL_ARCHITECT,
+  defaultSachbuchAgents,
+} from "@/lib/sachbuch/agent-defaults";
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import { emptySachbuchKapitel } from "@/lib/sachbuch/parse";
 import { resolveSachbuchAgentModel } from "@/lib/sachbuch/resolve-agent";
@@ -13,46 +16,126 @@ import {
 } from "@/lib/sachbuch/repository";
 import type {
   SachbuchKontext,
-  SachbuchMakroStage,
-  SachbuchMakroStageKey,
+  SachbuchMakroChapterPlan,
+  SachbuchMakroPart,
   SachbuchMakroTyp,
 } from "@/lib/sachbuch/types";
 import {
-  SACHBUCH_MAKRO_STAGE_LABELS,
   SACHBUCH_MAKRO_TYP_LABELS,
   emptyMakroStages,
-  makroStageKeysForTyp,
+  flattenMakroChapterPlans,
 } from "@/lib/sachbuch/types";
 
-function stagesJsonExample(typ: SachbuchMakroTyp): string {
-  const keys = makroStageKeysForTyp(typ);
-  const lines = keys
-    .map(
-      (key) =>
-        `    { "key": "${key}", "title": "...", "promise": "...", "notes": "..." }`,
-    )
-    .join(",\n");
-  return `{\n  "stages": [\n${lines}\n  ]\n}`;
-}
+const PARTS_JSON_EXAMPLE = `{
+  "parts": [
+    {
+      "id": "teil_a",
+      "title": "Teil A — …",
+      "promise": "Was dieser Teil für den Leser leistet",
+      "chapters": [
+        {
+          "id": "ch_01",
+          "title": "Kapitel-Titel",
+          "promise": "Leserversprechen dieses Kapitels",
+          "notes": "Argumentkerne, Cases, Artefakte"
+        }
+      ]
+    }
+  ]
+}`;
 
 function makroPromptBrief(typ: SachbuchMakroTyp): string {
+  const flexRules = `Strukturiere das Buch FLEXIBEL nach der Idee — nicht starr in genau 5 Kapitel.
+Regeln:
+- 2–5 Buchteile (parts), jeder Teil mit 1–4 Kapiteln.
+- Gesamt typisch 6–12 Kapitel (weniger bei sehr schlankem Konzept, mehr nur wenn die Idee es trägt).
+- Teil-Titel und Kapitel-Anzahl an UVP/Briefing anpassen (z. B. Qualitäts-Pyramide → 3 Teile; kompakte Mitte wenn Briefing „~50 %“ / Motor-Verdichtung verlangt).
+- ids: kurze ascii-slugs (teil_a, ch_01). Keine Artikelnummern.
+- Jedes Kapitel braucht title + promise; notes für Argumentkerne/Cases.
+- Keine 10-Kapitel-Standardgliederung aus dem Lehrbuch — Idee und Leserversprechen entscheiden.`;
+
   if (typ === "erklaerung") {
-    return `Erzeuge ein Erklär-Makro (Thema verständlich machen — kein Transformations-/Umsetzungs-Buch).
-Stages: Kontext → Kernidee → Vertiefung → Beispiele → Einordnung.
-Kein Framework/Implementierung, keine 10-Kapitel-Standardgliederung.`;
+    return `${flexRules}
+Erzählhint (Erklärung): Verständnisbogen — Teile können Kontext/Kern/Vertiefung/Beispiele/Einordnung abbilden, müssen aber nicht 1:1 fünf Stages sein.`;
   }
   if (typ === "erzaehlung") {
-    return `Erzeuge ein Erzähl-/Fall-Makro (narratives Sachbuch — eine Geschichte/Fall trägt die Erkenntnis).
-Stages: Ausgangssituation → Konflikt/Frage → Verlauf → Wendepunkt/Erkenntnis → Bedeutung für den Leser.
-Kein Methoden-Framework, keine reine Definitionskette, keine 10-Kapitel-Standardgliederung.`;
+    return `${flexRules}
+Erzählhint (Erzählung): Dramaturgiebogen — Teile können Ausgang/Konflikt/Verlauf/Erkenntnis/Bedeutung tragen, Kapitelzahl folgt der Fallgeschichte.`;
   }
-  return `Erzeuge die Reader-Transformation-Journey.
-Stages: Status Quo → Paradigmenwechsel → Framework → Implementierung → Zukunft.
-Keine 10-Kapitel-Standardgliederung.`;
+  return `${flexRules}
+Erzählhint (Journey): Transformation — Teile können Status Quo → These → Methode → Umbau → Ausblick spiegeln; Kapitelzahl und Gewichtung folgen der Idee (z. B. Fundament / Motor / Kundenergebnis).`;
+}
+
+function slugId(raw: string, fallback: string): string {
+  const s = raw
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 48);
+  return s || fallback;
+}
+
+function normalizeParts(rawParts: unknown): SachbuchMakroPart[] {
+  if (!Array.isArray(rawParts)) return [];
+  const parts: SachbuchMakroPart[] = [];
+  const usedPartIds = new Set<string>();
+  const usedChapterKeys = new Set<string>();
+
+  rawParts.forEach((raw, pi) => {
+    if (!raw || typeof raw !== "object") return;
+    const row = raw as Record<string, unknown>;
+    const title = typeof row.title === "string" ? row.title.trim() : "";
+    if (!title) return;
+    let partId = slugId(
+      typeof row.id === "string" ? row.id : `teil_${pi + 1}`,
+      `teil_${pi + 1}`,
+    );
+    while (usedPartIds.has(partId)) partId = `${partId}_${pi + 1}`;
+    usedPartIds.add(partId);
+
+    const chaptersRaw = Array.isArray(row.chapters) ? row.chapters : [];
+    const chapters: SachbuchMakroChapterPlan[] = [];
+    chaptersRaw.forEach((cRaw, ci) => {
+      if (!cRaw || typeof cRaw !== "object") return;
+      const c = cRaw as Record<string, unknown>;
+      const cTitle = typeof c.title === "string" ? c.title.trim() : "";
+      if (!cTitle) return;
+      let chId = slugId(
+        typeof c.id === "string" ? c.id : `ch_${ci + 1}`,
+        `ch_${String(ci + 1).padStart(2, "0")}`,
+      );
+      let link = `${partId}__${chId}`;
+      let n = 2;
+      while (usedChapterKeys.has(link)) {
+        chId = `${chId}_${n}`;
+        link = `${partId}__${chId}`;
+        n += 1;
+      }
+      usedChapterKeys.add(link);
+      chapters.push({
+        id: chId,
+        title: cTitle,
+        promise: typeof c.promise === "string" ? c.promise.trim() : "",
+        notes: typeof c.notes === "string" ? c.notes.trim() : "",
+      });
+    });
+    if (chapters.length === 0) return;
+    parts.push({
+      id: partId,
+      title,
+      promise: typeof row.promise === "string" ? row.promise.trim() : "",
+      chapters: chapters.slice(0, 12),
+    });
+  });
+
+  return parts.slice(0, 8);
 }
 
 /**
- * Generate / refresh makro stages via Architect for the book's makro.typ.
+ * Generate / refresh makro as flexible parts+chapters via Architect.
  */
 export async function generateSachbuchMakro(
   sachbuchId: string,
@@ -65,17 +148,19 @@ export async function generateSachbuchMakro(
   }
 
   const typ = book.makro.typ ?? "journey";
-  const keys = makroStageKeysForTyp(typ);
-  // Phase 3 always Gemini 4 Argon (prompt from book agent slot).
+  // Prefer current default Architect prompt so stored „5-Stage“-Agents nicht gegen flexibles Makro arbeiten.
   const slot = {
     ...book.agents.architect,
     modelSlug: SACHBUCH_MODEL_ARCHITECT,
+    systemPrompt: defaultSachbuchAgents().architect.systemPrompt,
   };
   const model = await resolveSachbuchAgentModel(slot);
   const evidenzSummary = book.evidenz.claims
     .slice(0, 12)
     .map((c) => `- ${c.claim}: ${c.evidence}`)
     .join("\n");
+
+  const briefingClip = book.idee.briefing.trim().slice(0, 48_000);
 
   const raw = await generateText({
     model,
@@ -84,63 +169,51 @@ export async function generateSachbuchMakro(
 Zielgruppe: ${book.zielgruppe.trim() || "—"}
 Makro-Typ: ${typ} (${SACHBUCH_MAKRO_TYP_LABELS[typ]})
 UVP: ${book.idee.unpopularOpinion}
-Briefing: ${book.idee.briefing}
+Briefing:
+${briefingClip || "—"}
 
 Evidenz (Auszug):
 ${evidenzSummary || "—"}
 
 ${makroPromptBrief(typ)}
 
-Antwort als JSON:
-${stagesJsonExample(typ)}
-Genau diese ${keys.length} Keys. Kein Markdown-Fence.`,
+Antwort als JSON (nur parts — keine festen 5 Keys):
+${PARTS_JSON_EXAMPLE}
+Kein Markdown-Fence.`,
     preferJson: true,
-    maxTokens: 6000,
+    maxTokens: 8_000,
     timeoutMs: 300_000,
   });
 
-  let stages: SachbuchMakroStage[] = emptyMakroStages(typ);
+  let parts: SachbuchMakroPart[] = [];
   try {
     const cleaned = raw.replace(/^```json?\s*|\s*```$/g, "").trim();
-    const parsed = JSON.parse(cleaned) as {
-      stages?: Array<{
-        key?: string;
-        title?: string;
-        promise?: string;
-        notes?: string;
-      }>;
-    };
-    const byKey = new Map<string, SachbuchMakroStage>();
-    const keySet = new Set<string>(keys);
-    for (const s of parsed.stages ?? []) {
-      const key = s.key as SachbuchMakroStageKey;
-      if (!keySet.has(key)) continue;
-      byKey.set(key, {
-        key,
-        title: String(s.title ?? "").trim() || SACHBUCH_MAKRO_STAGE_LABELS[key],
-        promise: String(s.promise ?? "").trim(),
-        notes: String(s.notes ?? "").trim(),
-      });
-    }
-    stages = keys.map(
-      (key) =>
-        byKey.get(key) ?? {
-          key,
-          title: SACHBUCH_MAKRO_STAGE_LABELS[key],
-          promise: "",
-          notes: "",
-        },
-    );
+    const parsed = JSON.parse(cleaned) as { parts?: unknown };
+    parts = normalizeParts(parsed.parts);
   } catch {
     throw new Error(
       "Makro-JSON konnte nicht gelesen werden. Bitte erneut versuchen.",
     );
   }
 
+  if (parts.length === 0) {
+    throw new Error(
+      "Makro ohne Buchteile — bitte erneut erzeugen (Idee prüfen).",
+    );
+  }
+
+  const chapterCount = parts.reduce((n, p) => n + p.chapters.length, 0);
+  if (chapterCount < 3) {
+    throw new Error(
+      `Makro zu dünn (${chapterCount} Kapitel). Bitte erneut erzeugen.`,
+    );
+  }
+
   return patchSachbuchBook(sachbuchId, {
     makro: {
       typ,
-      stages,
+      stages: emptyMakroStages(typ),
+      parts,
       status: "ready",
       kapitelGenerated: book.makro.kapitelGenerated,
       bookTypeId: book.makro.bookTypeId ?? "",
@@ -149,8 +222,8 @@ Genau diese ${keys.length} Keys. Kein Markdown-Fence.`,
 }
 
 /**
- * Create/replace kapitel list from makro stages (1:1 default).
- * Preserves existing kapitel that match a stage key when possible.
+ * Create/replace kapitel list from makro parts (or legacy stages).
+ * Preserves existing kapitel that match a link key when possible.
  */
 export async function applyMakroToKapitel(
   sachbuchId: string,
@@ -162,26 +235,39 @@ export async function applyMakroToKapitel(
     throw new Error("Zuerst Makro erzeugen.");
   }
 
-  const existingByStage = new Map(
+  const plans = flattenMakroChapterPlans(book.makro);
+  if (plans.length === 0) {
+    throw new Error("Makro hat keine Kapitelpläne.");
+  }
+
+  const existingByKey = new Map(
     book.kapitel
       .filter((k) => k.makroStageKey)
       .map((k) => [k.makroStageKey!, k]),
   );
 
-  const kapitel = book.makro.stages.map((stage, index) => {
-    const prev = existingByStage.get(stage.key);
+  const kapitel = plans.map((plan, index) => {
+    const goals = [
+      plan.partTitle ? `Buchteil: ${plan.partTitle}` : "",
+      plan.promise,
+      plan.notes,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const prev = existingByKey.get(plan.key);
     if (prev) {
       return {
         ...prev,
-        title: stage.title || prev.title,
-        goals: [stage.promise, stage.notes].filter(Boolean).join("\n\n"),
+        title: plan.title || prev.title,
+        goals: goals || prev.goals,
+        makroStageKey: plan.key,
         updatedAt: new Date().toISOString(),
       };
     }
     return emptySachbuchKapitel({
-      title: stage.title || `Kapitel ${index + 1}`,
-      goals: [stage.promise, stage.notes].filter(Boolean).join("\n\n"),
-      makroStageKey: stage.key,
+      title: plan.title || `Kapitel ${index + 1}`,
+      goals,
+      makroStageKey: plan.key,
     });
   });
 

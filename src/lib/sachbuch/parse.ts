@@ -30,6 +30,8 @@ import type {
   SachbuchKontext,
   SachbuchManuscriptBookReview,
   SachbuchMakro,
+  SachbuchMakroChapterPlan,
+  SachbuchMakroPart,
   SachbuchMakroStage,
   SachbuchMakroStageKey,
   SachbuchMakroTyp,
@@ -489,6 +491,7 @@ export function emptySachbuchMakro(
   return {
     typ,
     stages: emptyMakroStages(typ),
+    parts: [],
     status: "empty",
     kapitelGenerated: false,
     bookTypeId,
@@ -518,6 +521,52 @@ function parseStage(raw: unknown): SachbuchMakroStage | null {
   };
 }
 
+function slugMakroId(raw: string, fallback: string): string {
+  const s = raw
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 48);
+  return s || fallback;
+}
+
+function parseChapterPlan(
+  raw: unknown,
+  index: number,
+): SachbuchMakroChapterPlan | null {
+  const row = asRecord(raw);
+  const title = typeof row.title === "string" ? row.title.trim() : "";
+  if (!title) return null;
+  const idRaw = typeof row.id === "string" ? row.id.trim() : "";
+  return {
+    id: slugMakroId(idRaw || `ch_${index + 1}`, `ch_${index + 1}`),
+    title,
+    promise: typeof row.promise === "string" ? row.promise : "",
+    notes: typeof row.notes === "string" ? row.notes : "",
+  };
+}
+
+function parseMakroPart(raw: unknown, index: number): SachbuchMakroPart | null {
+  const row = asRecord(raw);
+  const title = typeof row.title === "string" ? row.title.trim() : "";
+  if (!title) return null;
+  const idRaw = typeof row.id === "string" ? row.id.trim() : "";
+  const chaptersRaw = Array.isArray(row.chapters) ? row.chapters : [];
+  const chapters = chaptersRaw
+    .map((c, i) => parseChapterPlan(c, i))
+    .filter((c): c is SachbuchMakroChapterPlan => Boolean(c));
+  if (chapters.length === 0) return null;
+  return {
+    id: slugMakroId(idRaw || `teil_${index + 1}`, `teil_${index + 1}`),
+    title,
+    promise: typeof row.promise === "string" ? row.promise : "",
+    chapters,
+  };
+}
+
 export function parseSachbuchMakro(raw: unknown): SachbuchMakro {
   const row = asRecord(raw);
   const typ = parseMakroTyp(row.typ);
@@ -527,6 +576,10 @@ export function parseSachbuchMakro(raw: unknown): SachbuchMakro {
     .map(parseStage)
     .filter((s): s is SachbuchMakroStage => Boolean(s));
   const byKey = new Map(parsed.map((s) => [s.key, s]));
+  const partsRaw = Array.isArray(row.parts) ? row.parts : [];
+  const parts = partsRaw
+    .map((p, i) => parseMakroPart(p, i))
+    .filter((p): p is SachbuchMakroPart => Boolean(p));
   return {
     typ,
     stages: keys.map(
@@ -538,6 +591,7 @@ export function parseSachbuchMakro(raw: unknown): SachbuchMakro {
           notes: "",
         },
     ),
+    parts,
     status: parsePhaseStatus(row.status),
     kapitelGenerated: Boolean(row.kapitelGenerated),
     bookTypeId:
@@ -634,9 +688,8 @@ export function parseSachbuchKapitel(raw: unknown): SachbuchKapitel | null {
     typeof row.id === "string" && row.id.trim() ? row.id.trim() : null;
   if (!id) return null;
   const makroStageKey =
-    typeof row.makroStageKey === "string" &&
-    STAGE_KEY_SET.has(row.makroStageKey)
-      ? (row.makroStageKey as SachbuchMakroStageKey)
+    typeof row.makroStageKey === "string" && row.makroStageKey.trim()
+      ? row.makroStageKey.trim().slice(0, 120)
       : null;
   const abschnitteRaw = Array.isArray(row.abschnitte) ? row.abschnitte : [];
   return {
@@ -658,6 +711,17 @@ export function parseSachbuchKapitel(raw: unknown): SachbuchKapitel | null {
     finalText: typeof row.finalText === "string" ? row.finalText : "",
     groundingSources: parseSources(row.groundingSources),
     manuscript: parseKapitelManuscript(row.manuscript),
+    infografikDataUrl: (() => {
+      const u =
+        typeof row.infografikDataUrl === "string"
+          ? row.infografikDataUrl.trim()
+          : "";
+      return u.startsWith("data:image/") ? u : null;
+    })(),
+    infografikTitle:
+      typeof row.infografikTitle === "string" ? row.infografikTitle.trim() : "",
+    infografikPrompt:
+      typeof row.infografikPrompt === "string" ? row.infografikPrompt : "",
     status: parseKapitelStatus(row.status),
     generationJobId:
       typeof row.generationJobId === "string" && row.generationJobId
@@ -700,6 +764,9 @@ export function emptySachbuchKapitel(
     finalText: partial?.finalText ?? "",
     groundingSources: partial?.groundingSources ?? [],
     manuscript: partial?.manuscript ?? emptySachbuchKapitelManuscript(),
+    infografikDataUrl: partial?.infografikDataUrl ?? null,
+    infografikTitle: partial?.infografikTitle ?? "",
+    infografikPrompt: partial?.infografikPrompt ?? "",
     status: partial?.status ?? "draft",
     generationJobId: partial?.generationJobId ?? null,
     generationProgress: partial?.generationProgress ?? null,
@@ -785,6 +852,11 @@ export function sachbuchKapitelExportBody(kapitel: SachbuchKapitel): string {
 /** True when Haiku Herstellung has produced layout text for a chapter. */
 export function sachbuchKapitelHasHerstellung(kapitel: SachbuchKapitel): boolean {
   return kapitel.manuscript.herstellungText.trim().length >= 200;
+}
+
+/** True when a chapter has a usable Infografik for export. */
+export function sachbuchKapitelHasInfografik(kapitel: SachbuchKapitel): boolean {
+  return Boolean(kapitel.infografikDataUrl?.trim().startsWith("data:image/"));
 }
 
 /** Whitespace-separated word count (German prose). */

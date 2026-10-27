@@ -11,6 +11,10 @@ import {
   SACHBUCH_MODEL_IDEE_CRITIC,
   SACHBUCH_MODEL_IDEE_DRAFTER,
 } from "@/lib/sachbuch/agent-defaults";
+import { SACHBUCH_REFINE_LOG_CONTENT_MAX_CHARS } from "@/lib/validations/sachbuch";
+
+/** Cap briefing size sent to refine models (full text stays in DB). */
+const REFINE_BRIEFING_CONTEXT_CHARS = 48_000;
 import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import {
   emptySachbuchEvidenz,
@@ -159,13 +163,41 @@ function parseCritique(
   }
 }
 
+function clipBriefingForRefine(briefing: string): string {
+  const t = briefing.trim();
+  if (t.length <= REFINE_BRIEFING_CONTEXT_CHARS) return t;
+  return `${t.slice(0, REFINE_BRIEFING_CONTEXT_CHARS)}\n\n[… Briefing für Verfeinerung gekürzt — voller Text bleibt im Rohkonzept …]`;
+}
+
+function dossierForRefine(d: {
+  unpopularOpinion: string;
+  briefing: string;
+  caseStudies: string[];
+  openRisks: string[];
+}): {
+  unpopularOpinion: string;
+  briefing: string;
+  caseStudies: string[];
+  openRisks: string[];
+} {
+  return {
+    ...d,
+    unpopularOpinion: d.unpopularOpinion.slice(0, 8_000),
+    briefing: clipBriefingForRefine(d.briefing),
+    caseStudies: d.caseStudies.slice(0, 20),
+    openRisks: d.openRisks.slice(0, 20),
+  };
+}
+
 function dossierBlock(d: {
   unpopularOpinion: string;
   briefing: string;
   caseStudies: string[];
   openRisks: string[];
 }): string {
-  return JSON.stringify(d, null, 2);
+  const raw = JSON.stringify(dossierForRefine(d), null, 2);
+  if (raw.length <= SACHBUCH_REFINE_LOG_CONTENT_MAX_CHARS) return raw;
+  return `${raw.slice(0, SACHBUCH_REFINE_LOG_CONTENT_MAX_CHARS - 40)}\n…[Log gekürzt]`;
 }
 
 /**
