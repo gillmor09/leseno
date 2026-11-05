@@ -4,7 +4,8 @@
  * Phase 8 — Herstellung: Haiku setzt Unterkapitel + Layout-Kästen vor dem Export.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { SachbuchHerstellungPreview } from "@/components/features/admin/sachbuch-herstellung-preview";
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
@@ -13,14 +14,21 @@ import {
   requestHerstellenAllSachbuchKapitel,
   requestHerstellenSachbuchKapitel,
 } from "@/lib/sachbuch/herstellen-client";
+import { sachbuchFiguresFromList } from "@/lib/sachbuch/figures";
 import {
   countSachbuchWords,
+  mergeSachbuchProseFromPrevious,
   sachbuchKapitelBodyText,
   sachbuchKapitelHasHerstellung,
-  sachbuchKapitelHasInfografik,
+  sachbuchKapitelInfografikSlotCount,
+  sachbuchKapitelInfografiken,
 } from "@/lib/sachbuch/parse";
+import {
+  isSachbuchDerivedEdition,
+  isSachbuchTeaser,
+} from "@/lib/sachbuch/guide";
 import { stripSachbuchLayoutMarkup } from "@/lib/sachbuch/herstellung-markup";
-import type { SachbuchKontext } from "@/lib/sachbuch/types";
+import type { SachbuchKapitel, SachbuchKontext } from "@/lib/sachbuch/types";
 import {
   SACHBUCH_WAIT_HERSTELLUNG,
   SACHBUCH_WAIT_HERSTELLUNG_ALL,
@@ -44,10 +52,16 @@ export function SachbuchHerstellungPanel({
 }) {
   const [selectedId, setSelectedId] = useState(book.kapitel[0]?.id ?? "");
   const [pending, setPending] = useState(false);
+  const [bodyLoading, setBodyLoading] = useState(false);
   const [waitKind, setWaitKind] = useState<WaitKind>(null);
   const [waitProgress, setWaitProgress] = useState<string | null>(null);
   const [showMarkers, setShowMarkers] = useState(false);
 
+  const bookRef = useRef(book);
+  bookRef.current = book;
+
+  const shortEdition = isSachbuchDerivedEdition(book);
+  const teaser = isSachbuchTeaser(book);
   const selected =
     book.kapitel.find((k) => k.id === selectedId) ?? book.kapitel[0] ?? null;
   const hasH = selected ? sachbuchKapitelHasHerstellung(selected) : false;
@@ -59,10 +73,87 @@ export function SachbuchHerstellungPanel({
   const words = countSachbuchWords(
     hasH ? stripSachbuchLayoutMarkup(preview) : preview,
   );
+  const selectedFigures =
+    !shortEdition && selected
+      ? sachbuchFiguresFromList(sachbuchKapitelInfografiken(selected))
+      : [];
   const modelLabel = sachbuchModelLabel(SACHBUCH_MODEL_HERSTELLUNG);
   const review = book.idee.herstellungReview;
   const doneCount = book.kapitel.filter(sachbuchKapitelHasHerstellung).length;
-  const infoCount = book.kapitel.filter(sachbuchKapitelHasInfografik).length;
+  const infoCount = shortEdition
+    ? 0
+    : book.kapitel.reduce(
+        (n, k) => n + sachbuchKapitelInfografikSlotCount(k),
+        0,
+      );
+
+  /** Slim hop payloads strip other chapters — keep prior prose in workspace state. */
+  function applyBookUpdate(next: SachbuchKontext) {
+    onBookUpdate(mergeSachbuchProseFromPrevious(book, next));
+  }
+
+  /**
+   * Admin page strips herstellungText / figure pixels — reload the selected
+   * chapter so Vorschau matches export.
+   */
+  useEffect(() => {
+    if (!selectedId) return;
+    const kap = bookRef.current.kapitel.find((k) => k.id === selectedId);
+    if (!kap) return;
+    const hasText =
+      kap.manuscript.herstellungText.trim().length >= 200 ||
+      sachbuchKapitelBodyText(kap).trim().length >= 200;
+    const needsPixels =
+      !isSachbuchDerivedEdition(bookRef.current) &&
+      sachbuchKapitelInfografikSlotCount(kap) > 0 &&
+      sachbuchKapitelInfografiken(kap).length === 0;
+    if (hasText && !needsPixels) {
+      setBodyLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setBodyLoading(true);
+    const bookId = bookRef.current.id;
+    const kapitelId = selectedId;
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin/sachbuch/kapitel-body", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sachbuchId: bookId, kapitelId }),
+        });
+        const json = (await res.json()) as {
+          success?: boolean;
+          kapitel?: SachbuchKapitel;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok || !json.success || !json.kapitel) {
+          toast.error(json.error ?? "Kapiteltext laden fehlgeschlagen.");
+          return;
+        }
+        const loaded = json.kapitel;
+        const current = bookRef.current;
+        onBookUpdate({
+          ...current,
+          kapitel: current.kapitel.map((k) =>
+            k.id === kapitelId ? loaded : k,
+          ),
+        });
+      } catch {
+        if (!cancelled) {
+          toast.error("Kapiteltext laden fehlgeschlagen.");
+        }
+      } finally {
+        if (!cancelled) setBodyLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, onBookUpdate]);
 
   async function runInfografiken(force: boolean) {
     if (!canSave || pending) return;
@@ -84,7 +175,7 @@ export function SachbuchHerstellungPanel({
         toast.error(json.error ?? "Infografiken fehlgeschlagen.");
         return;
       }
-      onBookUpdate(json.book);
+      applyBookUpdate(json.book);
       toast.success("Infografiken gespeichert.");
     } catch (error) {
       toast.error(
@@ -112,7 +203,7 @@ export function SachbuchHerstellungPanel({
         toast.error(result.error ?? "Herstellung fehlgeschlagen.");
         return;
       }
-      onBookUpdate(result.data.book);
+      applyBookUpdate(result.data.book);
       toast.success("Kapitel hergestellt.");
     } finally {
       setWaitKind(null);
@@ -130,10 +221,10 @@ export function SachbuchHerstellungPanel({
       const result = await requestHerstellenAllSachbuchKapitel({
         book,
         force,
-        onBookUpdate,
+        onBookUpdate: applyBookUpdate,
         onProgress: setWaitProgress,
       });
-      if (result.data?.book) onBookUpdate(result.data.book);
+      if (result.data?.book) applyBookUpdate(result.data.book);
       if (!result.success) {
         toast.error(result.error ?? "Herstellung abgebrochen.");
         return;
@@ -157,9 +248,11 @@ export function SachbuchHerstellungPanel({
           <div>
             <h2 className="text-lg font-extrabold text-zinc-950">Herstellung</h2>
             <p className="mt-1 text-sm font-semibold text-zinc-600">
-              {modelLabel} plant Unterkapitel und Kästen. Die Marker im Text
-              sind die Satz-Anweisung; PDF/ePub und die Vorschau unten setzen sie
-              in echte Zwischenüberschriften und Infoboxen um.
+              {teaser
+                ? `${modelLabel} setzt höchstens einen Merksatz. Teaser ist text-only — Appetit für Newsletter/Broschüre/Web.`
+                : shortEdition
+                  ? `${modelLabel} setzt sparsame Kästen (Merksatz/Infobox). Kompakt ist text-only — keine Infografiken; Vertiefung steht im Hauptband.`
+                  : `${modelLabel} plant Unterkapitel und Kästen. Die Marker im Text sind die Satz-Anweisung; PDF/ePub und die Vorschau unten setzen sie in echte Zwischenüberschriften und Infoboxen um.`}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -179,17 +272,19 @@ export function SachbuchHerstellungPanel({
             >
               Alle neu herstellen
             </button>
-            <button
-              type="button"
-              disabled={!canSave || pending || book.kapitel.length === 0}
-              onClick={() => void runInfografiken(infoCount > 0)}
-              title="Gemini 3 Pro Image — KPI-Cockpit, Kompass, Sprints …"
-              className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
-            >
-              {infoCount > 0
-                ? "Infografiken neu erzeugen"
-                : "Infografiken erzeugen"}
-            </button>
+            {!shortEdition ? (
+              <button
+                type="button"
+                disabled={!canSave || pending || book.kapitel.length === 0}
+                onClick={() => void runInfografiken(infoCount > 0)}
+                title="Gemini 3 Pro Image — Abbildungen laut Manuskript-Captions"
+                className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {infoCount > 0
+                  ? "Infografiken neu erzeugen"
+                  : "Infografiken erzeugen"}
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -244,7 +339,15 @@ export function SachbuchHerstellungPanel({
                   </span>
                   <span className="mt-0.5 block text-xs text-zinc-500">
                     {ready ? "hergestellt" : "offen"}
-                    {sachbuchKapitelHasInfografik(k) ? " · Infografik" : ""}
+                    {!shortEdition
+                      ? (() => {
+                          const n = sachbuchKapitelInfografikSlotCount(k);
+                          if (n === 0) return "";
+                          return n === 1
+                            ? " · Infografik"
+                            : ` · ${n} Infografiken`;
+                        })()
+                      : ""}
                   </span>
                 </button>
               </li>
@@ -284,23 +387,6 @@ export function SachbuchHerstellungPanel({
               </ul>
             ) : null}
 
-            {selected.infografikDataUrl?.startsWith("data:image/") ? (
-              <div>
-                <p className="mb-1.5 text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
-                  Infografik
-                  {selected.infografikTitle
-                    ? ` · ${selected.infografikTitle}`
-                    : ""}
-                </p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={selected.infografikDataUrl}
-                  alt={selected.infografikTitle || "Kapitel-Infografik"}
-                  className="max-h-[40vh] w-auto max-w-full rounded-2xl ring-1 ring-zinc-950/10"
-                />
-              </div>
-            ) : null}
-
             {hasH ? (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -316,7 +402,17 @@ export function SachbuchHerstellungPanel({
                   </button>
                 </div>
                 <div className="max-h-[50vh] overflow-y-auto rounded-2xl bg-white px-4 py-4 ring-1 ring-zinc-950/10">
-                  <SachbuchHerstellungPreview text={preview} />
+                  {bodyLoading && preview.trim().length < 200 ? (
+                    <p className="flex items-center gap-2 text-sm font-semibold text-zinc-500">
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                      Kapiteltext wird geladen…
+                    </p>
+                  ) : (
+                    <SachbuchHerstellungPreview
+                      text={preview}
+                      figures={selectedFigures}
+                    />
+                  )}
                 </div>
                 {showMarkers ? (
                   <div>
@@ -335,7 +431,14 @@ export function SachbuchHerstellungPanel({
                   Vorlage (Lektorat)
                 </p>
                 <div className="max-h-[50vh] overflow-y-auto rounded-2xl bg-zinc-50 px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 ring-1 ring-zinc-950/5">
-                  {preview || "—"}
+                  {bodyLoading && !preview.trim() ? (
+                    <span className="inline-flex items-center gap-2 font-semibold text-zinc-500">
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                      Kapiteltext wird geladen…
+                    </span>
+                  ) : (
+                    preview || "—"
+                  )}
                 </div>
               </div>
             )}

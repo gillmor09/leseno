@@ -1,11 +1,14 @@
 "use client";
 
 /**
- * Blocking wait dialog for Sachbuch KI work (elapsed time + soft checklist).
- * Prefer this over spinner-only buttons for any multi-second agent call.
+ * Blocking wait dialog for Sachbuch KI work.
+ * Shows wall-clock Laufzeit (not an ETA) + soft checklist.
+ * When `progressLabel` contains `Kapitel i/n`, the bar uses that fraction
+ * instead of the timer-based soft steps (which otherwise look “almost done”
+ * while a single Argon chapter rewrite can run ~20 min).
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2 } from "lucide-react";
 import { lockBodyScroll } from "@/lib/ui/body-scroll-lock";
@@ -21,12 +24,29 @@ function formatElapsed(totalSec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+/** Prefer real hop progress: `Kapitel 2/6: …` or `Kapitel 2/6 übersprungen`. */
+function parseKapitelProgress(
+  label: string | null | undefined,
+): { current: number; total: number } | null {
+  if (!label) return null;
+  const m = label.match(/Kapitel\s+(\d+)\s*\/\s*(\d+)/i);
+  if (!m) return null;
+  const current = Number(m[1]);
+  const total = Number(m[2]);
+  if (!Number.isFinite(current) || !Number.isFinite(total) || total < 1) {
+    return null;
+  }
+  return { current: Math.max(1, current), total };
+}
+
 export function SachbuchWaitDialog({
   open,
   title,
   steps,
   progressLabel,
   agentInfo,
+  /** Wall-clock start from parent — survives dialog remounts (HMR / re-render). */
+  startedAtMs = null,
   footer = "Bitte Fenster offen lassen — das kann einige Minuten dauern.",
 }: {
   open: boolean;
@@ -34,16 +54,22 @@ export function SachbuchWaitDialog({
   steps: readonly string[];
   progressLabel?: string | null;
   agentInfo?: SachbuchWaitAgentInfo | null;
+  startedAtMs?: number | null;
   footer?: string;
 }) {
+  const localStartedAtRef = useRef<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [softStep, setSoftStep] = useState(0);
   const [wasOpen, setWasOpen] = useState(open);
+
   if (open !== wasOpen) {
     setWasOpen(open);
     if (!open) {
+      localStartedAtRef.current = null;
       setElapsedSec(0);
       setSoftStep(0);
+    } else if (startedAtMs == null) {
+      localStartedAtRef.current = Date.now();
     }
   }
 
@@ -54,9 +80,14 @@ export function SachbuchWaitDialog({
 
   useEffect(() => {
     if (!open) return;
+    if (startedAtMs == null && localStartedAtRef.current == null) {
+      localStartedAtRef.current = Date.now();
+    }
     const tick = window.setInterval(() => {
-      setElapsedSec((n) => n + 1);
+      const start = startedAtMs ?? localStartedAtRef.current ?? Date.now();
+      setElapsedSec(Math.max(0, Math.floor((Date.now() - start) / 1000)));
     }, 1_000);
+    // Soft checklist only when we have no real Kapitel i/n progress.
     const maxSoft = Math.max(0, steps.length - 2);
     const soft = window.setInterval(() => {
       setSoftStep((current) => (current < maxSoft ? current + 1 : current));
@@ -65,17 +96,38 @@ export function SachbuchWaitDialog({
       window.clearInterval(tick);
       window.clearInterval(soft);
     };
-  }, [open, steps.length]);
+  }, [open, steps.length, startedAtMs]);
 
   if (!open) return null;
 
-  const stepIndex = Math.min(softStep, Math.max(0, steps.length - 2));
-  const statusText =
-    progressLabel?.trim() || steps[stepIndex] || "KI arbeitet …";
-  const barPct =
+  const kapitelProg = parseKapitelProgress(progressLabel);
+  const scoringBook = /Verkaufsreife|Buch-Score|Buch-Verkaufsreife/i.test(
+    progressLabel ?? "",
+  );
+  const startingHops = /Starte|ermittelt/i.test(progressLabel ?? "");
+
+  let stepIndex = Math.min(softStep, Math.max(0, steps.length - 2));
+  let barPct =
     steps.length > 0
       ? Math.round(((stepIndex + 1) / steps.length) * 100)
       : 15;
+
+  if (kapitelProg) {
+    // Mid-chapter: show (current-1)/total … current/total, not “almost done”.
+    const frac = (kapitelProg.current - 0.35) / kapitelProg.total;
+    barPct = Math.max(5, Math.min(92, Math.round(frac * 100)));
+    // Checklist: hop step (index 1) while chapters run; last-but-one for score.
+    stepIndex = Math.min(1, Math.max(0, steps.length - 2));
+  } else if (scoringBook && steps.length > 0) {
+    stepIndex = Math.max(0, steps.length - 2);
+    barPct = Math.round(((stepIndex + 1) / steps.length) * 100);
+  } else if (startingHops) {
+    stepIndex = 0;
+    barPct = Math.round((1 / Math.max(1, steps.length)) * 100);
+  }
+
+  const statusText =
+    progressLabel?.trim() || steps[stepIndex] || "KI arbeitet …";
 
   return createPortal(
     <div
@@ -99,6 +151,9 @@ export function SachbuchWaitDialog({
             {title}
           </h2>
           <p className="mt-2 font-mono text-sm font-extrabold tracking-wide text-orange-800">
+            <span className="mr-1.5 font-sans text-[0.7rem] font-bold uppercase tracking-wider text-orange-700/80">
+              Laufzeit
+            </span>
             {formatElapsed(elapsedSec)}
           </p>
           <p

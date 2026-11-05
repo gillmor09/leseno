@@ -1,0 +1,59 @@
+﻿
+--- K5 90-Tage-Durchbruch #1 @63922 ---
+ares Qualitätsmerkmal, das den Verkaufszyklus verkürzt und das Vertrauen anspruchsvoller Geschäftspartner sichert. Der 90-Tage-Durchbruch-Sprint und die Skalierung Der praktische Einstieg in den Regelbetrieb des automatisierten Löschens scheitert in den meisten Organisationen nicht an fehlendem Problembewusstsein, sondern an der lähmenden Ehrfurcht vor der schieren Wucht historisch gewachsener Datenberge. Wer ver
+
+--- K5 90-Tage-Durchbruch #2 @64746 ---
+ße historische Altlasten werden nicht flächendeckend gleichzeitig bekämpft, sondern in einem zeitlich streng begrenzten 90-Tage-Durchbruch-Sprint entlang einer einzigen, besonders schmerzhaften Pilotstrecke trockengelegt. Im übergeordneten Transformationsfahrplan, dessen 90-Tage-Gesamtbilanz wir im neunten Kapitel ziehen, bildet dieser fokussierte Lösch-Sprint das zentrale Sanierungsmodul für kritische Bestandsdate
+
+--- K5 90-Tage-Gesamtbilanz #1 @64898 ---
+g einer einzigen, besonders schmerzhaften Pilotstrecke trockengelegt. Im übergeordneten Transformationsfahrplan, dessen 90-Tage-Gesamtbilanz wir im neunten Kapitel ziehen, bildet dieser fokussierte Lösch-Sprint das zentrale Sanierungsmodul für kritische Bestandsdaten. Bei der KlarNetz AG wählte das interdisziplinäre Team den Kundensupport mit seinem überlasteten Ticket- und E-Mail-System als erste Pilotstrecke aus. 
+
+--- K5 90-Tage-Sprint #1 @71248 ---
+wertungen irreversibel aggregiert. Da die technische Plattform samt Lösch-Schnittstellen und Audit-Logs nach dem ersten 90-Tage-Sprint bereits fertig bereitsteht, sinkt der Implementierungsaufwand mit jeder neuen Rollout-Welle drastisch. Bei der KlarNetz AG verkürzte sich die Integrationsdauer für neue Unternehmensdomänen nach dem Pilotprojekt im Support von ursprünglich veranschlagten vier Monaten auf jeweils
+
+--- K5 90-Tage-Rollout #1 @75794 ---
+basis aktuell, relevant und frei von toxischen Altlasten ist. Welche langfristige strategische Rendite dieser initiale 90-Tage-Rollout abwirft, zeigt ein Ausblick auf die weitere Entwicklung der KlarNetz AG im zweiten Jahr nach der Transformation. Vor der Einführung automatisierter Lösch-Pipelines war dort ein früherer Wechsel des zentralen Kundensystems noch zu einem organisatorischen und finanziellen Fiasko g
+
+--- K5 90-Tage-Rollout #2 @76461 ---
+0 Euro an ungeplanten Bereinigungs- und Beratungskosten verschlungen. Als jedoch im zweiten Jahr nach dem erfolgreichen 90-Tage-Rollout die planmäßige Ablösung des Altsystems durch eine moderne Cloud-Plattform anstand, zahlte sich die inzwischen fest etablierte 5S-Datenhygiene in harten Zahlen aus. Durch das kontinuierliche Abschmelzen der Schattenkopien und das Eindampfen abgelaufener Vorgänge auf schlanke Tom
+
+--- K5 unternehmensweiten Rollout #1 @69348 ---
+nigung des ersten Datensumpfs nicht als heroische Sonderaktion behandelt, sondern als standardisierte Blaupause für den unternehmensweiten Rollout nutzt. Um diese Fähigkeit über alle Unternehmensbereiche hinweg systematisch zu multiplizieren, nutzt das Framework eine Priorisierungsmatrix aus zwei Achsen: das geschäftliche, finanzielle und regulatorische Schadenspotenzial bei einem Datenabfluss auf der einen Seite versus d
+
+--- K5 Welle des Rollouts #1 @70184 ---
+ing und Vertrieb. Hochkomplexe, tief verwobene Transaktionsdaten im zentralen ERP-System bilden ganz bewusst die letzte Welle des Rollouts. Dort ist die Prozessdichte und die Zahl technischer Abhängigkeiten am höchsten, weshalb die Teams zuerst an überschaubareren Fachdomänen den organisatorischen Reifegrad aufbauen und die zentrale technische Plattform – mit ihrem Event-Bus, den Data Contracts, den Restore-Filtern
+
+--- K5 neuen Rollout-Welle #1 @71335 ---
+n und Audit-Logs nach dem ersten 90-Tage-Sprint bereits fertig bereitsteht, sinkt der Implementierungsaufwand mit jeder neuen Rollout-Welle drastisch. Bei der KlarNetz AG verkürzte sich die Integrationsdauer für neue Unternehmensdomänen nach dem Pilotprojekt im Support von ursprünglich veranschlagten vier Monaten auf jeweils zwei bis drei kompakte, zweiwöchige Entwicklungs-Sprints. Als das Personalteam in der zweit
+
+======== K9 refs to Kap5 / Rollout ========
+
+--- K9 90-Tage-Lösch-Sprint #1 ---
+mittelbare Datenhygiene an den KI-Quellen herstellt, dockt ab Monat 2 der in Kapitel 5 detaillierte 90-Tage-Lösch-Sprint nahtlos als technisches Vertiefungsmodul für die tiefen Backend- und Archivsysteme an, auf dessen bereinigtem Fundament später im zweiten Jahr auch mehrjährige Großvorhaben wie komplette Cloud- und Systemmigrationen rei
+
+--- K9 90-Tage-Lösch-Sprint #2 ---
+r Entstehungsstelle in den Takt der Produktteams ein. Parallel dazu klinkt sich in dieser Phase der 90-Tage-Lösch-Sprint als spezialisierter technischer Arbeitsstrang ein: Während die Produktteams neue KI-Pipelines sauber aufsetzen, sanieren die Backend-Architekten schrittweise die gewachsenen Bestandsdatenbanken über den gesamten Kundenb
+
+--- K9 initialen Rollout #1 ---
+ess aufgesetzt wurde – das Fundament für jene reibungslose Systemmigration im zweiten Jahr nach dem initialen Rollout, die wir in Kapitel 5 beleuchtet haben. Schleuse 1: Poka-Yoke bei der Datenaufnahme Die erste Schleuse setzt direkt an der Quelle an und etabliert eine strikte Poka-Yoke-Sicherung bei der Datenaufnahme. Bevor unstrukt
+
+--- K9 Kapitel 5 #1 ---
+ Geschäftssparten hinweg begleitet haben. Noch während die große Trockenlegung der Support-Archive (Kapitel 5) vorbereitet wurde – Formularstrecken waren bereits verschlankt, die Ticket-Schattendatengräber aber noch nicht trockengelegt –, wollte KlarNetz den Kundenservice mit einem internen RAG-Assistenten beschleunigen. Das Sp
+
+--- K9 Kapitel 5 #2 ---
+ne rollenbasierte Zugriffskontrolle nebeneinander lagen. Genau dieser Beinahe-Vorfall machte die in Kapitel 5 erzählte Trockenlegung der 45.000 Ausweis-Scans und verwandter Altbestände zur Pflicht – nicht zu einer nachträglichen Kosmetik. Die KlarNetz AG stand vor einer klassischen Scheinalternative: Das Innovationsprojekt aus
+
+--- K9 Kapitel 5 #3 ---
+dament für jene reibungslose Systemmigration im zweiten Jahr nach dem initialen Rollout, die wir in Kapitel 5 beleuchtet haben. Schleuse 1: Poka-Yoke bei der Datenaufnahme Die erste Schleuse setzt direkt an der Quelle an und etabliert eine strikte Poka-Yoke-Sicherung bei der Datenaufnahme. Bevor unstrukturierte Dokumente unre
+
+--- K9 Kapitel 5 #4 ---
+der Nutzereingaben das Modell erreichen, trennt ein automatisiertes Dokumenten-Routing nach den aus Kapitel 5 bekannten 5S-Kriterien im Datenlebenszyklus die Spreu vom Weizen. Dieser erste digitale Filter hält veraltete Ticket-Historien, deren Aufbewahrungsfristen abgelaufen sind, redundante Datensätze und interne Personalnotiz
+
+--- K9 Kapitel 5 #5 ---
+ Während Phase 1 die unmittelbare Datenhygiene an den KI-Quellen herstellt, dockt ab Monat 2 der in Kapitel 5 detaillierte 90-Tage-Lösch-Sprint nahtlos als technisches Vertiefungsmodul für die tiefen Backend- und Archivsysteme an, auf dessen bereinigtem Fundament später im zweiten Jahr auch mehrjährige Großvorhaben wie komplett
+
+--- K9 zweiten Jahr #1 ---
+ischer Hintergrundprozess aufgesetzt wurde – das Fundament für jene reibungslose Systemmigration im zweiten Jahr nach dem initialen Rollout, die wir in Kapitel 5 beleuchtet haben. Schleuse 1: Poka-Yoke bei der Datenaufnahme Die erste Schleuse setzt direkt an der Quelle an und etabliert eine strikte Poka-Yoke-Sicherung bei der Da
+
+--- K9 zweiten Jahr #2 ---
+fungsmodul für die tiefen Backend- und Archivsysteme an, auf dessen bereinigtem Fundament später im zweiten Jahr auch mehrjährige Großvorhaben wie komplette Cloud- und Systemmigrationen reibungslos aufsetzen können. Bei der KlarNetz AG vollzieht sich dieser initiale Gesamt-Rollout in drei klar getakteten Monatsphasen zu je 30 Tage

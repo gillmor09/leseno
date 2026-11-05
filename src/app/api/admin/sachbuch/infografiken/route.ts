@@ -1,5 +1,5 @@
 /**
- * Generate curated chapter Infografiken (Napkin AI — `NAPKIN_API_KEY`).
+ * Generate curated chapter Infografiken (Gemini 3 Pro Image).
  */
 
 import { NextResponse } from "next/server";
@@ -49,9 +49,13 @@ export async function POST(request: Request) {
       force: parsed.data.force,
     });
     revalidateSachbuchAdmin(book.id);
+    // Keep figure pixels, strip chapter prose (client merges prior text).
     return NextResponse.json({
       success: true,
-      book: slimSachbuchKontextForTransport(book),
+      book: slimSachbuchKontextForTransport(book, {
+        stripAllProse: true,
+        keepInfografiken: true,
+      }),
     });
   } catch (error) {
     revalidateSachbuchAdmin(parsed.data.sachbuchId);

@@ -28,18 +28,15 @@ export const SACHBUCH_MODEL_IDEE_CRITIC = "gemini-4-argon";
 export const SACHBUCH_IDEE_REFINE_MAX_ROUNDS = 3;
 /** Export Marketing / Titelei (Titel, Klappe, Keywords). */
 export const SACHBUCH_MODEL_MARKETING = "gemini-4-argon";
-/** Export Cover (OpenAI Images) — keep slug here so client UI never imports export-cover. */
-export const SACHBUCH_COVER_MODEL_SLUG = "gpt-image-2.5-sunburst";
+/** Export Cover (Gemini Image) — keep slug here so client UI never imports export-cover. */
+export const SACHBUCH_COVER_MODEL_SLUG = "gemini-3-pro-image";
 /** Phase 7 Manuskript-Lektorat (Verkaufsreife + Rewrite). */
 export const SACHBUCH_MODEL_MANUSCRIPT = "gemini-4-argon";
 /** Phase 8 Herstellung (Unterkapitel + Layout-Kästen vor Export). */
 export const SACHBUCH_MODEL_HERSTELLUNG = "claude-haiku-5-5";
-/**
- * Chapter Infografiken — Napkin AI (`NAPKIN_API_KEY`), not a wired Gemini slug.
- * Kept as display/token id for wait UI compatibility.
- */
-export const SACHBUCH_MODEL_INFOGRAFIK = "napkin";
-export const SACHBUCH_INFOGRAFIK_PROVIDER = "napkin";
+/** Chapter Infografiken (Gemini native image — Nano Banana Pro). */
+export const SACHBUCH_MODEL_INFOGRAFIK = "gemini-3-pro-image";
+export const SACHBUCH_INFOGRAFIK_PROVIDER = "gemini-image";
 /** Luna pass only at/above this score (1–10). */
 export const SACHBUCH_IDEE_REFINE_PASS_SCORE = 8;
 

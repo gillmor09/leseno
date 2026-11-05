@@ -10,6 +10,7 @@ import {
   SACHBUCH_MODEL_IDEE_CRITIC,
   SACHBUCH_MODEL_IDEE_DRAFTER,
   SACHBUCH_MODEL_HERSTELLUNG,
+  SACHBUCH_MODEL_INFOGRAFIK,
   SACHBUCH_MODEL_MANUSCRIPT,
   SACHBUCH_MODEL_MARKETING,
   sachbuchRuntimeModelSlug,
@@ -125,7 +126,7 @@ export const SACHBUCH_WAIT_MANUSCRIPT_IMPROVE = [
 
 export const SACHBUCH_WAIT_MANUSCRIPT_IMPROVE_ALL = [
   "Offene Kapitel werden ermittelt …",
-  "Argon lektoriert Kapitel für Kapitel (API-Hop) …",
+  "Argon lektoriert Kapitel für Kapitel (oft 10–20 Min/Kapitel) …",
   "Buch-weite Change-Orders werden umgesetzt …",
   "Buch-Verkaufsreife wird neu bewertet …",
 ] as const;
@@ -154,19 +155,38 @@ export function sachbuchWaitAgentHerstellung(): SachbuchWaitAgentInfo {
   return sachbuchWaitAgentForSlug("Herstellung", SACHBUCH_MODEL_HERSTELLUNG);
 }
 
+export const SACHBUCH_WAIT_COMPACT = [
+  "Quellkapitel wird gelesen …",
+  "Kompaktfassung wird geschrieben …",
+  "Länge wird geprüft (20–30 %) …",
+  "Kapitel wird gespeichert …",
+] as const;
+
+export function sachbuchWaitAgentCompact(): SachbuchWaitAgentInfo {
+  return sachbuchWaitAgentForSlug("Kompakt-Ausgabe", SACHBUCH_MODEL_HERSTELLUNG);
+}
+
+export const SACHBUCH_WAIT_TEASER = [
+  "Kompakt-Vorlage wird gelesen …",
+  "Teaser-Abschnitt wird geschrieben …",
+  "Länge wird geprüft (20–30 %) …",
+  "Abschnitt wird gespeichert …",
+] as const;
+
+export function sachbuchWaitAgentTeaser(): SachbuchWaitAgentInfo {
+  return sachbuchWaitAgentForSlug("Teaser", SACHBUCH_MODEL_HERSTELLUNG);
+}
+
 export const SACHBUCH_WAIT_INFOGRAFIKEN = [
   "Kapitel-Diagramme werden geplant …",
-  "Napkin AI erzeugt Infografiken …",
-  "Status wird abgefragt …",
+  "Gemini Pro Image erzeugt Infografiken …",
+  "Bildantwort wird gelesen …",
   "Seitenformat wird normalisiert …",
   "Infografiken werden gespeichert …",
 ] as const;
 
 export function sachbuchWaitAgentInfografik(): SachbuchWaitAgentInfo {
-  return {
-    roleLabel: "Infografik",
-    modelLabel: "Napkin AI",
-  };
+  return sachbuchWaitAgentForSlug("Infografik", SACHBUCH_MODEL_INFOGRAFIK);
 }
 
 export const SACHBUCH_WAIT_EXPORT_META = [

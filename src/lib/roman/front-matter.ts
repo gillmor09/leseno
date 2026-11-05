@@ -33,6 +33,11 @@ export type RomanVorsatz = {
     rechteinhaber: string;
     hinweis: string;
     disclaimer: string;
+    /**
+     * Extra Impressum paragraphs (Herausgeber/Anschrift/KI/Credits).
+     * Each entry may contain single newlines for address blocks.
+     */
+    absatz: string[];
   };
   /** Optional; empty string = omit page. */
   widmung: string;
@@ -69,6 +74,7 @@ export function emptyVorsatz(): RomanVorsatz {
       hinweis: `© ${year} ${ROMAN_DEFAULT_AUTHOR} · ${ROMAN_DEFAULT_IMPRINT}. Alle Rechte vorbehalten.`,
       disclaimer:
         "Dies ist ein Werk der Fiktion. Ähnlichkeiten mit lebenden oder toten Personen, Orten oder Ereignissen sind rein zufällig.",
+      absatz: [],
     },
     widmung: "",
     motto: "",
@@ -120,6 +126,11 @@ export function parseVorsatzJson(value: unknown): RomanVorsatz {
       ),
       hinweis: String(impressum.hinweis ?? base.impressum.hinweis),
       disclaimer: String(impressum.disclaimer ?? base.impressum.disclaimer),
+      absatz: Array.isArray(impressum.absatz)
+        ? impressum.absatz
+            .map((line) => String(line ?? "").trim())
+            .filter(Boolean)
+        : base.impressum.absatz,
     },
     widmung: String(row.widmung ?? base.widmung),
     motto: String(row.motto ?? row.epigraph ?? base.motto),

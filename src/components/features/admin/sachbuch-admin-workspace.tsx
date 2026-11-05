@@ -1,15 +1,18 @@
 "use client";
 
 /**
- * Guided Sachbuch wizard: Rohkonzept → … → Manuskript → Herstellung → Export.
+ * Guided Sachbuch wizard: Rohkonzept → … → Manuskript → Herstellung → Export → Hörbuch.
  */
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BookOpen, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  applySachbuchCompactProductSplitAction,
+  createSachbuchCompactAction,
+  createSachbuchTeaserAction,
   deleteSachbuchAction,
   saveSachbuchAction,
 } from "@/app/actions/sachbuch-admin";
@@ -21,6 +24,8 @@ import { SachbuchBookTypePanel } from "@/components/features/admin/sachbuch-book
 import { SachbuchEvidenzPanel } from "@/components/features/admin/sachbuch-evidenz-panel";
 import { SachbuchExportPanel } from "@/components/features/admin/sachbuch-export-panel";
 import { SachbuchGuideStepper } from "@/components/features/admin/sachbuch-guide-stepper";
+import { SachbuchHoerbuchPanel } from "@/components/features/admin/sachbuch-hoerbuch-panel";
+import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
 import { SachbuchHerstellungPanel } from "@/components/features/admin/sachbuch-herstellung-panel";
 import { SachbuchIdeePanel } from "@/components/features/admin/sachbuch-idee-panel";
 import { SachbuchIdeeRefinePanel } from "@/components/features/admin/sachbuch-idee-refine-panel";
@@ -33,13 +38,34 @@ import {
   canOpenSachbuchGuideStep,
   effectiveSachbuchGuideStep,
   hasUsableSachbuchConcept,
+  isSachbuchCompact,
   isSachbuchIdeaApproved,
+  isSachbuchTeaser,
   isSachbuchWriteApproved,
   nextSachbuchGuideStep,
   sachbuchSchreibenReadyToFreeze,
 } from "@/lib/sachbuch/guide";
 import type { SachbuchGuideStep, SachbuchKontext } from "@/lib/sachbuch/types";
 import { SACHBUCH_GUIDE_STEP_LABELS } from "@/lib/sachbuch/types";
+import { mergeSachbuchProseFromPrevious } from "@/lib/sachbuch/parse";
+import {
+  claimSachbuchCompactRun,
+  mergeSachbuchChapterProse,
+  releaseSachbuchCompactRun,
+  requestCondenseSachbuchCompactBook,
+} from "@/lib/sachbuch/compact-client";
+import {
+  claimSachbuchTeaserRun,
+  releaseSachbuchTeaserRun,
+  requestCondenseSachbuchTeaserBook,
+} from "@/lib/sachbuch/teaser-client";
+import { sachbuchTeaserSourceReady } from "@/lib/sachbuch/teaser";
+import {
+  SACHBUCH_WAIT_COMPACT,
+  SACHBUCH_WAIT_TEASER,
+  sachbuchWaitAgentCompact,
+  sachbuchWaitAgentTeaser,
+} from "@/lib/sachbuch/wait-presets";
 import {
   SACHBUCH_BRIEFING_MAX_CHARS,
   SACHBUCH_OPINION_MAX_CHARS,
@@ -48,11 +74,14 @@ import {
 export function SachbuchAdminWorkspace({
   initialBook,
   canSave,
+  startCompact = false,
 }: {
   initialBook: SachbuchKontext;
   /** Kept for page compatibility; unused until agents UI returns. */
   modelOptions?: Array<{ modelSlug: string; label: string }>;
   canSave: boolean;
+  /** After creating a compact edition, condense open chapters once. */
+  startCompact?: boolean;
 }) {
   const router = useRouter();
   const [book, setBook] = useState(initialBook);
@@ -66,11 +95,39 @@ export function SachbuchAdminWorkspace({
   );
   const [draftBriefing, setDraftBriefing] = useState(initialBook.idee.briefing);
   const [conceptPending, setConceptPending] = useState(false);
+  const [compactPending, setCompactPending] = useState(false);
+  const [compactProgress, setCompactProgress] = useState<string | null>(null);
+  const [compactStartedAt, setCompactStartedAt] = useState<number | null>(null);
+  const [productSplitPending, setProductSplitPending] = useState(false);
+  const [teaserPending, setTeaserPending] = useState(false);
+  const [teaserProgress, setTeaserProgress] = useState<string | null>(null);
+  const [teaserStartedAt, setTeaserStartedAt] = useState<number | null>(null);
+  const compactRunStarted = useRef(false);
+  const teaserRunStarted = useRef(false);
+  const productSplitStarted = useRef(false);
 
   const bookType = getSachbuchBookType(book.makro.bookTypeId);
   const step = effectiveSachbuchGuideStep(book);
   const ideaApproved = isSachbuchIdeaApproved(book);
   const writeApproved = isSachbuchWriteApproved(book);
+  const compact = isSachbuchCompact(book);
+  const teaser = isSachbuchTeaser(book);
+  const compactPendingChapters = book.kapitel.filter(
+    (k) => k.status !== "ready",
+  ).length;
+  const canCreateCompact =
+    !compact &&
+    !teaser &&
+    book.kapitel.length > 0 &&
+    (writeApproved ||
+      book.kapitel.some(
+        (k) =>
+          Boolean(k.manuscript.hergestelltAt) ||
+          Boolean(k.manuscript.improvedAt) ||
+          k.manuscript.salesScore != null,
+      ));
+  const canCreateTeaser =
+    compact && sachbuchTeaserSourceReady(book).ok;
   const writeReady = sachbuchSchreibenReadyToFreeze(book);
   const hasConcept = hasUsableSachbuchConcept(book);
   const ideaInterviewing =
@@ -87,6 +144,163 @@ export function SachbuchAdminWorkspace({
   const opinionOverLimit = draftOpinion.length > SACHBUCH_OPINION_MAX_CHARS;
 
   const next = nextSachbuchGuideStep(step);
+
+  async function runCompactCondensation(
+    target: SachbuchKontext,
+    alreadyClaimed = false,
+  ) {
+    if (!canSave || compactPending) {
+      if (alreadyClaimed) releaseSachbuchCompactRun(target.id);
+      return;
+    }
+    if (!alreadyClaimed && !claimSachbuchCompactRun(target.id)) {
+      toast.error("Die Kürzung läuft bereits.");
+      return;
+    }
+    setCompactPending(true);
+    setCompactStartedAt(Date.now());
+    setCompactProgress("Kapitel werden gekürzt …");
+    try {
+      const result = await requestCondenseSachbuchCompactBook({
+        book: target,
+        onBookUpdate: (next) => {
+          setBook((prev) => mergeSachbuchChapterProse(prev, next));
+        },
+        onProgress: setCompactProgress,
+      });
+      if (result.data?.book) {
+        const saved = result.data.book;
+        setBook((prev) => mergeSachbuchChapterProse(prev, saved));
+      }
+      if (!result.success) {
+        toast.error(result.error ?? "Kürzung unvollständig.");
+        return;
+      }
+      const n = result.data?.condensedCount ?? 0;
+      toast.success(
+        n === 0
+          ? "Alle Kapitel sind bereits gekürzt."
+          : n === 1
+            ? "1 Kapitel gekürzt."
+            : `${n} Kapitel gekürzt.`,
+      );
+    } finally {
+      releaseSachbuchCompactRun(target.id);
+      setCompactPending(false);
+      setCompactProgress(null);
+      setCompactStartedAt(null);
+      if (startCompact) {
+        router.replace(`/admin/sachbuch/${target.id}`);
+      }
+    }
+  }
+
+  async function runTeaserCondensation(
+    target: SachbuchKontext,
+    alreadyClaimed = false,
+  ) {
+    if (!canSave || teaserPending) {
+      if (alreadyClaimed) releaseSachbuchTeaserRun(target.id);
+      return;
+    }
+    if (!alreadyClaimed && !claimSachbuchTeaserRun(target.id)) {
+      toast.error("Die Teaser-Verdichtung läuft bereits.");
+      return;
+    }
+    setTeaserPending(true);
+    setTeaserStartedAt(Date.now());
+    setTeaserProgress("Teaser-Abschnitte werden verdichtet …");
+    try {
+      const result = await requestCondenseSachbuchTeaserBook({
+        book: target,
+        onBookUpdate: (next) => {
+          setBook((prev) => mergeSachbuchChapterProse(prev, next));
+        },
+        onProgress: setTeaserProgress,
+      });
+      if (result.data?.book) {
+        setBook((prev) => mergeSachbuchChapterProse(prev, result.data!.book));
+      }
+      if (!result.success) {
+        toast.error(result.error ?? "Teaser unvollständig.");
+        return;
+      }
+      const n = result.data?.condensedCount ?? 0;
+      toast.success(
+        n === 0
+          ? "Alle Teaser-Abschnitte sind fertig."
+          : n === 1
+            ? "1 Teaser-Abschnitt verdichtet."
+            : `${n} Teaser-Abschnitte verdichtet.`,
+      );
+    } finally {
+      releaseSachbuchTeaserRun(target.id);
+      setTeaserPending(false);
+      setTeaserProgress(null);
+      setTeaserStartedAt(null);
+      if (startCompact) {
+        router.replace(`/admin/sachbuch/${target.id}`);
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!startCompact || !canSave || compactRunStarted.current) return;
+    if (!isSachbuchCompact(initialBook)) return;
+    if (initialBook.kapitel.every((k) => k.status === "ready")) return;
+    if (!claimSachbuchCompactRun(initialBook.id)) return;
+    compactRunStarted.current = true;
+    void runCompactCondensation(initialBook, true);
+    // Start once when the compact book opens with ?kuerzen=1.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startCompact, canSave, initialBook]);
+
+  useEffect(() => {
+    if (!startCompact || !canSave || teaserRunStarted.current) return;
+    if (!isSachbuchTeaser(initialBook)) return;
+    if (initialBook.kapitel.every((k) => k.status === "ready")) return;
+    if (!claimSachbuchTeaserRun(initialBook.id)) return;
+    teaserRunStarted.current = true;
+    void runTeaserCondensation(initialBook, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startCompact, canSave, initialBook]);
+
+  /** One-shot: older Kompakt still 1:1 / with figures / old Titelei. */
+  useEffect(() => {
+    if (!canSave || !isSachbuchCompact(initialBook) || productSplitStarted.current) {
+      return;
+    }
+    const hasFigs = initialBook.kapitel.some(
+      (k) =>
+        (k.infografiken?.length ?? 0) > 0 || Boolean(k.infografikDataUrl?.trim()),
+    );
+    const metaReady = /ohne Grafiken/i.test(initialBook.export.subtitle);
+    const tooManyChapters = initialBook.kapitel.length > 4;
+    if (!hasFigs && metaReady && !tooManyChapters) return;
+    productSplitStarted.current = true;
+    setProductSplitPending(true);
+    void (async () => {
+      try {
+        const prevCount = initialBook.kapitel.length;
+        const result = await applySachbuchCompactProductSplitAction({
+          id: initialBook.id,
+        });
+        if (!result.success || !result.data) {
+          toast.error(result.error ?? "Produkttrennung fehlgeschlagen.");
+          return;
+        }
+        setBook(result.data.book);
+        const nextCount = result.data.book.kapitel.length;
+        toast.success(
+          nextCount < prevCount
+            ? `Kompakt neu gegliedert: ${nextCount} Briefing-Kapitel — bitte erneut kürzen.`
+            : "Kompakt als text-only Briefing ausgerichtet (ohne Grafiken, mit Hauptband-Verweisen).",
+        );
+      } finally {
+        setProductSplitPending(false);
+      }
+    })();
+  }, [canSave, initialBook]);
 
   useEffect(() => {
     setDraftOpinion(book.idee.unpopularOpinion);
@@ -131,6 +345,15 @@ export function SachbuchAdminWorkspace({
       return;
     }
     if (effectiveSachbuchGuideStep(book) === target) return;
+    const previousStep = book.idee.guide.currentStep;
+    // Optimistic UI — do not wait for DB round-trip to flip the tab.
+    setBook((prev) => ({
+      ...prev,
+      idee: {
+        ...prev.idee,
+        guide: { ...prev.idee.guide, currentStep: target },
+      },
+    }));
     setStepPending(true);
     try {
       const result = await setSachbuchGuideStepAction({
@@ -138,10 +361,29 @@ export function SachbuchAdminWorkspace({
         step: target,
       });
       if (!result.success || !result.data) {
+        setBook((prev) => ({
+          ...prev,
+          idee: {
+            ...prev.idee,
+            guide: { ...prev.idee.guide, currentStep: previousStep },
+          },
+        }));
         toast.error(result.error ?? "Schritt wechseln fehlgeschlagen.");
         return;
       }
-      setBook(result.data.book);
+      // Action returns slim shell — keep any prose/pixels already in memory.
+      setBook((prev) =>
+        mergeSachbuchProseFromPrevious(prev, result.data!.book),
+      );
+    } catch {
+      setBook((prev) => ({
+        ...prev,
+        idee: {
+          ...prev.idee,
+          guide: { ...prev.idee.guide, currentStep: previousStep },
+        },
+      }));
+      toast.error("Schritt wechseln fehlgeschlagen.");
     } finally {
       setStepPending(false);
     }
@@ -154,6 +396,40 @@ export function SachbuchAdminWorkspace({
       return;
     }
     await goToStep(next);
+  }
+
+  async function createCompact() {
+    if (!canSave || compactPending || !canCreateCompact) return;
+    setCompactPending(true);
+    try {
+      const result = await createSachbuchCompactAction({ id: book.id });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Kompakt-Ausgabe anlegen fehlgeschlagen.");
+        return;
+      }
+      toast.success("Kompakt-Ausgabe angelegt — Kapitel werden gekürzt.");
+      router.push(`/admin/sachbuch/${result.data.bookId}?kuerzen=1`);
+      router.refresh();
+    } finally {
+      setCompactPending(false);
+    }
+  }
+
+  async function createTeaser() {
+    if (!canSave || teaserPending || !canCreateTeaser) return;
+    setTeaserPending(true);
+    try {
+      const result = await createSachbuchTeaserAction({ id: book.id });
+      if (!result.success || !result.data) {
+        toast.error(result.error ?? "Teaser anlegen fehlgeschlagen.");
+        return;
+      }
+      toast.success("Teaser angelegt — Abschnitte werden verdichtet.");
+      router.push(`/admin/sachbuch/${result.data.bookId}?kuerzen=1`);
+      router.refresh();
+    } finally {
+      setTeaserPending(false);
+    }
   }
 
   async function onDelete() {
@@ -296,29 +572,169 @@ export function SachbuchAdminWorkspace({
           <p className="mt-1 text-xs font-semibold text-zinc-500">
             {SACHBUCH_GUIDE_STEP_LABELS[step]}
             {bookType ? ` · ${bookType.shortLabel}` : ""}
-            {ideaApproved
-              ? " · Idee freigegeben"
-              : " · Idee gesperrt bis Freigabe"}
-            {writeApproved ? " · Schreiben fixiert" : ""}
+            {teaser
+              ? " · Teaser"
+              : compact
+                ? " · Kompakt-Ausgabe"
+                : ideaApproved
+                  ? " · Idee freigegeben"
+                  : " · Idee gesperrt bis Freigabe"}
+            {!compact && !teaser && writeApproved ? " · Schreiben fixiert" : ""}
           </p>
+          {(compact || teaser) && book.idee.sourceBookId ? (
+            <p className="mt-1 text-xs font-semibold text-zinc-500">
+              Quelle:{" "}
+              <Link
+                href={`/admin/sachbuch/${book.idee.sourceBookId}`}
+                className="font-bold text-orange-800 hover:underline"
+              >
+                {book.idee.sourceBookTitle ||
+                  (teaser ? "Kompakt-Ausgabe" : "Ursprungsbuch")}
+              </Link>
+            </p>
+          ) : null}
         </div>
-        <button
-          type="button"
-          disabled={!canSave || deletePending}
-          onClick={() => setDeleteOpen(true)}
-          className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-50"
-        >
-          <Trash2 className="size-4" aria-hidden />
-          Löschen
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canCreateCompact ? (
+            <button
+              type="button"
+              disabled={!canSave || compactPending || deletePending}
+              onClick={() => void createCompact()}
+              className="inline-flex items-center gap-2 rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+            >
+              {compactPending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <BookOpen className="size-4" aria-hidden />
+              )}
+              Kompakt-Ausgabe anlegen
+            </button>
+          ) : null}
+          {canCreateTeaser ? (
+            <button
+              type="button"
+              disabled={!canSave || teaserPending || deletePending}
+              onClick={() => void createTeaser()}
+              className="inline-flex items-center gap-2 rounded-full bg-sky-700 px-4 py-2 text-sm font-bold text-white hover:bg-sky-800 disabled:opacity-50"
+            >
+              {teaserPending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : (
+                <BookOpen className="size-4" aria-hidden />
+              )}
+              Teaser anlegen
+            </button>
+          ) : null}
+          <button
+            type="button"
+            disabled={!canSave || deletePending}
+            onClick={() => setDeleteOpen(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-red-700 ring-1 ring-red-200 hover:bg-red-50 disabled:opacity-50"
+          >
+            <Trash2 className="size-4" aria-hidden />
+            Löschen
+          </button>
+        </div>
       </div>
 
       <SachbuchGuideStepper
         book={book}
         canSave={canSave}
-        pending={stepPending || titlePending}
+        pending={
+          stepPending || titlePending || compactPending || teaserPending
+        }
         onSelectStep={(s) => void goToStep(s)}
       />
+
+      {compact ? (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-white px-4 py-4 ring-1 ring-zinc-950/10 sm:px-5">
+          <div className="min-w-0 space-y-1">
+            <p className="text-sm font-semibold text-zinc-700">
+              {compactPendingChapters === 0
+                ? "Alle Kapitel sind gekürzt. Weiter mit Manuskript, Herstellung und Export — oder Teaser anlegen."
+                : `${book.kapitel.length - compactPendingChapters} von ${book.kapitel.length} Kapiteln gekürzt.`}
+            </p>
+            <p className="text-xs font-semibold text-zinc-500">
+              Eigenes Produkt: 3–4 Briefing-Kapitel (Hauptband gebündelt), keine
+              Infografiken, Verweise auf den Hauptband.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {compactPendingChapters > 0 ? (
+              <button
+                type="button"
+                disabled={!canSave || compactPending || productSplitPending}
+                onClick={() => void runCompactCondensation(book)}
+                className="inline-flex items-center gap-2 rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+              >
+                {compactPending ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : null}
+                Offene Kapitel kürzen
+              </button>
+            ) : null}
+            <button
+              type="button"
+              disabled={!canSave || compactPending || productSplitPending}
+              onClick={() => {
+                setProductSplitPending(true);
+                void (async () => {
+                  try {
+                    const result = await applySachbuchCompactProductSplitAction({
+                      id: book.id,
+                    });
+                    if (!result.success || !result.data) {
+                      toast.error(
+                        result.error ?? "Produkttrennung fehlgeschlagen.",
+                      );
+                      return;
+                    }
+                    setBook(result.data.book);
+                    toast.success("Titelei, Verweise und text-only aktualisiert.");
+                  } finally {
+                    setProductSplitPending(false);
+                  }
+                })();
+              }}
+              className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              {productSplitPending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : null}
+              Produkttrennung anwenden
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {teaser ? (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-white px-4 py-4 ring-1 ring-zinc-950/10 sm:px-5">
+          <div className="min-w-0 space-y-1">
+            <p className="text-sm font-semibold text-zinc-700">
+              {compactPendingChapters === 0
+                ? "Alle Teaser-Abschnitte sind fertig. Weiter mit Manuskript, Herstellung und Export."
+                : `${book.kapitel.length - compactPendingChapters} von ${book.kapitel.length} Abschnitten verdichtet.`}
+            </p>
+            <p className="text-xs font-semibold text-zinc-500">
+              Appetizer für Newsletter, Broschüre und Web — Marketing-Ton, 2–3
+              Abschnitte, Verweise auf die Kompaktausgabe.
+            </p>
+          </div>
+          {compactPendingChapters > 0 ? (
+            <button
+              type="button"
+              disabled={!canSave || teaserPending}
+              onClick={() => void runTeaserCondensation(book)}
+              className="inline-flex items-center gap-2 rounded-full bg-sky-700 px-4 py-2 text-sm font-bold text-white hover:bg-sky-800 disabled:opacity-50"
+            >
+              {teaserPending ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+              ) : null}
+              Offene Abschnitte verdichten
+            </button>
+          ) : null}
+        </section>
+      ) : null}
 
       {!ideaApproved && book.kapitel.some((k) => k.abschnitte.length > 0) ? (
         <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
@@ -704,14 +1120,40 @@ export function SachbuchAdminWorkspace({
 
       {step === "export" ? (
         ideaApproved && bookType && writeApproved ? (
-          <SachbuchExportPanel
+          <div className="space-y-3">
+            <SachbuchExportPanel
+              book={book}
+              canSave={canSave}
+              onBookUpdate={setBook}
+            />
+            {canOpenSachbuchGuideStep(book, "hoerbuch") ? (
+              <button
+                type="button"
+                disabled={!canSave || stepPending}
+                onClick={() => void goToStep("hoerbuch")}
+                className="rounded-full bg-orange-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+              >
+                Weiter: Hörbuch
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
+            Export gesperrt — Schreiben fixieren und Manuskript abschließen.
+          </p>
+        )
+      ) : null}
+
+      {step === "hoerbuch" ? (
+        ideaApproved && bookType && writeApproved ? (
+          <SachbuchHoerbuchPanel
             book={book}
             canSave={canSave}
             onBookUpdate={setBook}
           />
         ) : (
           <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950 ring-1 ring-amber-200/80">
-            Export gesperrt — Schreiben fixieren und Manuskript abschließen.
+            Hörbuch gesperrt — zuerst Schreiben fixieren.
           </p>
         )
       ) : null}
@@ -722,6 +1164,8 @@ export function SachbuchAdminWorkspace({
       step !== "write" &&
       step !== "manuscript" &&
       step !== "herstellung" &&
+      step !== "export" &&
+      step !== "hoerbuch" &&
       step !== "concept" &&
       step !== "refine" &&
       canOpenSachbuchGuideStep(book, next) ? (
@@ -734,6 +1178,26 @@ export function SachbuchAdminWorkspace({
           Weiter: {SACHBUCH_GUIDE_STEP_LABELS[next]}
         </button>
       ) : null}
+
+      <SachbuchWaitDialog
+        open={compactPending && compact}
+        title="Kompakt-Ausgabe kürzen"
+        steps={SACHBUCH_WAIT_COMPACT}
+        progressLabel={compactProgress}
+        agentInfo={sachbuchWaitAgentCompact()}
+        startedAtMs={compactStartedAt}
+        footer="Bitte Fenster offen lassen — ein Kapitel dauert meist ein paar Minuten."
+      />
+
+      <SachbuchWaitDialog
+        open={teaserPending && teaser}
+        title="Teaser verdichten"
+        steps={SACHBUCH_WAIT_TEASER}
+        progressLabel={teaserProgress}
+        agentInfo={sachbuchWaitAgentTeaser()}
+        startedAtMs={teaserStartedAt}
+        footer="Bitte Fenster offen lassen — ein Abschnitt dauert meist wenige Minuten."
+      />
 
       <ConfirmDeleteDialog
         open={deleteOpen}

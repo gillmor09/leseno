@@ -21,9 +21,15 @@ const UUID_RE =
 
 const bodySchema = z.object({
   sachbuchId: z.string().regex(UUID_RE),
-  kapitelId: z.string().regex(UUID_RE),
+  /** Optional when reviewOnly — any chapter id is fine for slim keep. */
+  kapitelId: z.string().regex(UUID_RE).optional(),
   /** When true, refresh book-level Herstellung summary after the chapter. */
   refreshBook: z.boolean().optional().default(false),
+  /**
+   * Skip Haiku — only rebuild `idee.herstellungReview` from DB
+   * (used after multi-chapter hops so the client does not re-run the last chapter).
+   */
+  reviewOnly: z.boolean().optional().default(false),
 });
 
 export async function POST(request: Request) {
@@ -50,9 +56,29 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (parsed.data.reviewOnly) {
+      const book = await refreshSachbuchHerstellungBookReview(
+        parsed.data.sachbuchId,
+      );
+      revalidateSachbuchAdmin(book.id);
+      // No chapter prose — client must merge; stamps (hergestelltAt) stay.
+      return NextResponse.json({
+        success: true,
+        book: slimSachbuchKontextForTransport(book, { stripAllProse: true }),
+      });
+    }
+
+    const kapitelId = parsed.data.kapitelId;
+    if (!kapitelId) {
+      return NextResponse.json(
+        { error: "kapitelId fehlt." },
+        { status: 400 },
+      );
+    }
+
     let book = await herstellenSachbuchKapitel({
       sachbuchId: parsed.data.sachbuchId,
-      kapitelId: parsed.data.kapitelId,
+      kapitelId,
     });
     if (parsed.data.refreshBook) {
       book = await refreshSachbuchHerstellungBookReview(parsed.data.sachbuchId);
@@ -60,7 +86,9 @@ export async function POST(request: Request) {
     revalidateSachbuchAdmin(book.id);
     return NextResponse.json({
       success: true,
-      book: slimSachbuchKontextForTransport(book),
+      book: slimSachbuchKontextForTransport(book, {
+        keepKapitelIds: [kapitelId],
+      }),
     });
   } catch (error) {
     revalidateSachbuchAdmin(parsed.data.sachbuchId);

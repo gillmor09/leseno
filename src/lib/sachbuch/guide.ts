@@ -10,7 +10,10 @@ import type {
   SachbuchGuideStep,
   SachbuchKontext,
 } from "@/lib/sachbuch/types";
-import { SACHBUCH_GUIDE_STEPS } from "@/lib/sachbuch/types";
+import {
+  SACHBUCH_COMPACT_SKIPPED_STEPS,
+  SACHBUCH_GUIDE_STEPS,
+} from "@/lib/sachbuch/types";
 
 export type SachbuchGuideGatePhase =
   | "refine"
@@ -20,7 +23,8 @@ export type SachbuchGuideGatePhase =
   | "write"
   | "manuscript"
   | "herstellung"
-  | "export";
+  | "export"
+  | "hoerbuch";
 
 export function emptySachbuchGuide(
   step: SachbuchGuideStep = "concept",
@@ -47,6 +51,28 @@ export function isSachbuchIdeaApproved(book: SachbuchKontext): boolean {
 export function isSachbuchWriteApproved(book: SachbuchKontext): boolean {
   return Boolean(book.idee.guide.writeApprovedAt?.trim());
 }
+
+/** Executive Briefing derived from the Hauptband. */
+export function isSachbuchCompact(book: SachbuchKontext): boolean {
+  return book.idee.edition === "compact";
+}
+
+/** Marketing teaser derived from Kompakt (newsletter / brochure / web). */
+export function isSachbuchTeaser(book: SachbuchKontext): boolean {
+  return book.idee.edition === "teaser";
+}
+
+/** Kompakt or Teaser — Rohkonzept through Schreiben stay closed. */
+export function isSachbuchDerivedEdition(book: SachbuchKontext): boolean {
+  return isSachbuchCompact(book) || isSachbuchTeaser(book);
+}
+
+export function isSachbuchCompactSkippedStep(step: SachbuchGuideStep): boolean {
+  return (SACHBUCH_COMPACT_SKIPPED_STEPS as readonly string[]).includes(step);
+}
+
+/** @deprecated Prefer isSachbuchDerivedSkippedStep — same list. */
+export const isSachbuchDerivedSkippedStep = isSachbuchCompactSkippedStep;
 
 /** Soft readiness: every chapter has enough Abschnitte prose to freeze. */
 export function sachbuchSchreibenReadyToFreeze(book: SachbuchKontext): {
@@ -81,7 +107,7 @@ export function resolveSachbuchGuideFloor(book: SachbuchKontext): SachbuchGuideS
   if (!isSachbuchIdeaApproved(book)) return "refine";
   if (!hasConfirmedSachbuchBookType(book.makro.bookTypeId)) return "book_type";
   if (!isSachbuchWriteApproved(book)) return "write";
-  return "export";
+  return "hoerbuch";
 }
 
 /** Steps the user may open (all up to floor, plus current if valid). */
@@ -90,7 +116,9 @@ export function unlockedSachbuchGuideSteps(
 ): SachbuchGuideStep[] {
   const floor = resolveSachbuchGuideFloor(book);
   const max = stepIndex(floor);
-  return SACHBUCH_GUIDE_STEPS.filter((_, i) => i <= max);
+  const open = SACHBUCH_GUIDE_STEPS.filter((_, i) => i <= max);
+  if (!isSachbuchDerivedEdition(book)) return open;
+  return open.filter((step) => !isSachbuchCompactSkippedStep(step));
 }
 
 export function canOpenSachbuchGuideStep(
@@ -108,6 +136,7 @@ export function effectiveSachbuchGuideStep(
 ): SachbuchGuideStep {
   const stored = book.idee.guide.currentStep;
   if (canOpenSachbuchGuideStep(book, stored)) return stored;
+  if (isSachbuchDerivedEdition(book)) return "manuscript";
   return resolveSachbuchGuideFloor(book);
 }
 
@@ -118,6 +147,20 @@ export function assertSachbuchGuideAllows(
   book: SachbuchKontext,
   phase: SachbuchGuideGatePhase,
 ): void {
+  if (
+    isSachbuchDerivedEdition(book) &&
+    phase !== "manuscript" &&
+    phase !== "herstellung" &&
+    phase !== "export" &&
+    phase !== "hoerbuch"
+  ) {
+    throw new Error(
+      isSachbuchTeaser(book)
+        ? "Teaser — dieser Schritt entfällt."
+        : "Kompakt-Ausgabe — dieser Schritt entfällt.",
+    );
+  }
+
   if (phase === "refine") {
     if (!hasUsableSachbuchConcept(book)) {
       throw new Error(
@@ -143,7 +186,7 @@ export function assertSachbuchGuideAllows(
 
   if (phase === "makro") return;
 
-  if (phase === "export") return;
+  if (phase === "export" || phase === "hoerbuch") return;
 
   if (phase === "manuscript" || phase === "herstellung") {
     if (!isSachbuchWriteApproved(book)) {

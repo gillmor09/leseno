@@ -1,6 +1,9 @@
 /**
  * PDF / ePub builders for Sachbuch — reuse roman export engines.
- * PDF: cover + Titelei + Kapitel. ePub: Titelei only (no cover image).
+ * PDF: Titelei (Titelseite = S.1, Impressum = S.2) + Kapitel — ohne Cover
+ * (Cover separat für Tolino Print).
+ * ePub: Titelei inkl. Impressum; Cover optional (`includeCover`) —
+ * ohne Cover = Veröffentlichungsdatei, mit Cover = Vorschau/Paket.
  */
 
 import {
@@ -17,22 +20,43 @@ import {
   parseVorsatzJson,
   type RomanVorsatz,
 } from "@/lib/roman/front-matter";
-import { sachbuchKapitelExportBody } from "@/lib/sachbuch/parse";
+import {
+  buildSachbuchImpressum,
+  SACHBUCH_DEFAULT_AUTHOR,
+  SACHBUCH_DEFAULT_IMPRINT,
+} from "@/lib/sachbuch/impressum";
+import { sachbuchFiguresFromList } from "@/lib/sachbuch/figures";
+import {
+  sachbuchKapitelExportBody,
+  sachbuchKapitelInfografiken,
+} from "@/lib/sachbuch/parse";
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
+import { isSachbuchDerivedEdition } from "@/lib/sachbuch/guide";
 
 /** Kapitel with enough prose for export (Herstellung → Manuskript → Abschnitte). */
 export function sachbuchExportChapters(
   book: SachbuchKontext,
 ): RomanExportChapter[] {
+  /** Kompakt / Teaser: text-only — never embed chapter graphics. */
+  const allowFigures = !isSachbuchDerivedEdition(book);
   return book.kapitel
     .map((k, i) => {
       const body = sachbuchKapitelExportBody(k);
-      const info = (k.infografikDataUrl ?? "").trim();
+      const figures = allowFigures
+        ? sachbuchFiguresFromList(sachbuchKapitelInfografiken(k))
+        : [];
+      const infos = figures.map((x) => x.dataUrl);
       return {
         number: i + 1,
         title: k.title.trim() || `Kapitel ${i + 1}`,
         body,
-        infografikDataUrl: info.startsWith("data:image/") ? info : null,
+        infografikDataUrl: infos[0] ?? null,
+        infografikDataUrls: infos,
+        sachbuchFigures: figures.map((f) => ({
+          key: f.key,
+          title: f.title,
+          dataUrl: f.dataUrl,
+        })),
       };
     })
     .filter((c) => c.body.length >= 40);
@@ -40,12 +64,18 @@ export function sachbuchExportChapters(
 
 function resolveVorsatz(book: SachbuchKontext): RomanVorsatz {
   const base = parseVorsatzJson(book.export.vorsatz ?? emptyVorsatz());
-  const autor =
-    book.export.autorName?.trim() || base.titelseite.autor;
+  const autor = SACHBUCH_DEFAULT_AUTHOR;
   const title =
     base.titelseite.titel.trim() ||
     book.export.suggestedTitle.trim() ||
     book.title.trim();
+  const year =
+    base.impressum.jahr.trim() || String(new Date().getFullYear());
+  // Always inject Tolino-ready Impressum (Klarname / Anschrift / KI / Auflage).
+  const impressum = buildSachbuchImpressum({
+    jahr: year,
+    autorPseudonym: autor,
+  });
   return {
     ...base,
     titelseite: {
@@ -55,7 +85,10 @@ function resolveVorsatz(book: SachbuchKontext): RomanVorsatz {
         base.titelseite.untertitel.trim() ||
         book.export.subtitle.trim(),
       autor,
+      // Always use Privacy-Value imprint (not stored leseno.de leftovers).
+      imprint: SACHBUCH_DEFAULT_IMPRINT,
     },
+    impressum,
   };
 }
 
@@ -73,7 +106,9 @@ export async function buildSachbuchPdfBlob(
   const blob = await buildRomanPdfBlob({
     title,
     chapters,
-    coverImageDataUrl: book.export.coverImageDataUrl || undefined,
+    // Tolino Print: Innendatei ohne Cover → Titelseite S.1, Impressum S.2.
+    // Cover separat aus dem Export-Tab herunterladen / hochladen.
+    coverImageDataUrl: undefined,
     vorsatz: resolveVorsatz(book),
     /** Smaller body/heading than Roman trade PDF (11/13 pt vs 14/16). */
     printDensity: "compact",
@@ -81,10 +116,15 @@ export async function buildSachbuchPdfBlob(
   return { blob, filename: romanPdfFilename(title) };
 }
 
-/** ePub without cover image; Titelei (Vorsatz) included. */
+/**
+ * ePub + Titelei. `includeCover: false` → Veröffentlichungsdatei (Tolino).
+ * `includeCover: true` → gleiche Datei plus Cover-Bild im Package.
+ */
 export async function buildSachbuchEpubBlob(
   book: SachbuchKontext,
+  options: { includeCover?: boolean } = {},
 ): Promise<{ blob: Blob; filename: string }> {
+  const includeCover = Boolean(options.includeCover);
   const chapters = sachbuchExportChapters(book);
   if (!chapters.length) {
     throw new Error(
@@ -97,6 +137,12 @@ export async function buildSachbuchEpubBlob(
     book.export.suggestedTitle.trim() ||
     book.title.trim() ||
     "Sachbuch";
+  const cover = (book.export.coverImageDataUrl ?? "").trim();
+  if (includeCover && !cover.startsWith("data:image/")) {
+    throw new Error(
+      "Kein Cover gespeichert — zuerst Cover erzeugen oder ohne Cover exportieren.",
+    );
+  }
   const blob = await buildRomanEpubBlob({
     title,
     autorName:
@@ -104,8 +150,12 @@ export async function buildSachbuchEpubBlob(
       book.export.autorName.trim() ||
       "Autor:in",
     chapters,
-    coverImageDataUrl: undefined,
+    coverImageDataUrl: includeCover ? cover : undefined,
     vorsatz,
   });
-  return { blob, filename: romanEpubFilename(title) };
+  const base = romanEpubFilename(title);
+  const filename = includeCover
+    ? base.replace(/\.epub$/i, "-mit-Cover.epub")
+    : base;
+  return { blob, filename };
 }

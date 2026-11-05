@@ -1,0 +1,110 @@
+{
+  "1400": [
+    {
+      "kap": 1,
+      "title": "Erst das Ziel, dann die Daten",
+      "n": 1,
+      "snips": [
+        "r eine einzige solche manuell aufbereitete Auskunft in unstrukturierten Datensilos schnell auf über 1.400 US-Dollar an reiner Arbeitszeit. Solche ungeordneten Datenbestände verhalten sich exakt wie unfertige Erzeugnisse und ungekennzeichnete Teilekisten in einer sc"
+      ]
+    },
+    {
+      "kap": 3,
+      "title": "Verantwortung organisieren ohne Bürokratie-Monster",
+      "n": 1,
+      "snips": [
+        "siven Synchronisationsskripte entfielen ersatzlos, und KlarNetz sparte ganz nebenbei dauerhaft rund 1.400 Euro an monatlichen Cloud-Infrastrukturkosten ein. Zugleich zahlt sich diese direkte Kopplung des Prozessregisters an das zentrale Architektur-, Konfiguration"
+      ]
+    }
+  ],
+  "cisco": [
+    {
+      "kap": 1,
+      "title": "Erst das Ziel, dann die Daten",
+      "n": 1,
+      "snips": [
+        "organisatorische Trägheit. Branchenweite Untersuchungen wie die jährlichen Benchmark-Erhebungen von Cisco unterstreichen diesen betriebswirtschaftlichen Zusammenhang regelmäßig: Unternehmen, die Datenschutz als integrierte Qualitätsdisziplin begreifen, berichten ko"
+      ]
+    },
+    {
+      "kap": 2,
+      "title": "Risiken für Menschen vs. Risiken fürs Geschäft",
+      "n": 1,
+      "snips": [
+        "den Folgekosten von Datenpannen. In etablierten Marktuntersuchungen wie der jährlich durchgeführten Cisco Privacy Benchmark Study berichten Führungskräfte regelmäßig, dass der geschäftliche Ertrag solider Datenschutzprozesse die getätigten Aufwände um das 1,6- bis"
+      ]
+    }
+  ],
+  "gartner": [
+    {
+      "kap": 1,
+      "title": "Erst das Ziel, dann die Daten",
+      "n": 1,
+      "snips": [
+        "uell schwärzen, um deren Rechte nicht zu verletzen. Nach Erhebungen des Marktforschungsunternehmens Gartner klettern die internen Bearbeitungskosten für eine einzige solche manuell aufbereitete Auskunft in unstrukturierten Datensilos schnell auf über 1.400 US-Dollar"
+      ]
+    }
+  ],
+  "baymard": [
+    {
+      "kap": 1,
+      "title": "Erst das Ziel, dann die Daten",
+      "n": 1,
+      "snips": [
+        "alue-Driven Privacy solche Muster als handwerklichen Prozessmangel. Wie Langzeituntersuchungen des Baymard Institute belegen, gehören überfrachtete Formulare und intransparente Datenabfragen zu den größten Abbruchtreibern im elektronischen Handel. Herausragende digi"
+      ]
+    }
+  ],
+  "datagrail": [],
+  "dark-data": [
+    {
+      "kap": 1,
+      "title": "Erst das Ziel, dann die Daten",
+      "n": 1,
+      "snips": [
+        "elmäßig, dass bis zu zwei Drittel aller in Unternehmen gespeicherten Informationen als ungenutztes „Dark Data“ auf Servern brachliegen. Datenminimierung ist daher kein juristisches Bremsmanöver, sondern eine harte Methode zur Effizienzsteigerung, deren konkrete Umsetzu"
+      ]
+    }
+  ],
+  "roi-1.6": [
+    {
+      "kap": 2,
+      "title": "Risiken für Menschen vs. Risiken fürs Geschäft",
+      "n": 2,
+      "snips": [
+        "egelmäßig, dass der geschäftliche Ertrag solider Datenschutzprozesse die getätigten Aufwände um das 1,6- bis 1,8-Fache übertrifft. Dieser Mehrwert entsteht selten durch das bloße Ausbleiben externer Beanstandungen. Er zeigt sich im operativen Alltag: Vertriebszykl",
+        ", dass der geschäftliche Ertrag solider Datenschutzprozesse die getätigten Aufwände um das 1,6- bis 1,8-Fache übertrifft. Dieser Mehrwert entsteht selten durch das bloße Ausbleiben externer Beanstandungen. Er zeigt sich im operativen Alltag: Vertriebszyklen im B2B"
+      ]
+    }
+  ],
+  "70-abbruch": [
+    {
+      "kap": 9,
+      "title": "Der KI-Stresstest & der 90-Tage-Rollout",
+      "n": 1,
+      "snips": [
+        ". Im direkten 60-Tage-Vergleich vor und nach der Einführung der transparenten Oberfläche sank diese Abbruchquote von vormals 40 Prozent um mehr als ein Drittel auf 26 Prozent. Weil die Nutzer dank der klickbaren Quellenangaben den Aussagen vertrauten und dank des sichtbaren G"
+      ]
+    }
+  ],
+  "b2b-wochen": [
+    {
+      "kap": 7,
+      "title": "Verständlich ist, was der Kunde versteht",
+      "n": 1,
+      "snips": [
+        "ent gewahrt blieben und Beschwerderisiken minimiert wurden, sank die durchschnittliche Prüfdauer im B2B-Vertriebsprozess von zuvor neun Wochen auf knapp zwölf Tage. Die zähen Korrekturschleifen zu den technischen und organisatorischen Maßnahmen zur Sicherheit der Verarbeitung schrumpften von vier Abst"
+      ]
+    }
+  ],
+  "75-vertrauen": [
+    {
+      "kap": 8,
+      "title": "Fairness als Geschäftsmodell",
+      "n": 1,
+      "snips": [
+        "die Reaktionen der Verbraucher widersprüchlich: Viele Konsumenten betonen in Befragungen, dass sie nicht bei Unternehmen kaufen, deren Datenpraktiken sie misstrauen. Im digitalen Alltag klicken dieselben Personen dennoch resigniert auf „Zustimmen“, schlicht um den Kaufprozess endlich ab"
+      ]
+    }
+  ]
+}

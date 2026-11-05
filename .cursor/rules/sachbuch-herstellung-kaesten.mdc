@@ -1,0 +1,27 @@
+---
+description: Sachbuch-Herstellung — Kästen (Merksatz grau, keine Kind-Überschrift)
+globs: src/lib/sachbuch/**/*,src/components/features/admin/sachbuch*/**/*,src/lib/roman/export-roman-*.ts
+alwaysApply: false
+---
+
+# Herstellung-Kästen
+
+Source of truth for markers: `src/lib/sachbuch/herstellung-markup.ts`. Plan prompt: `HERSTELLUNG_PLAN_SYSTEM` in `src/lib/sachbuch/herstellung.ts`.
+
+## Chrome
+
+- **No kind eyebrow** in Preview / ePub / PDF (no small „INFOBOX“ / „MERKSATZ“ / „ONE-PAGER“ line above the box).
+- Box heading only when there is a **real content title** (`sachbuchBoxChromeTitle`).
+- **Merksatz:** always untitled — body is the pull-quote. Ignore generic titles like „Merksatz“ / „Merksatz für die Praxis“.
+- Marker: `<<<BOX merksatz>>>` (no title token).
+
+## Merksatz look & density
+
+- Visual: **grey** box (`border-zinc` / `bg-zinc-100`), not amber.
+- **2–3 Merksätze per chapter**, only where a short Lehrsatz / Pull-Quote clearly fits — never pad with fluff.
+- Prefer wrapping existing „Merksatz:“ prose; if inserting new ones, keep one pointed sentence (or two short ones).
+
+## Other boxes
+
+- Infobox / One-Pager / Schaubild: content title on the box is OK; still no kind-label chrome.
+- Do not invent boxes without text basis; do not use „Montagmorgen“-/Download-Rhetorik for onepagers.

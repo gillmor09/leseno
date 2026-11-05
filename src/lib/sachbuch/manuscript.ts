@@ -1,6 +1,7 @@
 /**
  * Phase 7 — Manuskript-Lektorat: freeze Schreiben, score sales readiness, improve chapters.
  * Model: Gemini 4 Argon (`SACHBUCH_MODEL_MANUSCRIPT`).
+ * Layout/Grafik/Tabellen-Platzhalter gehören zu Phase 8 Herstellung — nicht negativ scoren.
  */
 
 import {
@@ -23,6 +24,7 @@ import {
   emptySachbuchHerstellungBookReview,
   emptySachbuchKapitelManuscript,
   emptySachbuchManuscriptBookReview,
+  filterSachbuchManuscriptCritiqueLines,
   sachbuchBookCritiqueForChapter,
   sachbuchKapitelBodyText,
   sachbuchKapitelNeedsManuscriptImprove,
@@ -43,45 +45,102 @@ import { resolveRomanSchreibModel } from "@/lib/roman/model";
 /** Per-chapter attempts when improve-all hits transient network drops. */
 const IMPROVE_CHAPTER_ATTEMPTS = 3;
 
+/**
+ * Manuskript-Phase ≠ Herstellung: fertige Grafiken/Tabellen/Infografiken entstehen
+ * erst in Schritt 8 (Herstellung / Infografik). Platzhalter im Fließtext sind Absicht.
+ */
+const MANUSCRIPT_LAYOUT_SCOPE = `PHASE-GRENZE (verbindlich — Score und Change-Orders):
+- Du bewertest nur das MANUSKRIPT (Prosa, Argumentation, Dramaturgie, Verkaufsreife).
+- Platzhalter für Abbildungen, Tabellen, Infografiken, Übersichtskästen, QR/URL-Hinweise
+  (z. B. „Abbildung 3: …“, „[Tabelle: …]“, „Übersichtskasten: …“) sind VORGESEHEN und KEIN Mangel.
+- Fertige Grafiken, gesetzte Tabellen, Infografiken und Buchsatz-Layout entstehen erst in
+  Schritt 8 „Herstellung“ — fordere sie hier NICHT an und senke den Score deshalb NICHT.
+- VERBOTEN in gaps/changeOrders: „Platzhalter finalisieren“, „echte Tabellen/Grafiken setzen“,
+  „Infografik erzeugen“, „Buchsatz/Druckbild/Callout-Kästen optisch umsetzen“, „QR/URL finalisieren“,
+  „Nummerierung der Abbildungen vereinheitlichen“ als Produktionsauftrag.
+- Erlaubt: inhaltliche Kritik an der Prosa (Redundanz, Logik, Ton, Cases, Begriffe).
+- „Druckreife“ hier = Prosa ohne Markdown-Artefakte — nicht Druckerei-/Satz-Vollständigkeit.`;
+
+/** Shared score ladder — mirrors Idee-Refine so 9–10 can converge without inventing work. */
+const SCORE_LADDER = `Score-Leiter (verbindlich — score muss passen, nicht pauschal niedrig halten):
+1–3: These unklar / austauschbar; kaum Praxisnutzen; viel Fluff oder Formbruch.
+4–5: Richtung erkennbar, aber Argumentation, Belege oder Lesbarkeit dünn.
+6–7: Brauchbar; klarer Nutzen, noch materielle Lücken (Widerspruch, Leseversprechen, starke Redundanz).
+8–9: Verkaufsreif: Kaufgrund, Praxisnähe und Prosa stimmen. Nur noch materielle Restlücken.
+   Kosmetische Nitpicks (Stilgeschmack, Mini-Wiederholung, ideale Feinschliffe) senken den Score NICHT
+   und gehören NICHT in gaps/changeOrders.
+10: Exzellent — nichts Wesentliches offen. gaps und changeOrders MÜSSEN leere Arrays sein [].
+   10 ist selten und nur verdient, wenn wirklich nichts Materielles offen ist — nicht als Höflichkeit.
+
+Change-Order-Vertrag:
+- Es gibt KEINE Pflicht, Arbeit zu erfinden. Leere gaps/changeOrders sind bei 9–10 korrekt und erwünscht.
+- Bei score <= 7: bis zu 8 konkrete, umsetzbare changeOrders (priorisiert).
+- Bei score 8: höchstens 3 changeOrders, nur materielle Mängel.
+- Bei score >= 9: höchstens 2 changeOrders — nur bei echten Härtefällen (Widerspruch im Text,
+  gebrochenes Leseversprechen, Markdown-Artefakte, Artikelnummern 1:1, Kapitel-Sofortprogramm-CTA).
+  Sonst gaps=[] und changeOrders=[].
+- Keine Wiederholung bereits adressierter Themen, wenn der Text den Mangel nicht mehr zeigt.
+- Erledigte Vor-Orders bedeuten: diese Themen nicht neu erfinden. Sie bedeuten NICHT automatisch Score 10
+  und kein Blind-Upgrade — der aktuelle Text wird unabhängig auf der Score-Leiter bewertet.`;
+
 const SCORE_SYSTEM = `Du bist Lektor und Produktmanager für deutschsprachige Business-Sachbücher.
 Bewerte ein Kapitel auf VERKAUFSREIFE (Amazon/Fachbuch-Markt), nicht nur auf Grammatik.
 
-Rubrik (1–10 Gesamtscore, ganzzahlig):
+${MANUSCRIPT_LAYOUT_SCOPE}
+
+${SCORE_LADDER}
+
+Rubrik-Achsen (in den Gesamtscore 1–10 einrechnen):
 - These/Nutzenversprechen klar und kaufrelevant
 - Argumentation + Belege glaubwürdig
 - Lesbarkeit / Rhythmus (kein KI-Matsch, keine Wiederholungsschleifen)
-- Buchformatierung: druckreif — KEINE Markdown-Artefakte (# ## ###, **, \`\`\`, - Listen als Markdown)
+- Buchformatierung: Prosa ohne Markdown-Artefakte (# ## ###, **, \`\`\`, - Listen als Markdown)
 - Leseversprechen eingehalten (bei Privacy/DSGVO: KEINE Artikelnummern 1:1 / keine Artikel-Schlacht)
-- Praxisnähe (Frameworks, Cases, Handlungsaufforderung)
+- Praxisnähe (Frameworks, Cases, Diagnose-Hebel im Fließtext — KEINE Kapitel-Sofortprogramme)
 - Marktfähigkeit (Titelwirkung des Kapitels, Differenzierung)
+- VERBOT Kapitel-CTAs: kein Montag-/Wochen-/90-Tage-Sofortplan am Kapitelende (sonst neun konkurrierende Baustellen)
 
 Antworte NUR als JSON ohne Markdown-Fence:
 {
   "salesScore": 1-10,
   "scoreSummary": "2–4 Sätze Gesamturteil",
   "strengths": ["…"],
-  "gaps": ["…"],
-  "changeOrders": ["konkrete Verbesserungsaufträge, max 8"]
+  "gaps": [],
+  "changeOrders": []
 }`;
 
 const BOOK_SCORE_SYSTEM = `Du bist Lektor und Produktmanager für deutschsprachige Business-Sachbücher.
 Bewerte das GESAMTE BUCH als ein verkaufsfähiges Produkt (Amazon/Fachbuch), nicht als Mittelwert einzelner Kapitel.
 
-Rubrik (1–10 Gesamtscore, ganzzahlig) — Buch als Ganzes:
+${MANUSCRIPT_LAYOUT_SCOPE}
+
+${SCORE_LADDER}
+
+Rubrik-Achsen (Buch als Ganzes, in den Gesamtscore 1–10 einrechnen):
 - Roter Faden / Dramaturgie über alle Kapitel (Aufbau, Wiederholungen zwischen Kapiteln, Escalation)
 - UVP und Leseversprechen werden über das Werk eingelöst
 - Kohärenz der Cases, Begriffe und Handlungsstränge (kein Kapitel widerspricht dem anderen)
-- Marktfähigkeit des Gesamtwerks (Kaufgrund, Differenzierung, Abschluss/CTA des Buchs)
-- Druckreife über alle Kapitel (kein Markdown-Matsch, keine Artikel-Schlacht wo versprochen)
-- Kapitel-Einzelscores sind nur Kontext — der Buch-Score darf darunter oder darüber liegen, wenn das Gesamtwerk schwächer/stärker wirkt
+- Marktfähigkeit des Gesamtwerks (Kaufgrund, Differenzierung; höchstens EIN Buch-Abschluss, kein CTA pro Kapitel)
+- Prosa-Qualität über alle Kapitel (kein Markdown-Matsch, keine Artikel-Schlacht wo versprochen)
+- KEINE Überfrachtung: Kapitel dürfen nicht jeweils mit eigenem Sofortprogramm enden (Montag-/Mi-Fr-Plan, „noch in dieser Woche“, parallele 90-Tage-Sprints) — das erzeugt konkurrierende Baustellen
+- Kapitel-Einzelscores sind Kontext zur Ehrlichkeit: Der Buch-Score darf UNTER dem Kapitel-Mittel liegen,
+  wenn das Gesamtwerk schwächer wirkt (roter Faden, Widersprüche). Er darf höchstens 1 Punkt ÜBER dem
+  höchsten Kapitel-Score liegen — und Score 10 nur, wenn mindestens ein Kapitel bereits 10 hat bzw.
+  das Gesamtwerk klar exzellent und ohne materielle Restlücken ist. Kein Buch-10 bei durchweg 9ern
+  mit offenen Kapitel-Restarbeiten, nur weil Vor-Orders erledigt wurden.
+
+Wenn eine Vor-Bewertung mit gaps/changeOrders mitgeliefert wird: das sind erledigte bzw. geprüfte Punkte.
+Melde NUR neue, materielle Lücken, die im aktuellen Textauszug klar stehen. Themen aus der Vor-Liste
+nicht wiederholen, außer der Mangel ist im Auszug noch eindeutig sichtbar. Sonst gaps=[] und changeOrders=[].
+Erledigte Vor-Orders ≠ automatisches Score-Upgrade.
 
 Antworte NUR als JSON ohne Markdown-Fence:
 {
   "salesScore": 1-10,
   "scoreSummary": "2–5 Sätze Gesamturteil zum BUCH",
   "strengths": ["…"],
-  "gaps": ["…"],
-  "changeOrders": ["buchweite Verbesserungsaufträge, max 8"]
+  "gaps": [],
+  "changeOrders": []
 }`;
 
 /** Soft cap per chapter excerpt so a 5×8k book still fits one score call. */
@@ -110,6 +169,16 @@ Pflichtregeln:
   Markdown-Listen (- Item / * Item / 1. Item), [Links](url), HTML-Tags, Emoji-Zwischenüberschriften à la „### 🔍 …“.
   Zwischenüberschriften — wenn nötig — als eigene kurze Zeile in Normalschrift OHNE #-Zeichen (Titelfall), danach Absatz.
   Aufzählungen als fließende Sätze oder nummerierte Sätze im Fließtext, nicht als Markdown-Bullets.
+- PLATZHALTER für Abbildungen/Tabellen/Übersichtskästen (Zeilen wie „Abbildung …“, „Tabelle …“,
+  „[Abbildung: …]“, „Übersichtskasten: …“) BEIBEHALTEN — nicht löschen, nicht durch fertige Grafiken
+  ersetzen. Satz und Infografiken kommen erst in Schritt 8 Herstellung.
+- VERBOT Kapitel-Sofortprogramme / Ratgeber-CTAs am Kapitelende (hart):
+  Kein „Montagmorgen“-/„Montag-Mittwoch-Freitag“-Plan, kein „noch in dieser Woche mit drei Schritten“,
+  kein „kommender Montag = Tag 1“, kein paralleler 90-Tage-Sprint-CTA, keine „Management-Takeaway:
+  Erstens/Zweitens/Drittens — tun Sie Folgendes“-Blöcke als Kapitelabschluss.
+  Begründung: bei sequenziellem Lesen entstehen sonst neun konkurrierende Baustellen.
+  Erlaubt: Diagnose-Hebel und Prinzipien im Fließtext; Fallstudien-Zeitachsen (Etappen einer Case);
+  konzeptionelle Brücke zum nächsten Kapitel; der Buch-Abschluss nur im Schlusskapitel, ohne Wochenplan-Rhetorik.
 - Kein JSON, kein Vorspann („Hier das Kapitel:“) — nur der fertige Kapiteltext.`;
 
 function draftFromKapitel(k: SachbuchKapitel): string {
@@ -120,6 +189,15 @@ function draftFromKapitel(k: SachbuchKapitel): string {
   );
 }
 
+/** Prefer Lektorat for scoring; draft only when no improved text yet. */
+function manuscriptBodyForScore(k: SachbuchKapitel): string {
+  return (
+    k.manuscript.improvedText.trim() ||
+    k.manuscript.draftText.trim() ||
+    draftFromKapitel(k)
+  );
+}
+
 function parseScoreJson(raw: string): Partial<SachbuchKapitelManuscript> {
   const cleaned = raw.replace(/^```json?\s*|\s*```$/g, "").trim();
   const parsed = JSON.parse(cleaned) as Record<string, unknown>;
@@ -127,17 +205,74 @@ function parseScoreJson(raw: string): Partial<SachbuchKapitelManuscript> {
     typeof parsed.salesScore === "number" && Number.isFinite(parsed.salesScore)
       ? Math.max(1, Math.min(10, Math.round(parsed.salesScore)))
       : null;
-  const list = (v: unknown) =>
+  const list = (v: unknown, max: number) =>
     Array.isArray(v)
-      ? v.map((x) => String(x).trim()).filter(Boolean).slice(0, 12)
+      ? v.map((x) => String(x).trim()).filter(Boolean).slice(0, max)
       : [];
+  // Score 10 = nothing open; >=9 caps inventiveness so re-scores can converge.
+  const orderCap = score === 10 ? 0 : score != null && score >= 9 ? 2 : 12;
+  const gapCap = score === 10 ? 0 : 12;
   return {
     salesScore: score,
     scoreSummary: String(parsed.scoreSummary ?? "").trim(),
-    strengths: list(parsed.strengths),
-    gaps: list(parsed.gaps),
-    changeOrders: list(parsed.changeOrders),
+    strengths: list(parsed.strengths, 12),
+    gaps: filterSachbuchManuscriptCritiqueLines(list(parsed.gaps, gapCap)),
+    changeOrders: filterSachbuchManuscriptCritiqueLines(
+      list(parsed.changeOrders, orderCap),
+    ),
   };
+}
+
+function formatPriorCritiqueBlock(input: {
+  label: string;
+  salesScore: number | null;
+  gaps: string[];
+  changeOrders: string[];
+}): string {
+  const gaps = input.gaps.map((g) => `- ${g}`).join("\n") || "(keine)";
+  const orders =
+    input.changeOrders.map((o) => `- ${o}`).join("\n") || "(keine)";
+  const scoreLabel =
+    input.salesScore != null ? `${input.salesScore}/10` : "—";
+  return `Vor-Bewertung (${input.label}) — Score ${scoreLabel}.
+Die folgenden gaps/changeOrders wurden seitdem bearbeitet bzw. geprüft.
+Melde NUR neue, materielle Lücken, die im aktuellen Text klar stehen.
+Themen aus dieser Liste nicht wiederholen, außer der Mangel ist noch eindeutig sichtbar.
+Sonst gaps=[] und changeOrders=[].
+WICHTIG: Erledigte Orders sind kein Freifahrtschein für Score 10 — bewerte den aktuellen Text
+unabhängig auf der Score-Leiter (Verkaufsreife jetzt, nicht „Fortschritt seit letzter Runde“).
+
+Vorige Lücken:
+${gaps}
+
+Vorige Change-Orders:
+${orders}`;
+}
+
+/**
+ * Keep book score honest vs. chapter scores.
+ * Book-10 only when every scored chapter is already 10 with empty change-orders;
+ * otherwise ceiling is min(9, maxChapter). Never invent excellence above the chapters.
+ */
+function clampBookScoreToChapters(
+  modelScore: number,
+  kapitel: SachbuchKapitel[],
+): number {
+  const scored = kapitel.filter(
+    (k) =>
+      typeof k.manuscript.salesScore === "number" &&
+      Number.isFinite(k.manuscript.salesScore),
+  );
+  if (scored.length === 0) return modelScore;
+  const chapterScores = scored.map((k) => k.manuscript.salesScore as number);
+  const maxChapter = Math.max(...chapterScores);
+  const allTen = chapterScores.every((s) => s >= 10);
+  const anyOpenOrders = scored.some(
+    (k) => k.manuscript.changeOrders.length > 0,
+  );
+  const hardCeiling =
+    allTen && !anyOpenOrders ? 10 : Math.min(9, maxChapter);
+  return Math.max(1, Math.min(modelScore, hardCeiling));
 }
 
 /**
@@ -183,6 +318,7 @@ export async function approveSachbuchSchreiben(
         changeOrders: [],
         scoredAt: null,
         improvedAt: null,
+        bookPassAppliedScoredAt: null,
         modelSlug: "",
       },
       updatedAt: now,
@@ -293,11 +429,22 @@ export async function scoreSachbuchKapitelManuscript(input: {
   const kapitel = book.kapitel.find((k) => k.id === input.kapitelId);
   if (!kapitel) throw new Error("Kapitel nicht gefunden.");
 
-  const body =
-    kapitel.manuscript.draftText.trim() || draftFromKapitel(kapitel);
+  const body = manuscriptBodyForScore(kapitel);
   if (countSachbuchWords(body) < 400) {
     throw new Error("Kapiteltext zu kurz für Bewertung.");
   }
+
+  const prior =
+    kapitel.manuscript.gaps.length > 0 ||
+    kapitel.manuscript.changeOrders.length > 0 ||
+    kapitel.manuscript.salesScore != null
+      ? `\n\n${formatPriorCritiqueBlock({
+          label: "Kapitel",
+          salesScore: kapitel.manuscript.salesScore,
+          gaps: kapitel.manuscript.gaps,
+          changeOrders: kapitel.manuscript.changeOrders,
+        })}\n`
+      : "";
 
   const model = await resolveRomanSchreibModel(SACHBUCH_MODEL_MANUSCRIPT);
   const raw = await generateText({
@@ -307,8 +454,8 @@ export async function scoreSachbuchKapitelManuscript(input: {
 UVP: ${book.idee.unpopularOpinion}
 Zielgruppe: ${book.zielgruppe || "—"}
 Kapitel: ${kapitel.title}
-
-Kapiteltext:
+${prior}
+Kapiteltext (Lektorat falls vorhanden, sonst Rohentwurf):
 ${body}`,
     preferJson: true,
     maxTokens: 4000,
@@ -326,10 +473,14 @@ ${body}`,
   }
 
   const now = new Date().toISOString();
+  // Never overwrite frozen draft with Lektorat; only seed draft if still empty.
+  const draftText =
+    kapitel.manuscript.draftText.trim() ||
+    (!kapitel.manuscript.improvedText.trim() ? body : "");
   return patchSachbuchKapitel(input.sachbuchId, input.kapitelId, {
     manuscript: {
       ...kapitel.manuscript,
-      draftText: body,
+      draftText: draftText || kapitel.manuscript.draftText,
       salesScore: scored.salesScore,
       scoreSummary: scored.scoreSummary ?? "",
       strengths: scored.strengths ?? [],
@@ -357,10 +508,7 @@ export async function scoreSachbuchBookManuscript(
   }
 
   const chapterBlocks = book.kapitel.map((k, i) => {
-    const body =
-      k.manuscript.improvedText.trim() ||
-      k.manuscript.draftText.trim() ||
-      draftFromKapitel(k);
+    const body = manuscriptBodyForScore(k);
     const words = countSachbuchWords(body);
     if (words < 200) {
       throw new Error(
@@ -379,6 +527,19 @@ Wörter gesamt: ${words} (Auszug unten)
 ${excerpt}`;
   });
 
+  const priorReview = book.idee.manuscriptReview;
+  const priorBlock =
+    priorReview.salesScore != null ||
+    priorReview.gaps.length > 0 ||
+    priorReview.changeOrders.length > 0
+      ? `\n\n${formatPriorCritiqueBlock({
+          label: "Buch",
+          salesScore: priorReview.salesScore,
+          gaps: priorReview.gaps,
+          changeOrders: priorReview.changeOrders,
+        })}\n`
+      : "";
+
   const model = await resolveRomanSchreibModel(SACHBUCH_MODEL_MANUSCRIPT);
   const raw = await generateText({
     model,
@@ -387,7 +548,7 @@ ${excerpt}`;
 UVP: ${book.idee.unpopularOpinion}
 Zielgruppe: ${book.zielgruppe || "—"}
 Kapitelanzahl: ${book.kapitel.length}
-
+${priorBlock}
 Bewerte das GESAMTWERK (nicht den Mittelwert der Kapitel-Scores).
 
 ${chapterBlocks.join("\n\n---\n\n")}`,
@@ -406,12 +567,19 @@ ${chapterBlocks.join("\n\n---\n\n")}`,
     throw new Error("Kein salesScore in der Buch-Bewertung.");
   }
 
+  const salesScore = clampBookScoreToChapters(scored.salesScore, book.kapitel);
+  if (salesScore !== scored.salesScore) {
+    console.info(
+      `[sachbuch] book score clamped ${scored.salesScore} → ${salesScore} (chapter max)`,
+    );
+  }
+
   const now = new Date().toISOString();
   return patchSachbuchBook(sachbuchId, {
     idee: {
       ...book.idee,
       manuscriptReview: {
-        salesScore: scored.salesScore,
+        salesScore,
         scoreSummary: scored.scoreSummary ?? "",
         strengths: scored.strengths ?? [],
         gaps: scored.gaps ?? [],
@@ -498,7 +666,21 @@ Kapitel: ${kap.title}
 UVP: ${book.idee.unpopularOpinion}
 
 Vorlage: ${sourceWords} Wörter (${vorlageLabel}) — Ziel mindestens ${minWords} Wörter (kein starkes Kürzen).
-Priorität: Buch-weite Change-Orders zuerst (Redundanzen zwischen Kapiteln, Framework-Konsistenz, dramaturgische Staffelung), dann Kapitel-Orders.
+${
+  book.idee.edition === "teaser"
+    ? `Ausgabe: Teaser (Newsletter / Broschüre / Web-Appetit).
+- Vorlage nicht auf Kompakt- oder Hauptband-Länge ausdehnen; 90-Prozent-Untergrenze gilt nur für diese Kurzvorlage.
+- Keine Abbildungs-/Tabellen-Captions und keine Infografik-Platzhalter.
+- Mindestens ein Verweis „Vertiefung in der Kompaktausgabe …“ behalten oder ergänzen.
+- Marketing-Ton: Hook + Kernidee + Einstieg — kein Briefing und keine Sprint-Didaktik.\n`
+    : book.idee.edition === "compact"
+      ? `Ausgabe: Kompakt (Executive Briefing).
+- Vorlage nicht auf Hauptband-Länge ausdehnen; 90-Prozent-Untergrenze gilt nur für diese Kurzvorlage.
+- Keine Abbildungs-/Tabellen-Captions und keine Infografik-Platzhalter.
+- Mindestens ein Verweis „Ausführlich im Hauptband …, Kapitel N“ behalten oder ergänzen.
+- Briefing-Ton: These + ein Fallanker + ein Hebel — keine volle Sprint-Didaktik.\n`
+      : ""
+}Priorität: Buch-weite Change-Orders zuerst (Redundanzen zwischen Kapiteln, Framework-Konsistenz, dramaturgische Staffelung), dann Kapitel-Orders.
 
 Kapitel-Score bisher: ${kap.manuscript.salesScore}/10
 Kapitel-Kritik: ${kap.manuscript.scoreSummary || "—"}
@@ -558,6 +740,9 @@ ${body}`);
   }
 
   const now = new Date().toISOString();
+  const bookScoredAt = working.idee.manuscriptReview?.scoredAt?.trim() || null;
+  const appliedBookPass =
+    bookCritique.orders.length > 0 && Boolean(bookScoredAt);
   // Re-score after improve for updated salesScore
   const rescoreModel = await resolveRomanSchreibModel(SACHBUCH_MODEL_MANUSCRIPT);
   let newScore = kap.manuscript.salesScore;
@@ -566,12 +751,27 @@ ${body}`);
   let gapsOut = kap.manuscript.gaps;
   let changeOrders = kap.manuscript.changeOrders;
   try {
+    const priorRescore =
+      kap.manuscript.gaps.length > 0 ||
+      kap.manuscript.changeOrders.length > 0 ||
+      bookCritique.orders.length > 0 ||
+      bookCritique.gaps.length > 0
+        ? `\n\n${formatPriorCritiqueBlock({
+            label: "Kapitel + Buch-Pass",
+            salesScore: kap.manuscript.salesScore,
+            gaps: [...kap.manuscript.gaps, ...bookCritique.gaps],
+            changeOrders: [
+              ...kap.manuscript.changeOrders,
+              ...bookCritique.orders,
+            ],
+          })}\n`
+        : "";
     const scoreRaw = await generateText({
       model: rescoreModel,
       systemInstruction: SCORE_SYSTEM,
       userText: `Buch: ${book.title}
 Kapitel: ${kap.title} (NACH Lektorat)
-
+${priorRescore}
 ${improved}`,
       preferJson: true,
       maxTokens: 4000,
@@ -603,6 +803,9 @@ ${improved}`,
       changeOrders,
       scoredAt: kap.manuscript.scoredAt ?? now,
       improvedAt: now,
+      bookPassAppliedScoredAt: appliedBookPass
+        ? bookScoredAt
+        : kap.manuscript.bookPassAppliedScoredAt,
       modelSlug: SACHBUCH_MODEL_MANUSCRIPT,
     },
     updatedAt: now,
@@ -614,8 +817,10 @@ export const SACHBUCH_MANUSCRIPT_DEFAULT_CHANGE_ORDERS = [
   "Entferne alle DSGVO-/Gesetzes-Artikelnummern 1:1 (Art. …, Artikel …) — ersetze durch Prinzipien in Alltagssprache (Zweckbindung, Speicherbegrenzung, Sicherheit der Verarbeitung, Auskunftsrechte). Leseversprechen: ganz ohne Artikel-Schlacht.",
   "Reduziere Wiederholung und KI-Glätte: gleiche Pointe nicht in mehreren Absätzen neu aufwärmen; Rhythmus variieren.",
   "Belege/Zahlen nicht erfinden und nicht präziser machen als die Quelle hergibt — bei Unsicherheit weicher formulieren statt Scheingenauigkeit.",
-  "Schärfe Verkaufsreife: jedes Kapitel braucht klaren Leser-Nutzen und eine greifbare Handlungsaufforderung ohne Juristen-Jargon.",
+  "Schärfe Verkaufsreife: jedes Kapitel braucht klaren Leser-Nutzen und greifbare Diagnose-Hebel im Fließtext — OHNE eigenes Sofortprogramm/Montag-/Wochen-/90-Tage-CTA am Kapitelende (sonst neun konkurrierende Baustellen).",
+  "Entferne Kapitel-Schluss-CTAs: Montagmorgen-Pläne, Montag-Mittwoch-Freitag-Pläne, „noch in dieser Woche mit drei Schritten“, „kommender Montag = Tag 1“, parallele Sprint-Hausaufgaben. Ersetze durch konzeptionelle Brücke zum nächsten Kapitel bzw. einen ruhigen Buch-Schluss ohne Wochenplan-Rhetorik.",
   "Buchformatierung: keine Markdown-Syntax (# ## ###, **, Listen-Striche, Backticks). Nur saubere Absätze und ggf. Zwischenüberschriften als Normalschrift-Zeile ohne #-Zeichen.",
+  "Platzhalter für Abbildungen/Tabellen/Kästen unverändert lassen — fertige Grafiken und Satz entstehen erst in Herstellung, nicht im Manuskript-Lektorat.",
 ] as const;
 
 /**

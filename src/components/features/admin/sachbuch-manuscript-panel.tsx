@@ -6,7 +6,7 @@
  * Improve-all: one API hop per chapter (like Abschnitte) — no giant Server Action.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { reopenSachbuchSchreibenAction } from "@/app/actions/sachbuch-phases";
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
@@ -18,10 +18,11 @@ import {
 } from "@/lib/sachbuch/improve-manuscript-client";
 import {
   countSachbuchWords,
+  mergeSachbuchProseFromPrevious,
   sachbuchKapitelBodyText,
   sachbuchManuscriptOverallSalesScore,
 } from "@/lib/sachbuch/parse";
-import type { SachbuchKontext } from "@/lib/sachbuch/types";
+import type { SachbuchKapitel, SachbuchKontext } from "@/lib/sachbuch/types";
 import {
   SACHBUCH_WAIT_MANUSCRIPT_BOOK_SCORE,
   SACHBUCH_WAIT_MANUSCRIPT_IMPROVE,
@@ -45,9 +46,24 @@ export function SachbuchManuscriptPanel({
 }) {
   const [selectedId, setSelectedId] = useState(book.kapitel[0]?.id ?? "");
   const [pending, setPending] = useState(false);
+  const [bodyLoading, setBodyLoading] = useState(false);
   const [waitKind, setWaitKind] = useState<WaitKind>(null);
   const [waitProgress, setWaitProgress] = useState<string | null>(null);
+  /** Wall-clock start for WaitDialog — survives remounts while waitKind stays set. */
+  const [waitStartedAtMs, setWaitStartedAtMs] = useState<number | null>(null);
   const [reopenOpen, setReopenOpen] = useState(false);
+
+  function beginWait(kind: Exclude<WaitKind, null>, progress: string | null = null) {
+    setWaitKind(kind);
+    setWaitProgress(progress);
+    setWaitStartedAtMs(Date.now());
+  }
+
+  function endWait() {
+    setWaitKind(null);
+    setWaitProgress(null);
+    setWaitStartedAtMs(null);
+  }
 
   const selected =
     book.kapitel.find((k) => k.id === selectedId) ?? book.kapitel[0] ?? null;
@@ -57,18 +73,77 @@ export function SachbuchManuscriptPanel({
   const overall = sachbuchManuscriptOverallSalesScore(book);
   const bookReview = book.idee.manuscriptReview;
 
+  function applyBookUpdate(next: SachbuchKontext) {
+    onBookUpdate(mergeSachbuchProseFromPrevious(book, next));
+  }
+
+  const bookRef = useRef(book);
+  bookRef.current = book;
+
+  /** Lazy-load full chapter prose (page hydration strips bodies for size). */
+  useEffect(() => {
+    if (!selectedId) return;
+    const kap = bookRef.current.kapitel.find((k) => k.id === selectedId);
+    if (!kap) return;
+    if (sachbuchKapitelBodyText(kap).trim()) {
+      setBodyLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setBodyLoading(true);
+    const bookId = bookRef.current.id;
+    const kapitelId = selectedId;
+    void (async () => {
+      try {
+        const res = await fetch("/api/admin/sachbuch/kapitel-body", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sachbuchId: bookId, kapitelId }),
+        });
+        const json = (await res.json()) as {
+          success?: boolean;
+          kapitel?: SachbuchKapitel;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok || !json.success || !json.kapitel) {
+          toast.error(json.error ?? "Kapiteltext laden fehlgeschlagen.");
+          return;
+        }
+        const loaded = json.kapitel;
+        const current = bookRef.current;
+        onBookUpdate({
+          ...current,
+          kapitel: current.kapitel.map((k) =>
+            k.id === kapitelId ? loaded : k,
+          ),
+        });
+      } catch {
+        if (!cancelled) {
+          toast.error("Kapiteltext laden fehlgeschlagen.");
+        }
+      } finally {
+        if (!cancelled) setBodyLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, onBookUpdate]);
+
   async function runBookScore() {
     if (!canSave || pending) return;
     setPending(true);
-    setWaitKind("book-score");
-    setWaitProgress(null);
+    beginWait("book-score");
     try {
       const result = await requestScoreSachbuchBook({ sachbuchId: book.id });
       if (!result.success || !result.data) {
         toast.error(result.error ?? "Buch-Score fehlgeschlagen.");
         return;
       }
-      onBookUpdate(result.data.book);
+      applyBookUpdate(result.data.book);
       const s = result.data.book.idee.manuscriptReview.salesScore;
       toast.success(
         s != null
@@ -76,8 +151,7 @@ export function SachbuchManuscriptPanel({
           : "Buch-Verkaufsreife bewertet.",
       );
     } finally {
-      setWaitKind(null);
-      setWaitProgress(null);
+      endWait();
       setPending(false);
     }
   }
@@ -85,8 +159,7 @@ export function SachbuchManuscriptPanel({
   async function runImprove(kapitelId: string) {
     if (!canSave || pending) return;
     setPending(true);
-    setWaitKind("improve");
-    setWaitProgress(null);
+    beginWait("improve");
     try {
       const result = await requestImproveSachbuchKapitel({
         sachbuchId: book.id,
@@ -96,11 +169,10 @@ export function SachbuchManuscriptPanel({
         toast.error(result.error ?? "Verbesserung fehlgeschlagen.");
         return;
       }
-      onBookUpdate(result.data.book);
+      applyBookUpdate(result.data.book);
       toast.success("Kapitel lektoriert.");
     } finally {
-      setWaitKind(null);
-      setWaitProgress(null);
+      endWait();
       setPending(false);
     }
   }
@@ -108,16 +180,15 @@ export function SachbuchManuscriptPanel({
   async function runImproveAll() {
     if (!canSave || pending) return;
     setPending(true);
-    setWaitKind("improve-all");
-    setWaitProgress("Starte Kapitel-Hops…");
+    beginWait("improve-all", "Starte Kapitel-Hops…");
     try {
       const result = await requestImproveAllSachbuchManuscript({
         book,
-        onBookUpdate,
+        onBookUpdate: applyBookUpdate,
         onProgress: setWaitProgress,
       });
       if (result.data?.book) {
-        onBookUpdate(result.data.book);
+        applyBookUpdate(result.data.book);
       }
       if (!result.success) {
         toast.error(result.error ?? "Gesamtverbesserung fehlgeschlagen.");
@@ -130,8 +201,7 @@ export function SachbuchManuscriptPanel({
           : "Alles aktuell — Buch-Score aktualisiert.",
       );
     } finally {
-      setWaitKind(null);
-      setWaitProgress(null);
+      endWait();
       setPending(false);
     }
   }
@@ -145,7 +215,7 @@ export function SachbuchManuscriptPanel({
         toast.error(result.error ?? "Wieder öffnen fehlgeschlagen.");
         return;
       }
-      onBookUpdate(result.data.book);
+      applyBookUpdate(result.data.book);
       setReopenOpen(false);
       toast.success("Schreiben wieder geöffnet — Manuskript-Scores gelöscht.");
     } finally {
@@ -320,10 +390,13 @@ export function SachbuchManuscriptPanel({
                   {selected.title}
                 </h3>
                 <p className="mt-1 text-xs font-semibold text-zinc-500">
-                  {words.toLocaleString("de-DE")} Wörter
-                  {selected.manuscript.improvedText.trim()
-                    ? " · Lektorat"
-                    : " · Rohentwurf"}
+                  {bodyLoading
+                    ? "Text wird geladen…"
+                    : `${words.toLocaleString("de-DE")} Wörter`}
+                  {!bodyLoading &&
+                    (selected.manuscript.improvedText.trim()
+                      ? " · Lektorat"
+                      : " · Rohentwurf")}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -345,7 +418,9 @@ export function SachbuchManuscriptPanel({
                   : "Rohentwurf (fixiert)"}
               </p>
               <div className="max-h-[50vh] overflow-y-auto rounded-2xl bg-zinc-50 px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-zinc-800 ring-1 ring-zinc-950/5">
-                {body || "—"}
+                {bodyLoading
+                  ? "Kapiteltext wird nachgeladen…"
+                  : body || "—"}
               </div>
             </div>
           </section>
@@ -373,13 +448,16 @@ export function SachbuchManuscriptPanel({
         title="Buch-Verkaufsreife wird bewertet"
         steps={SACHBUCH_WAIT_MANUSCRIPT_BOOK_SCORE}
         agentInfo={sachbuchWaitAgentManuscript()}
-        footer="Fenster offen lassen — Argon liest das Gesamtwerk."
+        startedAtMs={waitStartedAtMs}
+        footer="Fenster offen lassen — Argon liest das Gesamtwerk. Die Zeit ist Laufzeit, keine Restzeit."
       />
       <SachbuchWaitDialog
         open={waitKind === "improve"}
         title="Kapitel wird lektoriert"
         steps={SACHBUCH_WAIT_MANUSCRIPT_IMPROVE}
         agentInfo={sachbuchWaitAgentManuscript()}
+        startedAtMs={waitStartedAtMs}
+        footer="Fenster offen lassen — ein Kapitel kann bei Argon bis ~20 Min dauern. Anzeige = Laufzeit, keine ETA."
       />
       <SachbuchWaitDialog
         open={waitKind === "improve-all"}
@@ -387,7 +465,8 @@ export function SachbuchManuscriptPanel({
         steps={SACHBUCH_WAIT_MANUSCRIPT_IMPROVE_ALL}
         progressLabel={waitProgress}
         agentInfo={sachbuchWaitAgentManuscript()}
-        footer="Fenster offen lassen — ein Kapitel pro Hop (wie Abschnitte). Fortschritt bleibt bei Abbruch erhalten."
+        startedAtMs={waitStartedAtMs}
+        footer="Ein Kapitel pro Hop; fertige Kapitel werden übersprungen. Argon bis ~20 Min/Kapitel. Anzeige = Laufzeit, keine ETA."
       />
     </div>
   );

@@ -18,11 +18,16 @@ export const ADMIN_IMPERSONATION_FORBIDDEN_MESSAGE =
 /**
  * Redirects non-admins away from `/admin/*` (unsigned → anmelden, others → home).
  * Impersonating admins stay on member routes until they restore admin.
+ * `next` keeps the intended admin path (e.g. /admin/sachbuch), not a fixed users URL.
  */
-export async function requireAdminPage(): Promise<void> {
+export async function requireAdminPage(nextPath = "/admin/users"): Promise<void> {
   const user = await getCurrentUser();
   if (!user) {
-    redirect("/anmelden?next=/admin/users");
+    const safe =
+      nextPath.startsWith("/admin") && !nextPath.startsWith("//")
+        ? nextPath
+        : "/admin/users";
+    redirect(`/anmelden?next=${encodeURIComponent(safe)}`);
   }
   if (user.app_metadata?.role !== "admin") {
     redirect("/");

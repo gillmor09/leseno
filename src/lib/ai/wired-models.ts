@@ -16,6 +16,7 @@ export type WiredAiEndpoint = {
     | "openai-image"
     | "ionos-image"
     | "openai-tts"
+    | "gemini-tts"
     | "fish-audio"
     | "inworld"
     | "elevenlabs";
@@ -208,6 +209,18 @@ export const WIRED_AI_ENDPOINTS: readonly WiredAiEndpoint[] = [
     label: "OpenAI TTS-1 HD",
     usage: "Vorlesen (höher)",
   },
+  {
+    modelSlug: "gemini-3.8-flash-tts",
+    provider: "gemini-tts",
+    label: "Gemini 3.8 Flash TTS",
+    usage: "Sachbuch Hörbuch / Tolino (Studio-Narration)",
+  },
+  {
+    modelSlug: "gemini-3.8-flash-lite-tts",
+    provider: "gemini-tts",
+    label: "Gemini 3.8 Flash-Lite TTS",
+    usage: "Hörbuch / Vorlesen (günstig, hoher Durchsatz)",
+  },
 ] as const;
 
 const bySlug = new Map(
@@ -234,6 +247,7 @@ const TTS_PROVIDERS = new Set([
   "inworld",
   "fish-audio",
   "openai-tts",
+  "gemini-tts",
 ]);
 
 /** True when the wired provider is a Vorlesen / TTS endpoint. */

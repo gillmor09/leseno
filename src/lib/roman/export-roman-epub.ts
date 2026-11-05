@@ -80,9 +80,21 @@ function chapterHeadingLabel(chapter: RomanExportChapter): string {
   } satisfies PlotChapter);
 }
 
-function paragraphsToXhtml(text: string): string {
-  if (hasSachbuchLayoutMarkup(text)) {
-    const xhtml = sachbuchLayoutBlocksToXhtml(text, escapeXml);
+function paragraphsToXhtml(
+  text: string,
+  figures?: Array<{ key: string; title: string; src: string }>,
+  onFigureUsed?: (key: string) => void,
+): string {
+  if (hasSachbuchLayoutMarkup(text) || (figures?.length ?? 0) > 0) {
+    const xhtml = sachbuchLayoutBlocksToXhtml(text, escapeXml, {
+      figures,
+      onFigureUsed,
+    });
+    // Plain body without markers but with figures: still run caption split via prose path.
+    if (!hasSachbuchLayoutMarkup(text) && figures?.length) {
+      // Force through figure-aware prose by wrapping as single prose parse —
+      // sachbuchLayoutBlocksToXhtml on plain text yields one prose block.
+    }
     return xhtml.trim() ? xhtml : "<p>&#160;</p>";
   }
   const parts = text
@@ -110,7 +122,14 @@ function plainLinesToXhtml(text: string): string {
   return lines.map((l) => `<p>${escapeXml(l)}</p>`).join("\n");
 }
 
-function xhtmlDoc(title: string, body: string, cssHref = "styles.css"): string {
+function xhtmlDoc(
+  title: string,
+  body: string,
+  options?: { cssHref?: string; bodyClass?: string },
+): string {
+  const cssHref = options?.cssHref ?? "styles.css";
+  const bodyClass = options?.bodyClass?.trim();
+  const bodyAttr = bodyClass ? ` class="${escapeXml(bodyClass)}"` : "";
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" lang="de" xml:lang="de">
@@ -119,18 +138,33 @@ function xhtmlDoc(title: string, body: string, cssHref = "styles.css"): string {
   <title>${escapeXml(title)}</title>
   <link rel="stylesheet" type="text/css" href="${cssHref}" />
 </head>
-<body>
+<body${bodyAttr}>
 ${body}
 </body>
 </html>`;
 }
 
-/** Chapter heading one type step above body, bold; one blank line before prose. */
-const EPUB_CSS = `body {
+/**
+ * Reflowable EPUB: top/bottom air ≈ one blank line beyond the old 1em margin.
+ * `@page` helps Tolino/Adobe; many apps still let the user override margins.
+ */
+const EPUB_CSS = `@page {
+  margin-top: 2em;
+  margin-bottom: 2em;
+  margin-left: 1em;
+  margin-right: 1em;
+}
+body {
   font-family: serif;
   font-size: 1em;
   line-height: 1.5;
-  margin: 1em;
+  margin: 2em 1em;
+  padding: 0;
+}
+/* Cover document: full-bleed, no author margins. */
+body.cover-doc {
+  margin: 0;
+  padding: 0;
 }
 /* Each front-matter / chapter file is its own EPUB spine page. */
 .cover {
@@ -152,10 +186,11 @@ h1 {
   margin: 2em 0 1em;
 }
 h1.chapter {
-  font-size: 1.15em;
-  font-weight: bold;
+  font-size: 1.35em;
+  font-weight: 800;
   text-align: left;
   margin: 0 0 1em;
+  color: #09090b;
 }
 .titlepage {
   text-align: center;
@@ -209,15 +244,26 @@ p.scene-break {
 .titlepage p, .copyright p, .dedication p, .epigraph p, .preface p, h1.chapter + p {
   text-indent: 0;
 }
+.sachbuch-figure {
+  margin: 1.1em 0 1.35em;
+  padding: 0;
+  text-indent: 0;
+  page-break-inside: avoid;
+}
+.sachbuch-figure .infografik {
+  margin: 0;
+  padding: 0;
+  text-align: center;
+  page-break-before: auto;
+  page-break-after: avoid;
+  break-before: auto;
+  break-after: avoid;
+}
 .infografik {
   margin: 0;
   padding: 0;
   text-align: center;
   text-indent: 0;
-  page-break-before: always;
-  page-break-after: always;
-  break-before: page;
-  break-after: page;
 }
 .infografik img {
   display: block;
@@ -266,25 +312,41 @@ p.scene-break {
   color: #16a34a;
   font-weight: bold;
 }
+header.unterkapitel-block {
+  margin: 2.1em 0 0.95em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid #d4d4d8;
+}
 h2.unterkapitel {
-  font-size: 1.05em;
-  font-weight: bold;
+  font-size: 1.28em;
+  font-weight: 800;
   text-align: left;
   text-indent: 0;
-  margin: 1.4em 0 0.65em;
+  margin: 0;
+  padding: 0;
+  color: #09090b;
+}
+p.unterkapitel-sub {
+  font-size: 1.05em;
+  font-weight: 600;
+  text-align: left;
+  text-indent: 0;
+  margin: 0.15em 0 0;
+  color: #52525b;
 }
 aside.sachbuch-box {
-  margin: 1.1em 0;
-  padding: 0.85em 1em;
+  margin: 1em 0 1.35em;
+  padding: 0.9em 1em;
   background: #f4f4f5;
   border: 1px solid #d4d4d8;
   border-radius: 0.5em;
   page-break-inside: avoid;
+  box-sizing: border-box;
 }
 aside.sachbuch-box h3 {
   font-size: 0.95em;
   font-weight: bold;
-  margin: 0 0 0.9em;
+  margin: 0 0 0.65em;
   text-indent: 0;
 }
 aside.sachbuch-box .box-kind {
@@ -304,13 +366,22 @@ aside.sachbuch-box p:last-child {
   margin-bottom: 0;
 }
 aside.sachbuch-box ul {
-  margin: 0.35em 0 0.7em;
+  margin: 0.35em 0 0;
   padding-left: 1.2em;
   text-indent: 0;
+}
+aside.sachbuch-box ul:first-child {
+  margin-top: 0;
 }
 aside.sachbuch-box li {
   margin: 0.25em 0;
   text-indent: 0;
+}
+aside.sachbuch-box > :first-child {
+  margin-top: 0;
+}
+aside.sachbuch-box > :last-child {
+  margin-bottom: 0;
 }
 .toc {
   page-break-before: always;
@@ -433,15 +504,20 @@ async function prepareEpubCoverImage(dataUrl: string): Promise<{
 
 function chapterBodyXhtml(
   chapter: RomanExportChapter,
-  imageHref: string | null,
+  figureHrefs: Array<{ key: string; title: string; src: string }>,
 ): string {
+  const used = new Set<string>();
   const parts: string[] = [
     `<h1 class="chapter">${escapeXml(chapterHeadingLabel(chapter))}</h1>`,
-    paragraphsToXhtml(chapter.body),
+    paragraphsToXhtml(chapter.body, figureHrefs, (key) => used.add(key)),
   ];
-  if (imageHref) {
+  for (const fig of figureHrefs) {
+    if (used.has(fig.key)) continue;
+    const label = (fig.title || "Infografik").trim();
     parts.push(
-      `<div class="infografik"><img src="${escapeXml(imageHref)}" alt="Infografik" /></div>`,
+      `<figure class="sachbuch-figure">
+  <div class="infografik"><img src="${escapeXml(fig.src)}" alt="${escapeXml(label)}" /></div>
+</figure>`,
     );
   }
   const fakten = abenteuerWissenExportLines(
@@ -535,6 +611,7 @@ export async function buildRomanEpubBlob(
         `<section class="cover" epub:type="cover">
   <img src="${escapeXml(coverHref)}" alt="Cover: ${escapeXml(title)}" />
 </section>`,
+        { bodyClass: "cover-doc" },
       ),
     );
     spine.push({
@@ -576,31 +653,39 @@ export async function buildRomanEpubBlob(
     });
 
     const imp = vorsatz.impressum;
-    const copyrightBlocks: string[] = [];
+    const impressumBlocks: string[] = [];
     if (imp.hinweis.trim()) {
-      copyrightBlocks.push(imp.hinweis.trim());
+      impressumBlocks.push(imp.hinweis.trim());
     } else {
-      copyrightBlocks.push(
+      impressumBlocks.push(
         `© ${imp.jahr.trim() || String(new Date().getFullYear())} ${
           imp.rechteinhaber.trim() || author
         }. Alle Rechte vorbehalten.`,
       );
     }
-    if (imp.disclaimer.trim()) copyrightBlocks.push(imp.disclaimer.trim());
+    for (const block of imp.absatz ?? []) {
+      if (block.trim()) impressumBlocks.push(block.trim());
+    }
+    if (imp.disclaimer.trim()) impressumBlocks.push(imp.disclaimer.trim());
     oebps.file(
-      "copyright.xhtml",
+      "impressum.xhtml",
       xhtmlDoc(
-        "Copyright",
+        "Impressum",
         `<section class="copyright" epub:type="copyright-page">
-  <h1>Copyright</h1>
-  ${copyrightBlocks.map((b) => `<p>${escapeXml(b)}</p>`).join("\n")}
+  <h1>Impressum</h1>
+  ${impressumBlocks
+    .map(
+      (b) =>
+        `<p>${escapeXml(b).replaceAll("\n", "<br />")}</p>`,
+    )
+    .join("\n  ")}
 </section>`,
       ),
     );
     spine.push({
-      id: "copyright",
-      href: "copyright.xhtml",
-      title: "Copyright",
+      id: "impressum",
+      href: "impressum.xhtml",
+      title: "Impressum",
     });
 
     if (vorsatz.widmung.trim()) {
@@ -691,22 +776,47 @@ ${tocItems}
     const id = `chapter-${chapter.number}`;
     const chapterTitle = chapterHeadingLabel(chapter);
 
-    let imageHref: string | null = null;
-    const parsed = chapter.infografikDataUrl
-      ? parseImageDataUrl(chapter.infografikDataUrl)
-      : null;
-    if (parsed) {
-      const imgName = `infografik-${String(chapter.number).padStart(2, "0")}.${parsed.ext}`;
+    const figureSources =
+      chapter.sachbuchFigures?.length
+        ? chapter.sachbuchFigures
+        : (
+            chapter.infografikDataUrls?.length
+              ? chapter.infografikDataUrls
+              : [(chapter.infografikDataUrl ?? "").trim()]
+          )
+            .map((u) => u.trim())
+            .filter((u) => u.startsWith("data:image/"))
+            .map((dataUrl, i) => ({
+              key: `legacy-${i + 1}`,
+              title: "Infografik",
+              dataUrl,
+            }));
+    const figureHrefs: Array<{ key: string; title: string; src: string }> = [];
+    figureSources.forEach((fig, infoIndex) => {
+      const parsed = parseImageDataUrl(fig.dataUrl);
+      if (!parsed) return;
+      const suffix =
+        figureSources.length > 1
+          ? `-${String(infoIndex + 1).padStart(2, "0")}`
+          : "";
+      const imgName = `infografik-${String(chapter.number).padStart(2, "0")}${suffix}.${parsed.ext}`;
       oebps.file(imgName, parsed.bytes);
-      imageHref = imgName;
+      figureHrefs.push({
+        key: fig.key,
+        title: fig.title,
+        src: imgName,
+      });
       manifestExtra.push({
-        id: `img-infografik-${chapter.number}`,
+        id: `img-infografik-${chapter.number}${suffix}`,
         href: imgName,
         mediaType: parsed.mediaType,
       });
-    }
+    });
 
-    oebps.file(href, xhtmlDoc(chapterTitle, chapterBodyXhtml(chapter, imageHref)));
+    oebps.file(
+      href,
+      xhtmlDoc(chapterTitle, chapterBodyXhtml(chapter, figureHrefs)),
+    );
     spine.push({
       id,
       href,

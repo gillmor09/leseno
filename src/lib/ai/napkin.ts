@@ -26,8 +26,8 @@ export type NapkinGenerateVisualInput = {
   styleId?: string;
   /** Prefer a single visual for book pages. */
   numberOfVisuals?: 1 | 2 | 3 | 4;
-  /** Hint when API supports orientation. */
-  orientation?: "portrait" | "landscape" | "square";
+  /** Napkin API: auto | horizontal | vertical | square. */
+  orientation?: "auto" | "horizontal" | "vertical" | "square";
 };
 
 export type NapkinGenerateVisualResult = {

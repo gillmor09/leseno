@@ -343,6 +343,7 @@ const vorsatzSchema = z.object({
     rechteinhaber: z.string().max(300),
     hinweis: z.string().max(2000),
     disclaimer: z.string().max(4000),
+    absatz: z.array(z.string().max(4000)).max(20).optional().default([]),
   }),
   widmung: z.string().max(2000),
   motto: z.string().max(4000),

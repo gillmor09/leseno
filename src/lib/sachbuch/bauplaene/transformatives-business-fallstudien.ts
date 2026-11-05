@@ -52,7 +52,7 @@ export const TRANSFORMATIVES_BUSINESS_CHAPTER_TRIAD = [
     sharePercent: 30,
     goal: "Lösungsorientierung und Praxistransfer.",
     content:
-      "Ausrede entlarven, Prozess richtig bauen (z. B. Privacy by Design), konkrete Hebel für den Leser.",
+      "Ausrede entlarven, Prozess richtig bauen (z. B. Privacy by Design), konkrete Diagnose-Hebel im Fließtext — kein Sofortprogramm/Montagplan als Kapitelabschluss.",
     style: "Konstruktiv, lösungsorientiert, strukturierend.",
   },
 ] as const;
@@ -83,6 +83,7 @@ export const TRANSFORMATIVES_BUSINESS_TONE = [
   "Keine Floskeln: keine Phrasen-Einstiege („In der heutigen digitalisierten Welt…“) — direkt in Szene oder These.",
   "Konkretheit vor Abstraktion: Tools, Prozesse, Rollen (z. B. Teams, Confluence, Berechtigungsmatrizen, Löschkonzepte).",
   "Tiefe im Faktencheck: Zweckbindung, Datenminimierung, Rechenschaftspflicht & Co. zum Demontieren von Ausreden nutzen.",
+  "Keine Kapitel-Sofortprogramme: kein Montag-/Mi–Fr-/Wochenplan und kein paralleler 90-Tage-CTA am Kapitelende — sonst neun konkurrierende Baustellen; Diagnose-Hebel im Fließtext, ein ruhiger Buch-Schluss nur im Schlusskapitel.",
 ] as const;
 
 export const TRANSFORMATIVES_BUSINESS_CHAPTER_WORKFLOW = [

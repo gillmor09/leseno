@@ -227,6 +227,7 @@ const guideStepActionSchema = z.object({
     "manuscript",
     "herstellung",
     "export",
+    "hoerbuch",
   ]),
 });
 
@@ -240,15 +241,22 @@ export async function setSachbuchGuideStepAction(
   if (!parsed.success) {
     return { success: false, error: firstSachbuchZodMessage(parsed.error) };
   }
-  return wrap(
-    parsed.data.sachbuchId,
-    () =>
-      setSachbuchGuideStep(
-        parsed.data.sachbuchId,
-        parsed.data.step as SachbuchGuideStep,
-      ),
-    "Schritt wechseln fehlgeschlagen.",
-  );
+  // No revalidatePath — tab switch must stay light (client already owns state).
+  try {
+    const book = await setSachbuchGuideStep(
+      parsed.data.sachbuchId,
+      parsed.data.step as SachbuchGuideStep,
+    );
+    return { success: true, data: { book } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Schritt wechseln fehlgeschlagen.",
+    };
+  }
 }
 
 /** Rank gängige Sachbuchtypen against Idee/Konzept (no persist). */
@@ -374,7 +382,11 @@ export async function generateNextAbschnittAction(
     revalidateSachbuchAdmin(book.id);
     return {
       success: true,
-      data: { book: slimSachbuchKontextForTransport(book) },
+      data: {
+        book: slimSachbuchKontextForTransport(book, {
+          keepKapitelIds: [parsed.data.kapitelId],
+        }),
+      },
     };
   } catch (error) {
     revalidateSachbuchAdmin(parsed.data.sachbuchId);
@@ -443,7 +455,7 @@ export async function generateSachbuchMarketingAction(
   );
 }
 
-/** Cover via gpt-image-2.5-sunburst 1600×2400 JPEG. */
+/** Cover via gemini-3-pro-image → 1600×2400 JPEG. */
 export async function generateSachbuchCoverAction(
   input: unknown,
 ): Promise<ActionResult<{ book: SachbuchKontext }>> {
@@ -458,6 +470,48 @@ export async function generateSachbuchCoverAction(
     () => runSachbuchCoverGenerate(parsed.data.id),
     "Cover-Generierung fehlgeschlagen.",
   );
+}
+
+/**
+ * Lazy-load cover pixels for Export preview (admin page strips the data URL).
+ */
+export async function getSachbuchCoverImageAction(
+  input: unknown,
+): Promise<
+  ActionResult<{ coverImageDataUrl: string; coverPrompt: string }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+  try {
+    const { getSachbuchKontext } = await import(
+      "@/lib/sachbuch/repository"
+    );
+    const book = await getSachbuchKontext(parsed.data.id);
+    if (!book) return { success: false, error: "Sachbuch nicht gefunden." };
+    const url = book.export.coverImageDataUrl.trim();
+    if (!url.startsWith("data:image/")) {
+      return { success: false, error: "Kein Cover gespeichert." };
+    }
+    return {
+      success: true,
+      data: {
+        coverImageDataUrl: url,
+        coverPrompt: book.export.coverPrompt,
+      },
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Cover konnte nicht geladen werden.",
+    };
+  }
 }
 
 /** Apply KI title suggestion to book.title. */

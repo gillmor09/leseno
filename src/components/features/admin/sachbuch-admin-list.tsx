@@ -94,9 +94,26 @@ export function SachbuchAdminList({
                   className="text-lg font-extrabold text-zinc-950 hover:text-orange-800"
                 >
                   {book.title}
+                  {book.idee.edition === "compact" ? (
+                    <span className="ml-2 align-middle rounded-full bg-yellow-400 px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-zinc-950 uppercase">
+                      Kompakt
+                    </span>
+                  ) : null}
+                  {book.idee.edition === "teaser" ? (
+                    <span className="ml-2 align-middle rounded-full bg-sky-500 px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-white uppercase">
+                      Teaser
+                    </span>
+                  ) : null}
                 </Link>
                 <p className="mt-1 text-xs font-semibold text-zinc-500">
-                  {book.kapitelCount} Kapitel · {formatDate(book.updatedAt)}
+                  {book.kapitelCount} Kapitel
+                  {(book.idee.edition === "compact" ||
+                    book.idee.edition === "teaser") &&
+                  book.idee.sourceBookTitle
+                    ? ` · aus „${book.idee.sourceBookTitle}“`
+                    : ""}
+                  {" · "}
+                  {formatDate(book.updatedAt)}
                 </p>
               </div>
               <button

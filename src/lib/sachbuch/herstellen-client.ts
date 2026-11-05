@@ -1,8 +1,13 @@
 /**
  * Client helpers: Herstellung via JSON API hops (one chapter per request).
+ * Slim API responses must be merged — otherwise each hop wipes prior
+ * herstellungText and the batch appears to have only finished the last chapter.
  */
 
-import { sachbuchKapitelHasHerstellung } from "@/lib/sachbuch/parse";
+import {
+  mergeSachbuchProseFromPrevious,
+  sachbuchKapitelHasHerstellung,
+} from "@/lib/sachbuch/parse";
 import type { SachbuchKontext } from "@/lib/sachbuch/types";
 import type { ActionResult } from "@/lib/types/actions";
 
@@ -97,7 +102,25 @@ export async function requestHerstellenSachbuchKapitel(input: {
   );
 }
 
-/** All chapters missing Herstellung — hop per chapter, refresh book on last. */
+/** Rebuild book-level Herstellung summary without re-running Haiku. */
+async function requestRefreshHerstellungReview(input: {
+  sachbuchId: string;
+}): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  return postJson(
+    "/api/admin/sachbuch/herstellen-kapitel",
+    {
+      sachbuchId: input.sachbuchId,
+      reviewOnly: true,
+    },
+    "Herstellung-Zusammenfassung fehlgeschlagen.",
+  );
+}
+
+/**
+ * All chapters missing Herstellung — hop per chapter.
+ * Merges slim hop payloads so prior chapters keep herstellungText in client state.
+ * Continues after a failed chapter; refreshes the book review once at the end.
+ */
 export async function requestHerstellenAllSachbuchKapitel(input: {
   book: SachbuchKontext;
   onBookUpdate?: (book: SachbuchKontext) => void;
@@ -115,28 +138,53 @@ export async function requestHerstellenAllSachbuchKapitel(input: {
     return { success: true, data: { book } };
   }
 
+  const failures: string[] = [];
+  let doneHops = 0;
+
   for (let i = 0; i < targets.length; i++) {
     const kap = targets[i]!;
     const idx = book.kapitel.findIndex((k) => k.id === kap.id);
-    input.onProgress?.(
-      `Herstellung Kap. ${idx + 1}/${book.kapitel.length}: ${kap.title || "…"}`,
-    );
+    const label = `Kap. ${idx + 1}/${book.kapitel.length}: ${kap.title || "…"}`;
+    input.onProgress?.(`Herstellung ${label}`);
+
     const result = await requestHerstellenSachbuchKapitel({
       sachbuchId: book.id,
       kapitelId: kap.id,
-      refreshBook: i === targets.length - 1,
+      refreshBook: false,
     });
+
     if (!result.success || !result.data) {
-      return {
-        success: false,
-        error:
-          result.error ??
-          `Herstellung abgebrochen bei Kapitel ${idx + 1}.`,
-        data: { book },
-      };
+      failures.push(
+        `Kapitel ${idx + 1}: ${result.error ?? "Herstellung fehlgeschlagen."}`,
+      );
+      input.onProgress?.(
+        `Fehler bei ${label} — fahre mit dem nächsten Kapitel fort…`,
+      );
+      continue;
     }
-    book = result.data.book;
+
+    book = mergeSachbuchProseFromPrevious(book, result.data.book);
+    doneHops += 1;
     input.onBookUpdate?.(book);
+  }
+
+  if (doneHops > 0) {
+    input.onProgress?.("Buch-Herstellung wird zusammengefasst…");
+    const refreshed = await requestRefreshHerstellungReview({
+      sachbuchId: book.id,
+    });
+    if (refreshed.success && refreshed.data) {
+      book = mergeSachbuchProseFromPrevious(book, refreshed.data.book);
+      input.onBookUpdate?.(book);
+    }
+  }
+
+  if (failures.length > 0) {
+    return {
+      success: false,
+      error: `Teilweise fehlgeschlagen (${failures.length}): ${failures.join(" · ")}`,
+      data: { book },
+    };
   }
 
   return { success: true, data: { book } };

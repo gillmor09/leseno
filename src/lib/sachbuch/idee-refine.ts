@@ -466,16 +466,94 @@ export async function setSachbuchGuideStep(
   sachbuchId: string,
   step: import("@/lib/sachbuch/types").SachbuchGuideStep,
 ): Promise<SachbuchKontext> {
-  const book = await getSachbuchKontext(sachbuchId);
+  // Shell + guide-step RPC only — never full get/upsert (that froze tab switches).
+  const {
+    getSachbuchKontextAdminShell,
+    patchSachbuchGuideStep,
+    patchSachbuchIdeeOnly,
+  } = await import("@/lib/sachbuch/repository");
+  const { slimSachbuchKontextForAdminPage } = await import(
+    "@/lib/sachbuch/parse"
+  );
+  const {
+    SACHBUCH_HOERBUCH_TRACK_PREVIEW_CHARS,
+    slimSachbuchHoerbuchState,
+  } = await import("@/lib/sachbuch/hoerbuch");
+  const book = await getSachbuchKontextAdminShell(sachbuchId);
   if (!book) throw new Error("Sachbuch nicht gefunden.");
-  const { canOpenSachbuchGuideStep } = await import("@/lib/sachbuch/guide");
+  const {
+    canOpenSachbuchGuideStep,
+    isSachbuchDerivedEdition,
+    isSachbuchCompactSkippedStep,
+    isSachbuchTeaser,
+  } = await import("@/lib/sachbuch/guide");
   if (!canOpenSachbuchGuideStep(book, step)) {
+    if (isSachbuchDerivedEdition(book) && isSachbuchCompactSkippedStep(step)) {
+      throw new Error(
+        isSachbuchTeaser(book)
+          ? "Teaser — dieser Schritt entfällt."
+          : "Kompakt-Ausgabe — dieser Schritt entfällt.",
+      );
+    }
     throw new Error("Dieser Schritt ist noch gesperrt.");
   }
-  return patchSachbuchBook(sachbuchId, {
+
+  const hoerbuch = book.idee.hoerbuch;
+  const fatHoerbuch = Boolean(
+    hoerbuch?.tracks.some(
+      (t) => t.text.length > SACHBUCH_HOERBUCH_TRACK_PREVIEW_CHARS,
+    ),
+  );
+
+  if (fatHoerbuch) {
+    // One-shot slim of duplicated spoken bodies in idee (no kapitel rewrite).
+    try {
+      await patchSachbuchIdeeOnly(sachbuchId, {
+        ...book.idee,
+        guide: { ...book.idee.guide, currentStep: step },
+        hoerbuch: slimSachbuchHoerbuchState(hoerbuch),
+      });
+    } catch {
+      try {
+        await patchSachbuchGuideStep(sachbuchId, step);
+      } catch {
+        await patchSachbuchBook(sachbuchId, {
+          idee: {
+            ...book.idee,
+            guide: { ...book.idee.guide, currentStep: step },
+            hoerbuch: slimSachbuchHoerbuchState(hoerbuch),
+          },
+        });
+      }
+    }
+  } else {
+    try {
+      await patchSachbuchGuideStep(sachbuchId, step);
+    } catch {
+      try {
+        // Pre-migration: idee-only avoids rewriting kapitel.
+        await patchSachbuchIdeeOnly(sachbuchId, {
+          ...book.idee,
+          guide: { ...book.idee.guide, currentStep: step },
+        });
+      } catch {
+        await patchSachbuchBook(sachbuchId, {
+          idee: {
+            ...book.idee,
+            guide: { ...book.idee.guide, currentStep: step },
+          },
+        });
+      }
+    }
+  }
+
+  const shell = await getSachbuchKontextAdminShell(sachbuchId);
+  if (!shell) throw new Error("Sachbuch nach Schrittwechsel nicht gefunden.");
+  return slimSachbuchKontextForAdminPage({
+    ...shell,
     idee: {
-      ...book.idee,
-      guide: { ...book.idee.guide, currentStep: step },
+      ...shell.idee,
+      guide: { ...shell.idee.guide, currentStep: step },
     },
   });
 }

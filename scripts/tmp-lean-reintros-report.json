@@ -1,0 +1,184 @@
+[
+  {
+    "kap": 1,
+    "title": "Erst das Ziel, dann die Daten",
+    "hits": [
+      {
+        "id": "poka-reintro",
+        "snip": "operative Führungsroutine direkt am Ort der Wertschöpfung. Im Lean Management bildet der regelmäßige Vor-Ort-Rundgang, der sogenannte Gemba Walk, das bewährte Führungswerkzeug, um die gelebte Realität an den Maschinen direkt mit dem definierten S"
+      }
+    ]
+  },
+  {
+    "kap": 2,
+    "title": "Risiken für Menschen vs. Risiken fürs Geschäft",
+    "hits": [
+      {
+        "id": "poka-define",
+        "snip": "enannte Paved Roads. Die technische Fehlervorsorge nach dem Poka-Yoke-Prinzip greift hier direkt in der Infrastruktur und übernimmt die Qualitätssicherung: Wer eine neue Anwendung auf den freigegebenen Standard-Containern der KlarNetz AG aufsetzt, nutzt aut"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": ", die niemand in ausführbaren Programmcode übersetzen kann. Im Lean Management gleicht dieser Zustand einer Fertigungslinie, an der niemand mehr ein Werkstück anfasst, aus Angst, am Bandende durch die Qualitätskontrolle zu fallen. Diese Lähmung er"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "htet, sogenannte Paved Roads. Die technische Fehlervorsorge nach dem Poka-Yoke-Prinzip greift hier direkt in der Infrastruktur und übernimmt die Qualitätssicherung: Wer eine neue Anwendung auf den freigegebenen Standard-Containern der KlarNetz AG aufsetzt, n"
+      },
+      {
+        "id": "jidoka-muda",
+        "snip": "an dieser Stelle direkt das aus dem ersten Kapitel bekannte Jidoka-Prinzip: Fehler werden im Entstehungsmoment sichtbar gemacht und automatisch gestoppt, anstatt fehlerhafte Datensätze am Ende eines Prozesses aufwendig zu bereinigen oder regulatorische B"
+      }
+    ]
+  },
+  {
+    "kap": 3,
+    "title": "Verantwortung organisieren ohne Bürokratie-Monster",
+    "hits": [
+      {
+        "id": "poka-define",
+        "snip": "baren Evidenzkette, die nach dem aus Kapitel eins bekannten Poka-Yoke-Prinzip direkt im Arbeitsfluss gegen menschliches Vergessen absichert. Abbildung 3: Das 5-stufige VDP-Nachweissystem (Audit by Design) – Geschlossene Evidenzkette von der Anforderung im"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "r lückenlosen, maschinenlesbaren Evidenzkette, die nach dem aus Kapitel eins bekannten Poka-Yoke-Prinzip direkt im Arbeitsfluss gegen menschliches Vergessen absichert. Abbildung 3: Das 5-stufige VDP-Nachweissystem (Audit by Design) – Geschlossene Evi"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "ert exakt jene Eskalation der 1-10-100-Qualitätskostenregel aus Kapitel eins und produziert zwangsläufig Ausschuss, Nacharbeit und Reibungsverluste. Echte Prozessqualität entsteht nur dort, wo die Teams an der Wertschöpfung befähigt werden, Fehlerquel"
+      },
+      {
+        "id": "jidoka-muda",
+        "snip": "on Privacy as Code zur harten technischen Schranke nach dem Jidoka-Prinzip, bei dem die Fertigungsstraße bei einem Qualitätsdefekt automatisch stoppt. Bei der KlarNetz AG dokumentieren die Softwareentwickler ihre Architekturentscheidungen nicht in stati"
+      }
+    ]
+  },
+  {
+    "kap": 4,
+    "title": "Weniger Daten, mehr Durchsatz",
+    "hits": [
+      {
+        "id": "poka-define",
+        "snip": "ekt an der Eingabequelle nach dem im Fundament eingeführten Poka-Yoke-Prinzip. Wo überflüssige Eingabemasken gar nicht erst existieren, sinkt die Fehlerquote auf null, und das Unternehmen spart sich jene um den Faktor zehn bis hundert teurere Nacharbeit in"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "irkt im Prozess als klassische Überbearbeitung im Sinne der bereits eingeführten Verschwendungskategorien (Muda), die zwangsläufig zu toxischem Datenmüll führt. Jedes Attribut, das ein Unternehmen ohne unmittelbaren Nutzen für den anstehenden Schritt erhebt,"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "- und Steuerungsritual direkt am Entstehungsort der Daten. Im Lean Management existiert dafür der Gemba Walk: Wer Verschwendung beseitigen will, verlässt den Besprechungsraum und geht dorthin, wo die Wertschöpfung tatsächlich stattfindet. In unse"
+      }
+    ]
+  },
+  {
+    "kap": 5,
+    "title": "Löschen ist eine Betriebsfähigkeit",
+    "hits": [
+      {
+        "id": "5s-define",
+        "snip": "egelwerk, sondern die aus der schlanken Produktion bekannte 5S-Methode als operatives Betriebssystem für das Datenlebenszyklus-Management. Abbildung 5: Das 5S-Lifecycle-Modell für schlanke Datenhygiene – Von der initialen Altlasten-Sortierung bis zu"
+      },
+      {
+        "id": "5s-define",
+        "snip": ": Prozesseignerschaft und Data Debt Der fünfte Schritt der 5S-Methode verankert diese Prinzipien dauerhaft in den Arbeitsroutinen und der Organisationskultur. In vielen Unternehmen herrscht traditionell eine dysfunktionale Asymmetrie: Fachbereiche entscheiden autonom über"
+      },
+      {
+        "id": "5s-reintro",
+        "snip": "röße, ergänzt durch ein quartalsweises Daten-Hygiene-Review nach dem 5S-Gedanken, das Prozesseigner, IT-Architekten und Datenschutzverantwortliche an einen Tisch bringt. Gesteuert wird anhand weniger, aussagekräftiger Kennzahlen auf dem zentralen Dash"
+      }
+    ]
+  },
+  {
+    "kap": 6,
+    "title": "Datenqualität heißt: Fehler an der Quelle verhindern",
+    "hits": [
+      {
+        "id": "poka-define",
+        "snip": "bedeutet die konsequente Anwendung des bereits eingeführten Poka-Yoke-Prinzips, digitalen Ausschuss direkt an der Eingabemaske technisch auszuschließen: Schnittstellen werden so konstruiert, dass unvollständige oder syntaktisch unmögliche Eingaben gar nicht"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "stümmelt, hat die Qualitätssicherung an der Quelle versagt. Im Lean-Kontext entspricht dieser Moment dem Ziehen der Reißleine am Fließband: Er signalisiert unmissverständlich, dass digitaler Ausschuss ungehindert durch die Kontrollpunkte gewandert"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "erfassung übertragen bedeutet die konsequente Anwendung des bereits eingeführten Poka-Yoke-Prinzips, digitalen Ausschuss direkt an der Eingabemaske technisch auszuschließen: Schnittstellen werden so konstruiert, dass unvollständige oder syntaktisch unmögliche"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "Streuverluste. Methodisch setzen wir dieses Prinzip mit der bereits eingeführten 5S-Systematik direkt auf den Abteilungsrechnern um. Statt bloße Exportverbote zu erlassen, die im operativen Druck sofort umgangen werden, sanieren wir die Datenwege an der Wurze"
+      },
+      {
+        "id": "5s-reintro",
+        "snip": "Streuverluste. Methodisch setzen wir dieses Prinzip mit der bereits eingeführten 5S-Systematik direkt auf den Abteilungsrechnern um. Statt bloße Exportverbote zu erlassen, die im operativen Druck sofort umgangen werden, sanieren wir die Datenwege an der Wurzel, i"
+      },
+      {
+        "id": "jidoka-muda",
+        "snip": "ung. In der Praxis wird dieses Skalierungsrisiko durch das Jidoka-Prinzip beherrschbar. Statt Algorithmen blind auf fragmentierte oder potenziell divergierende Datenbestände zugreifen zu lassen, greift hier der automatische Prozessstopp bei Qualitätsmän"
+      },
+      {
+        "id": "jidoka-muda",
+        "snip": "t. Die Lösung bestand darin, ein Validierungsgate nach dem Jidoka-Prinzip direkt vor der externen Auskunftei-Abfrage einzubauen. Dieser Filter glich in Millisekunden ab, ob sämtliche namens- und adressrelevanten Attribute zwischen Portal und Abrechnungs"
+      }
+    ]
+  },
+  {
+    "kap": 7,
+    "title": "Verständlich ist, was der Kunde versteht",
+    "hits": [
+      {
+        "id": "poka-reintro",
+        "snip": "fige Risiko-Ampel. Bewegt sich ein neues Vorhaben innerhalb bereits bekannter Datenflüsse und greifen Entwickler sowie Designer für Routineanpassungen im Onboarding ausschließlich auf die vorab validierten Standardbausteine aus dem Design-System zurück, st"
+      },
+      {
+        "id": "5s-reintro",
+        "snip": "landschaft einem rigorosen Content-Audit nach dem bekannten 5S-Ordnungsschema. Eine softwaregestützte Textanalyse sämtlicher 140 bestehenden Datenschutzerklärungen, Webseiten, Tarifblätter, Apps und Vertragsformulare förderte ein typisches Muster zut"
+      },
+      {
+        "id": "jidoka-muda",
+        "snip": "aft. Das Quality Gate zieht in diesem Fall im Sinne unseres Jidoka-Prinzips sofort die Reißleine und blockiert den Release zur Nacharbeit, ganz gleich, wie fehlerfrei und juristisch unangreifbar die Fachtexte in den tieferen Schichten im Hintergrund form"
+      }
+    ]
+  },
+  {
+    "kap": 8,
+    "title": "Fairness als Geschäftsmodell",
+    "hits": [
+      {
+        "id": "poka-reintro",
+        "snip": "en Betriebskosten rächt sich diese Trägheit sofort nach der bereits bekannten Eskalationslogik der Qualitätskosten, weil jede Stunde Verzögerung zwischen dem Widerruf an der Quelle und der tatsächlichen Sperrung in den Versand-Systemen den nachgelagerten B"
+      }
+    ]
+  },
+  {
+    "kap": 9,
+    "title": "Der KI-Stresstest & der 90-Tage-Rollout",
+    "hits": [
+      {
+        "id": "poka-reintro",
+        "snip": "hen, trennt ein automatisiertes Dokumenten-Routing nach den aus Kapitel 5 bekannten 5S-Kriterien im Datenlebenszyklus die Spreu vom Weizen. Dieser erste digitale Filter hält veraltete Ticket-Historien, deren Aufbewahrungsfristen abgelaufen sind, redun"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "tufung dockt nahtlos an die internen Pfade der Risiko-Ampel aus Kapitel 2 an, statt neue Formularberge zu erzwingen. Ob Fließtext, Datenbankabfrage, autonomer Agent oder Kamerabild: Wer Schutzmechanismen als technische Poka-Yoke-Schleusen direkt in di"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "dem Privacy Solution Canvas, dem 5-stufigen Nachweissystem aus Kapitel 3 und dem 4-Schleusen-Pipeline-Check aufgesetzt haben, müssen solche Prüfkataloge im Vertrieb nicht erst hektisch im Nachhinein beantworten. Sämtliche Datenströme, Zweckbindungen,"
+      },
+      {
+        "id": "poka-reintro",
+        "snip": "t zum integralen Qualitätskriterium im Entwurf, wodurch die aus Kapitel 1 bekannte 1-10-100-Regel der Qualitätskosten direkt in der täglichen Sprint-Planung wirksam wird: Ein minimaler Präventionsaufwand bei der 15-minütigen Konzeption auf dem Canvas"
+      },
+      {
+        "id": "5s-define",
+        "snip": "um Die zweite Schleuse ordnet den Wissensspeicher nach den 5S-Prinzipien, um den Grundsatz der Zweckbindung technisch im Abrufmechanismus zu erzwingen. In vielen gescheiterten KI-Projekten liegt das Kernproblem schlicht darin, dass der Kontext-Vekto"
+      },
+      {
+        "id": "5s-reintro",
+        "snip": "hen, trennt ein automatisiertes Dokumenten-Routing nach den aus Kapitel 5 bekannten 5S-Kriterien im Datenlebenszyklus die Spreu vom Weizen. Dieser erste digitale Filter hält veraltete Ticket-Historien, deren Aufbewahrungsfristen abgelaufen sind, redundante Datensätz"
+      }
+    ]
+  }
+]

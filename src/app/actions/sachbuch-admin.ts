@@ -8,7 +8,13 @@ import { z } from "zod";
 import { revalidateSachbuchAdmin } from "@/lib/sachbuch/revalidate-admin";
 import { denyUnlessAdmin } from "@/lib/auth/require-admin";
 import { defaultSachbuchAgents } from "@/lib/sachbuch/agent-defaults";
+import { parseSachbuchHoerbuchState } from "@/lib/sachbuch/hoerbuch";
 import { emptySachbuchKapitel } from "@/lib/sachbuch/parse";
+import {
+  applySachbuchCompactProductSplit,
+  createSachbuchCompactEdition,
+} from "@/lib/sachbuch/compact";
+import { createSachbuchTeaserEdition } from "@/lib/sachbuch/teaser";
 import {
   createSachbuchKontext,
   deleteSachbuchKontext,
@@ -116,6 +122,91 @@ export async function createSachbuchAction(
   }
 }
 
+/** Derive a compact edition and open it on Manuskript (prose follows in hops). */
+export async function createSachbuchCompactAction(
+  input: unknown,
+): Promise<ActionResult<{ bookId: string }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+
+  try {
+    const book = await createSachbuchCompactEdition(parsed.data.id);
+    revalidateSachbuchAdmin(book.id);
+    revalidateSachbuchAdmin(parsed.data.id);
+    return { success: true, data: { bookId: book.id } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Kompakt-Ausgabe anlegen fehlgeschlagen.",
+    };
+  }
+}
+
+/**
+ * Existing Kompakt: refresh Titelei, strip figures/captions, ensure Hauptband-Verweise.
+ */
+export async function applySachbuchCompactProductSplitAction(
+  input: unknown,
+): Promise<ActionResult<{ book: SachbuchKontext }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+
+  try {
+    const book = await applySachbuchCompactProductSplit(parsed.data.id);
+    revalidateSachbuchAdmin(book.id);
+    return { success: true, data: { book } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Kompakt-Produkttrennung fehlgeschlagen.",
+    };
+  }
+}
+
+/** Derive a teaser from a finished Kompakt edition. */
+export async function createSachbuchTeaserAction(
+  input: unknown,
+): Promise<ActionResult<{ bookId: string }>> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = sachbuchIdSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstSachbuchZodMessage(parsed.error) };
+  }
+
+  try {
+    const book = await createSachbuchTeaserEdition(parsed.data.id);
+    revalidateSachbuchAdmin(book.id);
+    revalidateSachbuchAdmin(parsed.data.id);
+    return { success: true, data: { bookId: book.id } };
+  } catch (error) {
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Teaser anlegen fehlgeschlagen.",
+    };
+  }
+}
+
 /** Save full book document. */
 export async function saveSachbuchAction(
   input: unknown,
@@ -135,7 +226,10 @@ export async function saveSachbuchAction(
       stilbibel: parsed.data.stilbibel,
       zielgruppe: parsed.data.zielgruppe,
       agents: parsed.data.agents,
-      idee: parsed.data.idee,
+      idee: {
+        ...parsed.data.idee,
+        hoerbuch: parseSachbuchHoerbuchState(parsed.data.idee.hoerbuch),
+      },
       evidenz: parsed.data.evidenz,
       makro: parsed.data.makro,
       kapitel: parsed.data.kapitel,

@@ -1,0 +1,102 @@
+[
+  {
+    "kap": 1,
+    "title": "Erst das Ziel, dann die Daten",
+    "hits": [],
+    "headings": []
+  },
+  {
+    "kap": 2,
+    "title": "Risiken für Menschen vs. Risiken fürs Geschäft",
+    "hits": [
+      {
+        "id": "checkliste",
+        "snip": "uktteam klärt gemeinsam mit den Qualitätsverantwortlichen anhand einer präzisen Checkliste, ob die erhöhten Risiken durch spezifische Gegenmaßnahmen abgefangen werden: Werden direkte Identifikatoren frühzeitig von den Nutzungsdaten getrennt? Werden p"
+      },
+      {
+        "id": "erstens starten",
+        "snip": "der Komplexität der Lieferkette und der technischen Härtung der Systemgrenzen. Zweitens: Welche konkrete Schadensschwere und welche Folgen entstehen für die betroffenen Menschen, wenn Daten unberechtigt abfließen, verfälscht oder zweckentfremdet wer"
+      }
+    ],
+    "headings": []
+  },
+  {
+    "kap": 3,
+    "title": "Verantwortung organisieren ohne Bürokratie-Monster",
+    "hits": [
+      {
+        "id": "erstens starten",
+        "snip": "rftiger, personenbezogener Daten erhoben oder bestehende Datenfelder erweitert? Zweitens: Binden wir externe Partner oder Dienstleister ein beziehungsweise verändern wir bestehende Schnittstellen nach außen? Drittens: Ändert sich der ursprüngliche ge"
+      },
+      {
+        "id": "erstens starten",
+        "snip": "leister ein beziehungsweise verändern wir bestehende Schnittstellen nach außen? Drittens: Ändert sich der ursprüngliche geschäftliche Verwendungszweck oder die Aufbewahrungsfrist bereits vorhandener Datenbestände? Lautet die Antwort auf alle drei Kri"
+      }
+    ],
+    "headings": []
+  },
+  {
+    "kap": 4,
+    "title": "Weniger Daten, mehr Durchsatz",
+    "hits": [
+      {
+        "id": "erstens starten",
+        "snip": "ummer? Weil der Vertrieb den Interessenten sofort nach dem Klick anrufen will. Zweitens: Warum will er sofort anrufen, anstatt unmittelbaren Zugang zur Demo-Umgebung oder eine selbstbestimmte digitale Terminwahl zu bieten? Weil die Vertriebsleitung"
+      },
+      {
+        "id": "erstens starten",
+        "snip": "leitung annimmt, das sofortige Nachtelefonieren führe schneller zum Abschluss. Drittens: Warum hält man an dieser Annahme fest, obwohl die eigenen CRM-Daten belegen, dass über 80 Prozent dieser Kaltanrufe ungehört auf Mailboxen landen und die Intere"
+      }
+    ],
+    "headings": []
+  },
+  {
+    "kap": 5,
+    "title": "Löschen ist eine Betriebsfähigkeit",
+    "hits": [
+      {
+        "id": "tage 1",
+        "snip": "als robuste operative Blaupause für jede andere Organisation dienen. Etappe 1 (Tage 1 bis 30): Ursachenbekämpfung und Zufluss-Stopp Die ersten 30 Tage standen ganz im Zeichen der Ursachenbekämpfung direkt an der Quelle unter dem Motto Stop the Bleedin"
+      }
+    ],
+    "headings": []
+  },
+  {
+    "kap": 6,
+    "title": "Datenqualität heißt: Fehler an der Quelle verhindern",
+    "hits": [],
+    "headings": []
+  },
+  {
+    "kap": 7,
+    "title": "Verständlich ist, was der Kunde versteht",
+    "hits": [],
+    "headings": []
+  },
+  {
+    "kap": 8,
+    "title": "Fairness als Geschäftsmodell",
+    "hits": [
+      {
+        "id": "montagmorgen",
+        "snip": "he Auslieferungswarteschlangen geladen. Widerruft eine Kundin ihre Einwilligung am Montagmorgen, erreicht sie am Dienstagmorgen dennoch die automatisierte Rabatt-Mail, weil der nächtliche Datenabgleich scheiterte oder die bereits scharfgeschaltete Versand"
+      }
+    ],
+    "headings": []
+  },
+  {
+    "kap": 9,
+    "title": "Der KI-Stresstest & der 90-Tage-Rollout",
+    "hits": [
+      {
+        "id": "tage 1",
+        "snip": "Werkzeuge, Verantwortlichkeiten und Vorstands-KPIs der Phasen 1 bis 3 Phase 1 (Tag 1 bis 30): Dekontamination, Baseline und operative Entlastung Der erste Monat steht ganz im Zeichen sofortiger Dekontamination, spürbarer operativer Entlastung der"
+      },
+      {
+        "id": "checkliste",
+        "snip": "e, Verhandlungshärte oder Kündigungswahrscheinlichkeiten ab. Eine rein formale Checklisten-Compliance, die lediglich statische Datenbankschemata abfragt, bleibt für dieses Inferenzrisiko vollkommen blind. Das Mindset des Privacy Value Thinking erfor"
+      }
+    ],
+    "headings": []
+  }
+]

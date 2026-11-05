@@ -33,8 +33,6 @@ export default function ImpressumPage() {
               </h2>
               <p className="mt-2 font-semibold text-zinc-950">Bernd Krpec</p>
               <p className="mt-1">
-                Wupperweg 14
-                <br />
                 Gebäude 44
                 <br />
                 46286 Dorsten

@@ -1,0 +1,71 @@
+﻿===== CO1 meta parens / chapter self-refs =====
+
+--- K3 ---
+· erst in Kapitel 9, wenn Fairness an der Kundenschnittstelle (Kapitel 8) und der Gesamt-Rollout hinzukommen. Diese enorme Zeitersparnis deckt sich präzi
+· bel der Governance-Ebene (Vorbereitung: Wochen → Stunden) — noch nicht die gesamte Sales Velocity. Die Gesamtverkürzung des B2B-Vertriebs- und Auditzyklus von einst neun Wochen 
+
+--- K4 ---
+
+--- K6 ---
+
+--- K8 ---
+· nd übergriffigen Kopplungen — nicht vor „zu vielen Feldern“ (das war Kapitel 4), sondern vor unfairer Wahlarchitektur. Welche wirtschaftlichen Schäden manipul
+· d übergriffigen Kopplungen — nicht vor „zu vielen Feldern“ (das war Kapitel 4), sondern vor unfairer Wahlarchitektur. Welche wirtschaftlichen Schäden manipulative Einwilligungsmuster anrichten, v
+
+===== CO2 timeline anchors =====
+
+--- K3 ---
+Reife- und Governance-Pfad → lout aus Kapitel 9 — einem vierstufigen Reife- und Governance-Pfad über vier Quartale, der Kultur und Technik in der Breite synchronisiert. Quartal 1: Strategische 5S-Inventur und Rückbau der Schatten-Bürokratie Im ersten Quartal verhängt die Geschäftsleitun
+Vorbereitungszeit → ngs- und Schutzmechanismen. Die interne Vorbereitungszeit für Kundenfragebögen sank dadurch von vier Wochen auf wenige Stunden, und die reine Sicherheitsfragebogen-Prüfung samt Datenschutz-Freigabe im B2B-Kundenaudit ist in drei Werktagen statt sechs Wochen er
+Sales Velocity → hen → Stunden) — noch nicht die gesamte Sales Velocity. Die Gesamtverkürzung des B2B-Vertriebs- und Auditzyklus von einst neun Wochen auf zwölf Tage bilanzieren wir erst in Kapitel 9, wenn Fairness an der Kundenschnittstelle (Kapitel 8) und der Gesamt-Rollout 
+
+--- K5 ---
+Retrospektive → pruchsvoller Geschäftspartner sichert. Retrospektive: Das Support-Pilotprojekt der KlarNetz AG Was folgt, ist der Erfahrungsbericht eines lokalen Piloten — noch vor dem unternehmensweiten 90-Tage-Rollout aus Kapitel 9. Der praktische Einstieg in den Regelbet
+Pilot → iativen scheitert bereits kurz nach der Pilotphase an mangelhafter Datenqualität, unklaren Zugriffskontrollen und explodierenden Betriebskosten. Insbesondere in Systemen zur Retrieval-Augmented Generation (RAG), bei denen Sprachmodelle für ihre Antworten auf i
+zweiten Jahr →  weitere Entwicklung der KlarNetz AG im zweiten Jahr nach etablierter Löschhygiene — zeitlich nach dem Pilot, noch bevor Kapitel 9 das buchweite Transformationsprogramm als Gesamt-Rollout aufzieht. Vor der Einführung automatisierter Lösch-Pipelines war dort ei
+Reifephase → ungen. Als jedoch in der anschließenden Reifephase — im zweiten Jahr nach dem Support-Piloten, parallel zur etablierten Governance aus Kapitel 3 — die planmäßige Ablösung des Altsystems durch eine moderne Cloud-Plattform anstand, zahlte sich die inzwischen fes
+90-Tage-Rollout → loten — noch vor dem unternehmensweiten 90-Tage-Rollout aus Kapitel 9. Der praktische Einstieg in den Regelbetrieb des automatisierten Löschens scheitert in den meisten Organisationen nicht an fehlendem Problembewusstsein, sondern an der lähmenden Ehrfurcht vo
+
+--- K9 ---
+Sales Cycle Velocity → eschäft schlägt sich dieser Wert in der Sales Cycle Velocity nieder: Der gesamte Vertriebs- und Auditzyklus bei sicherheitskritischen Ausschreibungen sank bei KlarNetz von einst neun Wochen auf zwölf Tage — aufbauend auf dem Nachweis-Portal aus Kapitel 3 und d
+vier Wochen → Kapitel 8. Die in Kapitel 3 bereits von vier Wochen auf Stunden gekürzte Fragebogen-Vorbereitung bleibt unter KI-Last stabil; Standardanfragen über das Self-Service Trust Center dauern inzwischen Minuten statt Stunden. Bilanz an Tag 90 und Übergang in den Reg
+Minuten →  vormals bis zu sieben Tagen auf wenige Minuten. Das sparte hunderten Mitarbeitern unproduktive Wartezeit und sicherte dem Risikomanagement freie Kapazitäten für echte Hochrisikofälle. Erst diese enge Verbindung aus technischer Fehlersicherung am Gateway und 
+Stunden → ust-Center-Nachweise: Was Kapitel 3 auf Stunden-Vorbereitung gebracht hatte, bleibt die Basis; unter dem Gesamt-Rollout sinken Standardfragebögen weiter auf Minuten — nur bei hochregulierten Finanzkunden bleiben Einzelabstimmungen. Zusammengenommen ergibt sich
+neun Wochen → gibt sich die Gesamt-Sales-Velocity von neun Wochen auf zwölf Tage. Wo Kunden und B2B-Partner zunehmend sensibel auf undurchsichtige Datenpraktiken und fehleranfällige Algorithmen reagieren, gewinnt derjenige das Vertrauen des Marktes dauerhaft, der belegt, da
+
+===== CO3 lean intros ab K4 =====
+K4: 0
+K5: 0
+K6: 0
+K9: 0
+
+===== CO4 typos =====
+
+--- K2 ---
+VDP-Pyramide  Kausalkette vervollständigt den Unterbau unserer VDP-Pyramide: Während das erste Kapitel den kulturellen und ökonomischen
+VDP-Pyramide ieblicher Ausfallsicherheit ist das Fundament der VDP-Pyramide geschlossen: Rechtmäßigkeit, Rechenschaft und Integrität gr
+Privacy Value Thinking pitel den kulturellen und ökonomischen Sockel des Privacy Value Thinking gelegt hat, schließen wir hier das strategische Fundament a
+Privacy Value Thinking ne Prozessverschwendung. Im Steuerungsmodell von Privacy Value Thinking passiert auf der roten Spur etwas völlig anderes. Hier verl
+Qualitäts bare Baustopp. Die Verbindung von Datenschutz und Qualitätsmanagement begreift den menschenzentrierten Risikoblick dahe
+Qualitäts isziplin der operativen Ausfallsicherheit und als Qualitätsprüfung an der Quelle. Im VDP-Werkzeugkasten greift an diese
+Qualitäts en Compliance-Formeln. Integriert in ein gelebtes Qualitäts- und Risikomanagement verwandeln sich diese drei Säulen jed
+
+--- K7 ---
+tatslich — none
+tatsächlich  vollständig erledigt haben, entscheidet sich der tatsächliche betriebswirtschaftliche Wert eines Systems erst an der Sch
+tatsächlich usschließlich am Empfängerhorizont: Hat der Kunde tatsächlich verstanden, was mit seinen Daten geschieht? Wer Nutzer mit 
+tatsächlich enkliche Szenario absichern kann, sondern wie die tatsächliche Datenverarbeitung so transparent dargestellt wird, dass ei
+
+--- K8 ---
+personenbezogen nde Auskunftsersuchen zu sämtlichen gespeicherten personenbezogenen Daten, weil verärgerte Nutzer ihre gesetzlichen Auskunfts
+personenbezogen  sich immer wieder der undurchsichtige Umgang mit personenbezogenen Daten. Diese Kluft vergrößert sich zwangsläufig, solange 
+personenbezogen t defensiv, sobald das Thema auf die Verarbeitung personenbezogener Daten fällt. Sie verstecken ihre Praktiken hinter endlose
+Privacy Value Thinking und Value-Driven Konvertierungspunkten auf. Das Zusammenspiel aus Privacy Value Thinking und Value-Driven Privacy kehrt diese Dynamik vollständig um. Es begreift Dat
+
+--- K9 ---
+konsequenzt — none
+unzurend — none
+konsequent redundante Datensätze und interne Personalnotizen konsequent vom Indexierungsstrang fern; abgelaufene Alttickets flogen 
+konsequent t des Privacy Value Thinking erfordert hier einen konsequenten Perspektivenwechsel: Zweckbindung bedeutet nicht bloß, di
+konsequent  keine separaten Kontrollbürokratien, sondern den konsequenten Einsatz desselben integrierten Betriebssystems. Das Minds
+unzureichend ler passieren, etwa wenn eine Vektordatenbank mit unzureichenden Zugriffsrechten aufgesetzt wurde, greift nach der interne

@@ -1,16 +1,13 @@
 /**
- * Cover generation for Sachbuch: gpt-image-2.5-sunburst,
- * 1600×2400 JPEG RGB @ 300 ppi (canonical {@link ROMAN_COVER_SIZE}).
+ * Cover generation for Sachbuch: gemini-3-pro-image (2:3),
+ * then fit to 1600×2400 JPEG RGB @ 300 ppi (canonical {@link ROMAN_COVER_SIZE}).
  * Art has no painted letters; title + subtitle are composited (trade overlay).
  */
 
-import { generateOpenAiImage } from "@/lib/ai/openai-images";
+import { generateWithGeminiImage } from "@/lib/ai/gemini-images";
 import { ensureRomanCoverExactSize } from "@/lib/roman/cover-compress";
 import { coverFontFamilyForGenre } from "@/lib/roman/cover-fonts";
-import {
-  ROMAN_COVER_GENERATE_SIZE,
-  romanCoverSizeLabel,
-} from "@/lib/roman/cover-size";
+import { romanCoverSizeLabel } from "@/lib/roman/cover-size";
 import {
   defaultCoverTitleDesign,
   overlayCoverTitleByDesign,
@@ -73,12 +70,12 @@ export async function generateSachbuchCoverImage(
     zielgruppe: book.zielgruppe,
   });
 
-  const result = await generateOpenAiImage({
+  const result = await generateWithGeminiImage({
     modelSlug: SACHBUCH_COVER_MODEL_SLUG,
     prompt,
-    size: ROMAN_COVER_GENERATE_SIZE,
-    quality: "high",
-    outputFormat: "jpeg",
+    aspectRatio: "2:3",
+    // 2K → ensureRomanCoverExactSize maps to 1600×2400; 4K if you want more headroom.
+    imageSize: "2K",
   });
 
   let dataUrl = await ensureRomanCoverExactSize(result.dataUrl);

@@ -6,8 +6,13 @@ import { defaultSachbuchAgents } from "@/lib/sachbuch/agent-defaults";
 import {
   emptyVorsatz,
   parseVorsatzJson,
-  ROMAN_DEFAULT_AUTHOR,
 } from "@/lib/roman/front-matter";
+import {
+  emptySachbuchHoerbuchState,
+  parseSachbuchHoerbuchState,
+  slimSachbuchHoerbuchState,
+} from "@/lib/sachbuch/hoerbuch";
+import { SACHBUCH_DEFAULT_AUTHOR } from "@/lib/sachbuch/impressum";
 import type {
   SachbuchAbschnitt,
   SachbuchAbschnittRevision,
@@ -25,6 +30,7 @@ import type {
   SachbuchIdee,
   SachbuchInterviewMessage,
   SachbuchKapitel,
+  SachbuchKapitelInfografik,
   SachbuchKapitelManuscript,
   SachbuchKapitelStatus,
   SachbuchKontext,
@@ -201,6 +207,7 @@ export function emptySachbuchKapitelManuscript(): SachbuchKapitelManuscript {
     changeOrders: [],
     scoredAt: null,
     improvedAt: null,
+    bookPassAppliedScoredAt: null,
     modelSlug: "",
   };
 }
@@ -285,6 +292,11 @@ function parseKapitelManuscript(raw: unknown): SachbuchKapitelManuscript {
       typeof row.improvedAt === "string" && row.improvedAt.trim()
         ? row.improvedAt.trim()
         : null,
+    bookPassAppliedScoredAt:
+      typeof row.bookPassAppliedScoredAt === "string" &&
+      row.bookPassAppliedScoredAt.trim()
+        ? row.bookPassAppliedScoredAt.trim()
+        : null,
     modelSlug:
       typeof row.modelSlug === "string" ? row.modelSlug.trim() : empty.modelSlug,
   };
@@ -320,6 +332,10 @@ export function emptySachbuchIdee(): SachbuchIdee {
     refinedCaseStudies: [],
     manuscriptReview: emptySachbuchManuscriptBookReview(),
     herstellungReview: emptySachbuchHerstellungBookReview(),
+    edition: "full",
+    sourceBookId: null,
+    sourceBookTitle: "",
+    hoerbuch: emptySachbuchHoerbuchState(),
   };
 }
 
@@ -339,10 +355,11 @@ export function emptySachbuchExport(): SachbuchExport {
     subtitle: "",
     summary: "",
     keywords: [],
-    autorName: ROMAN_DEFAULT_AUTHOR,
+    autorName: SACHBUCH_DEFAULT_AUTHOR,
     vorsatz: emptyVorsatz(),
     coverImageDataUrl: "",
     coverPrompt: "",
+    hasCoverImage: false,
   };
 }
 
@@ -362,16 +379,22 @@ export function parseSachbuchExport(row: {
     .map((k) => String(k).trim())
     .filter(Boolean)
     .slice(0, SACHBUCH_KEYWORD_COUNT);
+  const coverRaw = String(row.cover_image_data_url ?? "").trim();
+  /** Shell RPC sends a marker instead of multi-MB data URLs. */
+  const coverIsMarker = coverRaw === "__has_cover__";
+  const coverImageDataUrl = coverIsMarker ? "" : coverRaw;
   return {
     suggestedTitle: String(row.suggested_title ?? "").trim(),
     subtitle: String(row.subtitle ?? "").trim(),
     summary: String(row.summary ?? "").trim(),
     keywords,
     autorName:
-      String(row.autor_name ?? "").trim() || ROMAN_DEFAULT_AUTHOR,
+      String(row.autor_name ?? "").trim() || SACHBUCH_DEFAULT_AUTHOR,
     vorsatz: parseVorsatzJson(row.vorsatz ?? {}),
-    coverImageDataUrl: String(row.cover_image_data_url ?? "").trim(),
+    coverImageDataUrl,
     coverPrompt: String(row.cover_prompt ?? "").trim(),
+    hasCoverImage:
+      coverIsMarker || coverImageDataUrl.startsWith("data:image/"),
   };
 }
 
@@ -450,6 +473,19 @@ export function parseSachbuchIdee(raw: unknown): SachbuchIdee {
     refinedCaseStudies: parseStringList(row.refinedCaseStudies),
     manuscriptReview: parseManuscriptBookReview(row.manuscriptReview),
     herstellungReview: parseHerstellungBookReview(row.herstellungReview),
+    edition:
+      row.edition === "teaser"
+        ? "teaser"
+        : row.edition === "compact"
+          ? "compact"
+          : "full",
+    sourceBookId:
+      typeof row.sourceBookId === "string" && row.sourceBookId.trim()
+        ? row.sourceBookId.trim()
+        : null,
+    sourceBookTitle:
+      typeof row.sourceBookTitle === "string" ? row.sourceBookTitle.trim() : "",
+    hoerbuch: parseSachbuchHoerbuchState(row.hoerbuch),
   };
 }
 
@@ -697,6 +733,23 @@ export function parseSachbuchKapitel(raw: unknown): SachbuchKapitel | null {
     title: typeof row.title === "string" ? row.title : "",
     goals: typeof row.goals === "string" ? row.goals : "",
     makroStageKey,
+    sourceKapitelId:
+      typeof row.sourceKapitelId === "string" && row.sourceKapitelId.trim()
+        ? row.sourceKapitelId.trim()
+        : null,
+    sourceKapitelIds: (() => {
+      const fromArray = Array.isArray(row.sourceKapitelIds)
+        ? row.sourceKapitelIds
+            .filter((x): x is string => typeof x === "string" && Boolean(x.trim()))
+            .map((x) => x.trim())
+        : [];
+      if (fromArray.length > 0) return fromArray;
+      const one =
+        typeof row.sourceKapitelId === "string" && row.sourceKapitelId.trim()
+          ? row.sourceKapitelId.trim()
+          : null;
+      return one ? [one] : [];
+    })(),
     contextGraph: parseContextGraph(row.contextGraph),
     abschnitte: abschnitteRaw
       .map(parseAbschnitt)
@@ -711,17 +764,57 @@ export function parseSachbuchKapitel(raw: unknown): SachbuchKapitel | null {
     finalText: typeof row.finalText === "string" ? row.finalText : "",
     groundingSources: parseSources(row.groundingSources),
     manuscript: parseKapitelManuscript(row.manuscript),
-    infografikDataUrl: (() => {
-      const u =
+    ...(() => {
+      const legacyUrl =
         typeof row.infografikDataUrl === "string"
           ? row.infografikDataUrl.trim()
           : "";
-      return u.startsWith("data:image/") ? u : null;
+      const legacyTitle =
+        typeof row.infografikTitle === "string"
+          ? row.infografikTitle.trim()
+          : "";
+      const legacyPrompt =
+        typeof row.infografikPrompt === "string" ? row.infografikPrompt : "";
+      const fromArray = Array.isArray(row.infografiken)
+        ? row.infografiken
+            .map((raw) => {
+              if (!raw || typeof raw !== "object") return null;
+              const r = raw as Record<string, unknown>;
+              const dataUrl =
+                typeof r.dataUrl === "string" ? r.dataUrl.trim() : "";
+              if (!dataUrl.startsWith("data:image/")) return null;
+              return {
+                key:
+                  typeof r.key === "string" && r.key.trim()
+                    ? r.key.trim()
+                    : undefined,
+                title: typeof r.title === "string" ? r.title.trim() : "",
+                dataUrl,
+                prompt: typeof r.prompt === "string" ? r.prompt : "",
+              };
+            })
+            .filter((x): x is NonNullable<typeof x> => Boolean(x))
+        : [];
+      const infografiken =
+        fromArray.length > 0
+          ? fromArray
+          : legacyUrl.startsWith("data:image/")
+            ? [
+                {
+                  title: legacyTitle,
+                  dataUrl: legacyUrl,
+                  prompt: legacyPrompt,
+                },
+              ]
+            : [];
+      const first = infografiken[0];
+      return {
+        infografiken,
+        infografikDataUrl: first?.dataUrl ?? null,
+        infografikTitle: first?.title ?? legacyTitle,
+        infografikPrompt: first?.prompt ?? legacyPrompt,
+      };
     })(),
-    infografikTitle:
-      typeof row.infografikTitle === "string" ? row.infografikTitle.trim() : "",
-    infografikPrompt:
-      typeof row.infografikPrompt === "string" ? row.infografikPrompt : "",
     status: parseKapitelStatus(row.status),
     generationJobId:
       typeof row.generationJobId === "string" && row.generationJobId
@@ -755,6 +848,9 @@ export function emptySachbuchKapitel(
     title: partial?.title ?? "Neues Kapitel",
     goals: partial?.goals ?? "",
     makroStageKey: partial?.makroStageKey ?? null,
+    sourceKapitelId: partial?.sourceKapitelId ?? null,
+    sourceKapitelIds: partial?.sourceKapitelIds ??
+      (partial?.sourceKapitelId ? [partial.sourceKapitelId] : []),
     contextGraph: partial?.contextGraph ?? emptyContextGraph(),
     abschnitte: partial?.abschnitte ?? [],
     interviewMessages: partial?.interviewMessages ?? [],
@@ -767,6 +863,7 @@ export function emptySachbuchKapitel(
     infografikDataUrl: partial?.infografikDataUrl ?? null,
     infografikTitle: partial?.infografikTitle ?? "",
     infografikPrompt: partial?.infografikPrompt ?? "",
+    infografiken: partial?.infografiken ?? [],
     status: partial?.status ?? "draft",
     generationJobId: partial?.generationJobId ?? null,
     generationProgress: partial?.generationProgress ?? null,
@@ -851,12 +948,53 @@ export function sachbuchKapitelExportBody(kapitel: SachbuchKapitel): string {
 
 /** True when Haiku Herstellung has produced layout text for a chapter. */
 export function sachbuchKapitelHasHerstellung(kapitel: SachbuchKapitel): boolean {
-  return kapitel.manuscript.herstellungText.trim().length >= 200;
+  // Full text after a hop, or hergestelltAt when slim transport stripped prose
+  // (admin page / keepKapitelIds) — otherwise batch status collapses to 0/n.
+  if (kapitel.manuscript.herstellungText.trim().length >= 200) return true;
+  return Boolean(kapitel.manuscript.hergestelltAt?.trim());
+}
+
+/**
+ * Resolved Infografik list for export / UI (array preferred, legacy single
+ * as fallback). Client-safe — keep out of `infografik.ts` (Node canvas).
+ */
+export function sachbuchKapitelInfografiken(
+  kapitel: SachbuchKapitel,
+): SachbuchKapitelInfografik[] {
+  const fromArray = (kapitel.infografiken ?? []).filter((i) =>
+    i.dataUrl.trim().startsWith("data:image/"),
+  );
+  if (fromArray.length) return fromArray;
+  const u = (kapitel.infografikDataUrl ?? "").trim();
+  if (!u.startsWith("data:image/")) return [];
+  return [
+    {
+      title: kapitel.infografikTitle?.trim() || "",
+      dataUrl: u,
+      prompt: kapitel.infografikPrompt ?? "",
+    },
+  ];
 }
 
 /** True when a chapter has a usable Infografik for export. */
 export function sachbuchKapitelHasInfografik(kapitel: SachbuchKapitel): boolean {
-  return Boolean(kapitel.infografikDataUrl?.trim().startsWith("data:image/"));
+  return sachbuchKapitelInfografiken(kapitel).length > 0;
+}
+
+/** Slot count for admin chips (includes slim stubs without pixels). */
+export function sachbuchKapitelInfografikSlotCount(
+  kapitel: SachbuchKapitel,
+): number {
+  const list = kapitel.infografiken ?? [];
+  if (list.length) {
+    return list.filter(
+      (i) =>
+        Boolean(i.key?.trim()) ||
+        Boolean(i.title?.trim()) ||
+        i.dataUrl?.trim().startsWith("data:image/"),
+    ).length;
+  }
+  return kapitel.infografikDataUrl?.trim().startsWith("data:image/") ? 1 : 0;
 }
 
 /** Whitespace-separated word count (German prose). */
@@ -895,6 +1033,21 @@ export function sachbuchBookCritiqueAppliesToChapter(
   return mentions.includes(chapterIndex1);
 }
 
+/**
+ * True when a critique line demands finished layout/graphics — that belongs to
+ * Herstellung (step 8), not Manuskript scoring. Placeholders in prose are intentional.
+ */
+export function isSachbuchHerstellungLayoutCritique(line: string): boolean {
+  return /Platzhalter|Infografik|Buchsatz|Druckbild|Callout|QR-?Code|gesetzte Tabellen|echte Tabellen|finale Grafik|fertigen Grafik|Satzstudio|Nummerierung der Abbildungen|Abbildungen vereinheitlichen|visuelle Artefakte|im Buchsatz|optisch als Anker|Fettdruck oder Versalien|hervorgehobene (Tabelle|Checkliste|Stufen)|Übersichtskasten.{0,60}setzen|Kästen \(Callout|als Callout|WYSIWYG|Napkin/i.test(
+    line,
+  );
+}
+
+/** Drop Herstellung/layout demands from Manuskript gaps & change-orders. */
+export function filterSachbuchManuscriptCritiqueLines(lines: string[]): string[] {
+  return lines.filter((l) => !isSachbuchHerstellungLayoutCritique(l));
+}
+
 /** Book-wide critique lines that this chapter must honor. */
 export function sachbuchBookCritiqueForChapter(
   book: SachbuchKontext,
@@ -909,19 +1062,26 @@ export function sachbuchBookCritiqueForChapter(
   if (idx < 0) return empty;
   const n = idx + 1;
   return {
-    orders: (review.changeOrders ?? []).filter((o) =>
-      sachbuchBookCritiqueAppliesToChapter(o, n),
+    orders: filterSachbuchManuscriptCritiqueLines(
+      (review.changeOrders ?? []).filter((o) =>
+        sachbuchBookCritiqueAppliesToChapter(o, n),
+      ),
     ),
-    gaps: (review.gaps ?? []).filter((g) =>
-      sachbuchBookCritiqueAppliesToChapter(g, n),
+    gaps: filterSachbuchManuscriptCritiqueLines(
+      (review.gaps ?? []).filter((g) =>
+        sachbuchBookCritiqueAppliesToChapter(g, n),
+      ),
     ),
     summary: (review.scoreSummary ?? "").trim(),
   };
 }
 
 /**
- * Whether this chapter still needs an Improve-Hop (first Lektorat or Buch-Pass
- * newer than last improvedAt). Client-safe.
+ * Whether this chapter still needs an Improve-Hop.
+ * First Lektorat if no solid improvedText; Buch-Pass when open book
+ * change-orders apply and were not yet applied for the current
+ * `manuscriptReview.scoredAt` (manual `improvedAt` bumps must not skip).
+ * Client-safe.
  */
 export function sachbuchKapitelNeedsManuscriptImprove(
   book: SachbuchKontext,
@@ -932,15 +1092,15 @@ export function sachbuchKapitelNeedsManuscriptImprove(
   const already = countSachbuchWords(k.manuscript.improvedText);
   const improvedAt = k.manuscript.improvedAt?.trim() || null;
   const bookScoredAt = book.idee.manuscriptReview?.scoredAt?.trim() || null;
-  const bookHasOrders =
-    (book.idee.manuscriptReview?.changeOrders?.length ?? 0) > 0;
-  const needsBookPass =
-    bookHasOrders &&
-    Boolean(bookScoredAt) &&
-    (!improvedAt || improvedAt < bookScoredAt!);
   const critique = sachbuchBookCritiqueForChapter(book, kapitelId);
+  const appliedFor =
+    k.manuscript.bookPassAppliedScoredAt?.trim() || null;
+  // Open book Orders for this chapter force a hop until Argon has applied
+  // that exact book-score generation — not merely until improvedAt is fresh.
   const chapterNeedsBookPass =
-    needsBookPass && (critique.orders.length > 0 || critique.gaps.length > 0);
+    Boolean(bookScoredAt) &&
+    critique.orders.length > 0 &&
+    appliedFor !== bookScoredAt;
   if (
     already >= SACHBUCH_MANUSCRIPT_IMPROVED_MIN_WORDS &&
     improvedAt &&
@@ -1004,27 +1164,205 @@ export function sachbuchManuscriptOverallSalesScore(book: SachbuchKontext): {
   };
 }
 
+export type SlimSachbuchTransportOptions = {
+  /**
+   * Keep full manuscript / Abschnitt prose for these chapter ids
+   * (e.g. the chapter just improved). Others are stripped for payload size.
+   */
+  keepKapitelIds?: string[];
+  /** If true, strip all long prose (admin page hydration). */
+  stripAllProse?: boolean;
+  /**
+   * Keep Abbildung/Tabelle pixels even when prose is stripped
+   * (Infografik-API). Default false — too large for RSC hydration.
+   */
+  keepInfografiken?: boolean;
+};
+
 /**
- * Drop bulky revision before-snapshots for API/Action responses.
- * Keeps draftText + afterText + summary; avoids RSC/JSON stream blow-ups
- * once a book has many Abschnitte.
+ * Shrink Sachbuch JSON for RSC / API responses.
+ * Full books with 9×~10k-word chapters otherwise blow the browser (white screen).
  */
 export function slimSachbuchKontextForTransport(
   book: SachbuchKontext,
+  options: SlimSachbuchTransportOptions = {},
 ): SachbuchKontext {
+  const keep = new Set(options.keepKapitelIds ?? []);
+  const stripAll = Boolean(options.stripAllProse);
+  const keepInfos = Boolean(options.keepInfografiken);
+  const exp = book.export ?? emptySachbuchExport();
+  const hadCover =
+    Boolean(exp.hasCoverImage) ||
+    exp.coverImageDataUrl.trim().startsWith("data:image/");
+  // Cover data URLs are multi-MB; strip from slim admin/API payloads.
+  const stripCover = stripAll || keep.size > 0;
+
   return {
     ...book,
-    export: book.export ?? emptySachbuchExport(),
-    kapitel: book.kapitel.map((k) => ({
-      ...k,
-      abschnitte: k.abschnitte.map((a) => ({
-        ...a,
-        revisions: (a.revisions ?? []).map((r) => ({
-          ...r,
-          beforeText: "",
+    export: {
+      ...exp,
+      hasCoverImage: hadCover,
+      coverImageDataUrl: stripCover ? "" : exp.coverImageDataUrl,
+      coverPrompt: exp.coverPrompt?.slice(0, 2_000) ?? "",
+    },
+    idee: {
+      ...book.idee,
+      // Never ship full Hörbuch spoken bodies (duplicate of chapter prose).
+      hoerbuch: slimSachbuchHoerbuchState(
+        book.idee.hoerbuch ?? emptySachbuchHoerbuchState(),
+      ),
+      refineLog: stripAll || keep.size > 0 ? [] : book.idee.refineLog,
+      interviewMessages:
+        stripAll || keep.size > 0
+          ? book.idee.interviewMessages.map((m) => ({
+              ...m,
+              content: m.content.slice(0, 800),
+            }))
+          : book.idee.interviewMessages,
+    },
+    kapitel: book.kapitel.map((k) => {
+      // stripAll → no prose; keep ids → only those; else keep all (compat).
+      const keepProse = stripAll
+        ? false
+        : keep.size === 0
+          ? true
+          : keep.has(k.id);
+      const keepFig = keepProse || keepInfos;
+      return {
+        ...k,
+        draftPass1: keepProse ? k.draftPass1 : "",
+        critiquePass2: keepProse ? k.critiquePass2 : "",
+        finalText: keepProse ? k.finalText : "",
+        interviewBriefing: keepProse ? k.interviewBriefing : "",
+        interviewMessages: keepProse ? k.interviewMessages : [],
+        groundingSources: keepProse ? k.groundingSources : [],
+        infografikDataUrl: keepFig ? k.infografikDataUrl : null,
+        infografikPrompt: keepFig ? k.infografikPrompt : "",
+        // Titles/keys without pixels so status chips survive stripAll.
+        infografiken: keepFig
+          ? (k.infografiken ?? [])
+          : (k.infografiken ?? []).map((i) => ({
+              key: i.key,
+              title: i.title,
+              dataUrl: "",
+              prompt: "",
+            })),
+        abschnitte: k.abschnitte.map((a) => ({
+          ...a,
+          draftText: keepProse ? a.draftText : "",
+          authorReply: keepProse ? a.authorReply : "",
+          revisions: keepProse
+            ? (a.revisions ?? []).map((r) => ({ ...r, beforeText: "" }))
+            : [],
         })),
-      })),
-    })),
+        manuscript: {
+          ...k.manuscript,
+          draftText: keepProse ? k.manuscript.draftText : "",
+          improvedText: keepProse ? k.manuscript.improvedText : "",
+          herstellungText: keepProse ? k.manuscript.herstellungText : "",
+        },
+      };
+    }),
+  };
+}
+
+/** Alias for admin page initial props — strip all long chapter prose. */
+export function slimSachbuchKontextForAdminPage(
+  book: SachbuchKontext,
+): SachbuchKontext {
+  return slimSachbuchKontextForTransport(book, { stripAllProse: true });
+}
+
+/**
+ * Prefer next figure list; fill empty dataUrls from previous by key/title.
+ */
+function mergeSachbuchInfografiken(
+  nextList: SachbuchKapitelInfografik[] | undefined,
+  prevList: SachbuchKapitelInfografik[] | undefined,
+): SachbuchKapitelInfografik[] {
+  const next = nextList ?? [];
+  const prev = prevList ?? [];
+  if (!next.length) return prev;
+  return next.map((n) => {
+    if (n.dataUrl?.trim().startsWith("data:image/")) return n;
+    const match = prev.find(
+      (p) =>
+        (n.key && p.key && n.key === p.key) ||
+        (n.title.trim() && n.title.trim() === p.title.trim()),
+    );
+    if (match?.dataUrl?.trim().startsWith("data:image/")) {
+      return {
+        ...n,
+        dataUrl: match.dataUrl,
+        prompt: n.prompt || match.prompt,
+        key: n.key || match.key,
+      };
+    }
+    return n;
+  });
+}
+
+/**
+ * When an API returns a slim book, keep previously loaded chapter prose
+ * in client state unless the response includes replacement text.
+ */
+export function mergeSachbuchProseFromPrevious(
+  previous: SachbuchKontext,
+  next: SachbuchKontext,
+): SachbuchKontext {
+  const prevCover = previous.export?.coverImageDataUrl?.trim() ?? "";
+  const nextCover = next.export?.coverImageDataUrl?.trim() ?? "";
+  const coverImageDataUrl =
+    nextCover.startsWith("data:image/")
+      ? nextCover
+      : prevCover.startsWith("data:image/")
+        ? prevCover
+        : "";
+  const hasCoverImage =
+    Boolean(next.export?.hasCoverImage) ||
+    Boolean(previous.export?.hasCoverImage) ||
+    coverImageDataUrl.startsWith("data:image/");
+
+  return {
+    ...next,
+    export: {
+      ...next.export,
+      coverImageDataUrl,
+      coverPrompt: next.export.coverPrompt || previous.export.coverPrompt,
+      hasCoverImage,
+    },
+    kapitel: next.kapitel.map((nk) => {
+      const pk = previous.kapitel.find((p) => p.id === nk.id);
+      if (!pk) return nk;
+      const nextHasProse =
+        Boolean(nk.manuscript.improvedText.trim()) ||
+        Boolean(nk.manuscript.draftText.trim()) ||
+        Boolean(nk.manuscript.herstellungText.trim()) ||
+        nk.abschnitte.some((a) => a.draftText.trim());
+      if (nextHasProse) return nk;
+      return {
+        ...nk,
+        finalText: nk.finalText || pk.finalText,
+        infografikDataUrl: nk.infografikDataUrl || pk.infografikDataUrl,
+        infografikPrompt: nk.infografikPrompt || pk.infografikPrompt,
+        infografiken: mergeSachbuchInfografiken(
+          nk.infografiken,
+          pk.infografiken,
+        ),
+        abschnitte:
+          nk.abschnitte.some((a) => a.draftText.trim()) ||
+          nk.abschnitte.length !== pk.abschnitte.length
+            ? nk.abschnitte
+            : pk.abschnitte,
+        manuscript: {
+          ...nk.manuscript,
+          draftText: nk.manuscript.draftText || pk.manuscript.draftText,
+          improvedText: nk.manuscript.improvedText || pk.manuscript.improvedText,
+          herstellungText:
+            nk.manuscript.herstellungText || pk.manuscript.herstellungText,
+        },
+      };
+    }),
   };
 }
 

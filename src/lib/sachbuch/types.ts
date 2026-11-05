@@ -33,7 +33,7 @@ export type SachbuchGroundingSource = {
 
 export type SachbuchPhaseStatus = "empty" | "in_progress" | "ready";
 
-/** Guided wizard steps (Idee → … → Manuskript → Herstellung → Export). */
+/** Guided wizard steps (Idee → … → Manuskript → Herstellung → Export → Hörbuch). */
 export type SachbuchGuideStep =
   | "concept"
   | "refine"
@@ -43,7 +43,8 @@ export type SachbuchGuideStep =
   | "write"
   | "manuscript"
   | "herstellung"
-  | "export";
+  | "export"
+  | "hoerbuch";
 
 export const SACHBUCH_GUIDE_STEPS: readonly SachbuchGuideStep[] = [
   "concept",
@@ -55,6 +56,7 @@ export const SACHBUCH_GUIDE_STEPS: readonly SachbuchGuideStep[] = [
   "manuscript",
   "herstellung",
   "export",
+  "hoerbuch",
 ] as const;
 
 export const SACHBUCH_GUIDE_STEP_LABELS: Record<SachbuchGuideStep, string> = {
@@ -67,7 +69,31 @@ export const SACHBUCH_GUIDE_STEP_LABELS: Record<SachbuchGuideStep, string> = {
   manuscript: "Manuskript",
   herstellung: "Herstellung",
   export: "Export",
+  hoerbuch: "Hörbuch",
 };
+
+/**
+ * Full book vs. derived short editions:
+ * - `compact` ≈ 20–30 % of Hauptband (Executive Briefing)
+ * - `teaser` ≈ 20–30 % of Kompakt (Newsletter / Broschüre / Web-Appetit)
+ */
+export type SachbuchEdition = "full" | "compact" | "teaser";
+
+/**
+ * Wizard steps derived short editions (Kompakt + Teaser) do not run.
+ * They open on Manuskript.
+ */
+export const SACHBUCH_COMPACT_SKIPPED_STEPS: readonly SachbuchGuideStep[] = [
+  "concept",
+  "refine",
+  "book_type",
+  "evidenz",
+  "makro",
+  "write",
+] as const;
+
+/** Alias — same skip list for Teaser. */
+export const SACHBUCH_DERIVED_SKIPPED_STEPS = SACHBUCH_COMPACT_SKIPPED_STEPS;
 
 /** Fixed count for Sachbuch marketing keywords (Amazon-style). */
 export const SACHBUCH_KEYWORD_COUNT = 6;
@@ -94,6 +120,8 @@ export type SachbuchExport = {
       rechteinhaber: string;
       hinweis: string;
       disclaimer: string;
+      /** Extra paragraphs (Herausgeber, KI-Hinweis, Credits). */
+      absatz: string[];
     };
     widmung: string;
     motto: string;
@@ -102,6 +130,11 @@ export type SachbuchExport = {
   };
   coverImageDataUrl: string;
   coverPrompt: string;
+  /**
+   * True when a cover exists in DB even if `coverImageDataUrl` was stripped
+   * for transport (multi-MB). Export UI uses this to lazy-load the preview.
+   */
+  hasCoverImage: boolean;
 };
 
 /** Wizard cursor + HITL gates (stored inside idee JSON). */
@@ -138,6 +171,12 @@ export type SachbuchKapitelManuscript = {
   changeOrders: string[];
   scoredAt: string | null;
   improvedAt: string | null;
+  /**
+   * `manuscriptReview.scoredAt` for which book change-orders were last applied
+   * in an Improve-Hop. Manual prose patches bump `improvedAt` only — open book
+   * orders must still force a pass until this matches the current book score.
+   */
+  bookPassAppliedScoredAt: string | null;
   modelSlug: string;
 };
 
@@ -198,6 +237,66 @@ export type SachbuchIdee = {
   manuscriptReview: SachbuchManuscriptBookReview;
   /** Whole-book Herstellung notes after Haiku layout pass. */
   herstellungReview: SachbuchHerstellungBookReview;
+  /**
+   * `compact` / `teaser` = derived editions from `sourceBookId`
+   * (Kompakt ← Hauptband, Teaser ← Kompakt).
+   * Steps in `SACHBUCH_DERIVED_SKIPPED_STEPS` stay closed.
+   */
+  edition: SachbuchEdition;
+  /** Source book for compact/teaser (Hauptband or Kompakt). */
+  sourceBookId: string | null;
+  /** Snapshot of the source title (list + link label; no join). */
+  sourceBookTitle: string;
+  /**
+   * Tolino Hörbuch tracks + prefs (MP3s live in Storage bucket
+   * `sachbuch-hoerbuch`; see `src/lib/sachbuch/hoerbuch.ts`).
+   */
+  hoerbuch: SachbuchHoerbuchState;
+};
+
+/** One spoken track (= Abschnitt) for Tolino Media upload. */
+export type SachbuchHoerbuchTrack = {
+  id: string;
+  /** 1-based order → `01_….mp3`. */
+  order: number;
+  /** Tolino filename without path, e.g. `01_Kapitel1_Abschnitt1.mp3`. */
+  fileName: string;
+  title: string;
+  kapitelId: string;
+  /** Source writing-Abschnitt id when built from Abschnitte; else empty. */
+  abschnittId: string;
+  /** Spoken plain text for this track. */
+  text: string;
+  charCount: number;
+  /** Set after successful TTS + Storage upload. */
+  audio: SachbuchHoerbuchTrackAudio | null;
+};
+
+export type SachbuchHoerbuchTrackAudio = {
+  storagePath: string;
+  byteSize: number;
+  durationSec: number | null;
+  modelSlug: string;
+  voiceId: string;
+  generatedAt: string;
+};
+
+export type SachbuchHoerbuchSample = {
+  storagePath: string;
+  fileName: string;
+  byteSize: number;
+  durationSec: number;
+  generatedAt: string;
+};
+
+/** Hörbuch prefs + track list persisted inside `idee.hoerbuch`. */
+export type SachbuchHoerbuchState = {
+  voiceId: string;
+  /** Optional style hint for Gemini `speech_metadata.style`. */
+  style: string;
+  tracks: SachbuchHoerbuchTrack[];
+  sample: SachbuchHoerbuchSample | null;
+  tracksBuiltAt: string | null;
 };
 
 export type SachbuchEvidenzClaim = {
@@ -347,6 +446,18 @@ export type SachbuchKapitelStatus =
   | "ready"
   | "error";
 
+/**
+ * Chapter figure (Gemini): Abbildung or Tabelle.
+ * `key` matches manuscript captions (`abb-1`, `tab-9-1`, …).
+ */
+export type SachbuchKapitelInfografik = {
+  /** Stable id for inline placement in preview / PDF / ePub. */
+  key?: string;
+  title: string;
+  dataUrl: string;
+  prompt: string;
+};
+
 export type SachbuchKapitel = {
   id: string;
   title: string;
@@ -356,6 +467,16 @@ export type SachbuchKapitel = {
    * Flexible: `partId__chapterId` from parts, or legacy stage key.
    */
   makroStageKey: string | null;
+  /**
+   * Primary chapter id in the source book (`edition: compact` only).
+   * Prefer `sourceKapitelIds` when a compact chapter bundles several Hauptband chapters.
+   */
+  sourceKapitelId: string | null;
+  /**
+   * Source chapter ids for a compact bundle (order = Hauptband order).
+   * Empty on a full book; when empty but `sourceKapitelId` is set, treat as one source.
+   */
+  sourceKapitelIds: string[];
   contextGraph: SachbuchContextGraph;
   abschnitte: SachbuchAbschnitt[];
   /** Legacy chapter interview (unused in phases flow; kept for compat). */
@@ -369,13 +490,18 @@ export type SachbuchKapitel = {
   manuscript: SachbuchKapitelManuscript;
   /**
    * Optional full-page Infografik after chapter prose (PDF/ePub).
-   * data:image/…; set in Herstellung via Gemini Pro Image.
+   * Legacy single slot — kept in sync with `infografiken[0]`.
    */
   infografikDataUrl: string | null;
   /** Short German title shown in admin / used in the image brief. */
   infografikTitle: string;
   /** Last image prompt (debug / regenerate). */
   infografikPrompt: string;
+  /**
+   * All chapter Infografiken (Abbildung 1…n), full-page after prose.
+   * Prefer this over the legacy single fields when non-empty.
+   */
+  infografiken: SachbuchKapitelInfografik[];
   status: SachbuchKapitelStatus;
   generationJobId: string | null;
   generationProgress: string | null;

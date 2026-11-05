@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     revalidateSachbuchAdmin(book.id);
     return NextResponse.json({
       success: true,
-      book: slimSachbuchKontextForTransport(book),
+      book: slimSachbuchKontextForTransport(book, { stripAllProse: true }),
     });
   } catch (error) {
     revalidateSachbuchAdmin(parsed.data.sachbuchId);

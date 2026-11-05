@@ -1,0 +1,27 @@
+Das Privacy Solution Canvas und der Sechs-Fragen-Prozesskompass
+---
+ Rechtsdokumentation ansetzt: das Privacy Solution Canvas in Verbindung mit dem Sechs-Fragen-Prozesskompass. Canvas und Kompass sind zwei Gesichter desselben Werkzeugs: Das Canvas ist das einseitige Arbeitsblatt mit sechs Architekturfeldern; der Kompass umfasst die sechs Leitfragen, mit dene
+---
+Erstens klärt das Team in Feld 1 das betriebswirtschaftliche Problem und die Zweckbindung: Welches messbare betriebswirtschaftliche Problem löst dieser Prozessschritt? Lässt sich der Zweck eines Datenfeldes nicht in einem klaren Sat
+---
+z begründen, fällt es aus der Spezifikation heraus. Zweitens folgt in Feld 2 der direkte Gegenwert an der Benutzerschnittstelle: Welcher Nutzen rechtfertigt den Aufwand für den Kunden? Jedes zusätzliche Eingabefeld erzeugt Reibung und senkt die Abschlussrate. Drittens prüft F
+---
+der Datenminimierung direkt in schlanke Architektur übersetzt. Viertens wird in Feld 4 die tragfähige Rechtsgrundlage bestimmt: Wer auf eine klickbare Einwilligung ausweicht, muss rechnerisch nachweisen, dass der Prozess auch dann noch wirtschaftlich funktioniert, wenn knapp 70 Prozent
+---
+er berechtigtes Interesse bilden meist das robustere Fundament. Fünftens regelt Feld 5 den rollenbasierten Zugriff und die technische Begrenzung: Hier werden die Prinzipien von Vertraulichkeit und Sicherheit der Verarbeitung in konkrete Zugriffskontrollen übersetzt, damit Kundendaten n
+---
+icht in unternehmensweite Datensilos abwandern. Sechstens erzwingt Feld 6 ein Ablaufdatum und eine automatisierte Löschroutine: Wann hat der Datensatz seine Aufgabe erfüllt, und welche Routine löscht ihn? Damit wird gelebte Speicherbegrenzung technisch hinterlegt, bevor im
+---
+ormulararchitektur des Kundenportals in einem vierstündigen Workshop mit diesem Sechs-Fragen-Kompass überprüfte, entlarvten die Leitfragen mehr als die Hälfte der geplanten Textfelder als unbegründete Vorratshaltung. Das Marketing-Team wollte ursprünglich Segmentierungsmerkmale wie Haushalts
+---
+y Champions direkt im Team innerhalb von 30 bis 60 Minuten anhand transparenter Leitfragen, auf welcher Spur ein Vorhaben landet; Datenschutzbeauftragte wahren ihre gesetzliche Unabhängigkeit als strategische Sparringspartner und begleiten die tiefgehenden FMEA-Stresstests auf der roten S
+---
+ wählt der Produktverantwortliche über strukturierte Menüs aus dem hinterlegten Prozesskompass Zweck, Datenklassen und Speicherfristen aus, woraufhin das System die Rechtsgrundlage regelbasiert ableitet und das zentrale Verzeichnis im Hintergrund aktualisiert. In der Beschaffung verhindert die
+---
+Datenfeldes musste begründet werden, sondern dessen Erhebung. Die diagnostische Leitfrage lautete, welcher geschäftskritische Prozessschritt im System nachweisbar scheitert, wenn dieses spezifische Datum genau jetzt fehlt. Kann der anfordernde Fachbereich weder einen unmittelbaren operati
+---
+des statistisch erfasst und bei auffälliger Häufung strukturell analysiert. Die Leitfrage lautet dann niemals, welcher Mitarbeiter den Fehler gemacht hat, sondern an welcher Schnittstelle die technische Plausibilitätsprüfung fehlte.
+---
+erung, und hier greift der zentrale Prüfbaustein für die Entwicklungsteams: der Sechs-Fragen-Fairness-Check. Er wird als verbindliches Akzeptanzkriterium fest in die Definition of Done jedes agilen Sprints aufgenommen und entscheidet nüchtern darüber, ob eine neue oder geänderte Interaktions
+---
+ne kurz dokumentierte Selbstprüfung innerhalb des Produktteams anhand der sechs Leitfragen. Rote Muster hingegen, also asymmetrisch gestaltete Buttons, vorab angekreuzte Häkchen oder erzwungene Kopplungen von Vertrag und Werbung, lösen im System kompromisslos einen automatischen Bereitste

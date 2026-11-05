@@ -21,11 +21,23 @@ import {
 import {
   emptyVorsatz,
   parseVorsatzJson,
-  ROMAN_DEFAULT_AUTHOR,
-  ROMAN_DEFAULT_IMPRINT,
   type RomanVorsatz,
 } from "@/lib/roman/front-matter";
 import { resolveRomanSchreibModel } from "@/lib/roman/model";
+import {
+  buildSachbuchImpressum,
+  SACHBUCH_DEFAULT_AUTHOR,
+  SACHBUCH_DEFAULT_IMPRINT,
+} from "@/lib/sachbuch/impressum";
+import { isSachbuchCompact, isSachbuchTeaser } from "@/lib/sachbuch/guide";
+import {
+  buildSachbuchCompactEditionCopy,
+  compactSourceBookTitle,
+} from "@/lib/sachbuch/compact";
+import {
+  buildSachbuchTeaserEditionCopy,
+  teaserSourceBookTitle,
+} from "@/lib/sachbuch/teaser";
 
 export const sachbuchMarketingSchema = z.object({
   suggestedTitle: z.string().min(3).max(120),
@@ -47,6 +59,123 @@ function manuscriptSample(book: SachbuchKontext, maxChars = 12_000): string {
 }
 
 /**
+ * Compact edition: inherit marketing/Titelei from the Hauptband and only
+ * reframe as the quick overview (no fresh AI positioning).
+ */
+async function marketingCopyFromCompactSource(
+  book: SachbuchKontext,
+): Promise<
+  | (SachbuchMarketingCopy & { vorsatz: RomanVorsatz; autorName: string })
+  | null
+> {
+  const sourceId = book.idee.sourceBookId?.trim();
+  if (!isSachbuchCompact(book) || !sourceId) return null;
+  const source = await getSachbuchKontext(sourceId);
+  if (!source) return null;
+
+  const copy = buildSachbuchCompactEditionCopy(source);
+  const year = String(new Date().getFullYear());
+  const autor =
+    book.export.autorName.trim() ||
+    source.export.autorName.trim() ||
+    SACHBUCH_DEFAULT_AUTHOR;
+  const titleForVorsatz =
+    book.export.suggestedTitle.trim() ||
+    book.title.trim() ||
+    `${compactSourceBookTitle(source.title)} — Kompakt`;
+  const base = emptyVorsatz();
+  const vorsatz: RomanVorsatz = {
+    ...base,
+    titelseite: {
+      titel: titleForVorsatz,
+      untertitel: copy.subtitle,
+      autor,
+      imprint: SACHBUCH_DEFAULT_IMPRINT,
+    },
+    impressum: buildSachbuchImpressum({
+      jahr: year,
+      autorPseudonym: autor,
+    }),
+    motto: copy.motto,
+    widmung: "",
+    vorwort: copy.vorwort,
+  };
+  let keywords = copy.keywords;
+  while (keywords.length < SACHBUCH_KEYWORD_COUNT) {
+    keywords = [...keywords, `Keyword ${keywords.length + 1}`];
+  }
+  keywords = keywords.slice(0, SACHBUCH_KEYWORD_COUNT);
+
+  return {
+    suggestedTitle: titleForVorsatz,
+    subtitle: copy.subtitle,
+    summary: copy.summary,
+    keywords,
+    motto: copy.motto,
+    vorsatz: parseVorsatzJson(vorsatz),
+    autorName: autor,
+  };
+}
+
+/**
+ * Teaser: inherit from Kompakt, reframe as newsletter/brochure/web appetizer.
+ */
+async function marketingCopyFromTeaserSource(
+  book: SachbuchKontext,
+): Promise<
+  | (SachbuchMarketingCopy & { vorsatz: RomanVorsatz; autorName: string })
+  | null
+> {
+  const sourceId = book.idee.sourceBookId?.trim();
+  if (!isSachbuchTeaser(book) || !sourceId) return null;
+  const compact = await getSachbuchKontext(sourceId);
+  if (!compact) return null;
+
+  const copy = buildSachbuchTeaserEditionCopy(compact);
+  const year = String(new Date().getFullYear());
+  const autor =
+    book.export.autorName.trim() ||
+    compact.export.autorName.trim() ||
+    SACHBUCH_DEFAULT_AUTHOR;
+  const titleForVorsatz =
+    book.export.suggestedTitle.trim() ||
+    book.title.trim() ||
+    `${teaserSourceBookTitle(compact.title)} — Teaser`;
+  const base = emptyVorsatz();
+  const vorsatz: RomanVorsatz = {
+    ...base,
+    titelseite: {
+      titel: titleForVorsatz,
+      untertitel: copy.subtitle,
+      autor,
+      imprint: SACHBUCH_DEFAULT_IMPRINT,
+    },
+    impressum: buildSachbuchImpressum({
+      jahr: year,
+      autorPseudonym: autor,
+    }),
+    motto: copy.motto,
+    widmung: "",
+    vorwort: copy.vorwort,
+  };
+  let keywords = copy.keywords;
+  while (keywords.length < SACHBUCH_KEYWORD_COUNT) {
+    keywords = [...keywords, `Keyword ${keywords.length + 1}`];
+  }
+  keywords = keywords.slice(0, SACHBUCH_KEYWORD_COUNT);
+
+  return {
+    suggestedTitle: titleForVorsatz,
+    subtitle: copy.subtitle,
+    summary: copy.summary,
+    keywords,
+    motto: copy.motto,
+    vorsatz: parseVorsatzJson(vorsatz),
+    autorName: autor,
+  };
+}
+
+/**
  * Build title suggestion, subtitle, Klappentext, 6 keywords + Vorsatz.
  */
 export async function generateSachbuchMarketingCopy(
@@ -54,6 +183,11 @@ export async function generateSachbuchMarketingCopy(
 ): Promise<
   SachbuchMarketingCopy & { vorsatz: RomanVorsatz; autorName: string }
 > {
+  const fromTeaser = await marketingCopyFromTeaserSource(book);
+  if (fromTeaser) return fromTeaser;
+  const fromCompact = await marketingCopyFromCompactSource(book);
+  if (fromCompact) return fromCompact;
+
   const bookType = getSachbuchBookType(book.makro.bookTypeId);
   const model = await resolveRomanSchreibModel(SACHBUCH_MODEL_MARKETING);
   const raw = await generateText({
@@ -119,7 +253,7 @@ ${manuscriptSample(book) || book.idee.briefing.trim() || book.idee.unpopularOpin
 
   const year = String(new Date().getFullYear());
   const autor =
-    book.export.autorName.trim() || ROMAN_DEFAULT_AUTHOR;
+    book.export.autorName.trim() || SACHBUCH_DEFAULT_AUTHOR;
   const titleForVorsatz =
     parsed.data.suggestedTitle.trim() || book.title.trim();
   const base = emptyVorsatz();
@@ -129,16 +263,12 @@ ${manuscriptSample(book) || book.idee.briefing.trim() || book.idee.unpopularOpin
       titel: titleForVorsatz,
       untertitel: parsed.data.subtitle.trim(),
       autor,
-      imprint: ROMAN_DEFAULT_IMPRINT,
+      imprint: SACHBUCH_DEFAULT_IMPRINT,
     },
-    impressum: {
-      ...base.impressum,
+    impressum: buildSachbuchImpressum({
       jahr: year,
-      rechteinhaber: autor,
-      hinweis: `© ${year} ${autor} · ${ROMAN_DEFAULT_IMPRINT}. Alle Rechte vorbehalten.`,
-      disclaimer:
-        "Dieses Sachbuch gibt Orientierung und Erfahrungswissen wieder. Keine Garantie für Vollständigkeit oder individuelle Ergebnisse. Bei Bedarf fachlichen Rat einholen.",
-    },
+      autorPseudonym: autor,
+    }),
     motto: parsed.data.motto?.trim() || "",
     widmung: "",
     // Keep an existing preface when regenerating marketing copy.

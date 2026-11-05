@@ -43,13 +43,24 @@ function resolveFfmpegPath(): string {
  * Remuxes any MP3 to Tolino-safe stereo 128 kbps CBR @ 44.1 kHz (dual-mono if source is mono).
  */
 export async function remuxMp3ForTolino(audio: Buffer): Promise<Buffer> {
+  return encodeAudioForTolino(audio, "in.mp3");
+}
+
+/**
+ * Encodes WAV / PCM / MP3 to Tolino Media: stereo, 44.1 kHz, 128 kbps CBR,
+ * with loudnorm targeting RMS around −18 dB (Tolino window −24…−14).
+ */
+export async function encodeAudioForTolino(
+  audio: Buffer,
+  inputFileName = "in.wav",
+): Promise<Buffer> {
   if (audio.byteLength < 100) {
-    throw new Error("Audiodatei zu kurz für Tolino-Remux.");
+    throw new Error("Audiodatei zu kurz für Tolino-Encode.");
   }
 
   const ffmpeg = resolveFfmpegPath();
   const dir = await mkdtemp(join(tmpdir(), "leseno-tolino-"));
-  const inputPath = join(dir, "in.mp3");
+  const inputPath = join(dir, inputFileName);
   const outputPath = join(dir, "out.mp3");
 
   try {
@@ -63,6 +74,8 @@ export async function remuxMp3ForTolino(audio: Buffer): Promise<Buffer> {
         "error",
         "-i",
         inputPath,
+        "-af",
+        "loudnorm=I=-18:TP=-1.5:LRA=11",
         "-ac",
         "2",
         "-ar",
@@ -77,9 +90,89 @@ export async function remuxMp3ForTolino(audio: Buffer): Promise<Buffer> {
     );
     const out = await readFile(outputPath);
     if (out.byteLength < 100) {
-      throw new Error("Tolino-Remux lieferte keine nutzbare MP3.");
+      throw new Error("Tolino-Encode lieferte keine nutzbare MP3.");
     }
     return out;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Trim/pad an MP3 to an exact duration window (Hörprobe 90–180 s).
+ * Cuts from the start; does not stretch audio.
+ */
+export async function trimMp3ToDurationSec(
+  audio: Buffer,
+  durationSec: number,
+): Promise<{ audio: Buffer; durationSec: number }> {
+  const target = Math.max(1, Math.round(durationSec));
+  const ffmpeg = resolveFfmpegPath();
+  const dir = await mkdtemp(join(tmpdir(), "leseno-trim-"));
+  const inputPath = join(dir, "in.mp3");
+  const outputPath = join(dir, "out.mp3");
+  try {
+    await writeFile(inputPath, audio);
+    await execFileAsync(
+      ffmpeg,
+      [
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        inputPath,
+        "-t",
+        String(target),
+        "-ac",
+        "2",
+        "-ar",
+        TOLINO_MP3_SAMPLE_RATE,
+        "-b:a",
+        TOLINO_MP3_BITRATE,
+        "-c:a",
+        "libmp3lame",
+        outputPath,
+      ],
+      { maxBuffer: 32 * 1024 * 1024, windowsHide: true },
+    );
+    const out = await readFile(outputPath);
+    if (out.byteLength < 100) {
+      throw new Error("Hörprobe-Trim lieferte keine nutzbare MP3.");
+    }
+    return { audio: out, durationSec: target };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/** Probe duration in seconds via ffprobe-less ffmpeg `-i` stderr parse fallback. */
+export async function probeMp3DurationSec(audio: Buffer): Promise<number | null> {
+  const ffmpeg = resolveFfmpegPath();
+  const dir = await mkdtemp(join(tmpdir(), "leseno-probe-"));
+  const inputPath = join(dir, "in.mp3");
+  try {
+    await writeFile(inputPath, audio);
+    try {
+      await execFileAsync(
+        ffmpeg,
+        ["-hide_banner", "-i", inputPath, "-f", "null", "-"],
+        { maxBuffer: 8 * 1024 * 1024, windowsHide: true },
+      );
+    } catch (error) {
+      const stderr =
+        error && typeof error === "object" && "stderr" in error
+          ? String((error as { stderr?: unknown }).stderr ?? "")
+          : String(error);
+      const match = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stderr);
+      if (!match) return null;
+      const h = Number(match[1]);
+      const m = Number(match[2]);
+      const s = Number(match[3]);
+      if (![h, m, s].every(Number.isFinite)) return null;
+      return h * 3600 + m * 60 + s;
+    }
+    return null;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

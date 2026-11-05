@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Export tab: Titel-Vorschlag, Marketing/Titelei, Cover (gpt-image-2.5-sunburst).
+ * Export tab: Titel-Vorschlag, Marketing/Titelei, Cover (Gemini 3 Pro Image),
+ * PDF-Innendatei (Titelseite + Tolino-Impressum) / ePub.
  */
 
 import { useEffect, useState } from "react";
@@ -11,19 +12,23 @@ import {
   applySachbuchSuggestedTitleAction,
   generateSachbuchCoverAction,
   generateSachbuchMarketingAction,
+  getSachbuchCoverImageAction,
   saveSachbuchExportAction,
 } from "@/app/actions/sachbuch-phases";
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
 import { romanCoverSizeLabel } from "@/lib/roman/cover-size";
 import {
-  buildSachbuchEpubBlob,
-  buildSachbuchPdfBlob,
-} from "@/lib/sachbuch/export-build";
-import {
   SACHBUCH_KEYWORD_COUNT,
   type SachbuchKontext,
 } from "@/lib/sachbuch/types";
 import { SACHBUCH_COVER_MODEL_SLUG } from "@/lib/sachbuch/agent-defaults";
+import {
+  SACHBUCH_DEFAULT_IMPRINT,
+  SACHBUCH_HERAUSGEBER_ANSCHRIFT,
+  SACHBUCH_HERAUSGEBER_EMAIL,
+  SACHBUCH_HERAUSGEBER_NAME,
+  SACHBUCH_HERAUSGEBER_WEBSITE,
+} from "@/lib/sachbuch/impressum";
 import {
   SACHBUCH_WAIT_EXPORT_COVER,
   SACHBUCH_WAIT_EXPORT_META,
@@ -68,8 +73,22 @@ export function SachbuchExportPanel({
   const [motto, setMotto] = useState(exp.vorsatz.motto);
   const [vorwort, setVorwort] = useState(exp.vorsatz.vorwort ?? "");
   const [pending, setPending] = useState<
-    "meta" | "cover" | "save" | "apply-title" | "pdf" | "epub" | null
+    | "meta"
+    | "cover"
+    | "save"
+    | "apply-title"
+    | "pdf"
+    | "epub"
+    | "epub-cover"
+    | null
   >(null);
+  const [coverPreview, setCoverPreview] = useState(
+    () =>
+      exp.coverImageDataUrl?.startsWith("data:image/")
+        ? exp.coverImageDataUrl
+        : "",
+  );
+  const [coverLoading, setCoverLoading] = useState(false);
 
   useEffect(() => {
     setSuggestedTitle(exp.suggestedTitle);
@@ -79,6 +98,9 @@ export function SachbuchExportPanel({
     setAutorName(exp.autorName);
     setMotto(exp.vorsatz.motto);
     setVorwort(exp.vorsatz.vorwort ?? "");
+    if (exp.coverImageDataUrl?.startsWith("data:image/")) {
+      setCoverPreview(exp.coverImageDataUrl);
+    }
   }, [
     book.id,
     exp.suggestedTitle,
@@ -91,8 +113,30 @@ export function SachbuchExportPanel({
     exp.coverImageDataUrl,
   ]);
 
+  // Admin page strips multi-MB cover URLs; reload pixels when flag says cover exists.
+  useEffect(() => {
+    if (!exp.hasCoverImage) return;
+    if (exp.coverImageDataUrl?.startsWith("data:image/")) {
+      setCoverPreview(exp.coverImageDataUrl);
+      return;
+    }
+    let cancelled = false;
+    setCoverLoading(true);
+    void getSachbuchCoverImageAction({ id: book.id }).then((result) => {
+      if (cancelled) return;
+      setCoverLoading(false);
+      if (result.success && result.data?.coverImageDataUrl) {
+        setCoverPreview(result.data.coverImageDataUrl);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [book.id, exp.hasCoverImage, exp.coverImageDataUrl]);
+
   const busy = Boolean(pending) || !canSave;
-  const hasCover = Boolean(exp.coverImageDataUrl?.trim());
+  const hasCover =
+    coverPreview.startsWith("data:image/") || Boolean(exp.hasCoverImage);
   const titelei = exp.vorsatz.titelseite;
 
   async function onGenerateMeta() {
@@ -122,7 +166,14 @@ export function SachbuchExportPanel({
         toast.error(result.error ?? "Cover fehlgeschlagen.");
         return;
       }
-      onBookUpdate(result.data.book);
+      const next = result.data.book;
+      if (next.export.coverImageDataUrl?.startsWith("data:image/")) {
+        setCoverPreview(next.export.coverImageDataUrl);
+      }
+      onBookUpdate({
+        ...next,
+        export: { ...next.export, hasCoverImage: true },
+      });
       toast.success(`Cover ${romanCoverSizeLabel()} (JPG) erzeugt.`);
     } finally {
       setPending(null);
@@ -195,13 +246,50 @@ export function SachbuchExportPanel({
     }
   }
 
+  async function downloadExport(
+    kind: "pdf" | "epub",
+    options: { includeCover?: boolean } = {},
+  ): Promise<void> {
+    const res = await fetch(`/api/admin/sachbuch/export-${kind}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sachbuchId: book.id,
+        ...(kind === "epub"
+          ? { includeCover: Boolean(options.includeCover) }
+          : {}),
+      }),
+    });
+    if (!res.ok) {
+      let message = kind === "pdf" ? "PDF-Export fehlgeschlagen." : "ePub-Export fehlgeschlagen.";
+      try {
+        const data = (await res.json()) as { error?: string };
+        if (data.error?.trim()) message = data.error.trim();
+      } catch {
+        /* binary or empty */
+      }
+      throw new Error(message);
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const match = /filename="([^"]+)"/i.exec(disposition);
+    const fallback =
+      kind === "pdf"
+        ? "sachbuch.pdf"
+        : options.includeCover
+          ? "sachbuch-mit-Cover.epub"
+          : "sachbuch.epub";
+    downloadBlob(blob, match?.[1] || fallback);
+  }
+
   async function onPdf() {
     if (busy) return;
     setPending("pdf");
     try {
-      const { blob, filename } = await buildSachbuchPdfBlob(book);
-      downloadBlob(blob, filename);
-      toast.success("PDF heruntergeladen (Cover + Titelei + Kapitel).");
+      await downloadExport("pdf");
+      toast.success(
+        "PDF heruntergeladen (Titelseite · Impressum S.2 · Kapitel; Cover separat).",
+      );
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "PDF-Export fehlgeschlagen.",
@@ -211,13 +299,16 @@ export function SachbuchExportPanel({
     }
   }
 
-  async function onEpub() {
+  async function onEpub(includeCover: boolean) {
     if (busy) return;
-    setPending("epub");
+    setPending(includeCover ? "epub-cover" : "epub");
     try {
-      const { blob, filename } = await buildSachbuchEpubBlob(book);
-      downloadBlob(blob, filename);
-      toast.success("ePub heruntergeladen (Titelei, ohne Cover).");
+      await downloadExport("epub", { includeCover });
+      toast.success(
+        includeCover
+          ? "ePub heruntergeladen (mit Cover)."
+          : "ePub heruntergeladen (ohne Cover — Veröffentlichung).",
+      );
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "ePub-Export fehlgeschlagen.",
@@ -232,8 +323,10 @@ export function SachbuchExportPanel({
       <div>
         <h2 className="text-lg font-extrabold text-zinc-950">Export</h2>
         <p className="mt-1 text-sm font-semibold text-zinc-600">
-          Titel-Vorschlag, Untertitel, Titelei, Klappentext, 6 Schlagwörter,
-          Cover ({romanCoverSizeLabel()}) · PDF mit Cover, ePub ohne Cover.
+          Titel-Vorschlag, Untertitel, Titelei mit Tolino-Impressum, Klappentext,
+          6 Schlagwörter, Cover ({romanCoverSizeLabel()}). PDF-Innendatei ohne
+          Cover (S.1 Titelseite, S.2 Impressum); Cover separat hochladen. ePub
+          ohne Cover für die Veröffentlichung, optional zusätzlich mit Cover.
         </p>
       </div>
 
@@ -285,13 +378,29 @@ export function SachbuchExportPanel({
         <button
           type="button"
           disabled={busy}
-          onClick={() => void onEpub()}
+          onClick={() => void onEpub(false)}
           className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-gray-50 disabled:opacity-50"
         >
           {pending === "epub" ? (
             <Loader2 className="size-4 animate-spin" aria-hidden />
           ) : null}
-          ePub
+          ePub (ohne Cover)
+        </button>
+        <button
+          type="button"
+          disabled={busy || !hasCover}
+          title={
+            hasCover
+              ? "ePub inkl. Cover-Bild"
+              : "Zuerst Cover erzeugen"
+          }
+          onClick={() => void onEpub(true)}
+          className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-bold text-zinc-800 ring-1 ring-zinc-950/10 hover:bg-gray-50 disabled:opacity-50"
+        >
+          {pending === "epub-cover" ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : null}
+          ePub (mit Cover)
         </button>
       </div>
 
@@ -415,11 +524,32 @@ export function SachbuchExportPanel({
           </p>
         ) : null}
         <p className="text-sm text-zinc-600">
-          {titelei.autor || autorName} · {titelei.imprint || "leseno.de"}
+          {titelei.autor || autorName} ·{" "}
+          {titelei.imprint || SACHBUCH_DEFAULT_IMPRINT}
         </p>
-        {exp.vorsatz.impressum.hinweis ? (
-          <p className="text-xs text-zinc-500">{exp.vorsatz.impressum.hinweis}</p>
-        ) : null}
+        <div className="border-t border-zinc-200 pt-2">
+          <p className="text-xs font-extrabold tracking-wide text-zinc-500 uppercase">
+            Impressum (PDF S.2 / ePub)
+          </p>
+          <p className="mt-1 text-sm font-semibold text-zinc-800">
+            {SACHBUCH_HERAUSGEBER_NAME}
+          </p>
+          <p className="text-sm text-zinc-600">
+            {SACHBUCH_HERAUSGEBER_ANSCHRIFT}
+          </p>
+          <p className="text-sm text-zinc-600">
+            {SACHBUCH_HERAUSGEBER_EMAIL}
+          </p>
+          <p className="text-sm text-zinc-600">
+            {SACHBUCH_HERAUSGEBER_WEBSITE}
+          </p>
+          <p className="mt-1 text-sm font-semibold text-zinc-700">
+            1. Auflage
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            inkl. KI-Hinweis (Tolino) · Print: oben 5 cm / unten 3 cm freigehalten
+          </p>
+        </div>
       </section>
 
       <div>
@@ -429,13 +559,18 @@ export function SachbuchExportPanel({
           {sachbuchModelLabel(SACHBUCH_COVER_MODEL_SLUG)} · Motiv aus
           Klappentext / UVP; Titel und Untertitel als Typografie auf dem Cover.
         </p>
-        {hasCover ? (
+        {coverPreview.startsWith("data:image/") ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={exp.coverImageDataUrl}
+            src={coverPreview}
             alt="Cover"
             className="mt-2 max-h-[40vh] w-auto rounded-xl ring-1 ring-zinc-950/10"
           />
+        ) : coverLoading || (hasCover && !coverPreview) ? (
+          <p className="mt-2 inline-flex items-center gap-2 text-zinc-500">
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+            Cover-Vorschau wird geladen …
+          </p>
         ) : (
           <p className="mt-2 text-zinc-500">
             Noch kein Cover — zuerst Texte, dann Cover erzeugen.

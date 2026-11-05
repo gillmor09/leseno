@@ -7,6 +7,9 @@
 import {
   canOpenSachbuchGuideStep,
   effectiveSachbuchGuideStep,
+  isSachbuchDerivedEdition,
+  isSachbuchCompactSkippedStep,
+  isSachbuchTeaser,
 } from "@/lib/sachbuch/guide";
 import type { SachbuchGuideStep, SachbuchKontext } from "@/lib/sachbuch/types";
 import {
@@ -36,6 +39,8 @@ export function SachbuchGuideStepper({
       {SACHBUCH_GUIDE_STEPS.map((step, i) => {
         const open = canOpenSachbuchGuideStep(book, step);
         const active = current === step;
+        const skipped =
+          isSachbuchDerivedEdition(book) && isSachbuchCompactSkippedStep(step);
         return (
           <button
             key={step}
@@ -51,9 +56,13 @@ export function SachbuchGuideStepper({
                   : "bg-zinc-50 text-zinc-400",
             )}
             title={
-              open
-                ? SACHBUCH_GUIDE_STEP_LABELS[step]
-                : "Noch gesperrt — vorherige Schritte abschließen"
+              skipped
+                ? isSachbuchTeaser(book)
+                  ? "Teaser — dieser Schritt entfällt"
+                  : "Kompakt-Ausgabe — dieser Schritt entfällt"
+                : open
+                  ? SACHBUCH_GUIDE_STEP_LABELS[step]
+                  : "Noch gesperrt — vorherige Schritte abschließen"
             }
           >
             {i + 1}. {SACHBUCH_GUIDE_STEP_LABELS[step]}

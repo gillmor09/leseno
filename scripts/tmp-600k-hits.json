@@ -1,0 +1,63 @@
+{
+  "K2": [
+    ": Das Telekommunikations- und Infrastrukturunternehmen verwaltet rund 600.000 aktive Kundenkonten und steuert parallel zwei geschäftliche Säulen – einerseits das klassische B2B-Plattformgesc",
+    "atkundensegment rund um Mobilfunk und den vernetzten Smart-Home-Tarif KlarHome. Nach der im ersten Kapitel beschriebenen Entschlackung der KlarHome-Kundenformulare stand das Unternehmen vor ",
+    " KlarHome. Nach der im ersten Kapitel beschriebenen Entschlackung der KlarHome-Kundenformulare stand das Unternehmen vor der Herausforderung, hunderte jährliche Software-Releases über beide ",
+    " Kunden oder Beschäftigten, etwa bei automatisierter Profilbildung im KlarHome-Tarif oder lückenloser Verhaltensanalyse. Landet ein Projekt bei der Prüfung in diesem roten Bereich der Matrix",
+    "r Datenabteilung vor, die minutengenauen Funkzellenwechsel sämtlicher 600.000 aktiven Kundenendgeräte zentral zu sammeln. Zum Schutz der Privatsphäre sollten die Rufnummern durch wechselnde ",
+    "iben muss. In vielen Geschäftsprozessen – etwa bei der Abrechnung der 600.000 Kundenkonten, bei detaillierten Transaktionen im Kundenservice oder in der medizinischen Versorgung – lässt sich"
+  ],
+  "K3": [
+    "bieters, der neben seinen gewerblichen Mandanten im Privatkundentarif KlarHome rund 600.000 aktive Kundenkonten betreut, an der komplexen Ausschreibung eines europäischen Industriekonzerns g",
+    "eben seinen gewerblichen Mandanten im Privatkundentarif KlarHome rund 600.000 aktive Kundenkonten betreut, an der komplexen Ausschreibung eines europäischen Industriekonzerns gearbeitet. Die",
+    "anagement – sei es ein neues Produktmerkmal für den Privatkundentarif KlarHome, die Anbindung eines externen Cloud-Dienstleisters für die B2B-Plattform oder eine geänderte regulatorische Vor",
+    "kolltabellen sowohl in der B2B-Plattform als auch im Smart-Home-Tarif KlarHome führten dazu, dass selbst simple Anpassungen an bestehenden Diensten die Auslieferungs-Pipeline regelmäßig für ",
+    "ines kombinierten Groß-Releases für das Self-Service-Kundenportal des KlarHome-Tarifs und das zentrale Abrechnungsmodul. Ein Entwicklerteam arbeitete unter Hochdruck an der Fertigstellung d",
+    "entation davon ausgegangen, dass sämtliche B2B-Mandantendaten und die 600.000 Privatkundenkonten des KlarHome-Tarifs zentral und sauber in den führenden CRM-Kernsystemen verwaltet würden. Da"
+  ],
+  "K4": [
+    "bei der KlarNetz AG, die neben ihren Privatkunden im Smart-Home-Tarif KlarHome auch eine stark wachsende B2B-Cloud-Plattform betreibt. In deren früherer Systemarchitektur speicherte das Regi",
+    "Ergebnis öffnete allen Beteiligten die Augen: Während Privatkunden im KlarHome-Tarif bei zu langen Masken schlicht aus Bequemlichkeit abbrachen, scheiterten die B2B-Einkäufer und IT-Leiter i",
+    "ysteme bei der KlarNetz AG, in deren Messwerten für die Plattform der KlarHome-Privatkunden und der B2B-Mandanten reale Erfahrungswerte aus hochfrequenten Datenbank-Umgebungen gebündelt sind"
+  ],
+  "K5": [
+    "ungsstrecken für die B2B-Cloud-Plattform und den B2C-Smart-Home-Tarif KlarHome eingedämmt. Als das interne VDP-Team anschließend die nachgelagerten Bestandsdaten im Kundenservice untersuchte",
+    "ngssystem, dem Netzbetrieb und den analytischen Plattformen über alle 600.000 Kundenkonten hinweg zu synchronisieren. Vor der Einführung deklarativer Lifecycle-Verträge spiegelte die Organis",
+    "Datenbanken Verbindungsdaten der B2B-Plattform und Gerätelemetrie des KlarHome-Tarifs nach Fristablauf säuberten, blieben verwaiste Schattenkopien jahrelang in den Datenströmen und Staging-B",
+    "ensortierungen spürbar. Da Vorhersagemodelle für Kundenabwanderung im KlarHome-Segment und Netzauslastung in der B2B-Sparte dank der bereinigten Datenhistorie nicht länger durch veraltete, l",
+    "eline liefen rund 94 Prozent aller Standardfälle im Privatkundentarif KlarHome ohne menschliches Zutun in wenigen Sekunden durch die internen Kernsysteme; lediglich rund sechs Prozent der An",
+    "ht, zeigte sich ebenfalls bei der KlarNetz AG: Um Kündigungsgründe im KlarHome-Tarif genauer zu analysieren, aktivierte ein Teamleiter im Kundenservice in einem bestehenden Feedback-Werkzeug"
+  ],
+  "K6": [
+    "en Telekommunikations- und Dienstleistungsunternehmen mit seinen rund 600.000 aktiven Kundenkonten – von klassischen Mobilfunkverträgen über den Privatkundentarif KlarHome bis hin zur angesc",
+    "onten – von klassischen Mobilfunkverträgen über den Privatkundentarif KlarHome bis hin zur angeschlossenen Geschäftskunden-Sparte – blockierten jeden Monat hunderte Adressänderungen und manu",
+    "nes langjährigen Kunden mit mehreren Umzügen und einem Wechsel in den KlarHome-Tarif zu einem operativen Stresstest. Weil bei der Kundenerfassung über Jahre hinweg keine verbindliche Eingabe",
+    "dresse genügt, greifen bei einer Vertragsanbahnung für Mobilfunk oder KlarHome vollständige Plausibilitätskontrollen für Anschrift und Zahlungsdaten. Die internen Messungen bei der KlarNetz",
+    "in ganz ähnliches Muster zeigte sich beim Versand von Routern für die KlarHome-Tarife: Fehlende strukturierte Pflichtfelder für Adresszusätze führten in Mehrfamilienhäusern regelmäßig dazu, ",
+    "vice an diese führende Quelle an. Über das Kundenportal erhielten die 600.000 Nutzer seither direkten Zugriff auf ihre Stammdaten, Rechnungsarchive und Einwilligungseinstellungen. Selbst di"
+  ],
+  "K7": [
+    "urellen Schmerz erlebte auch die KlarNetz AG mit ihren insgesamt rund 600.000 aktiven Kundenkonten, als sie neben ihrer etablierten B2B-Plattform den vernetzten Privatkundentarif KlarHome vo",
+    "eben ihrer etablierten B2B-Plattform den vernetzten Privatkundentarif KlarHome vorbereitete, der intelligente Heizkörperthermostate mit einer Raumklimasteuerung und Raumüberwachung verbindet",
+    "d und Just-in-Time-Hinweisen den Wendepunkt für den Privatkundentarif KlarHome. Nachdem der erste Entwurf an den seitenlangen Klauseln über automatisierte Datenverarbeitung gescheitert war, ",
+    "rNetz AG reduzierte dieser integrierte Self-Service-Bereich über alle 600.000 Kundenkonten hinweg die formellen Auskunftsersuchen um 79 Prozent auf wenige komplexe Ausnahmefälle. Gleichzeit",
+    " eigenen Entwicklungen als auch bei zugekauften Modulen für den Tarif KlarHome. In einem ersten Fall wollte ein Entwicklerteam eine automatische Heizungsabsenkung realisieren, sobald alle Be",
+    "larNetz-Entwickler etwa ein kostenloses externes Wetter-Plugin in die KlarHome-App einbinden wollten, um Vorlauftemperaturen an angekündigte Kältewellen anzupassen, offenbarte der Netzwerk-M"
+  ],
+  "K8": [
+    "iben, zeigte sich bei der Einführung des neuen B2C-Smart-Home-Tarifs „KlarHome“ ein ähnliches Bild. Um die Lead-Zahlen für Partnerangebote künstlich zu steigern, hatte das Vertriebsteam die ",
+    "se vermischten Datenpfade sowohl für die Privatkunden-Tarife rund um „KlarHome“ als auch für die angeschlossene B2B-Geschäftskundenplattform radikal auf. Der Bestellabschluss für Tarife und ",
+    "eukundenabschlüsse zunächst sichtbar ab, doch die Vertragsstornos im „KlarHome“-Segment fielen innerhalb von sechs Wochen um 38 Prozent, und die datenschutzbezogenen Beschwerdetickets im Sup",
+    "ren. Bei der KlarNetz AG fungiert das Präferenz-Center heute für alle 600.000 Kundenkonten als synchrone Schnittstelle zu einem zentralen, autoritativen Zustimmungsdienst, der alle Präferenz",
+    ", autoritativen Zustimmungsdienst, der alle Präferenzsignale aus dem „KlarHome“-Privatkundengeschäft und der B2B-Plattform bündelt, anstatt sie fragmentiert über Webshop, Callcenter-Software",
+    "ch dem Rollout des modernisierten Kunden- und Serviceportals für die „KlarHome“-Sparte. Ein neues Funktionsmodul zur Störungsdiagnose verlangte von den Nutzern direkt beim ersten Aufruf der "
+  ],
+  "K9": [
+    "z AG. Nachdem der IT- und Kommunikationsdienstleister mit seinen rund 600.000 aktiven Kundenkonten seine Formularstrecken im Onboarding des B2C-Smart-Home-Tarifs KlarHome sowie auf seiner B2",
+    "konten seine Formularstrecken im Onboarding des B2C-Smart-Home-Tarifs KlarHome sowie auf seiner B2B-Plattform erfolgreich verschlankt hatte, sollte als nächster Schritt der Kundenservice übe",
+    "en den Entwurf für ein reguläres Tarif-Upgrade im Privatkundensegment KlarHome abfragte, präsentierte das Sprachmodell im Antworttext plötzlich vertrauliche Details aus einem völlig fremden,",
+    "S-Bereinigung des gesamten unstrukturierten Altdatenbestands über die 600.000 Kundenkonten hinweg parallel als systematischer Hintergrundprozess aufgesetzt wurde. Schleuse 1: Poka-Yoke bei ",
+    "llen. Meldet eine Kundin im Chat beispielsweise einen Umzug für ihren KlarHome-Vertrag samt neuer Bankverbindung und abweichendem Kontoinhaber, wandelt das Gateway diese Angaben vor der Über",
+    "e bauliche Trennung hätte eine harmlose Anfrage zum Privatkundentarif KlarHome unweigerlich vertrauliche Textfragmente aus fremden B2B-Rahmenverträgen in den Antwort-Prompt gezogen, sobald s"
+  ]
+}

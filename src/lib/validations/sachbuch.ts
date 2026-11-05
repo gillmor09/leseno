@@ -90,6 +90,7 @@ const kapitelManuscriptSchema = z
     changeOrders: z.array(z.string().max(5000)).max(20).default([]),
     scoredAt: z.string().max(80).nullable().default(null),
     improvedAt: z.string().max(80).nullable().default(null),
+    bookPassAppliedScoredAt: z.string().max(80).nullable().default(null),
     modelSlug: z.string().max(120).default(""),
   })
   .default({
@@ -105,6 +106,7 @@ const kapitelManuscriptSchema = z
     changeOrders: [],
     scoredAt: null,
     improvedAt: null,
+    bookPassAppliedScoredAt: null,
     modelSlug: "",
   });
 
@@ -172,6 +174,27 @@ export const sachbuchIdeeSchema = z.object({
       decisions: [],
       preparedAt: null,
       modelSlug: "",
+    }),
+  /** `compact` skips Rohkonzept … Schreiben and condenses a source manuscript. */
+  edition: z.enum(["full", "compact", "teaser"]).default("full"),
+  sourceBookId: z.string().uuid().nullable().default(null),
+  sourceBookTitle: z.string().max(300).default(""),
+  /** Hörbuch tracks/prefs — validated lightly; full parse in `parseSachbuchHoerbuchState`. */
+  hoerbuch: z
+    .object({
+      voiceId: z.string().max(120).default("Kore"),
+      style: z.string().max(500).default(""),
+      tracks: z.array(z.record(z.string(), z.unknown())).max(500).default([]),
+      sample: z.record(z.string(), z.unknown()).nullable().default(null),
+      tracksBuiltAt: z.string().max(80).nullable().default(null),
+    })
+    .passthrough()
+    .default({
+      voiceId: "Kore",
+      style: "",
+      tracks: [],
+      sample: null,
+      tracksBuiltAt: null,
     }),
 });
 
@@ -259,6 +282,10 @@ export const sachbuchKapitelSchema = z.object({
   goals: z.string().max(20_000),
   /** Legacy stage key or `partId__chapterId` from flexible parts. */
   makroStageKey: z.string().max(120).nullable(),
+  /** Primary source chapter when this book is a compact edition. */
+  sourceKapitelId: z.string().uuid().nullable().optional().default(null),
+  /** Bundled Hauptband chapters (compact); empty → fall back to sourceKapitelId. */
+  sourceKapitelIds: z.array(z.string().uuid()).max(40).optional().default([]),
   contextGraph: contextGraphSchema,
   abschnitte: z.array(abschnittSchema).max(200),
   interviewMessages: z.array(interviewMessageSchema).max(500),
@@ -276,6 +303,18 @@ export const sachbuchKapitelSchema = z.object({
     .default(null),
   infografikTitle: z.string().max(300).optional().default(""),
   infografikPrompt: z.string().max(20_000).optional().default(""),
+  infografiken: z
+    .array(
+      z.object({
+        key: z.string().max(80).optional(),
+        title: z.string().max(300),
+        dataUrl: z.string().max(12_000_000),
+        prompt: z.string().max(20_000).optional().default(""),
+      }),
+    )
+    .max(20)
+    .optional()
+    .default([]),
   status: z.enum([
     "draft",
     "graph",

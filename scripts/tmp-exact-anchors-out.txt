@@ -1,0 +1,52 @@
+﻿wrote 17 anchors
+
+## K1:methodische Gegenstück zur Datenrichtigkeit
+Das methodische Gegenstück zur Datenrichtigkeit ist präventive Fehlervermeidung direkt an der Eingabe — die Motor-Kapitel liefern dazu später die Werkzeuge (Poka-Yoke an Masken, 5S für ruhende Bestände). Auf der Fundamentebene gilt vorab die strikte Regel: Kein neues Datenfeld geht in Betrieb, ohne dass auf dem Canvas ein prozessualer Auslöser – ein sogenannter Trigger – für seine spätere Bereinig
+
+## K4:Baymard Institute im E-Commerce
+NOT FOUND
+
+## K6:Branchenanalysen von Gartner mit durchschnittlich
+NOT FOUND
+
+## K6:1-10-100-Regel ihre volle
+Die wirtschaftlichen Konsequenzen dieser Nachlässigkeit sind beträchtlich. Unsaubere Personenstammdaten zählen im Alltag zu den hartnäckigsten Kostentreibern: Fehlgeleitete Kundenkommunikation, Retouren durch falsche Adressen, verlangsamte Durchlaufzeiten, Fehlentscheidungen und zeitintensive manuelle Nacharbeiten im Kundenservice binden wertvolle Ressourcen, die für produktive Wertschöpfung verlo
+
+## K6:DataGrail oder Gartner
+NOT FOUND
+
+## K6:Prävention an der Schnittstelle
+Prävention an der Schnittstelle: Validierung, Self-Service und die Auflösung des Conversion-Mythos
+
+## K6:präventives Poka-Yoke-Design
+Wir begegnen dieser Prozessverschwendung und diesem Sicherheitsrisiko nicht mit zusätzlichem Personal für das Abtippen von Listen oder mit wiederkehrenden Belehrungen an die Belegschaft, sondern mit methodischer Struktur. Dafür greifen zwei zentrale Hebel ineinander: An der Erfassungsschnittstelle verhindert unser präventives Poka-Yoke-Design durch automatisierte Validierungsroutinen, feste Pflich
+
+## K7:Cisco Consumer Privacy Survey
+NOT FOUND
+
+## K7:Baymard Institute zeigen
+NOT FOUND
+
+## K7:1-10-100-Regel der Qualitätskosten
+NOT FOUND
+
+## K7:Erhebungen von Gartner deckt
+NOT FOUND
+
+## K7:Fehlersicherung nach dem Poka-Yoke
+NOT FOUND
+
+## K7:sorgt unser Poka-Yoke-Prinzip
+NOT FOUND
+
+## K9:RAG-Assistenten für die Support
+NOT FOUND
+
+## K9:unzureichend isoliertes Ticket-Archiv
+NOT FOUND
+
+## K9:Marktdaten von Gartner belegen
+NOT FOUND
+
+## K9:Benchmark-Daten von Cisco
+NOT FOUND

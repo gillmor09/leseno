@@ -128,7 +128,7 @@ export async function requestImproveAllSachbuchManuscript(input: {
     }
 
     input.onProgress?.(
-      `Kapitel ${i + 1}/${book.kapitel.length}: ${k.title.slice(0, 40)}…`,
+      `Kapitel ${i + 1}/${book.kapitel.length}: ${k.title.slice(0, 36)}… (Argon, oft 10–20 Min)`,
     );
     const result = await requestImproveSachbuchKapitel({
       sachbuchId: book.id,

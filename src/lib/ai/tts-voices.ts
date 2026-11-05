@@ -66,6 +66,22 @@ async function fetchElevenLabs(
   }
 }
 
+/**
+ * Gemini 3.8 TTS prebuilt studio voices (subset; good for DE narration).
+ * @see https://ai.google.dev/gemini-api/docs/speech-generation
+ */
+export const GEMINI_TTS_VOICE_OPTIONS: readonly TtsVoiceOption[] = [
+  voiceOption("Kore", "Kore", "Firm — klare Sachbuch-Erzählstimme"),
+  voiceOption("Charon", "Charon", "Informative"),
+  voiceOption("Aoede", "Aoede", "Breezy"),
+  voiceOption("Orus", "Orus", "Firm"),
+  voiceOption("Fenrir", "Fenrir", "Excitable"),
+  voiceOption("Puck", "Puck", "Upbeat"),
+  voiceOption("Zephyr", "Zephyr", "Bright"),
+  voiceOption("Leda", "Leda", "Youthful"),
+  voiceOption("Callirrhoe", "Callirrhoe", "Easy-going"),
+];
+
 /** Built-in OpenAI voices for `tts-1` / `tts-1-hd`. */
 export const OPENAI_TTS_VOICE_OPTIONS: readonly TtsVoiceOption[] = [
   { id: "alloy", label: "Alloy" },
@@ -495,6 +511,8 @@ export async function listTtsVoicesForProvider(
   switch (provider) {
     case "openai-tts":
       return [...OPENAI_TTS_VOICE_OPTIONS];
+    case "gemini-tts":
+      return [...GEMINI_TTS_VOICE_OPTIONS];
     case "elevenlabs":
       return listElevenLabsVoices();
     case "inworld":

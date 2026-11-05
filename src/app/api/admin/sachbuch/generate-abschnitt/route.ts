@@ -50,7 +50,9 @@ export async function POST(request: Request) {
     revalidateSachbuchAdmin(book.id);
     return NextResponse.json({
       success: true,
-      book: slimSachbuchKontextForTransport(book),
+      book: slimSachbuchKontextForTransport(book, {
+        keepKapitelIds: [parsed.data.kapitelId],
+      }),
     });
   } catch (error) {
     revalidateSachbuchAdmin(parsed.data.sachbuchId);

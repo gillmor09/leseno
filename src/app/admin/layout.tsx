@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import { requireAdminPage } from "@/lib/auth/require-admin";
 
 /**
@@ -14,6 +15,7 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  await requireAdminPage();
+  const pathname = (await headers()).get("x-pathname")?.trim() || "/admin/users";
+  await requireAdminPage(pathname.startsWith("/admin") ? pathname : "/admin/users");
   return children;
 }

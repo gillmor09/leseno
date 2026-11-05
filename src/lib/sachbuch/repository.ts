@@ -42,20 +42,35 @@ type Row = {
   updated_at: string;
 };
 
-/** All books for the admin list. */
+/**
+ * All books for the admin list (slim RPC — no kapitel prose / Infografiken).
+ * See migration `20261104120000_sachbuch_list_slim.sql`.
+ */
 export async function listSachbuchKontexte(): Promise<SachbuchKontextSummary[]> {
   const supabase = createServiceClient(null);
   const { data, error } = await supabase.rpc("admin_list_sachbuch_kontexte");
   if (error) throw new Error(error.message);
-  return ((data ?? []) as Row[]).map((row) => ({
-    ...mapSachbuchRow(row),
-    kapitelCount:
-      row.kapitel_count ??
-      (Array.isArray(row.kapitel) ? row.kapitel.length : 0),
-  }));
+  return ((data ?? []) as Row[]).map((row) => {
+    const mapped = mapSachbuchRow({
+      ...row,
+      // List payload intentionally omits heavy blobs; never parse leftover kapitel.
+      kapitel: [],
+      agents: row.agents ?? {},
+      evidenz: row.evidenz ?? {},
+      makro: row.makro ?? {},
+      stilbibel: row.stilbibel ?? "",
+      zielgruppe: row.zielgruppe ?? "",
+    });
+    return {
+      ...mapped,
+      kapitelCount:
+        row.kapitel_count ??
+        (Array.isArray(row.kapitel) ? row.kapitel.length : 0),
+    };
+  });
 }
 
-/** One book by id. */
+/** One book by id (full payload — export / hops that need prose or pixels). */
 export async function getSachbuchKontext(
   id: string,
 ): Promise<SachbuchKontext | null> {
@@ -67,6 +82,31 @@ export async function getSachbuchKontext(
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;
   return mapSachbuchRow(row as Row);
+}
+
+/**
+ * Admin UI shell: no chapter prose, no Infografik/cover pixels.
+ * Requires migration `20261104123000_sachbuch_admin_shell_get.sql`.
+ * Falls back to full get only if the shell RPC is missing.
+ */
+export async function getSachbuchKontextAdminShell(
+  id: string,
+): Promise<SachbuchKontext | null> {
+  const supabase = createServiceClient(null);
+  const { data, error } = await supabase.rpc(
+    "admin_get_sachbuch_kontext_shell",
+    { p_id: id },
+  );
+  if (!error) {
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+    return mapSachbuchRow(row as Row);
+  }
+  const missing =
+    /could not find|does not exist|PGRST202|42883/i.test(error.message) ||
+    error.code === "PGRST202";
+  if (!missing) throw new Error(error.message);
+  return getSachbuchKontext(id);
 }
 
 /** Create or update a Sachbuch document. */
@@ -188,6 +228,38 @@ export async function patchSachbuchBook(
     makro: patch.makro ?? book.makro,
     kapitel: patch.kapitel ?? book.kapitel,
   });
+}
+
+/**
+ * Set wizard `idee.guide.currentStep` without reading/writing kapitel.
+ * Requires migration `20261105140000_sachbuch_guide_step_patch.sql`.
+ */
+export async function patchSachbuchGuideStep(
+  sachbuchId: string,
+  step: string,
+): Promise<void> {
+  const supabase = createServiceClient(null);
+  const { error } = await supabase.rpc("admin_patch_sachbuch_guide_step", {
+    p_id: sachbuchId,
+    p_step: step,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Replace `idee` JSON only (no kapitel). Used to slim fat Hörbuch tracks in DB.
+ * Requires migration `20261105140000_sachbuch_guide_step_patch.sql`.
+ */
+export async function patchSachbuchIdeeOnly(
+  sachbuchId: string,
+  idee: SachbuchKontext["idee"],
+): Promise<void> {
+  const supabase = createServiceClient(null);
+  const { error } = await supabase.rpc("admin_patch_sachbuch_idee", {
+    p_id: sachbuchId,
+    p_idee: idee,
+  });
+  if (error) throw new Error(error.message);
 }
 
 /**

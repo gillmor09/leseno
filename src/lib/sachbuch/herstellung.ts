@@ -10,7 +10,13 @@ import {
 } from "@/lib/ai/fetch-timeout";
 import { generateText } from "@/lib/ai/provider";
 import { SACHBUCH_MODEL_HERSTELLUNG } from "@/lib/sachbuch/agent-defaults";
-import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
+import {
+  assertSachbuchGuideAllows,
+  isSachbuchDerivedEdition,
+  isSachbuchTeaser,
+} from "@/lib/sachbuch/guide";
+import { SACHBUCH_COMPACT_PRODUCT_RULES } from "@/lib/sachbuch/compact";
+import { SACHBUCH_TEASER_PRODUCT_RULES } from "@/lib/sachbuch/teaser";
 import {
   countSachbuchWords,
   emptySachbuchHerstellungBookReview,
@@ -39,13 +45,13 @@ Du schreibst KEINEN Buchtext. Du lieferst nur einen Layout-Plan als JSON.
 Aufgabe:
 1) 2–6 Zwischenüberschriften an thematischen Brüchen (beforePara = Index, VOR dem Absatz).
 2) Kästen nur wo der Text klar abgegrenzt ist:
-   - merksatz: Absätze die mit „Merksatz:“ beginnen (oft 1 Absatz) — bevorzugen als optische Anker
-   - infobox: kurze Definitionslisten / KPI-Blöcke / Säulen-Zusammenfassungen
-   - schaubild: „Architektur auf einen Blick“ / Schaubild-Absätze
-   - onepager: Management-Canvas / Sprint-Pläne / Chargeback / 6-Fragen-Kompass / 14-Tage- und 30-Tage-Bögen — KEINE „Montagmorgen“-/Download-Rhetorik
+   - merksatz: 2–3 pro Kapitel, nur wo ein kurzer Lehrsatz / Pull-Quote klar steht (Absätze mit „Merksatz:“ oder ein einzelner pointierter Satz). title IMMER leer — der Kasten zeigt nur den Satz, keine Kind-Überschrift und kein „Merksatz für die Praxis“.
+   - infobox: kurze Definitionslisten / KPI-Blöcke / Säulen-Zusammenfassungen — title = Inhaltstitel (kein Kind-Label)
+   - schaubild: „Architektur auf einen Blick“ / Schaubild-Absätze — title = Inhaltstitel
+   - onepager: Management-Canvas / Sprint-Pläne / Chargeback / 6-Fragen-Kompass / 14-Tage- und 30-Tage-Bögen — KEINE „Montagmorgen“-/Download-Rhetorik; title = Inhaltstitel
 3) Pflicht, sofern im Text vorhanden: die großen Werkzeugblöcke (Chargeback, 6-Fragen-Felder, Sprint-Tage/Wochen, 9-KPI-Säulen) als onepager oder infobox absetzen.
 4) Keine überlappenden Boxes. fromPara/toPara inklusiv, 0-basiert.
-5) Erfinde keine Kästen ohne Textbasis. Titel kurz, deutsch, ohne „Kapitel 3.1“.
+5) Erfinde keine Kästen ohne Textbasis. Titel kurz, deutsch, ohne „Kapitel 3.1“. Nie Kind-Labels („Infobox“, „One-Pager“, „Merksatz“) als title setzen — die UI zeigt keine Kind-Überschrift.
 
 Antwort NUR als JSON ohne Markdown-Fence:
 {
@@ -146,9 +152,16 @@ function normalizePlan(
     if (from > to) [from, to] = [to, from];
     if (from < 0 || to >= paraCount) return;
     if (!BOX_KIND_SET.has(b.kind)) return;
+    // Merksatz = untitled pull-quote (no chrome kind/title).
+    const rawTitle = String(b.title ?? "").trim().slice(0, 120);
+    const title =
+      b.kind === "merksatz" ||
+      /^merksatz(\s+für\s+die\s+praxis)?$/i.test(rawTitle)
+        ? ""
+        : rawTitle;
     const next: BoxPlan = {
       kind: b.kind,
-      title: String(b.title ?? "").trim().slice(0, 120),
+      title,
       fromPara: from,
       toPara: to,
     };
@@ -251,14 +264,33 @@ async function callHaikuPlan(input: {
   kapitelTitle: string;
   outline: string;
   paraCount: number;
+  shortEdition?: "compact" | "teaser";
 }): Promise<HerstellungPlan> {
   const model = await resolveRomanSchreibModel(SACHBUCH_MODEL_HERSTELLUNG);
+  const shortRules =
+    input.shortEdition === "teaser"
+      ? `ZUSATZ Teaser:
+${SACHBUCH_TEASER_PRODUCT_RULES}
+- Erlaubt: höchstens ein merksatz.
+- Verboten: schaubild, onepager, infobox-Häufung.`
+      : input.shortEdition === "compact"
+        ? `ZUSATZ Kompakt-Ausgabe:
+${SACHBUCH_COMPACT_PRODUCT_RULES}
+- Erlaubt: merksatz + höchstens eine infobox.
+- Verboten: schaubild, onepager (keine Canvas-/Sprint-Seiten als Kasten).
+- Keine Kästen nur wegen Abbildungs- oder Tabellen-Captions.`
+        : null;
+  const system = shortRules
+    ? `${HERSTELLUNG_PLAN_SYSTEM}
+
+${shortRules}`
+    : HERSTELLUNG_PLAN_SYSTEM;
   let lastError: unknown;
   for (let attempt = 1; attempt <= HERSTELLUNG_ATTEMPTS; attempt += 1) {
     try {
       const raw = await generateText({
         model,
-        systemInstruction: HERSTELLUNG_PLAN_SYSTEM,
+        systemInstruction: system,
         userText: `Buch: ${input.title}
 Kapitel: ${input.kapitelTitle}
 Absätze: 0…${input.paraCount - 1} (insgesamt ${input.paraCount})
@@ -321,6 +353,11 @@ export async function herstellenSachbuchKapitel(input: {
     throw new Error("Kapitel hat zu wenige Absätze für Herstellung.");
   }
 
+  const shortEdition = isSachbuchTeaser(book)
+    ? ("teaser" as const)
+    : isSachbuchDerivedEdition(book)
+      ? ("compact" as const)
+      : undefined;
   const sourceWords = countSachbuchWords(body);
   const outline = buildParagraphOutline(paras);
   const rawPlan = await callHaikuPlan({
@@ -328,8 +365,22 @@ export async function herstellenSachbuchKapitel(input: {
     kapitelTitle: kap.title || `Kapitel ${kapIndex + 1}`,
     outline,
     paraCount: paras.length,
+    shortEdition,
   });
-  const plan = normalizePlan(rawPlan, paras.length, heuristicBoxes(paras));
+  let plan = normalizePlan(rawPlan, paras.length, heuristicBoxes(paras));
+  if (shortEdition === "teaser") {
+    plan = {
+      ...plan,
+      boxes: plan.boxes.filter((b) => b.kind === "merksatz"),
+    };
+  } else if (shortEdition === "compact") {
+    plan = {
+      ...plan,
+      boxes: plan.boxes.filter(
+        (b) => b.kind === "merksatz" || b.kind === "infobox",
+      ),
+    };
+  }
 
   if (plan.headings.length === 0 && plan.boxes.length === 0) {
     throw new Error(

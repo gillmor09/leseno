@@ -1,0 +1,19 @@
+{
+  "K1:methodische Gegenstück zur Datenrichtigkeit": "Das methodische Gegenstück zur Datenrichtigkeit ist präventive Fehlervermeidung direkt an der Eingabe — die Motor-Kapitel liefern dazu später die Werkzeuge (Poka-Yoke an Masken, 5S für ruhende Bestände). Auf der Fundamentebene gilt vorab die strikte Regel: Kein neues Datenfeld geht in Betrieb, ohne dass auf dem Canvas ein prozessualer Auslöser – ein sogenannter Trigger – für seine spätere Bereinigung definiert ist. Sobald etwa ein „KlarHome“-Vertrag gekündigt, der Router retourniert und die letzte Rechnung beglichen ist, wechselt der Status auf „inaktiv“. Dieser Trigger sperrt den Datensatz sofort für Marketing und Vertrieb und startet im Hintergrund den Countdown für die gesetzlichen Aufbewahrungsfristen, nach deren Ablauf der programmierte Löschlauf vollautomatisch durch alle verknüpften Tabellen greift.",
+  "K4:Baymard Institute im E-Commerce": "NOT FOUND",
+  "K6:Branchenanalysen von Gartner mit durchschnittlich": "NOT FOUND",
+  "K6:1-10-100-Regel ihre volle": "Die wirtschaftlichen Konsequenzen dieser Nachlässigkeit sind beträchtlich. Unsaubere Personenstammdaten zählen im Alltag zu den hartnäckigsten Kostentreibern: Fehlgeleitete Kundenkommunikation, Retouren durch falsche Adressen, verlangsamte Durchlaufzeiten, Fehlentscheidungen und zeitintensive manuelle Nacharbeiten im Kundenservice binden wertvolle Ressourcen, die für produktive Wertschöpfung verloren gehen. Auf die Stammdatenpflege übertragen entfaltet die uns bereits vertraute 1-10-100-Regel ihre volle kaufmännische Wucht: Während eine automatisierte Plausibilitätsprüfung bei der Eingabe nur den Bruchteil eines Cents beansprucht und die unmittelbare Korrektur im Erfassungsprozess vielleicht einen Euro kostet, verschlingt die spätere Bereinigung im Backoffice bereits zehn Euro und die Eskalation über unzustellbare Dokumente oder Beschwerden beim Kunden hundert Euro und mehr.",
+  "K6:DataGrail oder Gartner": "NOT FOUND",
+  "K6:Prävention an der Schnittstelle": "Prävention an der Schnittstelle: Validierung, Self-Service und die Auflösung des Conversion-Mythos",
+  "K6:präventives Poka-Yoke-Design": "Wir begegnen dieser Prozessverschwendung und diesem Sicherheitsrisiko nicht mit zusätzlichem Personal für das Abtippen von Listen oder mit wiederkehrenden Belehrungen an die Belegschaft, sondern mit methodischer Struktur. Dafür greifen zwei zentrale Hebel ineinander: An der Erfassungsschnittstelle verhindert unser präventives Poka-Yoke-Design durch automatisierte Validierungsroutinen, feste Pflichtfelder und integrierte Dublettenprüfungen von vornherein, dass fehlerhafte Daten überhaupt erst in das System gelangen. Auf der Architekturebene sorgt parallel eine klar definierte Single Source of Truth dafür, dass Informationssilos aufgelöst werden, Änderungen in Echtzeit durch alle Systeme fließen und Auskünfte wie Korrekturen automatisiert abrufbar bleiben. Damit wandelt sich der Grundsatz der Datenrichtigkeit von einem reaktiven Krisenfall zu einem präventiven Schutzschild direkt an der Datenquelle.",
+  "K7:Cisco Consumer Privacy Survey": "NOT FOUND",
+  "K7:Baymard Institute zeigen": "NOT FOUND",
+  "K7:1-10-100-Regel der Qualitätskosten": "NOT FOUND",
+  "K7:Erhebungen von Gartner deckt": "NOT FOUND",
+  "K7:Fehlersicherung nach dem Poka-Yoke": "NOT FOUND",
+  "K7:sorgt unser Poka-Yoke-Prinzip": "NOT FOUND",
+  "K9:RAG-Assistenten für die Support": "NOT FOUND",
+  "K9:unzureichend isoliertes Ticket-Archiv": "NOT FOUND",
+  "K9:Marktdaten von Gartner belegen": "NOT FOUND",
+  "K9:Benchmark-Daten von Cisco": "NOT FOUND"
+}

@@ -1,0 +1,70 @@
+{
+  "bookScore": 9,
+  "bookOrders": [],
+  "gaps": [],
+  "chapter": [
+    {
+      "kap": 1,
+      "title": "Erst das Ziel, dann die Daten",
+      "score": 9,
+      "orders": [],
+      "gaps": []
+    },
+    {
+      "kap": 2,
+      "title": "Risiken für Menschen vs. Risiken fürs Geschäft",
+      "score": 9,
+      "orders": [],
+      "gaps": []
+    },
+    {
+      "kap": 3,
+      "title": "Verantwortung organisieren ohne Bürokratie-Monster",
+      "score": 9,
+      "orders": [],
+      "gaps": []
+    },
+    {
+      "kap": 4,
+      "title": "Weniger Daten, mehr Durchsatz",
+      "score": 9,
+      "orders": [],
+      "gaps": []
+    },
+    {
+      "kap": 5,
+      "title": "Löschen ist eine Betriebsfähigkeit",
+      "score": 9,
+      "orders": [],
+      "gaps": []
+    },
+    {
+      "kap": 6,
+      "title": "Datenqualität heißt: Fehler an der Quelle verhindern",
+      "score": 9,
+      "orders": [],
+      "gaps": []
+    },
+    {
+      "kap": 7,
+      "title": "Verständlich ist, was der Kunde versteht",
+      "score": 9,
+      "orders": [],
+      "gaps": []
+    },
+    {
+      "kap": 8,
+      "title": "Fairness als Geschäftsmodell",
+      "score": 9,
+      "orders": [],
+      "gaps": []
+    },
+    {
+      "kap": 9,
+      "title": "Der KI-Stresstest & der 90-Tage-Rollout",
+      "score": 9,
+      "orders": [],
+      "gaps": []
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 /**
  * Admin roman export: HTML preview + text PDF (jsPDF + embedded Nunito).
  * Trade paperback 6×9 in. Order: optional cover → front matter → chapters
- * (prose → optional Clever Infografik with 0.4 in edge inset → Abenteuer-Wissen card).
+ * (prose → optional Clever Infografik with edge inset → Abenteuer-Wissen card).
  */
 
 import { jsPDF } from "jspdf";
@@ -34,11 +34,23 @@ import {
 } from "@/lib/roman/plot-chapters";
 import type { Szene } from "@/lib/roman/types";
 import {
+  sachbuchFigureByKey,
+  sachbuchFigurePrefersFullPage,
+  splitProseAroundFigureCaption,
+  stripKnownFigureCaptions,
+  type SachbuchFigure,
+} from "@/lib/sachbuch/figures";
+import {
   hasSachbuchLayoutMarkup,
   parseSachbuchLayoutBlocks,
   sachbuchBoxChromeTitle,
+  splitSachbuchProseLeadingSubtitle,
   type SachbuchLayoutBlock,
 } from "@/lib/sachbuch/herstellung-markup";
+import {
+  SACHBUCH_IMPRESSUM_PRINT_BOTTOM_MM,
+  SACHBUCH_IMPRESSUM_PRINT_TOP_MM,
+} from "@/lib/sachbuch/impressum";
 
 export type RomanExportScene = Pick<
   Szene,
@@ -51,10 +63,21 @@ export type RomanExportChapter = {
   title: string;
   body: string;
   /**
-   * Clever erzählt: full-page Abenteuer-Wissen infographic (1200×1920) after prose,
-   * before the facts list.
+   * Clever erzählt / Sachbuch: full-page Infografik after prose
+   * (legacy single; prefer `infografikDataUrls` when set).
    */
   infografikDataUrl?: string | null;
+  /** Sachbuch: multiple Abbildung pages after chapter prose (fallback). */
+  infografikDataUrls?: string[];
+  /**
+   * Sachbuch figures keyed to Abbildung/Tabelle captions — placed inline
+   * in Herstellung markup; unused ones still append after the chapter.
+   */
+  sachbuchFigures?: Array<{
+    key: string;
+    title: string;
+    dataUrl: string;
+  }>;
   /** Clever erzählt: numbered takeaways after the infographic. */
   abenteuerWissenFakten?: string[];
 };
@@ -261,9 +284,13 @@ export type RomanExportInput = {
 
 type PdfTypeScale = {
   bodyPt: number;
+  /** Unterkapitel / Zwischenüberschrift. */
   headingPt: number;
+  /** Chapter title (Kapitel 1 …) — one step above Unterkapitel. */
+  chapterTitlePt: number;
   bodyLineMm: number;
   headingLineMm: number;
+  chapterTitleLineMm: number;
   tocLineMm: number;
   /** Front-matter title / subtitle / autor sizes. */
   fmTitlePt: number;
@@ -308,23 +335,31 @@ function resolvePdfTypeScale(
 ): PdfTypeScale {
   if (density === "compact") {
     const bodyPt = 11;
-    const headingPt = 13;
+    /** Clearly above body so Unterkapitel read as section starts. */
+    const headingPt = 15;
+    /** Kapitelüberschrift — one step above Unterkapitel. */
+    const chapterTitlePt = 18;
     return {
       bodyPt,
       headingPt,
+      chapterTitlePt,
       bodyLineMm: pdfLineHeightMm(bodyPt),
       headingLineMm: pdfLineHeightMm(headingPt),
+      chapterTitleLineMm: pdfLineHeightMm(chapterTitlePt),
       tocLineMm: bodyPt * PDF_TOC_LINE_HEIGHT * PT_TO_MM,
       fmTitlePt: 16,
       fmSubtitlePt: 11,
       fmAutorPt: 12,
     };
   }
+  const chapterTitlePt = PDF_HEADING_PT + 2;
   return {
     bodyPt: PDF_BODY_PT,
     headingPt: PDF_HEADING_PT,
+    chapterTitlePt,
     bodyLineMm: pdfLineHeightMm(PDF_BODY_PT),
     headingLineMm: pdfLineHeightMm(PDF_HEADING_PT),
+    chapterTitleLineMm: pdfLineHeightMm(chapterTitlePt),
     tocLineMm: PDF_BODY_PT * PDF_TOC_LINE_HEIGHT * PT_TO_MM,
     fmTitlePt: 19,
     fmSubtitlePt: 12,
@@ -458,8 +493,8 @@ function romanExportCss(wideCharSpacing: boolean): string {
   .chapter { margin: 0 0 2.5rem; break-before: page; }
   .chapter-title {
     margin: 0 0 1em;
-    font-size: 16pt;
-    font-weight: 700;
+    font-size: 18pt;
+    font-weight: 800;
     line-height: 1.5;
     letter-spacing: ${letterSpacing};
     color: #09090b;
@@ -616,22 +651,30 @@ function frontMatterHtml(vorsatz: RomanVorsatz): string {
   if (
     imp.hinweis.trim() ||
     imp.disclaimer.trim() ||
-    imp.rechteinhaber.trim()
+    imp.rechteinhaber.trim() ||
+    (imp.absatz?.length ?? 0) > 0
   ) {
+    const bodyParas: string[] = [];
+    if (imp.hinweis.trim()) {
+      bodyParas.push(imp.hinweis.trim());
+    } else if (imp.rechteinhaber.trim()) {
+      bodyParas.push(
+        `© ${imp.jahr.trim() || String(new Date().getFullYear())} ${imp.rechteinhaber.trim()}. Alle Rechte vorbehalten.`,
+      );
+    }
+    for (const block of imp.absatz ?? []) {
+      if (block.trim()) bodyParas.push(block.trim());
+    }
+    if (imp.disclaimer.trim()) bodyParas.push(imp.disclaimer.trim());
     parts.push(`
   <section class="front-matter impressum">
-    ${
-      imp.hinweis.trim()
-        ? `<p>${escapeHtml(imp.hinweis.trim())}</p>`
-        : imp.rechteinhaber.trim()
-          ? `<p>© ${escapeHtml(imp.jahr.trim() || String(new Date().getFullYear()))} ${escapeHtml(imp.rechteinhaber.trim())}. Alle Rechte vorbehalten.</p>`
-          : ""
-    }
-    ${
-      imp.disclaimer.trim()
-        ? `<p>${escapeHtml(imp.disclaimer.trim())}</p>`
-        : ""
-    }
+    <h2>Impressum</h2>
+    ${bodyParas
+      .map(
+        (b) =>
+          `<p>${escapeHtml(b).replaceAll("\n", "<br />")}</p>`,
+      )
+      .join("\n    ")}
   </section>`);
   }
 
@@ -703,16 +746,23 @@ export function buildRomanExportDocument(input: RomanExportInput): string {
   const chaptersHtml = chapters
     .map((chapter) => {
       const body = paragraphsToHtml(chapter.body);
-      const info = (chapter.infografikDataUrl ?? "").trim();
+      const infoUrls = (
+        chapter.infografikDataUrls?.length
+          ? chapter.infografikDataUrls
+          : [(chapter.infografikDataUrl ?? "").trim()]
+      )
+        .map((u) => u.trim())
+        .filter((u) => u.startsWith("data:image/"));
       const fakten = abenteuerWissenExportLines(
         chapter.abenteuerWissenFakten ?? [],
       );
-      const infoHtml =
-        info.startsWith("data:image/") && info.length <= 900_000
-          ? `<div class="infografik"><img src="${escapeHtml(info)}" alt="Infografik" /></div>`
-          : info.startsWith("data:image/")
-            ? `<div class="infografik"><p class="meta">Infografik (nur in der gespeicherten PDF)</p></div>`
-            : "";
+      const infoHtml = infoUrls
+        .map((info) =>
+          info.length <= 900_000
+            ? `<div class="infografik"><img src="${escapeHtml(info)}" alt="Infografik" /></div>`
+            : `<div class="infografik"><p class="meta">Infografik (nur in der gespeicherten PDF)</p></div>`,
+        )
+        .join("\n      ");
       const anchor = `chapter-${chapter.number}`;
       return `
   <section class="chapter" id="${escapeHtml(anchor)}">
@@ -779,10 +829,10 @@ export const PAPERBACK_6X9_PAGE_MM = {
 } as const;
 
 /**
- * Infografik inset from each page edge (0.4 in on top, right, bottom, left).
- * Image fills the inner frame; margins stay white.
+ * Infografik inset from each page edge (~0.55 in) — one blank line more than
+ * the old 0.4 in frame so full-page graphics match the roomier text margins.
  */
-const INFOGRAFIK_EDGE_INSET_IN = 0.4;
+const INFOGRAFIK_EDGE_INSET_IN = 0.55;
 const INFOGRAFIK_EDGE_INSET_MM = INFOGRAFIK_EDGE_INSET_IN * 25.4;
 
 /** @deprecated Prefer `PAPERBACK_6X9_PAGE_MM` (same size). */
@@ -902,11 +952,48 @@ function writeFrontMatterPdf(
   if (
     imp.hinweis.trim() ||
     imp.disclaimer.trim() ||
-    imp.rechteinhaber.trim()
+    imp.rechteinhaber.trim() ||
+    (imp.absatz?.length ?? 0) > 0
   ) {
     startNewPage(ctx);
-    ctx.y = ctx.pageHeight * 0.55;
-    setNunito(ctx.pdf, "normal", 10);
+    // Tolino Print: ≥5 cm top / ≥3 cm bottom on the first Impressum page
+    // (Druckvermerk). Overflow continues on the next page with normal margins
+    // so Pflichttexte nicht gekürzt werden müssen.
+    const savedTop = ctx.marginTop;
+    const savedBottom = ctx.marginBottom;
+    ctx.marginBottom = Math.max(savedBottom, SACHBUCH_IMPRESSUM_PRINT_BOTTOM_MM);
+    ctx.y = SACHBUCH_IMPRESSUM_PRINT_TOP_MM;
+    let impressumFirstPage = true;
+
+    const ensureImpressumSpace = (neededMm: number) => {
+      if (ctx.y + neededMm <= ctx.pageHeight - ctx.marginBottom) return;
+      ctx.pdf.addPage([ctx.pageWidth, ctx.pageHeight], "portrait");
+      if (impressumFirstPage) {
+        impressumFirstPage = false;
+        ctx.marginTop = savedTop;
+        ctx.marginBottom = savedBottom;
+      }
+      ctx.y = ctx.marginTop;
+    };
+
+    const writeImpressumLines = (lines: string[], lineHeightMm: number) => {
+      for (const line of lines) {
+        ensureImpressumSpace(lineHeightMm);
+        ctx.pdf.text(line, ctx.marginX, ctx.y);
+        ctx.y += lineHeightMm;
+      }
+    };
+
+    // Slightly denser than body so Pflicht + KI + Disclaimer eher auf S. 1 passen.
+    const lineMm = 4.6;
+    const gapMm = 2.4;
+
+    setNunito(ctx.pdf, "extrabold", 13);
+    ctx.pdf.setTextColor(9, 9, 11);
+    writeImpressumLines(["Impressum"], 6.2);
+    ctx.y += 2.8;
+
+    setNunito(ctx.pdf, "normal", 9.5);
     ctx.pdf.setTextColor(63, 63, 70);
     const blocks: string[] = [];
     if (imp.hinweis.trim()) {
@@ -916,15 +1003,23 @@ function writeFrontMatterPdf(
         `© ${imp.jahr.trim() || String(new Date().getFullYear())} ${imp.rechteinhaber.trim()}. Alle Rechte vorbehalten.`,
       );
     }
+    for (const block of imp.absatz ?? []) {
+      if (block.trim()) blocks.push(block.trim());
+    }
     if (imp.disclaimer.trim()) blocks.push(imp.disclaimer.trim());
     for (const block of blocks) {
-      writeLines(
-        ctx,
-        ctx.pdf.splitTextToSize(block, ctx.contentWidth) as string[],
-        5,
-      );
-      ctx.y += 3;
+      // Preserve address-line breaks inside a block.
+      const paras = block.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+      for (const para of paras) {
+        writeImpressumLines(
+          ctx.pdf.splitTextToSize(para, ctx.contentWidth) as string[],
+          lineMm,
+        );
+      }
+      ctx.y += gapMm;
     }
+    ctx.marginTop = savedTop;
+    ctx.marginBottom = savedBottom;
   }
 
   if (vorsatz.widmung.trim()) {
@@ -1007,6 +1102,33 @@ function drawCoverFitInBox(
   pdf.addImage(dataUrl, fmt, x, y, drawW, drawH);
 }
 
+/** Image contain-fit into a box (letterbox; never overflows). */
+function drawContainFitInBox(
+  pdf: jsPDF,
+  dataUrl: string,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+): void {
+  const fmt = dataUrl.includes("image/png") ? "PNG" : "JPEG";
+  const props = pdf.getImageProperties(dataUrl);
+  const imgRatio = props.width / Math.max(1, props.height);
+  const boxRatio = boxW / boxH;
+  let drawW: number;
+  let drawH: number;
+  if (imgRatio > boxRatio) {
+    drawW = boxW;
+    drawH = drawW / imgRatio;
+  } else {
+    drawH = boxH;
+    drawW = drawH * imgRatio;
+  }
+  const x = boxX + (boxW - drawW) / 2;
+  const y = boxY + (boxH - drawH) / 2;
+  pdf.addImage(dataUrl, fmt, x, y, drawW, drawH);
+}
+
 /** Full-bleed cover on the current PDF page (object-fit: cover). */
 function drawFullBleedCover(
   pdf: jsPDF,
@@ -1018,30 +1140,159 @@ function drawFullBleedCover(
 }
 
 /**
- * Chapter Infografik on a trim 6×9 page with exactly 0.4 in white margin on
- * all four edges (top, right, bottom, left). Image fills that inner frame.
+ * Chapter Infografik on a trim 6×9 page with white margin on all four edges.
+ * Image fills the inner frame (inset tracks the roomier text margins).
  */
 function drawChapterInfografik(ctx: WriteCtx, dataUrl: string): number {
   startNewPage(ctx);
   const pageIndex = ctx.pdf.getNumberOfPages();
-  const inset = INFOGRAFIK_EDGE_INSET_MM;
+  const insetX = INFOGRAFIK_EDGE_INSET_MM;
+  const insetTop = Math.max(INFOGRAFIK_EDGE_INSET_MM, ctx.marginTop);
+  const insetBottom = Math.max(INFOGRAFIK_EDGE_INSET_MM, ctx.marginBottom);
   const { pdf, pageWidth, pageHeight } = ctx;
-  const boxX = inset;
-  const boxY = inset;
-  const boxW = pageWidth - 2 * inset;
-  const boxH = pageHeight - 2 * inset;
+  const boxX = insetX;
+  const boxY = insetTop;
+  const boxW = pageWidth - 2 * insetX;
+  const boxH = pageHeight - insetTop - insetBottom;
   // White page so all four margins stay clean.
   pdf.setFillColor(255, 255, 255);
   pdf.rect(0, 0, pageWidth, pageHeight, "F");
   try {
     const fmt = dataUrl.includes("image/png") ? "PNG" : "JPEG";
-    // Exact inner frame → 0.4 in on every side (top/right/bottom/left).
     pdf.addImage(dataUrl, fmt, boxX, boxY, boxW, boxH);
   } catch {
     // Infografik optional — skip broken data URLs.
   }
   ctx.y = pageHeight;
   return pageIndex;
+}
+
+/**
+ * Inline figure in the text column (tables) — or near-full page (Abbildungen).
+ * Title/Bezeichnung lives on the graphic or in the Kasten — no extra caption.
+ * Returns PDF page index when a dedicated figure page was used, else null.
+ */
+function drawSachbuchFigure(
+  ctx: WriteCtx,
+  figure: SachbuchFigure,
+  usedKeys: Set<string>,
+  options: { scale?: PdfTypeScale } = {},
+): number | null {
+  if (usedKeys.has(figure.key)) return null;
+  usedKeys.add(figure.key);
+  const pdf = ctx.pdf;
+  /** ≥ one blank body line before following prose. */
+  const gapBelowMm = options.scale?.bodyLineMm ?? 4.2;
+
+  if (sachbuchFigurePrefersFullPage(figure)) {
+    startNewPage(ctx);
+    const pageIndex = pdf.getNumberOfPages();
+    const insetX = INFOGRAFIK_EDGE_INSET_MM;
+    const insetTop = Math.max(INFOGRAFIK_EDGE_INSET_MM, ctx.marginTop);
+    const bottomLimit = Math.max(INFOGRAFIK_EDGE_INSET_MM, ctx.marginBottom);
+    const boxX = insetX;
+    const boxY = insetTop;
+    const boxW = ctx.pageWidth - 2 * insetX;
+    const boxH = Math.max(40, ctx.pageHeight - boxY - bottomLimit);
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(0, 0, ctx.pageWidth, ctx.pageHeight, "F");
+    try {
+      drawContainFitInBox(pdf, figure.dataUrl, boxX, boxY, boxW, boxH);
+    } catch {
+      try {
+        const fmt = figure.dataUrl.includes("image/png") ? "PNG" : "JPEG";
+        pdf.addImage(figure.dataUrl, fmt, boxX, boxY, boxW, boxH);
+      } catch {
+        // optional
+      }
+    }
+    ctx.y = ctx.pageHeight;
+    return pageIndex;
+  }
+
+  const boxW = ctx.contentWidth;
+  let boxH = Math.min(boxW * (2 / 3), 78);
+  const avail =
+    ctx.pageHeight - ctx.marginBottom - Math.max(ctx.y, ctx.marginTop);
+  if (boxH + gapBelowMm + 4 > avail) {
+    startNewPage(ctx);
+  }
+  const availAfter = ctx.pageHeight - ctx.marginBottom - ctx.y;
+  boxH = Math.min(boxH, Math.max(28, availAfter - gapBelowMm - 2));
+  try {
+    const fmt = figure.dataUrl.includes("image/png") ? "PNG" : "JPEG";
+    pdf.addImage(figure.dataUrl, fmt, ctx.marginX, ctx.y, boxW, boxH);
+    ctx.y += boxH + gapBelowMm;
+  } catch {
+    // optional
+  }
+  return null;
+}
+
+function writeProseWithInlineFigures(
+  ctx: WriteCtx,
+  text: string,
+  scale: PdfTypeScale,
+  wrapW: number,
+  figures: SachbuchFigure[],
+  usedKeys: Set<string>,
+  betweenParasGap: number,
+  infografikPdfPages: Set<number>,
+): void {
+  const pdf = ctx.pdf;
+  const paras = text
+    .split(/\n\s*\n/)
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  for (let i = 0; i < paras.length; i++) {
+    const para = paras[i]!;
+    if (isSceneBreakParagraph(para)) {
+      ctx.y += scale.bodyLineMm * 0.5;
+      writeCenteredLines(ctx, [SCENE_BREAK_MARKER], scale.bodyLineMm);
+      ctx.y += scale.bodyLineMm * 0.5;
+      continue;
+    }
+    const parts = splitProseAroundFigureCaption(para);
+    const segments = [parts.before, parts.caption, parts.after].filter(
+      (s): s is string => Boolean(s && s.trim()),
+    );
+    // If no caption split, still try whole-para key (box titles).
+    if (!parts.figureKey && segments.length <= 1) {
+      const lines = pdf.splitTextToSize(para, wrapW) as string[];
+      writeLines(ctx, lines, scale.bodyLineMm);
+      if (i < paras.length - 1) ctx.y += betweenParasGap;
+      continue;
+    }
+    if (parts.before) {
+      const lines = pdf.splitTextToSize(parts.before, wrapW) as string[];
+      writeLines(ctx, lines, scale.bodyLineMm);
+      ctx.y += betweenParasGap * 0.6;
+    }
+    if (parts.figureKey) {
+      const fig = sachbuchFigureByKey(figures, parts.figureKey);
+      if (fig && !usedKeys.has(fig.key)) {
+        // Caption text is on the graphic — skip re-emitting it in prose.
+        const page = drawSachbuchFigure(ctx, fig, usedKeys, { scale });
+        if (page != null) infografikPdfPages.add(page);
+        setNunito(pdf, "normal", scale.bodyPt);
+        pdf.setTextColor(24, 24, 27);
+      } else if (fig && usedKeys.has(fig.key)) {
+        // Already placed (e.g. after a Kasten) — omit caption.
+      } else if (parts.caption) {
+        const lines = pdf.splitTextToSize(parts.caption, wrapW) as string[];
+        writeLines(ctx, lines, scale.bodyLineMm);
+      }
+    } else if (parts.caption) {
+      const lines = pdf.splitTextToSize(parts.caption, wrapW) as string[];
+      writeLines(ctx, lines, scale.bodyLineMm);
+    }
+    if (parts.after) {
+      ctx.y += betweenParasGap * 0.5;
+      const lines = pdf.splitTextToSize(parts.after, wrapW) as string[];
+      writeLines(ctx, lines, scale.bodyLineMm);
+    }
+    if (i < paras.length - 1) ctx.y += betweenParasGap;
+  }
 }
 
 /** Yellow lightbulb (heading icon) — simple filled shapes. */
@@ -1260,7 +1511,9 @@ function writeSachbuchLayoutBox(
 
   clearPdfCharSpacing(pdf);
   setNunito(pdf, "bold", titlePt);
-  const titleLines = pdf.splitTextToSize(head, innerW) as string[];
+  const titleLines = head
+    ? (pdf.splitTextToSize(head, innerW) as string[])
+    : [];
   setNunito(pdf, "normal", bodyPt);
   // Body already deduped in parseSachbuchLayoutBlocks.
   // Blank-line paragraphs; within a chunk, bullet/number lines stay separate.
@@ -1297,10 +1550,18 @@ function writeSachbuchLayoutBox(
     }
   }
 
-  const pageBottom = () => ctx.pageHeight - ctx.marginBottom;
+  /**
+   * Solid box chrome reads tighter than prose against the footer.
+   * Page numbers sit at pageHeight−8; keep extra air so the card
+   * never crowds into them when a segment fills the page.
+   */
+  const BOX_FOOTER_CLEARANCE_MM = 8;
+  const pageBottom = () =>
+    ctx.pageHeight - ctx.marginBottom - BOX_FOOTER_CLEARANCE_MM;
   const minSegment = padY * 2 + bodyLineH + titleLineH;
 
   const continuationHeader = (): SachbuchBoxLine[] => {
+    if (!head) return [];
     const lines = pdf.splitTextToSize(`${head} (Forts.)`, innerW) as string[];
     const out: SachbuchBoxLine[] = lines.map((text) => ({
       text,
@@ -1346,7 +1607,27 @@ function writeSachbuchLayoutBox(
 
     const cardX = ctx.marginX;
     const cardY = ctx.y;
-    const rawH = padY * 2 + heightOfBoxLines(slice);
+    const contentH = heightOfBoxLines(slice);
+    /**
+     * Trim soft leading after the last ink line so padY above the first glyph
+     * top equals padY below the last glyph bottom (jsPDF default baseline
+     * made the top look tighter).
+     */
+    let softTail = 0;
+    let lastInkIdx = -1;
+    for (let i = slice.length - 1; i >= 0; i--) {
+      if (slice[i]!.kind === "gap") {
+        softTail += slice[i]!.lineH;
+        continue;
+      }
+      lastInkIdx = i;
+      const pt = slice[i]!.kind === "title" ? titlePt : bodyPt;
+      const inkMm = pt * (25.4 / 72) * 1.2;
+      softTail += Math.max(0, slice[i]!.lineH - inkMm);
+      break;
+    }
+    const drawnH = Math.max(bodyLineH, contentH - softTail);
+    const rawH = padY * 2 + drawnH;
     // Never paint past the printable bottom (safety clamp).
     const segmentH = Math.min(rawH, Math.max(minSegment, pageBottom() - cardY));
 
@@ -1357,8 +1638,10 @@ function writeSachbuchLayoutBox(
 
     let cy = cardY + padY;
     pdf.setTextColor(24, 24, 27);
-    for (const item of slice) {
+    for (let i = 0; i < slice.length; i++) {
+      const item = slice[i]!;
       if (item.kind === "gap") {
+        if (lastInkIdx >= 0 && i > lastInkIdx) break;
         cy += item.lineH;
         continue;
       }
@@ -1369,11 +1652,12 @@ function writeSachbuchLayoutBox(
       );
       const x =
         cardX + padX + (item.kind === "bullet" ? bulletIndent : 0);
-      pdf.text(
-        item.text,
-        x,
-        cy + (item.kind === "title" ? titlePt * 0.2 : 0),
-      );
+      pdf.text(item.text, x, cy, { baseline: "top" });
+      if (i === lastInkIdx) {
+        const pt = item.kind === "title" ? titlePt : bodyPt;
+        cy += pt * (25.4 / 72) * 1.2;
+        break;
+      }
       cy += item.lineH;
     }
 
@@ -1385,60 +1669,146 @@ function writeSachbuchLayoutBox(
   }
 }
 
-/** Sachbuch Herstellung body: Zwischenüberschriften + Kästen + Prosa. */
+/** Sachbuch Herstellung body: Zwischenüberschriften + Kästen + Prosa + Figuren. */
 function writeSachbuchLayoutBody(
   ctx: WriteCtx,
   body: string,
   scale: PdfTypeScale,
   wrapW: number,
   charScale: number,
+  figures: SachbuchFigure[],
+  usedKeys: Set<string>,
+  infografikPdfPages: Set<number>,
 ): void {
   const pdf = ctx.pdf;
   const blocks = parseSachbuchLayoutBlocks(body);
-  const subPt = Math.min(scale.headingPt, scale.bodyPt + 1.5);
-  /** Breathing room after boxes / before next prose (matches UI preview gap). */
-  const afterBoxGap = scale.bodyLineMm * 1.05;
-  const afterHeadingGap = scale.bodyLineMm * 0.45;
+  const subPt = scale.headingPt;
+  const deckPt = Math.min(scale.bodyPt + 1.5, subPt - 1);
+  /**
+   * Visual gap (ink ↔ box edge), not raw ctx.y deltas.
+   * writeLines uses alphabetic baseline: after a prose block, ctx.y already
+   * sits ~1 line below the last baseline (soft leading below the ink).
+   * After a box, the next prose baseline sits at ctx.y while glyphs rise by
+   * ~ascent — that eats into a naive equal gap. Compensate both sides.
+   */
+  const fontMm = scale.bodyPt * PT_TO_MM;
+  const ascentMm = fontMm * 0.8;
+  const descentMm = fontMm * 0.25;
+  /** Visual gap above a Kasten (to preceding prose). */
+  const boxGapAbove = scale.bodyLineMm * 0.7;
+  /** Visual gap below a Kasten (to following prose / next Kasten) — a bit roomier. */
+  const boxGapBelow = scale.bodyLineMm * 1.05;
+  /** Soft leading already below last prose ink when ctx.y is past writeLines. */
+  const softBelowProse = scale.bodyLineMm - descentMm;
+  /** Extra air above Unterkapitel so it reads as a new section. */
+  const beforeHeadingGap = scale.bodyLineMm * 1.75;
+  /** Tight stack: Bezeichnung → Untertitel, then rule under the pair. */
+  const headingToSubtitleGap = scale.bodyLineMm * 0.12;
+  const afterHeadingBlockGap = scale.bodyLineMm * 0.65;
+  const betweenParasGap = scale.bodyLineMm * 0.4;
+  /** After a box edge: next alphabetic baseline needs +ascent for equal visual gap. */
+  let pendingAscentBeforeText = false;
 
-  for (const block of blocks) {
+  const drawUnterkapitelRule = () => {
+    ensureSpace(ctx, 3.2);
+    const ruleY = ctx.y + 0.8;
+    pdf.setDrawColor(212, 212, 216);
+    pdf.setLineWidth(0.35);
+    pdf.line(ctx.marginX, ruleY, ctx.marginX + ctx.contentWidth, ruleY);
+    ctx.y = ruleY + 2.2;
+  };
+
+  for (let bi = 0; bi < blocks.length; bi++) {
+    const block = blocks[bi]!;
     if (block.type === "heading") {
-      ctx.y += scale.bodyLineMm * 0.75;
-      setNunito(pdf, "bold", subPt);
+      if (pendingAscentBeforeText) {
+        ctx.y += ascentMm;
+        pendingAscentBeforeText = false;
+      }
+      ctx.y += beforeHeadingGap;
+      setNunito(pdf, "extrabold", subPt);
       applyPdfCharSpacing(pdf, charScale);
       pdf.setTextColor(9, 9, 11);
       const lines = pdf.splitTextToSize(block.text, wrapW) as string[];
-      writeLines(ctx, lines, scale.headingLineMm * 0.9);
-      ctx.y += afterHeadingGap;
+      writeLines(ctx, lines, scale.headingLineMm * 0.92);
+
+      const next = blocks[bi + 1];
+      if (next?.type === "prose") {
+        const { subtitle, rest } = splitSachbuchProseLeadingSubtitle(next.text);
+        if (subtitle) {
+          // Pull deck tight under the Bezeichnung (less than a full line).
+          ctx.y += headingToSubtitleGap;
+          setNunito(pdf, "semibold", deckPt);
+          pdf.setTextColor(63, 63, 70);
+          const deckLines = pdf.splitTextToSize(subtitle, wrapW) as string[];
+          writeLines(ctx, deckLines, pdfLineHeightMm(deckPt) * 0.9);
+          blocks[bi + 1] = { type: "prose", text: rest };
+        }
+      }
+      // Rule under the whole heading block (Bezeichnung + optional Untertitel).
+      drawUnterkapitelRule();
+      ctx.y += afterHeadingBlockGap;
       setNunito(pdf, "normal", scale.bodyPt);
       pdf.setTextColor(24, 24, 27);
       continue;
     }
 
     if (block.type === "box") {
-      ctx.y += scale.bodyLineMm * 0.55;
-      writeSachbuchLayoutBox(ctx, block, scale, wrapW);
-      ctx.y += afterBoxGap;
+      if (pendingAscentBeforeText) {
+        // Box after box: only the outer gap (no prose ascent).
+        pendingAscentBeforeText = false;
+        ctx.y += boxGapBelow;
+      } else {
+        // After prose/heading: tuck into leftover line leading.
+        ctx.y += boxGapAbove - softBelowProse;
+      }
+      // Caption text is replaced by the graphic after the Kasten.
+      const bodySansCaptions = stripKnownFigureCaptions(block.body, (key) =>
+        Boolean(sachbuchFigureByKey(figures, key)),
+      );
+      writeSachbuchLayoutBox(
+        ctx,
+        { ...block, body: bodySansCaptions },
+        scale,
+        wrapW,
+      );
+      // Figure referenced in box title/body → place right after the Kasten.
+      const boxKey =
+        splitProseAroundFigureCaption(
+          `${block.title}\n${block.body.slice(0, 500)}`,
+        ).figureKey ||
+        splitProseAroundFigureCaption(block.body).figureKey;
+      if (boxKey) {
+        const fig = sachbuchFigureByKey(figures, boxKey);
+        if (fig && !usedKeys.has(fig.key)) {
+          ctx.y += 2;
+          const page = drawSachbuchFigure(ctx, fig, usedKeys, { scale });
+          if (page != null) infografikPdfPages.add(page);
+        }
+      }
+      ctx.y += boxGapBelow;
+      pendingAscentBeforeText = true;
       applyPdfCharSpacing(pdf, charScale);
       setNunito(pdf, "normal", scale.bodyPt);
       pdf.setTextColor(24, 24, 27);
       continue;
     }
 
-    const paras = block.text
-      .split(/\n\s*\n/)
-      .map((p) => p.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
-    for (const para of paras) {
-      if (isSceneBreakParagraph(para)) {
-        ctx.y += scale.bodyLineMm * 0.5;
-        writeCenteredLines(ctx, [SCENE_BREAK_MARKER], scale.bodyLineMm);
-        ctx.y += scale.bodyLineMm * 0.5;
-        continue;
-      }
-      const lines = pdf.splitTextToSize(para, wrapW) as string[];
-      writeLines(ctx, lines, scale.bodyLineMm);
-      ctx.y += scale.bodyLineMm * 0.4;
+    if (pendingAscentBeforeText) {
+      ctx.y += ascentMm;
+      pendingAscentBeforeText = false;
     }
+
+    writeProseWithInlineFigures(
+      ctx,
+      block.text,
+      scale,
+      wrapW,
+      figures,
+      usedKeys,
+      betweenParasGap,
+      infografikPdfPages,
+    );
   }
 }
 
@@ -1552,7 +1922,7 @@ function fillTocPdfEntries(
 /**
  * Builds a real text PDF (Nunito embedded) from Manuskript chapters.
  * 6×9 in Taschenbuch; optional cover; TOC (clickable); each chapter on a new page;
- * Infografik with 0.4 in inset from the page edge on the following page;
+ * Infografik with ~0.55 in inset from the page edge on the following page;
  * then Abenteuer-Wissen card.
  */
 export async function buildRomanPdfBlob(
@@ -1579,9 +1949,11 @@ export async function buildRomanPdfBlob(
   await ensureNunitoOnPdf(pdf);
 
   const marginX = 14;
-  const marginTop = 16;
-  /** Leave room for bottom-right page numbers on story pages. */
-  const marginBottom = 18;
+  /** One blank body line of air beyond the base trim so text/graphics sit off the edge. */
+  const edgeBlankLineMm = scale.bodyLineMm;
+  const marginTop = 16 + edgeBlankLineMm;
+  /** Leave room for bottom-right page numbers on story pages (+ one blank line). */
+  const marginBottom = 18 + edgeBlankLineMm;
   const contentWidth = pageWidth - marginX * 2;
   const charScale = romanExportUsesWideCharSpacing(input.typography)
     ? PDF_CHAR_SCALE_WIDE
@@ -1636,8 +2008,14 @@ export async function buildRomanPdfBlob(
     const fakten = abenteuerWissenExportLines(
       chapter.abenteuerWissenFakten ?? [],
     );
-    const infoUrl = (chapter.infografikDataUrl ?? "").trim();
-    const hasInfo = infoUrl.startsWith("data:image/");
+    const infoUrls = (
+      chapter.infografikDataUrls?.length
+        ? chapter.infografikDataUrls
+        : [(chapter.infografikDataUrl ?? "").trim()]
+    )
+      .map((u) => u.trim())
+      .filter((u) => u.startsWith("data:image/"));
+    const hasInfo = infoUrls.length > 0;
     if (!paras.length && !hasInfo && fakten.length === 0) continue;
 
     // Always new page after TOC / previous chapter.
@@ -1647,14 +2025,14 @@ export async function buildRomanPdfBlob(
     }
     chapterStartPage.set(chapter.number, pdf.getNumberOfPages());
 
-    setNunito(pdf, "bold", scale.headingPt);
+    setNunito(pdf, "extrabold", scale.chapterTitlePt);
     applyPdfCharSpacing(pdf, charScale);
     pdf.setTextColor(9, 9, 11);
     const headingLines = pdf.splitTextToSize(
       chapterHeadingLabel(chapter),
       wrapW,
     ) as string[];
-    writeLines(ctx, headingLines, scale.headingLineMm);
+    writeLines(ctx, headingLines, scale.chapterTitleLineMm);
     // One blank line between Kapitelüberschrift and body.
     ctx.y += scale.bodyLineMm;
     pageUsed = true;
@@ -1663,8 +2041,38 @@ export async function buildRomanPdfBlob(
     applyPdfCharSpacing(pdf, charScale);
     pdf.setTextColor(24, 24, 27);
 
+    const figures: SachbuchFigure[] = (chapter.sachbuchFigures ?? []).map(
+      (f) => ({
+        key: f.key,
+        title: f.title,
+        dataUrl: f.dataUrl,
+        prompt: "",
+      }),
+    );
+    const usedFigureKeys = new Set<string>();
+
     if (hasSachbuchLayoutMarkup(chapter.body)) {
-      writeSachbuchLayoutBody(ctx, chapter.body, scale, wrapW, charScale);
+      writeSachbuchLayoutBody(
+        ctx,
+        chapter.body,
+        scale,
+        wrapW,
+        charScale,
+        figures,
+        usedFigureKeys,
+        infografikPdfPages,
+      );
+    } else if (figures.length) {
+      writeProseWithInlineFigures(
+        ctx,
+        chapter.body,
+        scale,
+        wrapW,
+        figures,
+        usedFigureKeys,
+        scale.bodyLineMm * 0.4,
+        infografikPdfPages,
+      );
     } else {
       for (const para of paras) {
         if (isSceneBreakParagraph(para)) {
@@ -1680,9 +2088,16 @@ export async function buildRomanPdfBlob(
     }
     clearPdfCharSpacing(pdf);
 
-    // Clever reader order: Infografik (bleed page) → Abenteuer-Wissen card.
-    if (hasInfo) {
-      infografikPdfPages.add(drawChapterInfografik(ctx, infoUrl));
+    // Unused figures (or Clever legacy URLs) → pages after chapter prose.
+    for (const fig of figures) {
+      if (usedFigureKeys.has(fig.key)) continue;
+      const page = drawSachbuchFigure(ctx, fig, usedFigureKeys, { scale });
+      if (page != null) infografikPdfPages.add(page);
+    }
+    if (!figures.length) {
+      for (const infoUrl of infoUrls) {
+        infografikPdfPages.add(drawChapterInfografik(ctx, infoUrl));
+      }
     }
 
     if (fakten.length > 0) {

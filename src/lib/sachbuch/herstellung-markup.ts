@@ -9,6 +9,12 @@
  * <<<BOX schaubild Titel>>> … <<<END BOX>>>
  */
 
+import {
+  sachbuchFigureKeyFromText,
+  splitProseAroundFigureCaption,
+  stripKnownFigureCaptions,
+} from "@/lib/sachbuch/figures";
+
 export const SACHBUCH_LAYOUT_BOX_KINDS = [
   "onepager",
   "merksatz",
@@ -213,16 +219,50 @@ export function dedupeSachbuchBoxBody(
 }
 
 /**
- * Display title for a box chrome line (no "Infobox: Infobox").
- * Merksatz without title → "Merksatz"; titled boxes → title only (kind via style).
+ * Optional in-box heading (no kind eyebrow).
+ * Merksatz is a pull-quote: no chrome title — ignore generic „Merksatz“ titles.
+ * Other kinds: custom title only; empty title → no heading (kind via style alone).
  */
 export function sachbuchBoxChromeTitle(
   kind: SachbuchLayoutBoxKind,
   title: string,
 ): string {
   const t = title.trim();
-  if (t) return t;
-  return sachbuchLayoutBoxLabel(kind);
+  if (kind === "merksatz") {
+    if (!t || /^merksatz(\s+für\s+die\s+praxis)?$/i.test(t)) return "";
+    return t;
+  }
+  return t;
+}
+
+/**
+ * True when the first paragraph after an Unterkapitel is a short deck/subtitle
+ * (e.g. „Der Fast-Track-Katalog“), not the start of body prose.
+ */
+export function isSachbuchUnterkapitelSubtitle(para: string): boolean {
+  const t = para.replace(/\s+/g, " ").trim();
+  if (t.length < 6 || t.length > 140) return false;
+  // Multi-sentence body copy — not a deck line.
+  if (/[.!?]["«»“”']?\s+\S/.test(t)) return false;
+  return true;
+}
+
+/**
+ * Peel a leading Unterkapitel-Untertitel off a prose block (after echo strip).
+ */
+export function splitSachbuchProseLeadingSubtitle(prose: string): {
+  subtitle: string | null;
+  rest: string;
+} {
+  const paras = splitParas(prose);
+  if (!paras.length) return { subtitle: null, rest: prose };
+  if (!isSachbuchUnterkapitelSubtitle(paras[0]!)) {
+    return { subtitle: null, rest: prose };
+  }
+  return {
+    subtitle: paras[0]!,
+    rest: joinParas(paras.slice(1)),
+  };
 }
 
 /** Remove Unterkapitel echo from the following prose block. */
@@ -340,16 +380,41 @@ export function summarizeSachbuchLayoutMarkup(text: string): string[] {
   ];
 }
 
-/** ePub/XHTML fragment for Herstellung body (markers → h2 / aside). */
+export type SachbuchLayoutXhtmlFigure = {
+  key: string;
+  title: string;
+  /** Relative package href or data URL. */
+  src: string;
+};
+
+/** ePub/XHTML fragment for Herstellung body (markers → h2 / aside / figures). */
 export function sachbuchLayoutBlocksToXhtml(
   text: string,
   escapeXml: (s: string) => string,
+  options?: {
+    figures?: SachbuchLayoutXhtmlFigure[];
+    onFigureUsed?: (key: string) => void;
+  },
 ): string {
   const blocks = parseSachbuchLayoutBlocks(text);
   if (!blocks.length) return "";
+  const figures = options?.figures ?? [];
+  const used = new Set<string>();
+
+  const figureHtml = (key: string | null | undefined): string => {
+    if (!key || used.has(key)) return "";
+    const fig = figures.find((f) => f.key === key);
+    if (!fig) return "";
+    used.add(key);
+    options?.onFigureUsed?.(key);
+    const alt = (fig.title || "Abbildung").trim();
+    // Bezeichnung is on the graphic / in the Kasten — no extra figcaption.
+    return `<figure class="sachbuch-figure">
+  <div class="infografik"><img src="${escapeXml(fig.src)}" alt="${escapeXml(alt)}" /></div>
+</figure>`;
+  };
 
   const proseParas = (body: string) => {
-    // Keep blank-line paragraphs; also keep single-newline list rows (• / - / 1.).
     const chunks = body
       .replace(/\r\n/g, "\n")
       .split(/\n\s*\n/)
@@ -368,27 +433,72 @@ export function sachbuchLayoutBlocksToXhtml(
             .join("\n  ");
           return `<ul>\n  ${items}\n</ul>`;
         }
-        return `<p>${escapeXml(chunk.replace(/\s+/g, " "))}</p>`;
+        const parts = splitProseAroundFigureCaption(
+          chunk.replace(/\s+/g, " "),
+        );
+        if (!parts.figureKey) {
+          return `<p>${escapeXml(chunk.replace(/\s+/g, " "))}</p>`;
+        }
+        const bits: string[] = [];
+        if (parts.before) {
+          bits.push(`<p>${escapeXml(parts.before)}</p>`);
+        }
+        const placed = figureHtml(parts.figureKey);
+        bits.push(placed);
+        // If no graphic, keep caption as prose; otherwise skip (title is on art).
+        // Already-used keys also skip caption (figureHtml returned "").
+        if (!placed && parts.caption) {
+          const stillAvailable = figures.some((f) => f.key === parts.figureKey);
+          if (!stillAvailable) {
+            bits.push(`<p>${escapeXml(parts.caption)}</p>`);
+          }
+        }
+        if (parts.after) {
+          bits.push(`<p>${escapeXml(parts.after)}</p>`);
+        }
+        return bits.filter(Boolean).join("\n");
       })
       .join("\n");
   };
 
   return blocks
-    .map((b) => {
+    .map((b, i) => {
       if (b.type === "heading") {
-        return `<h2 class="unterkapitel">${escapeXml(b.text)}</h2>`;
+        const next = blocks[i + 1];
+        let subtitleHtml = "";
+        if (next?.type === "prose") {
+          const { subtitle } = splitSachbuchProseLeadingSubtitle(next.text);
+          if (subtitle) {
+            subtitleHtml = `\n  <p class="unterkapitel-sub">${escapeXml(subtitle)}</p>`;
+          }
+        }
+        // Wrapper so the rule sits under Bezeichnung + Untertitel together.
+        return `<header class="unterkapitel-block">
+  <h2 class="unterkapitel">${escapeXml(b.text)}</h2>${subtitleHtml}
+</header>`;
       }
       if (b.type === "box") {
         const head = sachbuchBoxChromeTitle(b.kind, b.title);
-        const kind = sachbuchLayoutBoxLabel(b.kind);
-        const kindLine =
-          b.title.trim() && b.title.trim() !== kind
-            ? `<p class="box-kind">${escapeXml(kind)}</p>\n  `
-            : "";
+        const titleHtml = head
+          ? `<h3>${escapeXml(head)}</h3>\n  `
+          : "";
+        const boxKey =
+          sachbuchFigureKeyFromText(`${b.title} ${b.body.slice(0, 400)}`) ||
+          sachbuchFigureKeyFromText(b.body);
+        const hasFig = (key: string) => figures.some((f) => f.key === key);
+        const bodySans = stripKnownFigureCaptions(b.body, hasFig);
+        const inner = proseParas(bodySans);
+        const figBlock = boxKey ? figureHtml(boxKey) : "";
         return `<aside class="sachbuch-box sachbuch-box-${b.kind}">
-  ${kindLine}<h3>${escapeXml(head)}</h3>
-  ${proseParas(b.body)}
-</aside>`;
+  ${titleHtml}${inner}
+</aside>
+${figBlock}`;
+      }
+      // Subtitle already emitted with the preceding heading — skip here.
+      const prev = blocks[i - 1];
+      if (prev?.type === "heading") {
+        const { subtitle, rest } = splitSachbuchProseLeadingSubtitle(b.text);
+        if (subtitle) return proseParas(rest);
       }
       return proseParas(b.text);
     })
