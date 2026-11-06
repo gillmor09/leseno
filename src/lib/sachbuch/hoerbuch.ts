@@ -63,10 +63,18 @@ export function sachbuchHoerbuchModelSlugForProvider(
     : SACHBUCH_HOERBUCH_MODEL_SLUG;
 }
 
-/** Hörprobe target window for Tolino Media. */
+/** Hörprobe window for Tolino Media (FAQ: mind. 1:30, max. 3:00). */
 export const SACHBUCH_HOERBUCH_SAMPLE_MIN_SEC = 90;
 export const SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC = 180;
+/** Preferred length after synth/trim — comfortably inside Tolino’s window. */
 export const SACHBUCH_HOERBUCH_SAMPLE_TARGET_SEC = 120;
+/**
+ * Hard upload ceiling (seconds). Slightly under 180 so MP3 frame padding /
+ * Tolino validators don’t reject a “exactly 3:00” file.
+ */
+export const SACHBUCH_HOERBUCH_SAMPLE_SAFE_MAX_SEC = 175;
+/** Conservative spoken chars/sec for sample text budgeting (slow TTS). */
+export const SACHBUCH_HOERBUCH_SAMPLE_CHARS_PER_SEC = 11;
 
 export function emptySachbuchHoerbuchState(): SachbuchHoerbuchState {
   return {
@@ -671,7 +679,28 @@ export function estimateSpokenDurationSec(charCount: number): number {
   return Math.max(1, Math.round(charCount / 14));
 }
 
-/** Text for Hörprobe: title + Vorwort/early tracks until ~target duration. */
+/** Cut plain text near a sentence/paragraph boundary (Hörprobe budget). */
+function clipSamplePlainText(text: string, maxChars: number): string {
+  const plain = text.trim();
+  if (plain.length <= maxChars) return plain;
+  const slice = plain.slice(0, maxChars);
+  const breakAt = Math.max(
+    slice.lastIndexOf("\n\n"),
+    slice.lastIndexOf(". "),
+    slice.lastIndexOf("! "),
+    slice.lastIndexOf("? "),
+    slice.lastIndexOf("; "),
+  );
+  if (breakAt >= Math.floor(maxChars * 0.55)) {
+    return slice.slice(0, breakAt + 1).trim();
+  }
+  return slice.trim();
+}
+
+/**
+ * Text for Hörprobe: title + Vorwort/early tracks until ~target duration.
+ * Caps each track so a long Vorwort cannot blow past Tolino’s 3:00 max.
+ */
 export function buildSachbuchHoerbuchSampleText(
   book: SachbuchKontext,
   tracks: SachbuchHoerbuchTrack[],
@@ -685,7 +714,15 @@ export function buildSachbuchHoerbuchSampleText(
     "Dies ist eine Hörprobe.",
   ];
   let chars = bits.join(" ").length;
-  const targetChars = SACHBUCH_HOERBUCH_SAMPLE_TARGET_SEC * 14;
+  // Budget for TARGET; SAFE_MAX leaves headroom if TTS is slower than estimate.
+  const targetChars = Math.floor(
+    SACHBUCH_HOERBUCH_SAMPLE_TARGET_SEC *
+      SACHBUCH_HOERBUCH_SAMPLE_CHARS_PER_SEC,
+  );
+  const hardChars = Math.floor(
+    SACHBUCH_HOERBUCH_SAMPLE_SAFE_MAX_SEC *
+      SACHBUCH_HOERBUCH_SAMPLE_CHARS_PER_SEC,
+  );
   // Prefer Vorwort, then Kapitel — skip Intro/Outro credits in the sample.
   const ordered = [
     ...tracks.filter(
@@ -700,9 +737,12 @@ export function buildSachbuchHoerbuchSampleText(
   ];
   for (const t of ordered) {
     if (chars >= targetChars) break;
-    // Sample stores full text only when freshly built; else use preview.
-    bits.push(t.text);
-    chars += t.text.length + 1;
+    const room = Math.max(0, hardChars - chars);
+    if (room < 80) break;
+    const chunk = clipSamplePlainText(t.text, Math.min(room, targetChars - chars + 120));
+    if (!chunk) continue;
+    bits.push(chunk);
+    chars += chunk.length + 1;
   }
   return sachbuchSpokenPlainText(bits.join("\n\n"));
 }

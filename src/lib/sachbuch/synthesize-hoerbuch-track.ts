@@ -35,6 +35,7 @@ import {
   SACHBUCH_HOERBUCH_MODEL_SLUG,
   SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC,
   SACHBUCH_HOERBUCH_SAMPLE_MIN_SEC,
+  SACHBUCH_HOERBUCH_SAMPLE_SAFE_MAX_SEC,
   SACHBUCH_HOERBUCH_SAMPLE_TARGET_SEC,
   sachbuchHoerbuchDefaultVoiceForProvider,
   sachbuchHoerbuchSampleFileName,
@@ -293,17 +294,37 @@ export async function synthesizeSachbuchHoerbuchSample(input: {
     style,
   });
 
+  // Tolino Hörprobe: max 3:00. Always hard-cap audio — do not rely on probe alone
+  // (failed/underestimated duration previously let overlong samples through).
   let durationSec = (await probeMp3DurationSec(mp3)) ?? 0;
-  if (durationSec > SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC) {
+  const needsCap =
+    durationSec <= 0 || durationSec > SACHBUCH_HOERBUCH_SAMPLE_SAFE_MAX_SEC;
+  if (needsCap) {
+    // Probe unknown or overlong → cut to target (~2:00). `-t` on a shorter
+    // file keeps the whole clip, so failed probes on short samples stay short.
     const trimmed = await trimMp3ToDurationSec(
       mp3,
       SACHBUCH_HOERBUCH_SAMPLE_TARGET_SEC,
     );
     mp3 = trimmed.audio;
-    durationSec = trimmed.durationSec;
-  } else if (durationSec > 0 && durationSec < SACHBUCH_HOERBUCH_SAMPLE_MIN_SEC) {
-    // Too short: leave as-is; UI warns — Tolino wants ≥ 90s.
+    durationSec =
+      (await probeMp3DurationSec(mp3)) ?? trimmed.durationSec;
   }
+  if (durationSec > SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC) {
+    const trimmed = await trimMp3ToDurationSec(
+      mp3,
+      SACHBUCH_HOERBUCH_SAMPLE_SAFE_MAX_SEC,
+    );
+    mp3 = trimmed.audio;
+    durationSec =
+      (await probeMp3DurationSec(mp3)) ?? trimmed.durationSec;
+  }
+  if (durationSec > SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC) {
+    throw new UserFacingError(
+      `Hörprobe ist nach Kürzen noch ${Math.round(durationSec)}s lang (Tolino max. ${SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC}s). Bitte erneut erzeugen.`,
+    );
+  }
+  // Too short: leave as-is; UI warns — Tolino wants ≥ 90s.
 
   const fileName = sachbuchHoerbuchSampleFileName();
   const uploaded = await uploadSachbuchHoerbuchAudio({
