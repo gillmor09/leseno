@@ -12,6 +12,7 @@ import {
   buildSachbuchHoerbuchTracksAction,
   deleteSachbuchHoerbuchTrackAction,
   downloadSachbuchHoerbuchZipMetaAction,
+  ensureSachbuchHoerbuchIntroOutroAction,
   listSachbuchHoerbuchStoredAction,
   listSachbuchHoerbuchVoicesAction,
   saveSachbuchHoerbuchPrefsAction,
@@ -24,13 +25,21 @@ import {
   emptySachbuchHoerbuchState,
   estimateSpokenDurationSec,
   groupHoerbuchTracksByKapitel,
+  SACHBUCH_HOERBUCH_DEFAULT_PROVIDER,
   SACHBUCH_HOERBUCH_DEFAULT_VOICE,
+  SACHBUCH_HOERBUCH_ELEVENLABS_DEFAULT_VOICE,
+  SACHBUCH_HOERBUCH_ELEVENLABS_MODEL_SLUG,
   SACHBUCH_HOERBUCH_MODEL_SLUG,
   SACHBUCH_HOERBUCH_SAMPLE_MIN_SEC,
   SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC,
+  sachbuchHoerbuchDefaultVoiceForProvider,
+  sachbuchHoerbuchModelSlugForProvider,
 } from "@/lib/sachbuch/hoerbuch";
 import { mergeSachbuchProseFromPrevious } from "@/lib/sachbuch/parse";
-import type { SachbuchKontext } from "@/lib/sachbuch/types";
+import type {
+  SachbuchHoerbuchTtsProvider,
+  SachbuchKontext,
+} from "@/lib/sachbuch/types";
 import { cn } from "@/lib/utils";
 
 function applySlimBook(
@@ -44,8 +53,8 @@ function applySlimBook(
 
 const WAIT_STEPS = [
   "Text vorbereiten",
-  "Gemini 3.8 Flash TTS",
-  "WAV → Tolino-MP3 (44,1 kHz / 128 kbps)",
+  "TTS (Gemini oder ElevenLabs)",
+  "Tolino-MP3 (44,1 kHz / 128 kbps)",
   "In Storage speichern",
 ] as const;
 
@@ -88,11 +97,21 @@ export function SachbuchHoerbuchPanel({
   onBookUpdate: (book: SachbuchKontext) => void;
 }) {
   const hoerbuch = book.idee.hoerbuch ?? emptySachbuchHoerbuchState();
+  const [provider, setProvider] = useState<SachbuchHoerbuchTtsProvider>(
+    hoerbuch.provider || SACHBUCH_HOERBUCH_DEFAULT_PROVIDER,
+  );
   const [voiceId, setVoiceId] = useState(
     hoerbuch.voiceId || SACHBUCH_HOERBUCH_DEFAULT_VOICE,
   );
+  const [geminiVoiceId, setGeminiVoiceId] = useState(
+    SACHBUCH_HOERBUCH_DEFAULT_VOICE,
+  );
+  const [elevenVoiceId, setElevenVoiceId] = useState(
+    SACHBUCH_HOERBUCH_ELEVENLABS_DEFAULT_VOICE,
+  );
   const [style, setStyle] = useState(hoerbuch.style);
-  const [voices, setVoices] = useState<TtsVoiceOption[]>([]);
+  const [geminiVoices, setGeminiVoices] = useState<TtsVoiceOption[]>([]);
+  const [elevenVoices, setElevenVoices] = useState<TtsVoiceOption[]>([]);
   const [stored, setStored] = useState<SachbuchHoerbuchStoredTrack[]>([]);
   const [samplePlay, setSamplePlay] = useState<{
     fileName: string;
@@ -101,6 +120,7 @@ export function SachbuchHoerbuchPanel({
     durationSec: number;
   } | null>(null);
   const [building, setBuilding] = useState(false);
+  const [ensuringCredits, setEnsuringCredits] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [zipPending, setZipPending] = useState(false);
   const [runtimes, setRuntimes] = useState<Record<string, TrackRuntime>>({});
@@ -118,9 +138,19 @@ export function SachbuchHoerbuchPanel({
   const doneCount = hoerbuch.tracks.filter((t) => t.audio).length;
 
   useEffect(() => {
-    setVoiceId(hoerbuch.voiceId || SACHBUCH_HOERBUCH_DEFAULT_VOICE);
+    const nextProvider =
+      hoerbuch.provider || SACHBUCH_HOERBUCH_DEFAULT_PROVIDER;
+    const nextVoice =
+      hoerbuch.voiceId || sachbuchHoerbuchDefaultVoiceForProvider(nextProvider);
+    setProvider(nextProvider);
+    setVoiceId(nextVoice);
     setStyle(hoerbuch.style);
-  }, [hoerbuch.voiceId, hoerbuch.style]);
+    if (nextProvider === "elevenlabs") {
+      setElevenVoiceId(nextVoice);
+    } else {
+      setGeminiVoiceId(nextVoice);
+    }
+  }, [hoerbuch.provider, hoerbuch.voiceId, hoerbuch.style]);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +160,10 @@ export function SachbuchHoerbuchPanel({
         listSachbuchHoerbuchStoredAction({ sachbuchId: book.id }),
       ]);
       if (cancelled) return;
-      if (v.success && v.data) setVoices(v.data.voices);
+      if (v.success && v.data) {
+        setGeminiVoices(v.data.gemini?.length ? v.data.gemini : v.data.voices);
+        setElevenVoices(v.data.elevenlabs ?? []);
+      }
       if (s.success && s.data) {
         setStored(s.data.tracks);
         setSamplePlay(s.data.sample);
@@ -140,6 +173,15 @@ export function SachbuchHoerbuchPanel({
       cancelled = true;
     };
   }, [book.id, hoerbuch.tracksBuiltAt, doneCount]);
+
+  function selectProvider(next: SachbuchHoerbuchTtsProvider) {
+    setProvider(next);
+    const remembered =
+      next === "elevenlabs" ? elevenVoiceId : geminiVoiceId;
+    setVoiceId(
+      remembered || sachbuchHoerbuchDefaultVoiceForProvider(next),
+    );
+  }
 
   async function refreshBookFromServer() {
     const s = await listSachbuchHoerbuchStoredAction({ sachbuchId: book.id });
@@ -172,12 +214,53 @@ export function SachbuchHoerbuchPanel({
     }
   }
 
+  /** Add Intro/Outro only — never rebuilds existing Kapitel tracks. */
+  async function onEnsureIntroOutro() {
+    if (!canSave || ensuringCredits || !hoerbuch.tracks.length) return;
+    setEnsuringCredits(true);
+    try {
+      const res = await ensureSachbuchHoerbuchIntroOutroAction({
+        sachbuchId: book.id,
+      });
+      if (!res.success || !res.data) {
+        toast.error(res.error ?? "Intro/Outro ergänzen fehlgeschlagen.");
+        return;
+      }
+      applySlimBook(onBookUpdate, book, res.data.book);
+      if (
+        !res.data.addedIntro &&
+        !res.data.addedOutro &&
+        !res.data.updatedIntro
+      ) {
+        toast.message("Intro und Outro sind schon vorhanden.");
+        return;
+      }
+      if (res.data.updatedIntro && !res.data.addedIntro && !res.data.addedOutro) {
+        toast.success(
+          "Intro-Text aktualisiert — bitte Intro neu vertonen.",
+        );
+        return;
+      }
+      const bits = [
+        res.data.addedIntro ? "Intro" : null,
+        res.data.addedOutro ? "Outro" : null,
+        res.data.updatedIntro ? "Intro-Text" : null,
+      ].filter(Boolean);
+      toast.success(
+        `${bits.join(" + ")} — bestehende Kapitel-Vertonungen unverändert.`,
+      );
+    } finally {
+      setEnsuringCredits(false);
+    }
+  }
+
   async function onSavePrefs() {
     if (!canSave || prefsSaving) return;
     setPrefsSaving(true);
     try {
       const res = await saveSachbuchHoerbuchPrefsAction({
         sachbuchId: book.id,
+        provider,
         voiceId,
         style,
       });
@@ -199,7 +282,11 @@ export function SachbuchHoerbuchPanel({
       [trackId]: { status: "running", error: null },
     }));
     setWaitOpen(true);
-    setWaitLabel("Kapitel-Track wird vertont …");
+    setWaitLabel(
+      provider === "elevenlabs"
+        ? "ElevenLabs v4 Turbo vertont …"
+        : "Gemini TTS vertont …",
+    );
     setWaitStartedAt(Date.now());
     try {
       const res = await fetch("/api/admin/sachbuch/hoerbuch/track", {
@@ -208,6 +295,7 @@ export function SachbuchHoerbuchPanel({
         body: JSON.stringify({
           sachbuchId: book.id,
           trackId,
+          provider,
           voiceId,
           style,
         }),
@@ -215,7 +303,12 @@ export function SachbuchHoerbuchPanel({
       const json = (await res.json()) as {
         success?: boolean;
         error?: string;
-        data?: { fileName: string; byteSize: number };
+        data?: {
+          fileName: string;
+          byteSize: number;
+          modelSlug?: string;
+          provider?: SachbuchHoerbuchTtsProvider;
+        };
       };
       if (!res.ok || !json.success) {
         throw new Error(json.error || "Vertonung fehlgeschlagen.");
@@ -231,6 +324,7 @@ export function SachbuchHoerbuchPanel({
           ...book.idee,
           hoerbuch: {
             ...hoerbuch,
+            provider,
             voiceId,
             style,
             tracks: hoerbuch.tracks.map((t) =>
@@ -241,7 +335,9 @@ export function SachbuchHoerbuchPanel({
                       storagePath: `${book.id}/${json.data?.fileName ?? t.fileName}`,
                       byteSize: json.data?.byteSize ?? 0,
                       durationSec: null,
-                      modelSlug: SACHBUCH_HOERBUCH_MODEL_SLUG,
+                      modelSlug:
+                        json.data?.modelSlug ||
+                        sachbuchHoerbuchModelSlugForProvider(provider),
                       voiceId,
                       generatedAt: new Date().toISOString(),
                     },
@@ -275,7 +371,12 @@ export function SachbuchHoerbuchPanel({
       const res = await fetch("/api/admin/sachbuch/hoerbuch/sample", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sachbuchId: book.id, voiceId, style }),
+        body: JSON.stringify({
+          sachbuchId: book.id,
+          provider,
+          voiceId,
+          style,
+        }),
       });
       const json = (await res.json()) as {
         success?: boolean;
@@ -365,15 +466,14 @@ export function SachbuchHoerbuchPanel({
           <span className="font-semibold text-zinc-800">
             {SACHBUCH_HOERBUCH_MODEL_SLUG}
           </span>
-          . Reihenfolge wie Export: Vorwort zuerst, dann Kapitel. Lange
-          Kapitel (über ca. 35 Min.) werden an Herstellung-Unterkapiteln
-          geteilt — nicht an Schreib-Abschnitten.
+          . Reihenfolge: Intro (0) → Vorwort → Kapitel → Outro. Anbieter
+          Gemini TTS oder ElevenLabs v4 Turbo wählbar (A/B pro Track).
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={!canSave || building}
+            disabled={!canSave || building || ensuringCredits}
             onClick={() => void onBuildTracks()}
             className="rounded-full bg-orange-700 px-4 py-2 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
           >
@@ -382,6 +482,21 @@ export function SachbuchHoerbuchPanel({
               : hoerbuch.tracks.length
                 ? "Kapitel-Tracks neu anlegen"
                 : "1. Kapitel-Tracks anlegen"}
+          </button>
+          <button
+            type="button"
+            disabled={
+              !canSave ||
+              !hoerbuch.tracks.length ||
+              ensuringCredits ||
+              building
+            }
+            onClick={() => void onEnsureIntroOutro()}
+            className="rounded-full bg-white px-4 py-2 text-sm font-bold text-zinc-900 ring-1 ring-zinc-300 hover:bg-zinc-50 disabled:opacity-50"
+          >
+            {ensuringCredits
+              ? "Intro/Outro …"
+              : "Intro + Outro ergänzen"}
           </button>
           <button
             type="button"
@@ -412,37 +527,116 @@ export function SachbuchHoerbuchPanel({
       </section>
 
       <section className="rounded-2xl bg-white px-4 py-4 ring-1 ring-zinc-200/80 sm:px-5">
-        <h3 className="font-extrabold text-zinc-950">Stimme</h3>
+        <h3 className="font-extrabold text-zinc-950">Stimme / Anbieter</h3>
+        <p className="mt-1 text-sm text-zinc-600">
+          Zum Kapitelvergleich Anbieter wechseln und einzelne Tracks neu
+          vertonen. Gespeicherte MP3s bleiben bis zur Neuvertonung.
+        </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm">
-            <span className="font-semibold text-zinc-700">Gemini-Stimme</span>
-            <select
-              value={voiceId}
-              onChange={(e) => setVoiceId(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 font-semibold text-zinc-900"
-            >
-              {(voices.length
-                ? voices
-                : [{ id: SACHBUCH_HOERBUCH_DEFAULT_VOICE, label: "Kore" }]
-              ).map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.label}
-                  {v.description ? ` — ${v.description}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-sm sm:col-span-2">
-            <span className="font-semibold text-zinc-700">
-              Stil (speech_metadata)
-            </span>
-            <textarea
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              rows={2}
-              className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900"
-            />
-          </label>
+          <button
+            type="button"
+            onClick={() => selectProvider("gemini-tts")}
+            className={cn(
+              "rounded-2xl px-4 py-3 text-left ring-1 transition",
+              provider === "gemini-tts"
+                ? "bg-orange-50 ring-orange-400"
+                : "bg-zinc-50 ring-zinc-200 hover:bg-white",
+            )}
+          >
+            <p className="text-sm font-extrabold text-zinc-950">Gemini TTS</p>
+            <p className="mt-0.5 text-xs text-zinc-600">
+              {SACHBUCH_HOERBUCH_MODEL_SLUG}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => selectProvider("elevenlabs")}
+            className={cn(
+              "rounded-2xl px-4 py-3 text-left ring-1 transition",
+              provider === "elevenlabs"
+                ? "bg-orange-50 ring-orange-400"
+                : "bg-zinc-50 ring-zinc-200 hover:bg-white",
+            )}
+          >
+            <p className="text-sm font-extrabold text-zinc-950">
+              ElevenLabs v4 Turbo
+            </p>
+            <p className="mt-0.5 text-xs text-zinc-600">
+              {SACHBUCH_HOERBUCH_ELEVENLABS_MODEL_SLUG}
+            </p>
+          </button>
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {provider === "gemini-tts" ? (
+            <label className="block text-sm">
+              <span className="font-semibold text-zinc-700">Gemini-Stimme</span>
+              <select
+                value={voiceId}
+                onChange={(e) => {
+                  setVoiceId(e.target.value);
+                  setGeminiVoiceId(e.target.value);
+                }}
+                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 font-semibold text-zinc-900"
+              >
+                {(geminiVoices.length
+                  ? geminiVoices
+                  : [{ id: SACHBUCH_HOERBUCH_DEFAULT_VOICE, label: "Kore" }]
+                ).map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                    {v.description ? ` — ${v.description}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label className="block text-sm">
+              <span className="font-semibold text-zinc-700">
+                ElevenLabs-Stimme
+              </span>
+              <select
+                value={voiceId}
+                onChange={(e) => {
+                  setVoiceId(e.target.value);
+                  setElevenVoiceId(e.target.value);
+                }}
+                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 font-semibold text-zinc-900"
+              >
+                {(elevenVoices.length
+                  ? elevenVoices
+                  : [
+                      {
+                        id: SACHBUCH_HOERBUCH_ELEVENLABS_DEFAULT_VOICE,
+                        label: "Standard (Sarah)",
+                      },
+                    ]
+                ).map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                    {v.description ? ` — ${v.description}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {provider === "gemini-tts" ? (
+            <label className="block text-sm sm:col-span-2">
+              <span className="font-semibold text-zinc-700">
+                Stil (speech_metadata)
+              </span>
+              <textarea
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900"
+              />
+            </label>
+          ) : (
+            <p className="text-xs text-zinc-500 sm:col-span-2">
+              ElevenLabs nutzt die gewählte Stimme ohne Gemini-Stilhinweis.
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -450,7 +644,7 @@ export function SachbuchHoerbuchPanel({
           onClick={() => void onSavePrefs()}
           className="mt-3 rounded-full bg-zinc-900 px-4 py-2 text-sm font-bold text-white hover:bg-zinc-800 disabled:opacity-50"
         >
-          {prefsSaving ? "Speichern …" : "Stimme übernehmen"}
+          {prefsSaving ? "Speichern …" : "Anbieter & Stimme übernehmen"}
         </button>
       </section>
 
@@ -501,6 +695,9 @@ export function SachbuchHoerbuchPanel({
                         <p className="text-xs text-zinc-500">
                           {t.fileName} · {t.charCount} Zeichen · ~{" "}
                           {estimateSpokenDurationSec(t.charCount)}s
+                          {t.audio?.modelSlug
+                            ? ` · ${t.audio.modelSlug}`
+                            : ""}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">

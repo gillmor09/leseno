@@ -100,6 +100,12 @@ export const OPENAI_TTS_VOICE_OPTIONS: readonly TtsVoiceOption[] = [
  * IDs are stable public defaults; labels help Hörbuch casting.
  */
 export const ELEVENLABS_CURATED_VOICE_OPTIONS: readonly TtsVoiceOption[] = [
+  // Sachbuch / Privacy-Value preferred narrator (user library).
+  {
+    id: "Cqbq4nsuUe1we6J45miU",
+    label: "Helmut",
+    description: "Bevorzugte Sachbuch-Erzählstimme",
+  },
   { id: "EXAVITQu4vr4xnSDxMaL", label: "Sarah", description: "Weich, klar — gut für Vorlesen" },
   { id: "JBFqnCBsd6RMkjVDRZzb", label: "George", description: "Ruhig, männlich" },
   { id: "pFZP5JQG7iQjIQuC4Bku", label: "Lily", description: "Warm, weiblich" },

@@ -12,11 +12,14 @@ import { assertSachbuchGuideAllows } from "@/lib/sachbuch/guide";
 import {
   buildSachbuchHoerbuchTracks,
   emptySachbuchHoerbuchState,
+  ensureSachbuchHoerbuchIntroOutroTracks,
+  isSachbuchHoerbuchTtsProvider,
   mergeHoerbuchTrackAudio,
   SACHBUCH_HOERBUCH_DEFAULT_STYLE,
   SACHBUCH_HOERBUCH_DEFAULT_VOICE,
   toPersistedHoerbuchTracks,
 } from "@/lib/sachbuch/hoerbuch";
+import type { SachbuchHoerbuchTtsProvider } from "@/lib/sachbuch/types";
 import {
   createSachbuchHoerbuchSignedUrl,
   deleteSachbuchHoerbuchObject,
@@ -110,6 +113,86 @@ export async function buildSachbuchHoerbuchTracksAction(
   };
 }
 
+/**
+ * Add Intro (0) + Outro only — keeps every existing Kapitel track and its audio.
+ */
+export async function ensureSachbuchHoerbuchIntroOutroAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    addedIntro: boolean;
+    addedOutro: boolean;
+    updatedIntro: boolean;
+    trackCount: number;
+    book: Awaited<ReturnType<typeof getSachbuchKontext>>;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = z.object({ sachbuchId: z.string().uuid() }).safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstZodMessage(parsed.error) };
+  }
+
+  const book = await getSachbuchKontext(parsed.data.sachbuchId);
+  if (!book) return { success: false, error: "Sachbuch nicht gefunden." };
+  try {
+    assertSachbuchGuideAllows(book, "hoerbuch");
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "Hörbuch gesperrt.",
+    };
+  }
+
+  const prev = book.idee.hoerbuch ?? emptySachbuchHoerbuchState();
+  if (!prev.tracks.length) {
+    return {
+      success: false,
+      error: "Noch keine Tracks — zuerst Kapitel-Tracks anlegen.",
+    };
+  }
+
+  const { tracks, addedIntro, addedOutro, updatedIntro } =
+    ensureSachbuchHoerbuchIntroOutroTracks(book, prev.tracks);
+  if (!addedIntro && !addedOutro && !updatedIntro) {
+    const shell = await getSachbuchKontextAdminShell(book.id);
+    return {
+      success: true,
+      data: {
+        addedIntro: false,
+        addedOutro: false,
+        updatedIntro: false,
+        trackCount: prev.tracks.length,
+        book: shell ? slimSachbuchKontextForAdminPage(shell) : null,
+      },
+    };
+  }
+
+  await patchSachbuchBook(book.id, {
+    idee: {
+      ...book.idee,
+      hoerbuch: {
+        ...prev,
+        tracks: toPersistedHoerbuchTracks(tracks),
+      },
+    },
+  });
+
+  const shell = await getSachbuchKontextAdminShell(book.id);
+  return {
+    success: true,
+    data: {
+      addedIntro,
+      addedOutro,
+      updatedIntro,
+      trackCount: tracks.length,
+      book: shell ? slimSachbuchKontextForAdminPage(shell) : null,
+    },
+  };
+}
+
 export async function saveSachbuchHoerbuchPrefsAction(
   input: unknown,
 ): Promise<ActionResult<{ book: Awaited<ReturnType<typeof getSachbuchKontext>> }>> {
@@ -119,6 +202,7 @@ export async function saveSachbuchHoerbuchPrefsAction(
   const parsed = z
     .object({
       sachbuchId: z.string().uuid(),
+      provider: z.enum(["gemini-tts", "elevenlabs"]).optional(),
       voiceId: z.string().trim().min(1).max(120),
       style: z.string().trim().max(500).optional(),
     })
@@ -131,12 +215,17 @@ export async function saveSachbuchHoerbuchPrefsAction(
   if (!book) return { success: false, error: "Sachbuch nicht gefunden." };
 
   const prev = book.idee.hoerbuch ?? emptySachbuchHoerbuchState();
+  const provider: SachbuchHoerbuchTtsProvider =
+    parsed.data.provider && isSachbuchHoerbuchTtsProvider(parsed.data.provider)
+      ? parsed.data.provider
+      : prev.provider;
   await patchSachbuchBook(book.id, {
     idee: {
       ...book.idee,
       hoerbuch: {
         ...prev,
         tracks: toPersistedHoerbuchTracks(prev.tracks),
+        provider,
         voiceId: parsed.data.voiceId,
         style: (parsed.data.style ?? prev.style).trim() ||
           SACHBUCH_HOERBUCH_DEFAULT_STYLE,
@@ -154,12 +243,40 @@ export async function saveSachbuchHoerbuchPrefsAction(
 }
 
 export async function listSachbuchHoerbuchVoicesAction(): Promise<
-  ActionResult<{ voices: TtsVoiceOption[] }>
+  ActionResult<{
+    gemini: TtsVoiceOption[];
+    elevenlabs: TtsVoiceOption[];
+    /** @deprecated use `gemini` — kept for older clients */
+    voices: TtsVoiceOption[];
+  }>
 > {
   const denied = await denyUnlessAdmin();
   if (denied) return { success: false, error: denied };
-  const voices = await listTtsVoicesForProvider("gemini-tts");
-  return { success: true, data: { voices } };
+  const [gemini, elevenRaw] = await Promise.all([
+    listTtsVoicesForProvider("gemini-tts"),
+    listTtsVoicesForProvider("elevenlabs"),
+  ]);
+  // Prefer the known Sachbuch narrator even if the API listing omits it.
+  const { SACHBUCH_HOERBUCH_ELEVENLABS_PREFERRED_VOICE_ID } = await import(
+    "@/lib/sachbuch/hoerbuch"
+  );
+  const preferredId = SACHBUCH_HOERBUCH_ELEVENLABS_PREFERRED_VOICE_ID;
+  const elevenlabs = [
+    {
+      id: preferredId,
+      label: "Helmut",
+      description: "Bevorzugte Sachbuch-Erzählstimme",
+    },
+    ...elevenRaw.filter((v) => v.id !== preferredId),
+  ];
+  return {
+    success: true,
+    data: {
+      gemini,
+      elevenlabs,
+      voices: gemini,
+    },
+  };
 }
 
 export async function listSachbuchHoerbuchStoredAction(

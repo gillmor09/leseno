@@ -289,10 +289,15 @@ export type SachbuchHoerbuchSample = {
   generatedAt: string;
 };
 
+/** TTS backend for Sachbuch Hörbuch (A/B: Gemini vs ElevenLabs). */
+export type SachbuchHoerbuchTtsProvider = "gemini-tts" | "elevenlabs";
+
 /** Hörbuch prefs + track list persisted inside `idee.hoerbuch`. */
 export type SachbuchHoerbuchState = {
+  /** Active TTS provider for the next synthesize call. */
+  provider: SachbuchHoerbuchTtsProvider;
   voiceId: string;
-  /** Optional style hint for Gemini `speech_metadata.style`. */
+  /** Optional style hint for Gemini `speech_metadata.style` (ignored by ElevenLabs). */
   style: string;
   tracks: SachbuchHoerbuchTrack[];
   sample: SachbuchHoerbuchSample | null;

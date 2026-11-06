@@ -15,6 +15,7 @@ export const maxDuration = 3600;
 
 const bodySchema = z.object({
   sachbuchId: z.string().uuid(),
+  provider: z.enum(["gemini-tts", "elevenlabs"]).optional(),
   voiceId: z.string().trim().min(1).max(120).optional(),
   style: z.string().trim().max(500).optional(),
 });
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
 
     const data = await synthesizeSachbuchHoerbuchSample({
       sachbuchId: parsed.data.sachbuchId,
+      provider: parsed.data.provider,
       voiceId: parsed.data.voiceId,
       style: parsed.data.style,
     });

@@ -8,9 +8,14 @@ import type {
   SachbuchHoerbuchState,
   SachbuchHoerbuchTrack,
   SachbuchHoerbuchTrackAudio,
+  SachbuchHoerbuchTtsProvider,
   SachbuchKontext,
 } from "@/lib/sachbuch/types";
 import { sachbuchKapitelExportBody } from "@/lib/sachbuch/parse";
+
+/** Default TTS provider (Gemini Flash). */
+export const SACHBUCH_HOERBUCH_DEFAULT_PROVIDER: SachbuchHoerbuchTtsProvider =
+  "gemini-tts";
 
 /** Default Gemini 3.8 Flash TTS prebuilt voice (firm / narration-friendly). */
 export const SACHBUCH_HOERBUCH_DEFAULT_VOICE = "Kore";
@@ -18,9 +23,45 @@ export const SACHBUCH_HOERBUCH_DEFAULT_VOICE = "Kore";
 /** Gemini model for Sachbuch Hörbuch (Tolino). */
 export const SACHBUCH_HOERBUCH_MODEL_SLUG = "gemini-3.8-flash-tts";
 
+/** ElevenLabs comparison model (v4 Turbo). */
+export const SACHBUCH_HOERBUCH_ELEVENLABS_MODEL_SLUG = "eleven_v4_turbo";
+
+/**
+ * Preferred ElevenLabs narrator for Sachbuch Hörbuch (always offered in UI).
+ * Account/library voice — not always returned by `/voices` listing.
+ */
+export const SACHBUCH_HOERBUCH_ELEVENLABS_PREFERRED_VOICE_ID =
+  "Cqbq4nsuUe1we6J45miU";
+
+/** Default ElevenLabs voice when switching provider. */
+export const SACHBUCH_HOERBUCH_ELEVENLABS_DEFAULT_VOICE =
+  SACHBUCH_HOERBUCH_ELEVENLABS_PREFERRED_VOICE_ID;
+
 /** Soft style for German non-fiction narration. */
 export const SACHBUCH_HOERBUCH_DEFAULT_STYLE =
   "Ruhige, klare deutschsprachige Sachbuch-Erzählstimme: professionell, warm, ohne Übertreibung.";
+
+export function isSachbuchHoerbuchTtsProvider(
+  value: string,
+): value is SachbuchHoerbuchTtsProvider {
+  return value === "gemini-tts" || value === "elevenlabs";
+}
+
+export function sachbuchHoerbuchDefaultVoiceForProvider(
+  provider: SachbuchHoerbuchTtsProvider,
+): string {
+  return provider === "elevenlabs"
+    ? SACHBUCH_HOERBUCH_ELEVENLABS_DEFAULT_VOICE
+    : SACHBUCH_HOERBUCH_DEFAULT_VOICE;
+}
+
+export function sachbuchHoerbuchModelSlugForProvider(
+  provider: SachbuchHoerbuchTtsProvider,
+): string {
+  return provider === "elevenlabs"
+    ? SACHBUCH_HOERBUCH_ELEVENLABS_MODEL_SLUG
+    : SACHBUCH_HOERBUCH_MODEL_SLUG;
+}
 
 /** Hörprobe target window for Tolino Media. */
 export const SACHBUCH_HOERBUCH_SAMPLE_MIN_SEC = 90;
@@ -29,6 +70,7 @@ export const SACHBUCH_HOERBUCH_SAMPLE_TARGET_SEC = 120;
 
 export function emptySachbuchHoerbuchState(): SachbuchHoerbuchState {
   return {
+    provider: SACHBUCH_HOERBUCH_DEFAULT_PROVIDER,
     voiceId: SACHBUCH_HOERBUCH_DEFAULT_VOICE,
     style: SACHBUCH_HOERBUCH_DEFAULT_STYLE,
     tracks: [],
@@ -151,7 +193,7 @@ export function parseSachbuchHoerbuchState(
     if (!text && charCount < 40 && !parseTrackAudio(t.audio)) continue;
     const order =
       typeof t.order === "number" && Number.isFinite(t.order)
-        ? Math.max(1, Math.round(t.order))
+        ? Math.max(0, Math.round(t.order))
         : tracks.length + 1;
     tracks.push({
       id,
@@ -173,7 +215,12 @@ export function parseSachbuchHoerbuchState(
     });
   }
   tracks.sort((a, b) => a.order - b.order);
+  const providerRaw =
+    typeof row.provider === "string" ? row.provider.trim() : "";
   return {
+    provider: isSachbuchHoerbuchTtsProvider(providerRaw)
+      ? providerRaw
+      : empty.provider,
     voiceId:
       typeof row.voiceId === "string" && row.voiceId.trim()
         ? row.voiceId.trim()
@@ -247,8 +294,74 @@ export const SACHBUCH_HOERBUCH_TRACK_SOFT_MAX_CHARS = 28_000;
 /** Synthetic kapitel id for Titelei-Vorwort tracks (same as PDF/ePub front matter). */
 export const SACHBUCH_HOERBUCH_VORWORT_KAPITEL_ID = "__vorwort__";
 
+/** Synthetic ids for Ansage (Track 0) and Closing Credits. */
+export const SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID = "__intro__";
+export const SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID = "__outro__";
+
+function sachbuchHoerbuchSpokenTitle(book: SachbuchKontext): string {
+  return (
+    book.export.suggestedTitle.trim() ||
+    book.title.trim() ||
+    "Sachbuch"
+  );
+}
+
+function sachbuchHoerbuchSpokenAuthor(book: SachbuchKontext): string {
+  return book.export.autorName.trim() || "Bernd Krpec";
+}
+
+/** Spoken credit for the active TTS provider (Intro Ansage). */
+export function sachbuchHoerbuchSpokenVoiceCredit(
+  provider: SachbuchHoerbuchTtsProvider | string | null | undefined,
+): string {
+  return resolveProvider(provider) === "elevenlabs"
+    ? "KI-Stimme (ElevenLabs v4)"
+    : "KI-Stimme (Gemini TTS)";
+}
+
+function resolveProvider(
+  raw: string | null | undefined,
+): SachbuchHoerbuchTtsProvider {
+  const value = (raw ?? "").trim();
+  return isSachbuchHoerbuchTtsProvider(value)
+    ? value
+    : SACHBUCH_HOERBUCH_DEFAULT_PROVIDER;
+}
+
+/** Spoken disclaimer after title/voice credit (Hörbuch Intro). */
+export const SACHBUCH_HOERBUCH_INTRO_DISCLAIMER =
+  "Dieses Sachbuch gibt Orientierung und operatives Erfahrungswissen wieder. Es ersetzt keine Rechtsberatung und keine juristische Prüfung konkreter Prozesse oder Sachverhalte. Keine Garantie für Vollständigkeit oder individuelle Ergebnisse. Bei Bedarf fachlichen Rat einholen.";
+
+/** Track 0 — short title/voice credit before Vorwort. */
+export function buildSachbuchHoerbuchIntroText(
+  book: SachbuchKontext,
+  providerOverride?: SachbuchHoerbuchTtsProvider | string | null,
+): string {
+  const title = sachbuchHoerbuchSpokenTitle(book);
+  const author = sachbuchHoerbuchSpokenAuthor(book);
+  const credit = sachbuchHoerbuchSpokenVoiceCredit(
+    providerOverride ?? book.idee.hoerbuch?.provider,
+  );
+  return `${title} von ${author}. Gelesen von ${credit}. ${SACHBUCH_HOERBUCH_INTRO_DISCLAIMER}`;
+}
+
+/** Closing Credits after the last Kapitel. */
+export function buildSachbuchHoerbuchOutroText(book: SachbuchKontext): string {
+  const title = sachbuchHoerbuchSpokenTitle(book);
+  const author = sachbuchHoerbuchSpokenAuthor(book);
+  return `Das war ${title} von ${author}. Vielen Dank fürs Zuhören. Weitere Informationen unter privacyvalue.de`;
+}
+
+function isSyntheticHoerbuchKapitelId(kapitelId: string): boolean {
+  return (
+    kapitelId === SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID ||
+    kapitelId === SACHBUCH_HOERBUCH_VORWORT_KAPITEL_ID ||
+    kapitelId === SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID
+  );
+}
+
 /**
- * Build Hörbuch tracks: Vorwort (like Export) first, then Kapitel Tracks.
+ * Build Hörbuch tracks: Intro (0) → Vorwort → Kapitel → Outro.
  * Writing-Abschnitte are authoring units — not Hörbuch chapters.
  * Long Kapitel (>~35 min) split on Herstellung-`<<<H>>>` Unterkapitel.
  */
@@ -257,6 +370,21 @@ export function buildSachbuchHoerbuchTracks(
 ): SachbuchHoerbuchTrack[] {
   const tracks: SachbuchHoerbuchTrack[] = [];
   let order = 0;
+
+  const introText = sachbuchSpokenPlainText(
+    buildSachbuchHoerbuchIntroText(book),
+  );
+  tracks.push({
+    id: SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID,
+    order: 0,
+    fileName: sachbuchHoerbuchTrackFileName(0, "Intro"),
+    title: "Intro",
+    kapitelId: SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID,
+    abschnittId: "",
+    text: introText,
+    charCount: introText.length,
+    audio: null,
+  });
 
   const vorwort = sachbuchSpokenPlainText(
     book.export.vorsatz.vorwort?.trim() ?? "",
@@ -317,6 +445,22 @@ export function buildSachbuchHoerbuchTracks(
         audio: null,
       });
     });
+  });
+
+  order += 1;
+  const outroText = sachbuchSpokenPlainText(
+    buildSachbuchHoerbuchOutroText(book),
+  );
+  tracks.push({
+    id: SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID,
+    order,
+    fileName: sachbuchHoerbuchTrackFileName(order, "Outro"),
+    title: "Outro",
+    kapitelId: SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID,
+    abschnittId: "",
+    text: outroText,
+    charCount: outroText.length,
+    audio: null,
   });
 
   return tracks;
@@ -421,11 +565,101 @@ export function mergeHoerbuchTrackAudio(
   }));
 }
 
+/**
+ * Insert Intro (0) + Outro without rebuilding Kapitel tracks.
+ * Existing rows (incl. audio / filenames / order) stay as-is.
+ */
+export function ensureSachbuchHoerbuchIntroOutroTracks(
+  book: SachbuchKontext,
+  existing: SachbuchHoerbuchTrack[],
+): {
+  tracks: SachbuchHoerbuchTrack[];
+  addedIntro: boolean;
+  addedOutro: boolean;
+  updatedIntro: boolean;
+} {
+  let tracks = [...existing].sort((a, b) => a.order - b.order);
+  let addedIntro = false;
+  let addedOutro = false;
+  let updatedIntro = false;
+
+  const hasIntro = tracks.some(
+    (t) =>
+      t.id === SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID ||
+      t.kapitelId === SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID,
+  );
+  const introText = sachbuchSpokenPlainText(
+    buildSachbuchHoerbuchIntroText(book),
+  );
+  if (!hasIntro) {
+    tracks = [
+      {
+        id: SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID,
+        order: 0,
+        fileName: sachbuchHoerbuchTrackFileName(0, "Intro"),
+        title: "Intro",
+        kapitelId: SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID,
+        abschnittId: "",
+        text: introText,
+        charCount: introText.length,
+        audio: null,
+      },
+      ...tracks,
+    ];
+    addedIntro = true;
+  } else {
+    // Refresh preview copy (e.g. Gemini → ElevenLabs v4) without touching audio.
+    tracks = tracks.map((t) => {
+      if (
+        t.id !== SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID &&
+        t.kapitelId !== SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID
+      ) {
+        return t;
+      }
+      if (t.text === introText && t.charCount === introText.length) return t;
+      updatedIntro = true;
+      return { ...t, text: introText, charCount: introText.length };
+    });
+  }
+
+  const hasOutro = tracks.some(
+    (t) =>
+      t.id === SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID ||
+      t.kapitelId === SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID,
+  );
+  if (!hasOutro) {
+    const maxOrder = tracks.reduce((m, t) => Math.max(m, t.order), 0);
+    const order = maxOrder + 1;
+    const outroText = sachbuchSpokenPlainText(
+      buildSachbuchHoerbuchOutroText(book),
+    );
+    tracks = [
+      ...tracks,
+      {
+        id: SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID,
+        order,
+        fileName: sachbuchHoerbuchTrackFileName(order, "Outro"),
+        title: "Outro",
+        kapitelId: SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID,
+        abschnittId: "",
+        text: outroText,
+        charCount: outroText.length,
+        audio: null,
+      },
+    ];
+    addedOutro = true;
+  }
+
+  return { tracks, addedIntro, addedOutro, updatedIntro };
+}
+
 export function kapitelTitleById(
   book: SachbuchKontext,
   kapitelId: string,
 ): string {
+  if (kapitelId === SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID) return "Intro";
   if (kapitelId === SACHBUCH_HOERBUCH_VORWORT_KAPITEL_ID) return "Vorwort";
+  if (kapitelId === SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID) return "Outro";
   return (
     book.kapitel.find((k) => k.id === kapitelId)?.title.trim() ||
     "Kapitel"
@@ -452,17 +686,21 @@ export function buildSachbuchHoerbuchSampleText(
   ];
   let chars = bits.join(" ").length;
   const targetChars = SACHBUCH_HOERBUCH_SAMPLE_TARGET_SEC * 14;
-  // Prefer Vorwort first (same order as the finished Hörbuch / Export).
+  // Prefer Vorwort, then Kapitel — skip Intro/Outro credits in the sample.
   const ordered = [
     ...tracks.filter(
       (t) => t.kapitelId === SACHBUCH_HOERBUCH_VORWORT_KAPITEL_ID,
     ),
     ...tracks.filter(
-      (t) => t.kapitelId !== SACHBUCH_HOERBUCH_VORWORT_KAPITEL_ID,
+      (t) =>
+        t.kapitelId !== SACHBUCH_HOERBUCH_VORWORT_KAPITEL_ID &&
+        t.kapitelId !== SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID &&
+        t.kapitelId !== SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID,
     ),
   ];
   for (const t of ordered) {
     if (chars >= targetChars) break;
+    // Sample stores full text only when freshly built; else use preview.
     bits.push(t.text);
     chars += t.text.length + 1;
   }
@@ -482,12 +720,23 @@ export type SachbuchHoerbuchTrackGroup = {
   tracks: SachbuchHoerbuchTrack[];
 };
 
-/** Kapitel list helper for UI grouping (Vorwort first, like Export). */
+/** Kapitel list helper for UI grouping (Intro → Vorwort → Kapitel → Outro). */
 export function groupHoerbuchTracksByKapitel(
   book: SachbuchKontext,
   tracks: SachbuchHoerbuchTrack[],
 ): SachbuchHoerbuchTrackGroup[] {
   const out: SachbuchHoerbuchTrackGroup[] = [];
+
+  const introTracks = tracks.filter(
+    (t) => t.kapitelId === SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID,
+  );
+  if (introTracks.length) {
+    out.push({
+      id: SACHBUCH_HOERBUCH_INTRO_KAPITEL_ID,
+      title: "Intro",
+      tracks: introTracks,
+    });
+  }
 
   const vorwortTracks = tracks.filter(
     (t) => t.kapitelId === SACHBUCH_HOERBUCH_VORWORT_KAPITEL_ID,
@@ -510,9 +759,21 @@ export function groupHoerbuchTracksByKapitel(
       });
     }
   }
+
+  const outroTracks = tracks.filter(
+    (t) => t.kapitelId === SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID,
+  );
+  if (outroTracks.length) {
+    out.push({
+      id: SACHBUCH_HOERBUCH_OUTRO_KAPITEL_ID,
+      title: "Outro",
+      tracks: outroTracks,
+    });
+  }
+
   const orphan = tracks.filter(
     (t) =>
-      t.kapitelId !== SACHBUCH_HOERBUCH_VORWORT_KAPITEL_ID &&
+      !isSyntheticHoerbuchKapitelId(t.kapitelId) &&
       !book.kapitel.some((k) => k.id === t.kapitelId),
   );
   if (orphan.length) {
