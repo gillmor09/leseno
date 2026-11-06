@@ -146,7 +146,20 @@ export async function trimMp3ToDurationSec(
   }
 }
 
-/** Probe duration in seconds via ffprobe-less ffmpeg `-i` stderr parse fallback. */
+function parseFfmpegDurationSec(stderr: string): number | null {
+  const match = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stderr);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  const s = Number(match[3]);
+  if (![h, m, s].every(Number.isFinite)) return null;
+  return h * 3600 + m * 60 + s;
+}
+
+/**
+ * Probe duration in seconds via ffmpeg (Duration line lives on stderr whether
+ * the process exits 0 or non-zero — do not only parse the catch path).
+ */
 export async function probeMp3DurationSec(audio: Buffer): Promise<number | null> {
   const ffmpeg = resolveFfmpegPath();
   const dir = await mkdtemp(join(tmpdir(), "leseno-probe-"));
@@ -154,25 +167,19 @@ export async function probeMp3DurationSec(audio: Buffer): Promise<number | null>
   try {
     await writeFile(inputPath, audio);
     try {
-      await execFileAsync(
+      const { stderr } = await execFileAsync(
         ffmpeg,
         ["-hide_banner", "-i", inputPath, "-f", "null", "-"],
         { maxBuffer: 8 * 1024 * 1024, windowsHide: true },
       );
+      return parseFfmpegDurationSec(String(stderr ?? ""));
     } catch (error) {
       const stderr =
         error && typeof error === "object" && "stderr" in error
           ? String((error as { stderr?: unknown }).stderr ?? "")
           : String(error);
-      const match = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(stderr);
-      if (!match) return null;
-      const h = Number(match[1]);
-      const m = Number(match[2]);
-      const s = Number(match[3]);
-      if (![h, m, s].every(Number.isFinite)) return null;
-      return h * 3600 + m * 60 + s;
+      return parseFfmpegDurationSec(stderr);
     }
-    return null;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -16,6 +16,7 @@ import {
   listSachbuchHoerbuchStoredAction,
   listSachbuchHoerbuchVoicesAction,
   saveSachbuchHoerbuchPrefsAction,
+  trimSachbuchHoerbuchSampleAction,
   type SachbuchHoerbuchStoredTrack,
 } from "@/app/actions/sachbuch-hoerbuch";
 import { SachbuchWaitDialog } from "@/components/features/admin/sachbuch-wait-dialog";
@@ -123,6 +124,7 @@ export function SachbuchHoerbuchPanel({
   const [ensuringCredits, setEnsuringCredits] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
   const [zipPending, setZipPending] = useState(false);
+  const [trimSamplePending, setTrimSamplePending] = useState(false);
   const [runtimes, setRuntimes] = useState<Record<string, TrackRuntime>>({});
   const [waitOpen, setWaitOpen] = useState(false);
   const [waitLabel, setWaitLabel] = useState("");
@@ -406,6 +408,47 @@ export function SachbuchHoerbuchPanel({
     }
   }
 
+  /** Cut existing sample to Tolino max — no TTS. */
+  async function trimExistingSample() {
+    if (!canSave || trimSamplePending || !samplePlay) return;
+    setTrimSamplePending(true);
+    setWaitOpen(true);
+    setWaitLabel("Hörprobe auf max. 3:00 kürzen …");
+    setWaitStartedAt(Date.now());
+    try {
+      const res = await trimSachbuchHoerbuchSampleAction({
+        sachbuchId: book.id,
+      });
+      if (!res.success || !res.data) {
+        toast.error(res.error ?? "Kürzung fehlgeschlagen.");
+        return;
+      }
+      applySlimBook(onBookUpdate, book, res.data.book);
+      setSamplePlay({
+        fileName: res.data.fileName,
+        playUrl: res.data.playUrl,
+        byteSize: res.data.byteSize,
+        durationSec: res.data.durationSec,
+      });
+      if (res.data.trimmed) {
+        toast.success(
+          `Hörprobe gekürzt auf ${Math.round(res.data.durationSec)}s (Tolino max. ${SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC}s).`,
+        );
+      } else {
+        toast.success(
+          `Hörprobe war schon ok (${Math.round(res.data.durationSec)}s).`,
+        );
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Kürzung fehlgeschlagen.");
+    } finally {
+      setTrimSamplePending(false);
+      setWaitOpen(false);
+      setWaitLabel("");
+      setWaitStartedAt(null);
+    }
+  }
+
   async function onZip() {
     if (zipPending) return;
     setZipPending(true);
@@ -513,6 +556,17 @@ export function SachbuchHoerbuchPanel({
             className="rounded-full bg-white px-4 py-2 text-sm font-bold text-zinc-900 ring-1 ring-zinc-300 hover:bg-zinc-50 disabled:opacity-50"
           >
             Hörprobe erzeugen (1:30–3:00)
+          </button>
+          <button
+            type="button"
+            disabled={!canSave || !samplePlay || trimSamplePending}
+            onClick={() => void trimExistingSample()}
+            className="rounded-full bg-amber-700 px-4 py-2 text-sm font-bold text-white hover:bg-amber-800 disabled:opacity-50"
+            title="Bestehende Hörprobe ohne Neuvertonung auf max. 3:00 kürzen"
+          >
+            {trimSamplePending
+              ? "Kürzung …"
+              : "Hörprobe auf 3:00 kürzen"}
           </button>
         </div>
 

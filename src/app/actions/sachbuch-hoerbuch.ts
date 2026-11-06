@@ -351,6 +351,63 @@ export async function listSachbuchHoerbuchStoredAction(
   return { success: true, data: { tracks, sample } };
 }
 
+/**
+ * Trim existing Hörprobe to Tolino max (~3:00) without re-running TTS.
+ */
+export async function trimSachbuchHoerbuchSampleAction(
+  input: unknown,
+): Promise<
+  ActionResult<{
+    fileName: string;
+    playUrl: string;
+    byteSize: number;
+    durationSec: number;
+    trimmed: boolean;
+    book: Awaited<ReturnType<typeof getSachbuchKontext>>;
+  }>
+> {
+  const denied = await denyUnlessAdmin();
+  if (denied) return { success: false, error: denied };
+
+  const parsed = z.object({ sachbuchId: z.string().uuid() }).safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: firstZodMessage(parsed.error) };
+  }
+
+  const book = await getSachbuchKontext(parsed.data.sachbuchId);
+  if (!book) return { success: false, error: "Sachbuch nicht gefunden." };
+  try {
+    assertSachbuchGuideAllows(book, "hoerbuch");
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "Hörbuch gesperrt.",
+    };
+  }
+
+  try {
+    const { trimExistingSachbuchHoerbuchSample } = await import(
+      "@/lib/sachbuch/synthesize-hoerbuch-track"
+    );
+    const data = await trimExistingSachbuchHoerbuchSample({
+      sachbuchId: parsed.data.sachbuchId,
+    });
+    const shell = await getSachbuchKontextAdminShell(book.id);
+    return {
+      success: true,
+      data: {
+        ...data,
+        book: shell ? slimSachbuchKontextForAdminPage(shell) : null,
+      },
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "Hörprobe-Kürzung fehlgeschlagen.",
+    };
+  }
+}
+
 export async function deleteSachbuchHoerbuchTrackAction(
   input: unknown,
 ): Promise<ActionResult<{ book: Awaited<ReturnType<typeof getSachbuchKontext>> }>> {

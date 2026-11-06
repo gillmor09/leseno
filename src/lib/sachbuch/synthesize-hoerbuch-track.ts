@@ -44,6 +44,7 @@ import {
 } from "@/lib/sachbuch/hoerbuch";
 import {
   createSachbuchHoerbuchSignedUrl,
+  downloadSachbuchHoerbuchAudio,
   uploadSachbuchHoerbuchAudio,
 } from "@/lib/sachbuch/hoerbuch-storage";
 import {
@@ -363,5 +364,92 @@ export async function synthesizeSachbuchHoerbuchSample(input: {
     durationSec: sample.durationSec,
     modelSlug,
     provider,
+  };
+}
+
+/**
+ * Shorten an existing Hörprobe MP3 to Tolino’s max window — no TTS re-run.
+ * Use when the sample is already too long for Tolino Media upload.
+ */
+export async function trimExistingSachbuchHoerbuchSample(input: {
+  sachbuchId: string;
+}): Promise<{
+  fileName: string;
+  playUrl: string;
+  byteSize: number;
+  durationSec: number;
+  trimmed: boolean;
+}> {
+  const book = await getSachbuchKontext(input.sachbuchId);
+  if (!book) throw new UserFacingError("Sachbuch nicht gefunden.");
+  const state = book.idee.hoerbuch;
+  const existing = state.sample;
+  if (!existing?.storagePath) {
+    throw new UserFacingError(
+      "Keine Hörprobe vorhanden — zuerst erzeugen oder ZIP mit Probe.",
+    );
+  }
+
+  let mp3 = await downloadSachbuchHoerbuchAudio(existing.storagePath);
+  let durationSec = (await probeMp3DurationSec(mp3)) ?? existing.durationSec ?? 0;
+
+  if (durationSec > 0 && durationSec <= SACHBUCH_HOERBUCH_SAMPLE_SAFE_MAX_SEC) {
+    const playUrl = await createSachbuchHoerbuchSignedUrl(existing.storagePath);
+    return {
+      fileName: existing.fileName,
+      playUrl,
+      byteSize: existing.byteSize,
+      durationSec,
+      trimmed: false,
+    };
+  }
+
+  const trimmed = await trimMp3ToDurationSec(
+    mp3,
+    SACHBUCH_HOERBUCH_SAMPLE_SAFE_MAX_SEC,
+  );
+  mp3 = trimmed.audio;
+  durationSec =
+    (await probeMp3DurationSec(mp3)) ?? trimmed.durationSec;
+
+  if (durationSec > SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC) {
+    throw new UserFacingError(
+      `Hörprobe ist nach Kürzen noch ${Math.round(durationSec)}s (Tolino max. ${SACHBUCH_HOERBUCH_SAMPLE_MAX_SEC}s).`,
+    );
+  }
+
+  const fileName = existing.fileName || sachbuchHoerbuchSampleFileName();
+  const uploaded = await uploadSachbuchHoerbuchAudio({
+    sachbuchId: book.id,
+    fileName,
+    audio: mp3,
+  });
+
+  const sample: SachbuchHoerbuchSample = {
+    storagePath: uploaded.storagePath,
+    fileName,
+    byteSize: uploaded.byteSize,
+    durationSec,
+    generatedAt: new Date().toISOString(),
+  };
+
+  await patchSachbuchBook(book.id, {
+    idee: {
+      ...book.idee,
+      hoerbuch: {
+        ...state,
+        tracks: toPersistedHoerbuchTracks(state.tracks),
+        sample,
+      },
+    },
+  });
+
+  const playUrl = await createSachbuchHoerbuchSignedUrl(uploaded.storagePath);
+  return {
+    fileName,
+    playUrl,
+    byteSize: uploaded.byteSize,
+    durationSec,
+    trimmed: true,
   };
 }
