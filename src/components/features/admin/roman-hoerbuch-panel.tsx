@@ -43,7 +43,7 @@ import {
   collectExportChaptersFromEditorial,
   type RomanExportProseSource,
 } from "@/lib/roman/export-roman-pdf";
-import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
+import { hasFilledManuskript } from "@/lib/roman/fill-checks";
 import type { RomanKontext } from "@/lib/roman/types";
 import { cn } from "@/lib/utils";
 

@@ -14,10 +14,8 @@ import {
   ROMAN_ALTER_PRESETS,
   type RomanBuchTyp,
 } from "@/lib/roman/editorial";
-import {
-  basicsLookEmptyForAutoDerive,
-  suggestBasicsFromIdee,
-} from "@/lib/roman/suggest-basics-from-idee";
+import { basicsLookEmptyForAutoDerive } from "@/lib/roman/fill-checks";
+import { suggestBasicsFromIdee } from "@/lib/roman/suggest-basics-from-idee";
 import { evaluateStageHardGate } from "@/lib/roman/stage-hard-gates";
 import {
   historyEvent,

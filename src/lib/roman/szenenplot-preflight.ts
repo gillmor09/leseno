@@ -11,7 +11,7 @@ import {
   type RomanEditorial,
 } from "@/lib/roman/editorial";
 import { auditGeruestPlotClaims } from "@/lib/roman/geruest-plot-claims";
-import { listThinConcreteNodes } from "@/lib/roman/wissens-graph";
+import { listThinConcreteNodes } from "@/lib/roman/wissens-graph-thin";
 import {
   structuredKapitelGeruestToMarkdown,
   type RomanKapitelGeruestChapter,

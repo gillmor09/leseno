@@ -99,7 +99,6 @@ import {
   generateCascadeConfirm,
   invalidateDownstreamEditorial,
 } from "@/lib/roman/pipeline/cascade";
-import { hasFilledKapitelGeruest } from "@/lib/roman/suggest-kapitelgeruest";
 import {
   RomanWeltPanel,
   type WeltBasics,
@@ -124,10 +123,16 @@ import {
   approveRomanPhaseAction,
   importRomanIdeeTextAction,
 } from "@/app/actions/roman-phase-freigabe";
+import { emptyCharakter, hasFilledCharaktere } from "@/lib/roman/fundament";
 import {
   basicsLookEmptyForAutoDerive,
-} from "@/lib/roman/suggest-basics-from-idee";
-import { emptyCharakter, hasFilledCharaktere } from "@/lib/roman/fundament";
+  hasFilledCleverUnterthemen,
+  hasFilledExpose,
+  hasFilledKapitelGeruest,
+  hasFilledManuskript,
+  hasFilledSzenenplot,
+  hasFilledWelt,
+} from "@/lib/roman/fill-checks";
 import {
   normalizeManuskriptDocument,
   normalizePlotDocument,
@@ -136,16 +141,9 @@ import {
   sanitizeChapterTitle,
   serializeManuskriptChapters,
 } from "@/lib/roman/plot-chapters";
-import { stripErzaehlerWrappers } from "@/lib/roman/clever-geschichte";
-import { hasFilledExpose } from "@/lib/roman/suggest-expose";
-import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
-import { hasFilledSzenenplot } from "@/lib/roman/suggest-szenenplot";
-import {
-  applyCleverThemaTitlesToManuskript,
-  hasFilledCleverUnterthemen,
-} from "@/lib/roman/clever-unterthemen";
+import { stripErzaehlerWrappers } from "@/lib/roman/clever-geschichte-strip";
+import { applyCleverThemaTitlesToManuskript } from "@/lib/roman/clever-manuskript-titles";
 import { buildCleverThemaStanceForThema } from "@/lib/roman/clever-thema-stance";
-import { hasFilledWelt } from "@/lib/roman/suggest-welt";
 import type {
   RomanCharakter,
   RomanIdeaChatMessage,

@@ -153,14 +153,4 @@ Zusatz: Du bist Entwicklungslektor für Verlags-Basics. Antworte ausschließlich
   };
 }
 
-/** True when Basics look empty enough to auto-fill without confirm. */
-export function basicsLookEmptyForAutoDerive(input: {
-  genre?: string | null;
-  tonalitaet?: string | null;
-  editorial?: RomanEditorial | null;
-}): boolean {
-  const ton = (input.tonalitaet ?? "").trim();
-  const grob = (input.editorial?.grobRegeln ?? "").trim();
-  const genre = (input.genre ?? "").trim();
-  return ton.length < 40 && grob.length < 40 && genre.length < 2;
-}
+export { basicsLookEmptyForAutoDerive } from "@/lib/roman/fill-checks";

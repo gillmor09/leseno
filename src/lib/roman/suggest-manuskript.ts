@@ -14,6 +14,7 @@ import {
   isAiAbortError,
 } from "@/lib/ai/fetch-timeout";
 import { generateText } from "@/lib/ai/provider";
+import { hasFilledManuskript } from "@/lib/roman/fill-checks";
 import {
   BUCHTYP_LABELS,
   buildCritiqueRulesAndNeedsBlock,
@@ -214,10 +215,7 @@ function parseManuskriptText(raw: string, roleLabel: string): string {
   return body;
 }
 
-/** True when Manuskript already has substance. */
-export function hasFilledManuskript(text: string): boolean {
-  return text.trim().length >= 400;
-}
+export { hasFilledManuskript };
 
 function cleanChapterProse(raw: string, chapter: PlotChapter): string {
   const body = stripFence(raw)

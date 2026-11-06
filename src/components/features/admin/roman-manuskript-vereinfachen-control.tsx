@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { romanManuskriptVereinfachenAction } from "@/app/actions/roman-manuskript-vereinfachen";
 import { RomanSceneWaitDialog } from "@/components/features/admin/roman-scene-wait-dialog";
 import type { RomanEditorial } from "@/lib/roman/editorial";
-import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
+import { hasFilledManuskript } from "@/lib/roman/fill-checks";
 import type { RomanKontext } from "@/lib/roman/types";
 
 export function RomanManuskriptVereinfachenControl({

@@ -14,6 +14,7 @@ import { AI_LONG_PROSE_TIMEOUT_MS } from "@/lib/ai/fetch-timeout";
 import { lowestReasoningEffortForScoring } from "@/lib/ai/reasoning-effort";
 import { parseModelJsonObjectWithRepair } from "@/lib/ai/repair-model-json";
 import { generateText } from "@/lib/ai/provider";
+import { hasFilledKapitelGeruest } from "@/lib/roman/fill-checks";
 import type { AiModelConfig } from "@/lib/prompts/catalog";
 import {
   BUCHTYP_LABELS,
@@ -142,10 +143,7 @@ export type KapitelGeruestCritiqueResult = {
   modelLabel: string;
 };
 
-/** True when Kapitelgerüst already has substance. */
-export function hasFilledKapitelGeruest(raw: string): boolean {
-  return raw.trim().length >= 80;
-}
+export { hasFilledKapitelGeruest };
 
 type ThinChapterLike = {
   kernsatz: string;

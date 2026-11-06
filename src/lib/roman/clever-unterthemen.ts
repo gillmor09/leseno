@@ -8,6 +8,7 @@
 import { generateText } from "@/lib/ai/provider";
 import { formatCleverGeschichteBrief } from "@/lib/roman/clever-erzaehlt";
 import { formatCleverThemaStanceBrief } from "@/lib/roman/clever-thema-stance";
+import { hasFilledCleverUnterthemen } from "@/lib/roman/fill-checks";
 import type {
   CleverFaktCheck,
   CleverFaktCheckStatus,
@@ -17,11 +18,6 @@ import type {
   RomanEditorial,
 } from "@/lib/roman/editorial";
 import { ROMAN_PROSE_MAX_TOKENS } from "@/lib/roman/pipeline/quality-brief";
-import {
-  parsePlotChapters,
-  sanitizeChapterTitle,
-  serializeManuskriptChapters,
-} from "@/lib/roman/plot-chapters";
 import { resolveRomanKiRolle } from "@/lib/roman/roles";
 
 export type {
@@ -64,14 +60,7 @@ export function cleverKapitelSoll(
 export const CLEVER_FAKT_LENGTH_MANDATE =
   "Jeder Fakt: ca. 30–50 Wörter (ein dichter, verständlicher Absatz — konkret, altersgerecht, prüfbar; kein Stichwort und kein Roman).";
 
-export function hasFilledCleverUnterthemen(
-  doc: CleverUnterthemen | null | undefined,
-  editorial?: Pick<RomanEditorial, "zielAlterMin" | "zielAlterMax">,
-): boolean {
-  if (!doc?.kapitel.length) return false;
-  const soll = editorial ? cleverKapitelSoll(editorial) : 10;
-  return doc.kapitel.length >= soll;
-}
+export { hasFilledCleverUnterthemen };
 
 /** Append one empty Unterthema chapter (title placeholder, no facts yet). */
 export function appendEmptyCleverKapitel(
@@ -239,35 +228,7 @@ export function formatCleverUnterthemenMarkdown(doc: CleverUnterthemen): string 
   return lines.join("\n").trim();
 }
 
-/**
- * Force Manuskript chapter headings to match Unterthemen titles (Thema = SoT).
- * Keeps story bodies; only retitles. No-op when there is no prose or no Kapitel.
- */
-export function applyCleverThemaTitlesToManuskript(
-  manuskriptText: string,
-  unterthemen: CleverUnterthemen | null | undefined,
-): string {
-  const doc = unterthemen;
-  if (!doc?.kapitel.length) return manuskriptText;
-  const text = manuskriptText.trim();
-  if (!text) return manuskriptText;
-
-  const chapters = parsePlotChapters(text);
-  if (chapters.length < 1) return manuskriptText;
-
-  const byNum = new Map(
-    doc.kapitel.map((k) => [k.nummer, k.titel.trim()] as const),
-  );
-  let changed = false;
-  const next = chapters.map((c) => {
-    const thema = byNum.get(c.number);
-    if (!thema) return c;
-    const title = sanitizeChapterTitle(thema, c.number) || c.title;
-    if (title !== c.title) changed = true;
-    return { ...c, title };
-  });
-  return changed ? serializeManuskriptChapters(next) : manuskriptText;
-}
+export { applyCleverThemaTitlesToManuskript } from "@/lib/roman/clever-manuskript-titles";
 
 function stripFence(raw: string): string {
   return raw

@@ -3,6 +3,7 @@
  */
 
 import { generateText } from "@/lib/ai/provider";
+import { hasFilledWelt } from "@/lib/roman/fill-checks";
 import {
   BUCHTYP_LABELS,
   buildCritiqueRulesAndNeedsBlock,
@@ -209,13 +210,7 @@ function parseWeltJson(raw: string, roleLabel: string): RomanWelt {
   return { weltSchauplaetze, weltRegeln };
 }
 
-/** True when world fields already have substance. */
-export function hasFilledWelt(welt: RomanWelt): boolean {
-  return (
-    welt.weltSchauplaetze.trim().length >= 40 ||
-    welt.weltRegeln.trim().length >= 40
-  );
-}
+export { hasFilledWelt };
 
 function formatWelt(welt: RomanWelt): string {
   const parts = [

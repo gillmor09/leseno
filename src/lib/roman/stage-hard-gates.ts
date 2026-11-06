@@ -27,8 +27,8 @@ import {
   auditKapitelGeruestStructured,
   auditSzenenplotStructured,
 } from "@/lib/roman/szenenplot-preflight";
-import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
-import { listThinConcreteNodes } from "@/lib/roman/wissens-graph";
+import { hasFilledManuskript } from "@/lib/roman/fill-checks";
+import { listThinConcreteNodes } from "@/lib/roman/wissens-graph-thin";
 
 export type {
   StageGateKey,

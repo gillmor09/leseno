@@ -5,6 +5,7 @@
  */
 
 import { generateText } from "@/lib/ai/provider";
+import { hasFilledExpose } from "@/lib/roman/fill-checks";
 import {
   BUCHTYP_LABELS,
   buildCritiqueRulesAndNeedsBlock,
@@ -69,10 +70,7 @@ function parseExposeText(raw: string, roleLabel: string): string {
   return expose;
 }
 
-/** True when Exposé already has substance. */
-export function hasFilledExpose(expose: string): boolean {
-  return expose.trim().length >= 80;
-}
+export { hasFilledExpose };
 
 function typHints(buchTyp: RomanBuchTyp): string {
   switch (buchTyp) {

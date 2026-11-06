@@ -4,7 +4,7 @@
  * Kept separate from `gemini.ts` to avoid circular imports.
  */
 
-import { createHash } from "node:crypto";
+import { createHash } from "crypto";
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_TTL_SEC = 3_600;

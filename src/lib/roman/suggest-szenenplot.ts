@@ -8,6 +8,7 @@ import { AI_LONG_PROSE_TIMEOUT_MS } from "@/lib/ai/fetch-timeout";
 import { parseModelJsonObject } from "@/lib/ai/parse-model-json";
 import { parseModelJsonObjectWithRepair } from "@/lib/ai/repair-model-json";
 import { generateText } from "@/lib/ai/provider";
+import { hasFilledSzenenplot } from "@/lib/roman/fill-checks";
 import type { AiModelConfig } from "@/lib/prompts/catalog";
 import {
   BUCHTYP_LABELS,
@@ -122,10 +123,7 @@ function extractBetween(text: string, startMark: string, endMark: string): strin
   return (b < 0 ? text.slice(from) : text.slice(from, b)).trim();
 }
 
-/** True when Kapitelgerüst already has substance. */
-export function hasFilledSzenenplot(plot: string): boolean {
-  return plot.trim().length >= 80;
-}
+export { hasFilledSzenenplot };
 
 function typHints(buchTyp: RomanBuchTyp): string {
   switch (buchTyp) {

@@ -38,7 +38,7 @@ import {
   romanPdfFilename,
   type RomanExportProseSource,
 } from "@/lib/roman/export-roman-pdf";
-import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
+import { hasFilledManuskript } from "@/lib/roman/fill-checks";
 import type { RomanKontext } from "@/lib/roman/types";
 
 function downloadBlob(blob: Blob, filename: string): void {

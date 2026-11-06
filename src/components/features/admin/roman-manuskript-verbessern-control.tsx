@@ -25,7 +25,7 @@ import {
 } from "@/lib/roman/editorial";
 import { parsePlotChapters } from "@/lib/roman/plot-chapters";
 import { getManuskriptRomanVerbessernGate } from "@/lib/roman/roman-verbessern-preflight";
-import { hasFilledManuskript } from "@/lib/roman/suggest-manuskript";
+import { hasFilledManuskript } from "@/lib/roman/fill-checks";
 import type { RomanKontext } from "@/lib/roman/types";
 
 type ProgressPollPayload = {
